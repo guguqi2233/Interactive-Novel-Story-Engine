@@ -51,8 +51,8 @@ def test_observe_returns_current_location_visible_objects_only() -> None:
     )
 
     assert result.success_level == SuccessLevel.SUCCESS
-    assert result.state_delta is not None
-    assert result.state_delta.path == "current_time"
+    assert result.state_deltas
+    assert result.state_deltas[0].path == "current_time"
     assert result.visible_facts == ["square", "well", "harlan"]
     assert "mira" not in result.visible_facts
 
@@ -66,8 +66,10 @@ def test_move_requires_target_in_current_location_exits() -> None:
     )
 
     assert result.success_level == SuccessLevel.SUCCESS
-    assert result.state_delta is not None
-    next_state = apply_delta(state, result.state_delta)
+    assert result.state_deltas
+    next_state = state
+    for delta in result.state_deltas:
+        next_state = apply_delta(next_state, delta)
     assert next_state.player.location_id == "smithy"
 
 
@@ -79,7 +81,7 @@ def test_move_fails_for_unreachable_target() -> None:
     )
 
     assert result.success_level == SuccessLevel.FAILURE
-    assert result.state_delta is None
+    assert result.state_deltas == []
 
 
 def test_talk_succeeds_only_for_present_npc() -> None:
@@ -101,7 +103,7 @@ def test_talk_fails_for_absent_npc() -> None:
     )
 
     assert result.success_level == SuccessLevel.FAILURE
-    assert result.state_delta is None
+    assert result.state_deltas == []
 
 
 def test_use_item_checks_inventory_structurally() -> None:
@@ -125,6 +127,6 @@ def test_wait_advances_time_with_delta() -> None:
     )
 
     assert result.success_level == SuccessLevel.SUCCESS
-    assert result.state_delta is not None
-    next_state = apply_delta(state, result.state_delta)
+    assert result.state_deltas
+    next_state = apply_delta(state, result.state_deltas[0])
     assert next_state.current_time.minutes_of_day == state.current_time.minutes_of_day + 30

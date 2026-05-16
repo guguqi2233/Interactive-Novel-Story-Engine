@@ -18,7 +18,7 @@ def make_event(event_id: str, turn: int) -> Event:
         target_id="smithy",
         input_text="Go to the smithy.",
         result="accepted",
-        state_delta=make_delta(),
+        state_deltas=[make_delta()],
         visible_to_player=True,
         narrative_text="You walk to the smithy.",
     )
@@ -91,7 +91,6 @@ def test_event_can_explicitly_allow_empty_delta() -> None:
         allow_empty_delta=True,
     )
 
-    assert event.state_delta is None
     assert event.state_deltas == []
 
 
@@ -109,5 +108,4 @@ def test_event_accepts_multiple_state_deltas() -> None:
         state_deltas=[first_delta, second_delta],
     )
 
-    assert event.state_delta is None
     assert event.state_deltas == [first_delta, second_delta]

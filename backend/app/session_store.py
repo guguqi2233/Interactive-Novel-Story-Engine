@@ -2,16 +2,23 @@ from collections.abc import Callable
 from random import Random
 from uuid import uuid4
 
-from app.core.event_log import EventLog
+from app.core.event_log import Event, EventLog
 from app.core.game_loop import GameLoop
 from app.core.world_state import GameState
-from app.api import VisibleStateResponse
+from app.api import (
+    KnownFactResponse,
+    VisibleLocationResponse,
+    VisibleNPCResponse,
+    VisibleObjectResponse,
+    VisibleStateResponse,
+    VisibleTimeResponse,
+)
 from app.engine.action_dispatcher import ActionDispatcher
 from app.engine.content.world_loader import WorldLoader
-from app.engine.rules.visibility import get_visible_facts
+from app.engine.rules.time import format_game_time, get_time_of_day
 from app.llm.intent_parser import IntentParser
-from app.llm.mock_provider import MockLLMProvider
 from app.llm.narrator import Narrator
+from app.llm.provider_factory import create_llm_provider
 from app.llm.provider_base import LLMProvider
 
 ProviderFactory = Callable[[], LLMProvider]
@@ -25,23 +32,38 @@ class InMemorySessionStore:
         default_world_id: str = "mist_valley",
     ) -> None:
         self._sessions: dict[str, GameLoop] = {}
-        self._provider_factory = provider_factory or MockLLMProvider
+        self._provider_factory = provider_factory or create_llm_provider
         self._world_loader = WorldLoader(worlds_root)
         self._default_world_id = default_world_id
 
-    def create_session(self) -> tuple[str, GameLoop]:
+    def create_session(self, world_id: str | None = None) -> tuple[str, GameLoop]:
         session_id = str(uuid4())
-        provider = self._provider_factory()
-        game_loop = GameLoop(
-            state=create_initial_state(self._world_loader, self._default_world_id),
+        game_loop = self._build_game_loop(
+            state=create_initial_state(self._world_loader, world_id or self._default_world_id),
             event_log=EventLog(),
+        )
+        self._sessions[session_id] = game_loop
+        return session_id, game_loop
+
+    def restore_session(self, state: GameState, events: list[Event] | None = None) -> tuple[str, GameLoop]:
+        session_id = str(uuid4())
+        game_loop = self._build_game_loop(
+            state=state,
+            event_log=EventLog(events or []),
+        )
+        self._sessions[session_id] = game_loop
+        return session_id, game_loop
+
+    def _build_game_loop(self, state: GameState, event_log: EventLog) -> GameLoop:
+        provider = self._provider_factory()
+        return GameLoop(
+            state=state,
+            event_log=event_log,
             intent_parser=IntentParser(provider),
             action_dispatcher=ActionDispatcher(),
             narrator=Narrator(provider),
             rng=Random(),
         )
-        self._sessions[session_id] = game_loop
-        return session_id, game_loop
 
     def get_session(self, session_id: str) -> GameLoop | None:
         return self._sessions.get(session_id)
@@ -54,9 +76,57 @@ def create_initial_state(world_loader: WorldLoader | None = None, world_id: str 
 
 def build_visible_state(state: GameState) -> VisibleStateResponse:
     location = state.locations.get(state.player.location_id)
+    location_id = state.player.location_id
+    visible_objects = [
+        VisibleObjectResponse(id=world_object.id)
+        for world_object in state.objects.values()
+        if _object_visible_to_player(state, world_object.id, location_id)
+    ]
+    inventory = [
+        VisibleObjectResponse(id=item_id)
+        for item_id in state.player.inventory
+        if item_id in state.objects
+    ]
+    visible_npcs = [
+        VisibleNPCResponse(
+            id=npc.id,
+            mood=npc.mood,
+            relationship_to_player=npc.relationship_to_player,
+        )
+        for npc in state.npcs.values()
+        if npc.location_id == location_id
+    ]
+    known_facts = [
+        KnownFactResponse(id=fact_id, text=state.facts.get(fact_id).text, tags=state.facts.get(fact_id).tags)
+        for fact_id in sorted(state.player_visible_facts)
+        if fact_id in state.facts
+    ]
     return VisibleStateResponse(
         world_id=state.world_id,
-        location_id=state.player.location_id,
-        location_name=location.name if location else state.player.location_id,
-        visible_facts=get_visible_facts(state, state.player.id, state.player.location_id),
+        turn=state.turn,
+        time=VisibleTimeResponse(
+            day=state.current_time.day,
+            minutes_of_day=state.current_time.minutes_of_day,
+            time_of_day=get_time_of_day(state),
+            formatted=format_game_time(state),
+        ),
+        location=VisibleLocationResponse(
+            id=location_id,
+            name=location.name if location else location_id,
+            exits=location.exits if location else {},
+        ),
+        inventory=inventory,
+        visible_objects=visible_objects,
+        visible_npcs=visible_npcs,
+        known_facts=known_facts,
+        quests=[],
     )
+
+
+def _object_visible_to_player(state: GameState, object_id: str, location_id: str) -> bool:
+    world_object = state.objects.get(object_id)
+    if world_object is None:
+        return False
+    if world_object.location_id != location_id or not world_object.visible:
+        return False
+    return not world_object.hidden or state.player.id in world_object.discovered_by

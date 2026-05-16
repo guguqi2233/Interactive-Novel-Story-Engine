@@ -70,9 +70,7 @@ class GameLoop:
         original_state = self.state
         action_result = self.action_dispatcher.resolve(intent, original_state, self.rng)
         next_state = self.state
-        action_deltas = action_result.state_deltas or (
-            [action_result.state_delta] if action_result.state_delta is not None else []
-        )
+        action_deltas = action_result.state_deltas
         event_deltas = list(action_deltas)
 
         for delta in action_deltas:
@@ -103,7 +101,6 @@ class GameLoop:
             target_id=intent.target_id,
             input_text=player_input,
             result=action_result.success_level.value,
-            state_delta=event_deltas[0] if event_deltas else None,
             state_deltas=event_deltas,
             allow_empty_delta=not event_deltas,
             visible_to_player=True,

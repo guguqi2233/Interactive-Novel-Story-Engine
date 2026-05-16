@@ -18,7 +18,6 @@ class Event(BaseModel):
     visible_to_player: bool
     target_id: str | None = None
     input_text: str | None = None
-    state_delta: StateDelta | None = Field(default=None, description="Deprecated; use state_deltas.")
     state_deltas: list[StateDelta] = Field(default_factory=list)
     allow_empty_delta: bool = False
     narrative_text: str | None = None
@@ -26,8 +25,6 @@ class Event(BaseModel):
 
     @model_validator(mode="after")
     def validate_state_delta_presence(self) -> "Event":
-        if self.state_delta is not None and not self.state_deltas:
-            self.state_deltas = [self.state_delta]
         if not self.state_deltas and not self.allow_empty_delta:
             raise ValueError("Event must include state_deltas unless allow_empty_delta is true")
         return self

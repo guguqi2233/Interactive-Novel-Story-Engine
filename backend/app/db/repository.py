@@ -35,6 +35,17 @@ class SQLiteSaveRepository:
             ).fetchone()
         return _row_to_save(row)
 
+    def list_saves(self) -> list[SaveGame]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT save_id, state_json, created_at, updated_at
+                FROM save_games
+                ORDER BY updated_at DESC, save_id ASC
+                """
+            ).fetchall()
+        return [_row_to_save(row) for row in rows]
+
     def load_save(self, save_id: str) -> GameState:
         with self._connect() as connection:
             row = connection.execute(
@@ -88,6 +99,46 @@ class SQLiteSaveRepository:
                 (event.event_id,),
             ).fetchone()
         return _row_to_event(row)
+
+    def save_snapshot(self, save_id: str, state: GameState, events: list[Event]) -> SaveGame:
+        state_json = _dump_model_json(state)
+        with self._connect() as connection:
+            try:
+                connection.execute("BEGIN")
+                connection.execute(
+                    """
+                    INSERT INTO save_games (save_id, state_json, created_at, updated_at)
+                    VALUES (?, ?, datetime('now'), datetime('now'))
+                    ON CONFLICT(save_id) DO UPDATE SET
+                        state_json = excluded.state_json,
+                        updated_at = datetime('now')
+                    """,
+                    (save_id, state_json),
+                )
+                connection.execute(
+                    "DELETE FROM stored_events WHERE save_id = ?",
+                    (save_id,),
+                )
+                for event in events:
+                    connection.execute(
+                        """
+                        INSERT INTO stored_events (event_id, save_id, turn, event_json, created_at)
+                        VALUES (?, ?, ?, ?, datetime('now'))
+                        """,
+                        (event.event_id, save_id, event.turn, _dump_model_json(event)),
+                    )
+                row = connection.execute(
+                    "SELECT save_id, state_json, created_at, updated_at FROM save_games WHERE save_id = ?",
+                    (save_id,),
+                ).fetchone()
+                connection.commit()
+            except sqlite3.IntegrityError as exc:
+                connection.rollback()
+                raise SaveRepositoryError(f"Could not save snapshot: {save_id}") from exc
+            except Exception:
+                connection.rollback()
+                raise
+        return _row_to_save(row)
 
     def list_events(self, save_id: str) -> list[Event]:
         if not self._save_exists(save_id):

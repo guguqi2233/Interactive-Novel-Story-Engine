@@ -34,11 +34,13 @@ def make_event(event_id: str = "event-1", turn: int = 1) -> Event:
         result="success",
         visible_to_player=True,
         input_text="等待",
-        state_delta=StateDelta(
-            operation=StateDeltaOperation.INC,
-            path="turn",
-            value=1,
-        ),
+        state_deltas=[
+            StateDelta(
+                operation=StateDeltaOperation.INC,
+                path="turn",
+                value=1,
+            )
+        ],
         narrative_text="时间过去了。",
     )
 
@@ -77,8 +79,7 @@ def test_append_and_list_events_round_trips_full_event_json(tmp_path: Path) -> N
     events = repository.list_events("save-1")
 
     assert events == [event]
-    assert events[0].state_delta is not None
-    assert events[0].state_delta.operation == StateDeltaOperation.INC
+    assert events[0].state_deltas[0].operation == StateDeltaOperation.INC
     assert len(events[0].state_deltas) == 1
 
 

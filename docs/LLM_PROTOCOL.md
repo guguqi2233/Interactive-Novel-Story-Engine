@@ -8,6 +8,18 @@ The LLM protocol defines how the application talks to model providers without le
 
 Business code should depend on an interface like `LLMProvider`, not a concrete vendor SDK.
 
+Provider construction must go through the centralized factory:
+
+- `backend/app/llm/provider_factory.py`
+- `create_llm_provider(settings)`
+
+The factory reads `LLM_PROVIDER` from application settings and supports:
+
+- `mock`: default local-development and test-safe provider.
+- `openai`: OpenAI API provider.
+
+Business modules must not instantiate `OpenAIProvider`, `MockLLMProvider`, or `FakeLLMProvider` directly. They should receive an `LLMProvider` instance through dependency wiring. Tests may use `FakeLLMProvider` as a controlled test double.
+
 Provider implementations are responsible for:
 
 - Reading API keys from environment variables.
@@ -25,6 +37,8 @@ Provider implementations must not:
 ## Credentials
 
 API keys must be read from environment variables, for example `LLM_API_KEY`. Real values must never appear in code, docs, tests, logs, or database records.
+
+If `LLM_PROVIDER=openai`, `LLM_API_KEY` is required. Missing credentials must fail with a clear local error and must not silently fall back to another provider. If `LLM_PROVIDER` is unknown, startup or provider creation must fail clearly.
 
 ## Initial LLM Tasks
 

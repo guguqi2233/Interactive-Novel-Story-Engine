@@ -30,6 +30,10 @@ def get_visible_facts(state: GameState, actor_id: str, location_id: str) -> list
         if npc.location_id == location_id:
             visible_facts.append(npc.id)
 
+    for fact_id in sorted(state.player_visible_facts):
+        if fact_id not in visible_facts:
+            visible_facts.append(fact_id)
+
     return visible_facts
 
 

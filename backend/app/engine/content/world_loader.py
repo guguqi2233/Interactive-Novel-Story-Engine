@@ -4,7 +4,15 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
-from app.core.world_state import GameState, LocationState, NPCState, PlayerState, WorldObjectState
+from app.core.world_state import (
+    FactState,
+    FactVisibility,
+    GameState,
+    LocationState,
+    NPCState,
+    PlayerState,
+    WorldObjectState,
+)
 
 
 class WorldLoaderError(ValueError):
@@ -59,14 +67,35 @@ class QuestDef(BaseModel):
     starts_at: str | None = None
 
 
+class FactDef(BaseModel):
+    id: str
+    text: str
+    visibility: FactVisibility
+    known_by: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+
+
 class WorldPack(BaseModel):
     manifest: WorldManifest
     locations: list[LocationDef]
     npcs: list[NPCDef]
     items: list[ItemDef] = Field(default_factory=list)
     quests: list[QuestDef] = Field(default_factory=list)
+    facts: list[FactDef] = Field(default_factory=list)
 
     def to_game_state(self) -> GameState:
+        facts = {
+            fact.id: FactState(
+                id=fact.id,
+                text=fact.text,
+                visibility=fact.visibility,
+                public=fact.visibility == FactVisibility.PUBLIC,
+                secret=fact.visibility == FactVisibility.HIDDEN,
+                known_by=set(fact.known_by),
+                tags=fact.tags,
+            )
+            for fact in self.facts
+        }
         return GameState(
             world_id=self.manifest.world_id,
             player=PlayerState(location_id=self.manifest.start_location_id),
@@ -98,6 +127,10 @@ class WorldPack(BaseModel):
                 for npc in self.npcs
             },
             npc_knowledge={npc.id: set(npc.knowledge) for npc in self.npcs},
+            facts=facts,
+            player_visible_facts={
+                fact.id for fact in self.facts if fact.visibility == FactVisibility.PUBLIC
+            },
         )
 
 
@@ -128,6 +161,10 @@ class WorldLoader:
                 quests=[
                     QuestDef.model_validate(item)
                     for item in _read_yaml_list(world_path / "quests.yaml", "quests", required=False)
+                ],
+                facts=[
+                    FactDef.model_validate(item)
+                    for item in _read_yaml_list(world_path / "facts.yaml", "facts", required=False)
                 ],
             )
         except ValidationError as exc:
@@ -166,6 +203,13 @@ class WorldLoader:
                 raise WorldLoaderError(
                     f"Item {item.id} must reference an existing location_id or owner_id"
                 )
+
+        for fact in pack.facts:
+            for actor_id in fact.known_by:
+                if actor_id != "player" and actor_id not in npc_ids:
+                    raise WorldLoaderError(
+                        f"Fact {fact.id} known_by references missing NPC id: {actor_id}"
+                    )
 
 
 def _read_yaml_file(path: Path) -> dict[str, Any]:

@@ -1,0 +1,26 @@
+facts:
+  - id: village_square_is_misty
+    text: The village square is damp with morning mist.
+    visibility: public
+    known_by:
+      - player
+      - harlan
+    tags:
+      - location
+      - atmosphere
+  - id: sealed_letter_under_stone
+    text: A sealed letter is hidden beneath a loose paving stone.
+    visibility: hidden
+    known_by:
+      - harlan
+    tags:
+      - secret
+      - item
+  - id: old_bridge_creaks_at_midnight
+    text: The old bridge creaks loudly around midnight.
+    visibility: discoverable
+    known_by:
+      - harlan
+    tags:
+      - clue
+      - location

@@ -70,8 +70,6 @@ def _fact_allowed_for_dialogue(state: GameState, npc: NPCState, fact_id: str) ->
     if fact is not None:
         if fact.public:
             return True
-        if fact.secret:
-            return False
-        return "player" in fact.known_by
+        return False
 
     return fact_id not in npc.secrets

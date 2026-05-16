@@ -18,11 +18,13 @@ def make_event(event_id: str, turn: int, text: str) -> Event:
         result="success",
         visible_to_player=True,
         input_text=text,
-        state_delta=StateDelta(
-            operation=StateDeltaOperation.INC,
-            path="turn",
-            value=1,
-        ),
+        state_deltas=[
+            StateDelta(
+                operation=StateDeltaOperation.INC,
+                path="turn",
+                value=1,
+            )
+        ],
         narrative_text=f"叙事：{text}",
     )
 

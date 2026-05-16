@@ -14,7 +14,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -28,9 +29,24 @@ button {
 }
 
 button:disabled,
-input:disabled {
+input:disabled,
+select:disabled {
   cursor: not-allowed;
   opacity: 0.55;
+}
+
+select {
+  width: 100%;
+  border: 1px solid #a7b0b9;
+  background: #ffffff;
+  color: #1f2933;
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+.side-panel section {
+  display: grid;
+  gap: 8px;
 }
 
 .app-shell {

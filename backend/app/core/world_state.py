@@ -1,3 +1,5 @@
+from enum import StrEnum
+
 from pydantic import BaseModel, Field
 
 
@@ -39,12 +41,20 @@ class GameTime(BaseModel):
     minutes_of_day: int = Field(default=8 * 60, ge=0, lt=24 * 60)
 
 
+class FactVisibility(StrEnum):
+    PUBLIC = "public"
+    HIDDEN = "hidden"
+    DISCOVERABLE = "discoverable"
+
+
 class FactState(BaseModel):
     id: str
     text: str | None = None
+    visibility: FactVisibility = FactVisibility.HIDDEN
     public: bool = False
     secret: bool = False
     known_by: set[str] = Field(default_factory=set)
+    tags: list[str] = Field(default_factory=list)
 
 
 class GameState(BaseModel):

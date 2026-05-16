@@ -3,7 +3,9 @@ from pydantic import BaseModel
 
 from app.config import Settings
 from app.llm.fake_provider import FakeLLMProvider
+from app.llm.mock_provider import MockLLMProvider
 from app.llm.openai_provider import OpenAIProvider
+from app.llm.provider_factory import create_llm_provider
 from app.llm.provider_base import LLMProviderError
 
 
@@ -47,4 +49,38 @@ def test_openai_provider_requires_api_key() -> None:
 
     with pytest.raises(LLMProviderError, match="LLM_API_KEY is required"):
         OpenAIProvider(settings=settings)
+
+
+def test_provider_factory_returns_mock_provider() -> None:
+    settings = Settings(llm_provider="mock")
+
+    provider = create_llm_provider(settings)
+
+    assert isinstance(provider, MockLLMProvider)
+
+
+def test_provider_factory_returns_openai_provider_with_config() -> None:
+    settings = Settings(
+        llm_provider="openai",
+        llm_model="gpt-4.1-mini",
+        llm_api_key="test-key-not-used",
+    )
+
+    provider = create_llm_provider(settings)
+
+    assert isinstance(provider, OpenAIProvider)
+
+
+def test_provider_factory_openai_without_api_key_fails_clearly() -> None:
+    settings = Settings(llm_provider="openai", llm_model="gpt-4.1-mini", llm_api_key=None)
+
+    with pytest.raises(LLMProviderError, match="LLM_API_KEY is required"):
+        create_llm_provider(settings)
+
+
+def test_provider_factory_unknown_provider_fails_clearly() -> None:
+    settings = Settings(llm_provider="local-file")
+
+    with pytest.raises(LLMProviderError, match="Unsupported LLM_PROVIDER: local-file"):
+        create_llm_provider(settings)
 
