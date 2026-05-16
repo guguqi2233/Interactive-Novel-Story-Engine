@@ -32,7 +32,8 @@ items:
 
     state = WorldLoader(tmp_path).load("owned_item").to_game_state()
 
-    assert state.objects["pocket_watch"].location_id == "player"
+    assert state.objects["pocket_watch"].owner_id == "player"
+    assert state.objects["pocket_watch"].location_id is None
 
 
 def test_discoverable_fact_waits_for_discovery() -> None:

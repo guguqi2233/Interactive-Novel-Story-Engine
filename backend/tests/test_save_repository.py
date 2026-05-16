@@ -83,7 +83,7 @@ def test_append_and_list_events_round_trips_full_event_json(tmp_path: Path) -> N
     assert len(events[0].state_deltas) == 1
 
 
-def test_list_events_orders_by_turn(tmp_path: Path) -> None:
+def test_list_events_preserves_append_sequence(tmp_path: Path) -> None:
     repository = make_repository(tmp_path)
     repository.create_save("save-1", make_state())
 
@@ -91,7 +91,20 @@ def test_list_events_orders_by_turn(tmp_path: Path) -> None:
     repository.append_event("save-1", make_event("event-1", turn=1))
     events = repository.list_events("save-1")
 
-    assert [event.event_id for event in events] == ["event-1", "event-2"]
+    assert [event.event_id for event in events] == ["event-2", "event-1"]
+
+
+def test_save_snapshot_preserves_event_log_sequence_for_same_turn(tmp_path: Path) -> None:
+    repository = make_repository(tmp_path)
+    player_event = make_event("z-player-event", turn=1)
+    system_event = make_event("a-system-event", turn=1)
+    system_event.actor_id = "system"
+    system_event.action_type = "world_tick"
+
+    repository.save_snapshot("save-1", make_state(turn=1), [player_event, system_event])
+    events = repository.list_events("save-1")
+
+    assert [event.event_id for event in events] == ["z-player-event", "a-system-event"]
 
 
 def test_missing_save_errors_are_clear(tmp_path: Path) -> None:

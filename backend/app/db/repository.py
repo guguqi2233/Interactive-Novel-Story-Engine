@@ -81,18 +81,19 @@ class SQLiteSaveRepository:
         event_json = _dump_model_json(event)
         with self._connect() as connection:
             try:
+                sequence = self._next_event_sequence(connection, save_id)
                 connection.execute(
                     """
-                    INSERT INTO stored_events (event_id, save_id, turn, event_json, created_at)
-                    VALUES (?, ?, ?, ?, datetime('now'))
+                    INSERT INTO stored_events (event_id, save_id, turn, event_json, sequence, created_at)
+                    VALUES (?, ?, ?, ?, ?, datetime('now'))
                     """,
-                    (event.event_id, save_id, event.turn, event_json),
+                    (event.event_id, save_id, event.turn, event_json, sequence),
                 )
             except sqlite3.IntegrityError as exc:
                 raise SaveRepositoryError(f"Event already exists: {event.event_id}") from exc
             row = connection.execute(
                 """
-                SELECT event_id, save_id, turn, event_json, created_at
+                SELECT event_id, save_id, turn, event_json, sequence, created_at
                 FROM stored_events
                 WHERE event_id = ?
                 """,
@@ -119,13 +120,13 @@ class SQLiteSaveRepository:
                     "DELETE FROM stored_events WHERE save_id = ?",
                     (save_id,),
                 )
-                for event in events:
+                for sequence, event in enumerate(events):
                     connection.execute(
                         """
-                        INSERT INTO stored_events (event_id, save_id, turn, event_json, created_at)
-                        VALUES (?, ?, ?, ?, datetime('now'))
+                        INSERT INTO stored_events (event_id, save_id, turn, event_json, sequence, created_at)
+                        VALUES (?, ?, ?, ?, ?, datetime('now'))
                         """,
-                        (event.event_id, save_id, event.turn, _dump_model_json(event)),
+                        (event.event_id, save_id, event.turn, _dump_model_json(event), sequence),
                     )
                 row = connection.execute(
                     "SELECT save_id, state_json, created_at, updated_at FROM save_games WHERE save_id = ?",
@@ -149,7 +150,7 @@ class SQLiteSaveRepository:
                 SELECT event_json
                 FROM stored_events
                 WHERE save_id = ?
-                ORDER BY turn ASC, created_at ASC, event_id ASC
+                ORDER BY sequence ASC
                 """,
                 (save_id,),
             ).fetchall()
@@ -174,15 +175,17 @@ class SQLiteSaveRepository:
                     save_id TEXT NOT NULL,
                     turn INTEGER NOT NULL,
                     event_json TEXT NOT NULL,
+                    sequence INTEGER NOT NULL DEFAULT 0,
                     created_at TEXT NOT NULL,
                     FOREIGN KEY (save_id) REFERENCES save_games(save_id)
                 )
                 """
             )
+            self._ensure_event_sequence_column(connection)
             connection.execute(
                 """
-                CREATE INDEX IF NOT EXISTS idx_stored_events_save_turn
-                ON stored_events(save_id, turn)
+                CREATE INDEX IF NOT EXISTS idx_stored_events_save_sequence
+                ON stored_events(save_id, sequence)
                 """
             )
 
@@ -199,6 +202,23 @@ class SQLiteSaveRepository:
                 (save_id,),
             ).fetchone()
         return row is not None
+
+    def _next_event_sequence(self, connection: sqlite3.Connection, save_id: str) -> int:
+        row = connection.execute(
+            "SELECT COALESCE(MAX(sequence), -1) + 1 AS next_sequence FROM stored_events WHERE save_id = ?",
+            (save_id,),
+        ).fetchone()
+        if row is None:
+            return 0
+        return int(row["next_sequence"])
+
+    def _ensure_event_sequence_column(self, connection: sqlite3.Connection) -> None:
+        columns = connection.execute("PRAGMA table_info(stored_events)").fetchall()
+        if any(row["name"] == "sequence" for row in columns):
+            return
+        connection.execute(
+            "ALTER TABLE stored_events ADD COLUMN sequence INTEGER NOT NULL DEFAULT 0"
+        )
 
 
 def _dump_model_json(model: GameState | Event) -> str:

@@ -1,13 +1,15 @@
 from random import Random
 from uuid import uuid4
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.core.event_log import Event, EventLog
 from app.core.state_delta import StateDelta, StateDeltaOperation, apply_delta
 from app.core.world_state import GameState
 from app.engine.action_dispatcher import ActionDispatcher
 from app.engine.actions.schemas import ActionResult, SuccessLevel
+from app.engine.rules.quests import resolve_quest_triggers
+from app.engine.rules.world_tick import run_world_tick
 from app.llm.intent_parser import IntentParser
 from app.llm.narrator import Narrator
 from app.llm.schemas import NarrativeResult, PlayerActionType, PlayerIntent
@@ -19,6 +21,7 @@ class GameLoopResult(BaseModel):
     action_result: ActionResult | None
     narrative: NarrativeResult
     event: Event | None = None
+    system_events: list[Event] = Field(default_factory=list)
 
 
 class GameLoop:
@@ -77,6 +80,16 @@ class GameLoop:
             next_state = apply_delta(next_state, delta)
 
         if action_result.success_level in {SuccessLevel.SUCCESS, SuccessLevel.PARTIAL_SUCCESS}:
+            quest_deltas = resolve_quest_triggers(
+                original_state,
+                next_state,
+                intent,
+                action_result,
+            )
+            for delta in quest_deltas:
+                next_state = apply_delta(next_state, delta)
+            event_deltas.extend(quest_deltas)
+
             turn_delta = StateDelta(
                 operation=StateDeltaOperation.INC,
                 path="turn",
@@ -85,6 +98,15 @@ class GameLoop:
             )
             next_state = apply_delta(next_state, turn_delta)
             event_deltas.append(turn_delta)
+
+        system_events: list[Event] = []
+        if action_result.success_level in {SuccessLevel.SUCCESS, SuccessLevel.PARTIAL_SUCCESS}:
+            tick_result = run_world_tick(next_state, self.rng)
+            if tick_result.state_deltas:
+                for delta in tick_result.state_deltas:
+                    next_state = apply_delta(next_state, delta)
+            if tick_result.event is not None:
+                system_events.append(tick_result.event)
 
         narrative = self.narrator.render(
             player_input=player_input,
@@ -108,6 +130,8 @@ class GameLoop:
         )
         self.state = next_state
         self.event_log.append(event)
+        for system_event in system_events:
+            self.event_log.append(system_event)
 
         return GameLoopResult(
             state=self.state,
@@ -115,4 +139,5 @@ class GameLoop:
             action_result=action_result,
             narrative=narrative,
             event=event,
+            system_events=system_events,
         )

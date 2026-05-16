@@ -10,7 +10,15 @@ from app.core.world_state import (
     GameState,
     LocationState,
     NPCState,
+    NPCScheduleEntry,
     PlayerState,
+    QuestStage,
+    QuestState,
+    QuestStatus,
+    QuestTrigger,
+    QuestTriggerAction,
+    QuestTriggerType,
+    QuestVisibility,
     WorldObjectState,
 )
 
@@ -33,6 +41,8 @@ class LocationDef(BaseModel):
     description: str
     exits: dict[str, str] = Field(default_factory=dict)
     visible_objects: list[str] = Field(default_factory=list)
+    cover_level: int = Field(default=0, ge=0)
+    light_level: int = Field(default=5, ge=0)
 
 
 class NPCDef(BaseModel):
@@ -41,6 +51,10 @@ class NPCDef(BaseModel):
     location_id: str
     personality: str
     knowledge: list[str] = Field(default_factory=list)
+    visible: bool = True
+    hidden: bool = False
+    discovered_by: list[str] = Field(default_factory=list)
+    schedule: list[NPCScheduleEntry] = Field(default_factory=list)
 
 
 class ItemDef(BaseModel):
@@ -49,22 +63,55 @@ class ItemDef(BaseModel):
     description: str = ""
     location_id: str | None = None
     owner_id: str | None = None
+    container_id: str | None = None
+    portable: bool = False
     visible: bool = True
     hidden: bool = False
+    discoverable: bool = False
     discovered_by: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+    locked: bool = False
+    lock_difficulty: int = Field(default=0, ge=0)
+    lock_state: str = "intact"
 
     @model_validator(mode="after")
     def validate_placement(self) -> "ItemDef":
-        if self.location_id is None and self.owner_id is None:
-            raise ValueError("ItemDef requires location_id or owner_id")
+        placements = [
+            self.location_id is not None,
+            self.owner_id is not None,
+            self.container_id is not None,
+        ]
+        if sum(placements) == 0:
+            raise ValueError("ItemDef requires location_id, owner_id, or container_id")
+        if sum(placements) > 1:
+            raise ValueError("ItemDef cannot have multiple placements")
         return self
+
+
+class QuestStageDef(BaseModel):
+    id: str
+    title: str
+    description: str = ""
+    objectives: list[str] = Field(default_factory=list)
+    next_stages: list[str] = Field(default_factory=list)
+
+
+class QuestTriggerDef(BaseModel):
+    type: QuestTriggerType
+    id: str
+    action: QuestTriggerAction = QuestTriggerAction.ACTIVATE
+    objective_id: str | None = None
+    next_stage: str | None = None
 
 
 class QuestDef(BaseModel):
     id: str
-    name: str
+    title: str
     description: str = ""
-    starts_at: str | None = None
+    initial_stage: str
+    stages: list[QuestStageDef]
+    visibility: QuestVisibility = QuestVisibility.HIDDEN
+    triggers: list[QuestTriggerDef] = Field(default_factory=list)
 
 
 class FactDef(BaseModel):
@@ -96,6 +143,43 @@ class WorldPack(BaseModel):
             )
             for fact in self.facts
         }
+        quests = {
+            quest.id: QuestState(
+                id=quest.id,
+                title=quest.title,
+                description=quest.description,
+                initial_stage=quest.initial_stage,
+                current_stage=quest.initial_stage,
+                stages={
+                    stage.id: QuestStage(
+                        id=stage.id,
+                        title=stage.title,
+                        description=stage.description,
+                        objectives=stage.objectives,
+                        next_stages=stage.next_stages,
+                    )
+                    for stage in quest.stages
+                },
+                visibility=quest.visibility,
+                status=(
+                    QuestStatus.ACTIVE
+                    if quest.visibility == QuestVisibility.PUBLIC
+                    else QuestStatus.INACTIVE
+                ),
+                known_to_player=quest.visibility == QuestVisibility.PUBLIC,
+                triggers=[
+                    QuestTrigger(
+                        type=trigger.type,
+                        id=trigger.id,
+                        action=trigger.action,
+                        objective_id=trigger.objective_id,
+                        next_stage=trigger.next_stage,
+                    )
+                    for trigger in quest.triggers
+                ],
+            )
+            for quest in self.quests
+        }
         return GameState(
             world_id=self.manifest.world_id,
             player=PlayerState(location_id=self.manifest.start_location_id),
@@ -105,16 +189,28 @@ class WorldPack(BaseModel):
                     name=location.name,
                     exits=location.exits,
                     visible_objects=location.visible_objects,
+                    cover_level=location.cover_level,
+                    light_level=location.light_level,
                 )
                 for location in self.locations
             },
             objects={
                 item.id: WorldObjectState(
                     id=item.id,
-                    location_id=item.location_id or item.owner_id or "",
+                    name=item.name,
+                    description=item.description,
+                    location_id=item.location_id,
+                    owner_id=item.owner_id,
+                    container_id=item.container_id,
+                    portable=item.portable,
                     visible=item.visible,
                     hidden=item.hidden,
+                    discoverable=item.discoverable,
                     discovered_by=item.discovered_by,
+                    tags=item.tags,
+                    locked=item.locked,
+                    lock_difficulty=item.lock_difficulty,
+                    lock_state=item.lock_state,
                 )
                 for item in self.items
             },
@@ -122,7 +218,11 @@ class WorldPack(BaseModel):
                 npc.id: NPCState(
                     id=npc.id,
                     location_id=npc.location_id,
+                    visible=npc.visible,
+                    hidden=npc.hidden,
+                    discovered_by=npc.discovered_by,
                     knowledge=npc.knowledge,
+                    schedule=npc.schedule,
                 )
                 for npc in self.npcs
             },
@@ -131,6 +231,7 @@ class WorldPack(BaseModel):
             player_visible_facts={
                 fact.id for fact in self.facts if fact.visibility == FactVisibility.PUBLIC
             },
+            quests=quests,
         )
 
 
@@ -195,13 +296,20 @@ class WorldLoader:
                 raise WorldLoaderError(
                     f"NPC {npc.id} references missing location_id: {npc.location_id}"
                 )
+            for schedule_entry in npc.schedule:
+                if schedule_entry.location_id not in location_ids:
+                    raise WorldLoaderError(
+                        f"NPC {npc.id} schedule references missing location_id: "
+                        f"{schedule_entry.location_id}"
+                    )
 
         for item in pack.items:
             has_valid_location = item.location_id in location_ids if item.location_id else False
             has_valid_owner = item.owner_id in npc_ids or item.owner_id == "player" if item.owner_id else False
-            if not has_valid_location and not has_valid_owner:
+            has_container = item.container_id is not None
+            if not has_valid_location and not has_valid_owner and not has_container:
                 raise WorldLoaderError(
-                    f"Item {item.id} must reference an existing location_id or owner_id"
+                    f"Item {item.id} must reference an existing location_id, owner_id, or container_id"
                 )
 
         for fact in pack.facts:
@@ -209,6 +317,54 @@ class WorldLoader:
                 if actor_id != "player" and actor_id not in npc_ids:
                     raise WorldLoaderError(
                         f"Fact {fact.id} known_by references missing NPC id: {actor_id}"
+                    )
+
+        fact_ids = {fact.id for fact in pack.facts}
+        item_ids = {item.id for item in pack.items}
+        for quest in pack.quests:
+            stage_ids = {stage.id for stage in quest.stages}
+            if quest.initial_stage not in stage_ids:
+                raise WorldLoaderError(
+                    f"Quest {quest.id} initial_stage does not exist: {quest.initial_stage}"
+                )
+            for stage in quest.stages:
+                for next_stage in stage.next_stages:
+                    if next_stage not in stage_ids:
+                        raise WorldLoaderError(
+                            f"Quest {quest.id} stage {stage.id} references missing next_stage: "
+                            f"{next_stage}"
+                        )
+            objective_ids = {
+                objective_id
+                for stage in quest.stages
+                for objective_id in stage.objectives
+            }
+            for trigger in quest.triggers:
+                if trigger.type == QuestTriggerType.FACT_DISCOVERED and trigger.id not in fact_ids:
+                    raise WorldLoaderError(
+                        f"Quest {quest.id} trigger references missing fact id: {trigger.id}"
+                    )
+                if trigger.type == QuestTriggerType.ITEM_ACQUIRED and trigger.id not in item_ids:
+                    raise WorldLoaderError(
+                        f"Quest {quest.id} trigger references missing item id: {trigger.id}"
+                    )
+                if trigger.type == QuestTriggerType.NPC_TALKED and trigger.id not in npc_ids:
+                    raise WorldLoaderError(
+                        f"Quest {quest.id} trigger references missing NPC id: {trigger.id}"
+                    )
+                if trigger.type == QuestTriggerType.LOCATION_VISITED and trigger.id not in location_ids:
+                    raise WorldLoaderError(
+                        f"Quest {quest.id} trigger references missing location id: {trigger.id}"
+                    )
+                if trigger.objective_id and trigger.objective_id not in objective_ids:
+                    raise WorldLoaderError(
+                        f"Quest {quest.id} trigger references missing objective id: "
+                        f"{trigger.objective_id}"
+                    )
+                if trigger.next_stage and trigger.next_stage not in stage_ids:
+                    raise WorldLoaderError(
+                        f"Quest {quest.id} trigger references missing next_stage: "
+                        f"{trigger.next_stage}"
                     )
 
 

@@ -189,6 +189,38 @@ select {
   font-size: 12px;
 }
 
+.timeline {
+  display: grid;
+  gap: 8px;
+}
+
+.timeline h2 {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: #4c5965;
+  text-transform: uppercase;
+}
+
+.timeline-event {
+  border: 1px solid #c7cdd3;
+  border-radius: 6px;
+  background: #f8fafc;
+}
+
+.timeline-event summary {
+  display: grid;
+  grid-template-columns: 70px 1fr 1fr 1fr;
+  gap: 8px;
+  padding: 8px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.timeline-event pre {
+  max-height: 220px;
+  border-radius: 0 0 6px 6px;
+}
+
 @media (max-width: 860px) {
   .app-shell {
     grid-template-columns: 1fr;

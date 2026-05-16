@@ -3,7 +3,11 @@ from random import Random
 from app.core.state_delta import StateDelta, StateDeltaOperation
 from app.core.world_state import GameState
 from app.engine.actions.base import ActionHandler
+from app.engine.actions.lockpick import LockpickActionHandler
+from app.engine.actions.search import SearchActionHandler
+from app.engine.actions.sneak import SneakActionHandler
 from app.engine.actions.schemas import ActionResult, SuccessLevel
+from app.engine.rules.inventory import item_is_accessible
 from app.engine.rules.knowledge import get_npc_context_for_dialogue
 from app.engine.rules.time import make_time_delta
 from app.engine.rules.visibility import get_visible_facts
@@ -111,10 +115,10 @@ class UseItemActionHandler(ActionHandler):
                 success_level=SuccessLevel.INVALID,
                 reason="Use item action requires an item target.",
             )
-        if intent.target_id not in state.player.inventory:
+        if not item_is_accessible(state, state.player.id, intent.target_id):
             return ActionResult(
                 success_level=SuccessLevel.FAILURE,
-                reason="Player does not have the target item.",
+                reason="Target item is not owned or accessible.",
             )
         return ActionResult(
             success_level=SuccessLevel.PARTIAL_SUCCESS,
@@ -140,6 +144,9 @@ class WaitActionHandler(ActionHandler):
 def default_action_handlers() -> list[ActionHandler]:
     return [
         ObserveActionHandler(),
+        SearchActionHandler(),
+        LockpickActionHandler(),
+        SneakActionHandler(),
         MoveActionHandler(),
         TalkActionHandler(),
         UseItemActionHandler(),

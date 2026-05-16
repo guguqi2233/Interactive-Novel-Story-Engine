@@ -27,7 +27,12 @@ def get_visible_facts(state: GameState, actor_id: str, location_id: str) -> list
         visible_facts.append(world_object.id)
 
     for npc in state.npcs.values():
-        if npc.location_id == location_id:
+        if npc.location_id == location_id and _npc_visible_to_actor(
+            npc.visible,
+            npc.hidden,
+            npc.discovered_by,
+            actor_id,
+        ):
             visible_facts.append(npc.id)
 
     for fact_id in sorted(state.player_visible_facts):
@@ -39,4 +44,13 @@ def get_visible_facts(state: GameState, actor_id: str, location_id: str) -> list
 
 def _object_visible_to_actor(object_location_id: str, actor_location_id: str, visible: bool) -> bool:
     return visible and object_location_id == actor_location_id
+
+
+def _npc_visible_to_actor(
+    visible: bool,
+    hidden: bool,
+    discovered_by: list[str],
+    actor_id: str,
+) -> bool:
+    return visible and (not hidden or actor_id in discovered_by)
 

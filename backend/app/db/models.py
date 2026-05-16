@@ -15,5 +15,6 @@ class StoredEvent(BaseModel):
     save_id: str
     turn: int
     event_json: str
+    sequence: int = 0
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 

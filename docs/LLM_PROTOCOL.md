@@ -2,135 +2,121 @@
 
 ## Purpose
 
-The LLM protocol defines how the application talks to model providers without letting model output become trusted world state. All LLM calls must pass through a provider abstraction and all responses must be validated with Pydantic schemas.
+The LLM protocol defines how this project talks to model providers without letting model output become trusted world state. All LLM calls pass through `LLMProvider`, and structured outputs are validated with Pydantic schemas.
 
 ## Provider Boundary
 
-Business code should depend on an interface like `LLMProvider`, not a concrete vendor SDK.
-
-Provider construction must go through the centralized factory:
+Runtime provider construction must go through:
 
 - `backend/app/llm/provider_factory.py`
 - `create_llm_provider(settings)`
 
-The factory reads `LLM_PROVIDER` from application settings and supports:
+The factory reads `LLM_PROVIDER` from settings/environment.
 
-- `mock`: default local-development and test-safe provider.
+Supported values:
+
+- `mock`: default for local development and tests.
 - `openai`: OpenAI API provider.
 
-Business modules must not instantiate `OpenAIProvider`, `MockLLMProvider`, or `FakeLLMProvider` directly. They should receive an `LLMProvider` instance through dependency wiring. Tests may use `FakeLLMProvider` as a controlled test double.
-
-Provider implementations are responsible for:
-
-- Reading API keys from environment variables.
-- Calling the configured model.
-- Returning raw text or structured payloads to the protocol layer.
-- Avoiding secret logging.
-
-Provider implementations must not:
-
-- Modify `GameState`.
-- Write events.
-- Apply `StateDelta`.
-- Depend on world engine internals beyond explicit request schemas.
+Business modules should depend on `LLMProvider`, not `OpenAIProvider` or any vendor SDK. Tests may use `FakeLLMProvider` as a controlled test double.
 
 ## Credentials
 
-API keys must be read from environment variables, for example `LLM_API_KEY`. Real values must never appear in code, docs, tests, logs, or database records.
+API keys are read only from environment variables.
 
-If `LLM_PROVIDER=openai`, `LLM_API_KEY` is required. Missing credentials must fail with a clear local error and must not silently fall back to another provider. If `LLM_PROVIDER` is unknown, startup or provider creation must fail clearly.
+- `LLM_API_KEY` is required when `LLM_PROVIDER=openai`.
+- Real API keys must not be committed, logged, written into fixtures, or returned from APIs.
+- Missing OpenAI credentials fail with a clear `LLMProviderError`.
+- Unknown providers fail with a clear `LLMProviderError`.
 
-## Initial LLM Tasks
+## Current LLM Uses
 
-### Intent Parsing
+### IntentParser
 
-Input:
+`IntentParser` receives player text and asks the provider for a schema-validated `PlayerIntent`.
 
-- Player text.
-- Public world state summary.
-- Relevant recent events.
-- Allowed action vocabulary, if available.
+The parsed intent is input to the world engine. It does not modify `GameState`.
 
-Output schema:
+### Narrator
 
-- `intent_type`: normalized action category.
-- `actor_id`: acting entity.
-- `target_ids`: referenced world entities.
-- `arguments`: structured action arguments.
-- `confidence`: numeric confidence.
-- `raw_notes`: optional short reasoning summary for debugging, never used as authority.
+`Narrator` renders player-facing prose after the world engine has already resolved the action.
 
-### Narrative Rendering
+Inputs include:
 
-Input:
+- player input
+- safe action result payload
+- `visible_facts`
+- current location
+- tone
 
-- Accepted player event.
-- Applied state deltas.
-- Resulting public state view.
-- Tone and style settings.
+`Narrator` does not receive:
 
-Output schema:
+- `ActionResult.hidden_facts`
+- raw `GameState`
+- raw system tick deltas
+- NPC secrets
+- debug timeline events
 
-- `narration`: player-facing prose.
-- `visible_changes`: concise list of changes the player can perceive.
-- `npc_lines`: optional structured dialogue lines.
+The narrator returns a schema-validated `NarrativeResult`.
 
-### NPC Dialogue
+### MemorySummarizer
 
-Input:
+`MemorySummarizer` summarizes recent events into `MemorySummary`.
 
-- NPC public profile.
-- Conversation context.
-- Current public state view.
-- Relevant memories.
+It does not:
 
-Output schema:
+- mutate `GameState`
+- apply `StateDelta`
+- write `EventLog`
+- promote summary text into canonical facts
 
-- `speaker_id`.
-- `line`.
-- `emotion`.
-- `intent_hint`.
+Memory summaries are internal and must not replace structured state.
 
-### Memory Summary
+## v0.3 Rule Modules Do Not Call LLM
 
-Input:
+The following v0.3 modules are deterministic rule/code paths and do not call `LLMProvider`:
 
-- Event range.
-- Existing memory records.
-- Compression target.
+- search
+- inventory rules
+- lockpick
+- sneak
+- quest state machine
+- NPC schedule resolver
+- world tick
+- debug timeline API
 
-Output schema:
+They may receive `PlayerIntent` as input, but action results and state changes are decided by Python rules and emitted as `StateDelta`.
 
-- `summary`.
-- `salient_entities`.
-- `open_threads`.
-- `superseded_event_ids`.
+## Output Validation
 
-## Validation Rules
+All LLM JSON outputs must validate against Pydantic schemas:
 
-- Parse LLM output as structured JSON when possible.
-- Validate using Pydantic models before using any field.
-- Reject responses with missing required fields, invalid enum values, impossible IDs, or excessive length.
-- Treat freeform text fields as display text only.
-- Do not execute instructions embedded in model output.
+- `PlayerIntent`
+- `NarrativeResult`
+- `MemorySummary`
+
+Schema validation failure must not silently modify state. Provider or parser errors should surface as controlled errors or explicit fallback behavior.
 
 ## Error Handling
 
 If an LLM call fails:
 
-- Return a controlled application error or fallback response.
-- Do not mutate `GameState`.
-- Record a system event only if the failure is relevant to gameplay or debugging.
+- do not mutate `GameState`
+- do not apply deltas based on failed output
+- return a clear application/provider error
+- do not print secrets or environment values
 
-If validation fails:
+If narrator generation fails after rule resolution, `GameLoop` must not commit state or append events for the failed step.
 
-- Keep the original player event.
-- Do not apply deltas based on invalid output.
-- Optionally retry once with a stricter repair prompt.
-- Log only sanitized validation diagnostics.
+## Visibility Rules for Prompts
 
-If provider credentials are missing:
+Prompt inputs must obey world visibility:
 
-- Fail startup or the specific LLM operation with a clear local error.
-- Do not print environment variable values.
+- player-visible facts only
+- no hidden facts unless discovered and promoted to `player_visible_facts`
+- no NPC secrets unless rules explicitly made them visible
+- no debug timeline data in narrative prompts
+- no raw `hidden_facts` field in narrator payloads
+
+The LLM can render prose, but it cannot create canonical items, NPCs, locations, quest progress, or facts.
 

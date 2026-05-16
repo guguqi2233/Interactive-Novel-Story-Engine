@@ -1,6 +1,9 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
+  DebugEvent,
   fetchGameState,
+  fetchSaveDebugEvents,
+  fetchSessionDebugEvents,
   GameInputResponse,
   listSaves,
   loadGame,
@@ -28,6 +31,8 @@ export function App() {
   const [input, setInput] = useState<string>("");
   const [debugOpen, setDebugOpen] = useState<boolean>(true);
   const [lastResponse, setLastResponse] = useState<unknown>(null);
+  const [timeline, setTimeline] = useState<DebugEvent[]>([]);
+  const [timelineError, setTimelineError] = useState<string>("");
   const [saves, setSaves] = useState<SaveSummary[]>([]);
   const [selectedSaveId, setSelectedSaveId] = useState<string>("");
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -54,6 +59,7 @@ export function App() {
       setSuggestedActions(["observe", "smithy", "wait"]);
       setStory([{ id: Date.now(), text: "A new local story session has started." }]);
       setLastResponse(response);
+      void refreshTimeline(response.session_id);
     } catch (err) {
       setError(toErrorMessage(err));
     } finally {
@@ -93,6 +99,7 @@ export function App() {
       setVisibleState(response.visible_state);
       setTurn(response.turn);
       setLastResponse(response);
+      void refreshTimeline(sessionId);
     } catch (err) {
       setError(toErrorMessage(err));
     } finally {
@@ -111,6 +118,7 @@ export function App() {
       const response = await saveGame(sessionId);
       setLastResponse(response);
       await refreshSaves(response.save_id);
+      void refreshSaveTimeline(response.save_id);
     } catch (err) {
       setError(toErrorMessage(err));
     } finally {
@@ -133,6 +141,7 @@ export function App() {
       setSuggestedActions(["observe", "smithy", "wait"]);
       setStory([{ id: Date.now(), text: `Loaded save ${response.save_id}.` }]);
       setLastResponse(response);
+      void refreshTimeline(response.session_id);
     } catch (err) {
       setError(toErrorMessage(err));
     } finally {
@@ -158,6 +167,35 @@ export function App() {
     setVisibleState(response.visible_state);
     setTurn(response.turn);
     setLastResponse(response);
+    void refreshTimeline(sessionId);
+  }
+
+  async function refreshTimeline(nextSessionId = sessionId) {
+    if (!nextSessionId) {
+      return;
+    }
+    setTimelineError("");
+    try {
+      const response = await fetchSessionDebugEvents(nextSessionId);
+      setTimeline(response.events);
+    } catch (err) {
+      setTimeline([]);
+      setTimelineError(toErrorMessage(err));
+    }
+  }
+
+  async function refreshSaveTimeline(saveId = selectedSaveId) {
+    if (!saveId) {
+      return;
+    }
+    setTimelineError("");
+    try {
+      const response = await fetchSaveDebugEvents(saveId);
+      setTimeline(response.events);
+    } catch (err) {
+      setTimeline([]);
+      setTimelineError(toErrorMessage(err));
+    }
   }
 
   return (
@@ -286,6 +324,16 @@ export function App() {
             <button type="button" onClick={() => void refreshSaves()} disabled={isLoading}>
               Refresh Saves
             </button>
+            <button type="button" onClick={() => void refreshTimeline()} disabled={!sessionId || isLoading}>
+              Refresh Timeline
+            </button>
+            <button
+              type="button"
+              onClick={() => void refreshSaveTimeline()}
+              disabled={!selectedSaveId || isLoading}
+            >
+              Load Save Timeline
+            </button>
             <dl>
               <dt>Session</dt>
               <dd>{sessionId || "Not created"}</dd>
@@ -304,6 +352,22 @@ export function App() {
               <dt>Known Facts</dt>
               <dd>{knownFacts.length > 0 ? knownFacts.map((fact) => fact.id).join(", ") : "None"}</dd>
             </dl>
+            <section className="timeline">
+              <h2>Timeline</h2>
+              {timelineError && <p className="error">{timelineError}</p>}
+              {timeline.length === 0 && !timelineError && <p className="muted">No events yet.</p>}
+              {timeline.map((event) => (
+                <details className="timeline-event" key={event.event_id}>
+                  <summary>
+                    <span>Turn {event.turn}</span>
+                    <span>{event.action_type}</span>
+                    <span>{event.actor_id}</span>
+                    <span>{event.result}</span>
+                  </summary>
+                  <pre>{JSON.stringify(event.state_deltas, null, 2)}</pre>
+                </details>
+              ))}
+            </section>
             <pre>{JSON.stringify({ visibleState, saves, lastResponse }, null, 2)}</pre>
           </div>
         )}

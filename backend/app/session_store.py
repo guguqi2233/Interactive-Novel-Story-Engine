@@ -10,11 +10,15 @@ from app.api import (
     VisibleLocationResponse,
     VisibleNPCResponse,
     VisibleObjectResponse,
+    VisibleQuestObjectiveResponse,
+    VisibleQuestResponse,
     VisibleStateResponse,
     VisibleTimeResponse,
 )
 from app.engine.action_dispatcher import ActionDispatcher
 from app.engine.content.world_loader import WorldLoader
+from app.engine.rules.inventory import get_inventory
+from app.engine.rules.quests import get_visible_quests
 from app.engine.rules.time import format_game_time, get_time_of_day
 from app.llm.intent_parser import IntentParser
 from app.llm.narrator import Narrator
@@ -84,8 +88,7 @@ def build_visible_state(state: GameState) -> VisibleStateResponse:
     ]
     inventory = [
         VisibleObjectResponse(id=item_id)
-        for item_id in state.player.inventory
-        if item_id in state.objects
+        for item_id in [item.id for item in get_inventory(state, state.player.id)]
     ]
     visible_npcs = [
         VisibleNPCResponse(
@@ -94,13 +97,36 @@ def build_visible_state(state: GameState) -> VisibleStateResponse:
             relationship_to_player=npc.relationship_to_player,
         )
         for npc in state.npcs.values()
-        if npc.location_id == location_id
+        if npc.location_id == location_id and _npc_visible_to_player(state, npc.id)
     ]
     known_facts = [
         KnownFactResponse(id=fact_id, text=state.facts.get(fact_id).text, tags=state.facts.get(fact_id).tags)
         for fact_id in sorted(state.player_visible_facts)
         if fact_id in state.facts
     ]
+    quests = []
+    for quest in get_visible_quests(state):
+        stage = quest.stages.get(quest.current_stage)
+        stage_objectives = stage.objectives if stage else []
+        quests.append(
+            VisibleQuestResponse(
+                id=quest.id,
+                title=quest.title,
+                name=quest.title,
+                description=quest.description,
+                status=quest.status.value,
+                current_stage=quest.current_stage,
+                stage_title=stage.title if stage else quest.current_stage,
+                stage_description=stage.description if stage else "",
+                objectives=[
+                    VisibleQuestObjectiveResponse(
+                        id=objective_id,
+                        completed=objective_id in quest.completed_objectives,
+                    )
+                    for objective_id in stage_objectives
+                ],
+            )
+        )
     return VisibleStateResponse(
         world_id=state.world_id,
         turn=state.turn,
@@ -119,7 +145,7 @@ def build_visible_state(state: GameState) -> VisibleStateResponse:
         visible_objects=visible_objects,
         visible_npcs=visible_npcs,
         known_facts=known_facts,
-        quests=[],
+        quests=quests,
     )
 
 
@@ -130,3 +156,10 @@ def _object_visible_to_player(state: GameState, object_id: str, location_id: str
     if world_object.location_id != location_id or not world_object.visible:
         return False
     return not world_object.hidden or state.player.id in world_object.discovered_by
+
+
+def _npc_visible_to_player(state: GameState, npc_id: str) -> bool:
+    npc = state.npcs.get(npc_id)
+    if npc is None or not npc.visible:
+        return False
+    return not npc.hidden or state.player.id in npc.discovered_by

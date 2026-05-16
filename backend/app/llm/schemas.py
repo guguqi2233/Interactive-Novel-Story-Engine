@@ -5,6 +5,9 @@ from pydantic import BaseModel, Field, model_validator
 
 class PlayerActionType(StrEnum):
     OBSERVE = "observe"
+    SEARCH = "search"
+    LOCKPICK = "lockpick"
+    SNEAK = "sneak"
     MOVE = "move"
     TALK = "talk"
     USE_ITEM = "use_item"

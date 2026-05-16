@@ -89,7 +89,10 @@ def test_visible_state_time_inventory_and_quests_are_present() -> None:
     assert visible_state["time"]["formatted"] == "Day 1, 08:00"
     assert visible_state["time"]["time_of_day"] == "morning"
     assert visible_state["inventory"] == []
-    assert visible_state["quests"] == []
+    assert visible_state["quests"][0]["id"] == "missing_tools"
+    assert visible_state["quests"][0]["status"] == "active"
+    assert visible_state["quests"][0]["current_stage"] == "ask_harlan"
+    assert not any(quest["id"] == "sealed_letter" for quest in visible_state["quests"])
 
 
 def test_visible_state_exposes_only_visible_objects_npcs_and_known_facts() -> None:

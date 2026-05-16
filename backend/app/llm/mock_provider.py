@@ -27,6 +27,27 @@ class MockLLMProvider(LLMProvider):
                 "confidence": 0.9,
                 "requires_clarification": False,
             }
+        if "搜索" in text or "search" in text:
+            return {
+                "action_type": PlayerActionType.SEARCH.value,
+                "raw_text": text,
+                "confidence": 0.9,
+                "requires_clarification": False,
+            }
+        if "撬锁" in text or "lockpick" in text:
+            return {
+                "action_type": PlayerActionType.LOCKPICK.value,
+                "raw_text": text,
+                "confidence": 0.9,
+                "requires_clarification": False,
+            }
+        if "潜行" in text or "sneak" in text:
+            return {
+                "action_type": PlayerActionType.SNEAK.value,
+                "raw_text": text,
+                "confidence": 0.9,
+                "requires_clarification": False,
+            }
         if "铁匠" in text or "smithy" in text:
             return {
                 "action_type": PlayerActionType.MOVE.value,

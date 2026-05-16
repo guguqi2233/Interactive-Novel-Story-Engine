@@ -6,6 +6,8 @@ from app.api import (
     GameInputRequest,
     GameInputResponse,
     GameStateResponse,
+    DebugEventListResponse,
+    DebugEventResponse,
     LoadGameResponse,
     SaveGameResponse,
     SaveListResponse,
@@ -14,6 +16,7 @@ from app.api import (
     StartGameResponse,
 )
 from app.config import get_settings
+from app.core.event_log import Event
 from app.core.world_state import GameState
 from app.db.models import SaveGame
 from app.db.repository import SaveRepositoryError, SQLiteSaveRepository
@@ -53,6 +56,16 @@ def get_session_store() -> InMemorySessionStore:
 
 def get_save_repository() -> SQLiteSaveRepository:
     return app.state.save_repository
+
+
+def debug_api_enabled() -> bool:
+    active_settings = getattr(app.state, "settings", settings)
+    return bool(active_settings.enable_debug_api)
+
+
+def require_debug_api() -> None:
+    if not debug_api_enabled():
+        raise HTTPException(status_code=403, detail="Debug API is disabled")
 
 
 @app.post("/game/start", response_model=StartGameResponse)
@@ -163,4 +176,40 @@ def load_game(save_id: str) -> LoadGameResponse:
         session_id=session_id,
         visible_state=build_visible_state(game_loop.state),
         turn=game_loop.state.turn,
+    )
+
+
+@app.get("/debug/sessions/{session_id}/events", response_model=DebugEventListResponse)
+def get_debug_session_events(session_id: str) -> DebugEventListResponse:
+    require_debug_api()
+    game_loop = get_session_store().get_session(session_id)
+    if game_loop is None:
+        raise HTTPException(status_code=404, detail=f"Unknown game session: {session_id}")
+    return DebugEventListResponse(
+        events=[_debug_event_response(event) for event in game_loop.event_log.list_events()]
+    )
+
+
+@app.get("/debug/saves/{save_id}/events", response_model=DebugEventListResponse)
+def get_debug_save_events(save_id: str) -> DebugEventListResponse:
+    require_debug_api()
+    try:
+        events = get_save_repository().list_events(save_id)
+    except SaveRepositoryError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return DebugEventListResponse(
+        events=[_debug_event_response(event) for event in events]
+    )
+
+
+def _debug_event_response(event: Event) -> DebugEventResponse:
+    return DebugEventResponse(
+        turn=event.turn,
+        event_id=event.event_id,
+        actor_id=event.actor_id,
+        action_type=event.action_type,
+        result=event.result,
+        state_deltas=event.state_deltas,
+        visible_to_player=event.visible_to_player,
+        created_at=event.created_at.isoformat(),
     )

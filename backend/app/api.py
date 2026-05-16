@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field
 
+from app.core.state_delta import StateDelta
+
 
 class VisibleTimeResponse(BaseModel):
     day: int
@@ -30,10 +32,21 @@ class KnownFactResponse(BaseModel):
     tags: list[str] = Field(default_factory=list)
 
 
+class VisibleQuestObjectiveResponse(BaseModel):
+    id: str
+    completed: bool = False
+
+
 class VisibleQuestResponse(BaseModel):
     id: str
+    title: str
     name: str
-    status: str = "available"
+    description: str = ""
+    status: str
+    current_stage: str
+    stage_title: str
+    stage_description: str = ""
+    objectives: list[VisibleQuestObjectiveResponse] = Field(default_factory=list)
 
 
 class VisibleStateResponse(BaseModel):
@@ -101,3 +114,19 @@ class LoadGameResponse(BaseModel):
     session_id: str
     visible_state: VisibleStateResponse
     turn: int
+
+
+class DebugEventResponse(BaseModel):
+    turn: int
+    event_id: str
+    actor_id: str
+    action_type: str
+    result: str
+    state_deltas: list[StateDelta] = Field(default_factory=list)
+    visible_to_player: bool
+    created_at: str
+
+
+class DebugEventListResponse(BaseModel):
+    local_only: bool = True
+    events: list[DebugEventResponse] = Field(default_factory=list)

@@ -6,4 +6,11 @@ npcs:
     knowledge:
       - old_bridge_creaks_at_midnight
       - mayor_hides_missing_tools
+    schedule:
+      - time_of_day: morning
+        location_id: blacksmith
+        activity: tending the cold forge
+      - time_of_day: evening
+        location_id: village_square
+        activity: listening for village gossip
 

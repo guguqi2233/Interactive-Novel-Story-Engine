@@ -1,7 +1,7 @@
 from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, TypeAdapter, field_validator
 
 from app.core.world_state import GameState
 
@@ -163,7 +163,7 @@ def _set_value(container: Any, key: str, value: Any) -> None:
     if isinstance(container, BaseModel):
         if not hasattr(container, key):
             raise StateDeltaError(f"Invalid state path segment: {key}")
-        setattr(container, key, value)
+        setattr(container, key, _validate_model_field_value(container, key, value))
         return
 
     if isinstance(container, dict):
@@ -171,6 +171,16 @@ def _set_value(container: Any, key: str, value: Any) -> None:
         return
 
     raise StateDeltaError(f"Cannot set value on non-container path segment: {key}")
+
+
+def _validate_model_field_value(container: BaseModel, key: str, value: Any) -> Any:
+    field = container.__class__.model_fields.get(key)
+    if field is None:
+        return value
+    try:
+        return TypeAdapter(field.annotation).validate_python(value)
+    except Exception as exc:
+        raise StateDeltaError(f"Invalid value for state path segment: {key}") from exc
 
 
 def _collection_contains(collection: Any, value: Any) -> bool:

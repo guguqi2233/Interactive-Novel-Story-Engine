@@ -8,7 +8,10 @@ The deterministic world engine is the only authority for outcomes and state.
 Return only data matching the requested schema.
 
 Allowed action_type values:
-- observe: inspect, look, search, listen, or examine
+- observe: inspect, look, listen, or examine
+- search: actively search the current location, an object, or an NPC nearby
+- lockpick: attempt to open a locked door or container
+- sneak: move or approach stealthily
 - move: go to or enter a place
 - talk: speak to an NPC
 - use_item: use, give, equip, open with, or manipulate an item

@@ -35,6 +35,31 @@ export type VisibleQuest = {
   status: string;
 };
 
+export type StateDelta = {
+  operation: string;
+  path: string;
+  value?: unknown;
+  caused_by_event_id?: string | null;
+  reason?: string | null;
+  metadata: Record<string, string>;
+};
+
+export type DebugEvent = {
+  turn: number;
+  event_id: string;
+  actor_id: string;
+  action_type: string;
+  result: string;
+  state_deltas: StateDelta[];
+  visible_to_player: boolean;
+  created_at: string;
+};
+
+export type DebugEventListResponse = {
+  local_only: boolean;
+  events: DebugEvent[];
+};
+
 export type VisibleState = {
   world_id: string;
   turn: number;
@@ -139,6 +164,16 @@ export async function loadGame(saveId: string): Promise<LoadGameResponse> {
   return requestJson<LoadGameResponse>(`/game/load/${encodeURIComponent(saveId)}`, {
     method: "POST"
   });
+}
+
+export async function fetchSessionDebugEvents(sessionId: string): Promise<DebugEventListResponse> {
+  return requestJson<DebugEventListResponse>(
+    `/debug/sessions/${encodeURIComponent(sessionId)}/events`
+  );
+}
+
+export async function fetchSaveDebugEvents(saveId: string): Promise<DebugEventListResponse> {
+  return requestJson<DebugEventListResponse>(`/debug/saves/${encodeURIComponent(saveId)}/events`);
 }
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
