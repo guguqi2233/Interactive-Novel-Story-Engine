@@ -1,0 +1,16 @@
+items:
+  - id: notice_board
+    name: Notice Board
+    description: Weather-stained notices curl under rusted nails.
+    location_id: village_square
+  - id: anvil
+    name: Anvil
+    description: A scarred anvil with fresh hammer marks.
+    location_id: blacksmith
+  - id: sealed_letter
+    name: Sealed Letter
+    description: A letter tucked beneath a loose paving stone.
+    location_id: village_square
+    hidden: true
+    discovered_by: []
+

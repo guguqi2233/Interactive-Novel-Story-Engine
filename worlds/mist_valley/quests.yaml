@@ -1,0 +1,6 @@
+quests:
+  - id: missing_tools
+    name: Missing Tools
+    description: Harlan's best tools vanished before dawn.
+    starts_at: blacksmith
+

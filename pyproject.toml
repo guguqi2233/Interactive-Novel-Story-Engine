@@ -1,0 +1,21 @@
+[project]
+name = "llm-world-engine"
+version = "0.1.0"
+description = "Local-only LLM interactive fiction world engine."
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115.0",
+    "openai>=1.93.0",
+    "pydantic>=2.7.0",
+    "PyYAML>=6.0.0",
+    "uvicorn>=0.30.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+pythonpath = ["backend"]

@@ -1,0 +1,22 @@
+locations:
+  - id: village_square
+    name: Village Square
+    description: A stone square damp with mist, bordered by shuttered cottages.
+    exits:
+      north: old_bridge
+      east: blacksmith
+    visible_objects:
+      - notice_board
+  - id: old_bridge
+    name: Old Bridge
+    description: A narrow bridge crosses a pale stream into the fog.
+    exits:
+      south: village_square
+  - id: blacksmith
+    name: Blacksmith
+    description: The forge is cold, but iron filings still glitter near the anvil.
+    exits:
+      west: village_square
+    visible_objects:
+      - anvil
+

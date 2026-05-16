@@ -1,0 +1,180 @@
+from enum import StrEnum
+from typing import Any
+
+from pydantic import BaseModel, Field, field_validator
+
+from app.core.world_state import GameState
+
+
+class StateDeltaError(ValueError):
+    """Raised when a state delta cannot be applied safely."""
+
+
+class StateDeltaOperation(StrEnum):
+    SET = "set"
+    INC = "inc"
+    ADD = "add"
+    REMOVE = "remove"
+
+
+class StateDelta(BaseModel):
+    operation: StateDeltaOperation
+    path: str
+    value: Any = None
+    caused_by_event_id: str | None = None
+    reason: str | None = None
+    metadata: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("path")
+    @classmethod
+    def validate_path(cls, value: str) -> str:
+        parts = value.split(".")
+        if not value or any(part == "" for part in parts):
+            raise ValueError("StateDelta path must be a non-empty dot path")
+        return value
+
+
+def apply_delta(state: GameState, delta: StateDelta) -> GameState:
+    next_state = state.model_copy(deep=True)
+    parent, key = _resolve_parent(next_state, delta.path)
+
+    if delta.operation == StateDeltaOperation.SET:
+        _set_value(parent, key, delta.value)
+        return next_state
+
+    current_value = _get_value(parent, key)
+
+    if delta.operation == StateDeltaOperation.INC:
+        if not isinstance(current_value, int | float):
+            raise StateDeltaError(f"Cannot inc non-numeric path: {delta.path}")
+        if not isinstance(delta.value, int | float):
+            raise StateDeltaError(f"Increment value must be numeric for path: {delta.path}")
+        _set_value(parent, key, current_value + delta.value)
+        return next_state
+
+    if delta.operation == StateDeltaOperation.ADD:
+        if isinstance(current_value, list):
+            if delta.value not in current_value:
+                current_value.append(delta.value)
+            return next_state
+        if isinstance(current_value, set):
+            current_value.add(delta.value)
+            return next_state
+        raise StateDeltaError(f"Cannot add to non-collection path: {delta.path}")
+
+    if delta.operation == StateDeltaOperation.REMOVE:
+        if isinstance(current_value, list):
+            if delta.value not in current_value:
+                raise StateDeltaError(f"Cannot remove missing value from path: {delta.path}")
+            current_value.remove(delta.value)
+            return next_state
+        if isinstance(current_value, set):
+            if delta.value not in current_value:
+                raise StateDeltaError(f"Cannot remove missing value from path: {delta.path}")
+            current_value.remove(delta.value)
+            return next_state
+        raise StateDeltaError(f"Cannot remove from non-collection path: {delta.path}")
+
+    raise StateDeltaError(f"Unsupported delta operation: {delta.operation}")
+
+
+def inverse_delta(before_state: GameState, delta: StateDelta) -> StateDelta:
+    parent, key = _resolve_parent(before_state, delta.path)
+    previous_value = _get_value(parent, key)
+
+    if delta.operation == StateDeltaOperation.SET:
+        return StateDelta(
+            operation=StateDeltaOperation.SET,
+            path=delta.path,
+            value=previous_value,
+            caused_by_event_id=delta.caused_by_event_id,
+            reason="Rollback set delta",
+        )
+
+    if delta.operation == StateDeltaOperation.INC:
+        if not isinstance(delta.value, int | float):
+            raise StateDeltaError(f"Increment value must be numeric for path: {delta.path}")
+        return StateDelta(
+            operation=StateDeltaOperation.INC,
+            path=delta.path,
+            value=-delta.value,
+            caused_by_event_id=delta.caused_by_event_id,
+            reason="Rollback inc delta",
+        )
+
+    if delta.operation == StateDeltaOperation.ADD:
+        if _collection_contains(previous_value, delta.value):
+            return StateDelta(
+                operation=StateDeltaOperation.SET,
+                path=delta.path,
+                value=previous_value,
+                caused_by_event_id=delta.caused_by_event_id,
+                reason="Rollback no-op add delta",
+            )
+        return StateDelta(
+            operation=StateDeltaOperation.REMOVE,
+            path=delta.path,
+            value=delta.value,
+            caused_by_event_id=delta.caused_by_event_id,
+            reason="Rollback add delta",
+        )
+
+    if delta.operation == StateDeltaOperation.REMOVE:
+        return StateDelta(
+            operation=StateDeltaOperation.ADD,
+            path=delta.path,
+            value=delta.value,
+            caused_by_event_id=delta.caused_by_event_id,
+            reason="Rollback remove delta",
+        )
+
+    raise StateDeltaError(f"Unsupported delta operation: {delta.operation}")
+
+
+def rollback_delta(state: GameState, inverse: StateDelta) -> GameState:
+    return apply_delta(state, inverse)
+
+
+def _resolve_parent(state: GameState, path: str) -> tuple[Any, str]:
+    parts = path.split(".")
+    current: Any = state
+
+    for part in parts[:-1]:
+        current = _get_value(current, part)
+
+    return current, parts[-1]
+
+
+def _get_value(container: Any, key: str) -> Any:
+    if isinstance(container, BaseModel):
+        if not hasattr(container, key):
+            raise StateDeltaError(f"Invalid state path segment: {key}")
+        return getattr(container, key)
+
+    if isinstance(container, dict):
+        if key not in container:
+            raise StateDeltaError(f"Invalid state path segment: {key}")
+        return container[key]
+
+    raise StateDeltaError(f"Cannot traverse through non-container path segment: {key}")
+
+
+def _set_value(container: Any, key: str, value: Any) -> None:
+    if isinstance(container, BaseModel):
+        if not hasattr(container, key):
+            raise StateDeltaError(f"Invalid state path segment: {key}")
+        setattr(container, key, value)
+        return
+
+    if isinstance(container, dict):
+        container[key] = value
+        return
+
+    raise StateDeltaError(f"Cannot set value on non-container path segment: {key}")
+
+
+def _collection_contains(collection: Any, value: Any) -> bool:
+    if isinstance(collection, list | set):
+        return value in collection
+    raise StateDeltaError("Expected collection value for collection rollback")
+

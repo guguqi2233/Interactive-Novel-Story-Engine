@@ -1,0 +1,9 @@
+npcs:
+  - id: harlan
+    name: Harlan
+    location_id: blacksmith
+    personality: Wary, practical, and slow to trust strangers.
+    knowledge:
+      - old_bridge_creaks_at_midnight
+      - mayor_hides_missing_tools
+
