@@ -1,6 +1,6 @@
 # World Engine
 
-This document describes the local world engine as of v0.5. The engine is the
+This document describes the local world engine as of v0.6. The engine is the
 only source of truth for world state, rules, consequences, persistence, and
 visibility. The LLM layer may parse intent, render narration, and summarize
 memory, but it does not decide rule outcomes or mutate `GameState`.
@@ -48,14 +48,14 @@ The current state model includes:
 - Memory: memory records are persisted separately and are not authoritative
   facts.
 
-Old save JSON is loaded through Pydantic defaults and compatibility-friendly
-model fields. Missing v0.4/v0.5 social or memory fields should default rather
-than crash.
+Old save JSON is loaded through Pydantic defaults, compatibility-friendly
+model fields, and the v0.6 save migration system. Missing v0.3-v0.5 fields
+should default or migrate rather than crash.
 
 ## StateDelta Rules
 
 `StateDelta` supports structured operations such as `set`, `inc`, `add`, and
-`remove` over dot paths. Core paths used by v0.5 include:
+`remove` over dot paths. Core paths used by the current engine include:
 
 - `player.location_id`
 - `player.currency`
@@ -141,9 +141,14 @@ It must not include:
 - raw event `state_deltas`
 - API keys, environment variables, or local paths
 
-Known v0.5 limitation: visible faction conflict summaries include
+Known limitation: visible faction conflict summaries include
 `conflict_tags` for player-known factions. Authors should avoid using those
 tags for secret-only content until a stricter public-label field is added.
+
+Known v0.6 blocker from visibility/security audit: `visible_state.relationships`
+must filter relationship endpoints by actor visibility before v0.6 acceptance.
+The player graph already performs this filtering; the player API relationship
+summary should be aligned with it.
 
 ## Time, Schedule, and World Tick
 
@@ -204,7 +209,7 @@ buy, and sell actions produce `StateDelta` entries and events. Trade prices are
 rule-based and may consider merchant modifiers and reputation bands. The LLM
 does not price items.
 
-v0.5 does not implement a dynamic supply/demand economy, auctions, equipment
+The current engine does not implement a dynamic supply/demand economy, auctions, equipment
 slots, or full stolen-goods simulation.
 
 ## Lockpick and Sneak
@@ -229,7 +234,7 @@ reputation, crimes, or other structured state. Quest state changes go through
 ### Factions and Reputation
 
 `factions.yaml` defines factions, default player reputation, visibility, tags,
-and v0.5 conflict metadata. Reputation bands include hostile, suspicious,
+and conflict metadata. Reputation bands include hostile, suspicious,
 neutral, friendly, and trusted. Reputation changes are rule-driven and are not
 decided by the LLM.
 
@@ -263,7 +268,7 @@ combat, rumors, quest stages, or reputation bands. Conflict changes are
 deduped by source/consequence ids where supported and are visible only for
 player-known factions/conflicts.
 
-v0.5 does not simulate armies, diplomacy AI, territorial war, or complex
+The current engine does not simulate armies, diplomacy AI, territorial war, or complex
 conflict escalation.
 
 ## Combat and Life State
@@ -277,6 +282,21 @@ Combat is lightweight and rules-first. Actions include:
 Damage, hit/miss, hp, condition, stance, incapacitation, and death are decided
 by deterministic rules. Public assault or killing can feed crime, witness,
 rumor, reputation, quest, and reaction systems.
+
+v0.6 adds a small combat expansion:
+
+- stances: `aggressive`, `defensive`, `cautious`, `fleeing`
+- status effects: `guarded`, `stunned`, `bleeding`
+- defend grants a guarded/defensive consequence through `StateDelta`
+- guarded can reduce damage and be consumed
+- stunned actors cannot act
+- heavy damage can mark bleeding for future consequences
+- flee has deterministic risk and failure consequences
+- non-lethal attack can incapacitate without directly killing
+- `visible_state.active_combat` exposes only player-visible combatants
+
+This is not tactical combat. There is no grid movement, equipment system,
+magic combat, or multi-round AI combat planner.
 
 Life state prevents contradictions:
 
@@ -293,7 +313,7 @@ retrieval, but it does not replace `GameState`, facts, quests, or event logs.
 
 ### MemoryStore Backends
 
-v0.5 supports:
+The current engine supports:
 
 - `InMemoryMemoryStore`
 - `SQLiteMemoryStore`
@@ -361,17 +381,96 @@ Validation reports contain structured `errors`, `warnings`, and `suggestions`
 with file, path, code, message, severity, and optional reference ids. CLI
 validation still returns a non-zero exit code when errors are present.
 
+## Authoring Diff, Preview, and Dry Run
+
+v0.6 adds local authoring dry-run support:
+
+- `preview-file-change` parses proposed YAML, validates a draft in a temporary
+  copy, returns normalized YAML when possible, and reports a diff summary.
+- `validate-draft` validates proposed file content without writing it.
+- `impact-analysis` reports removed ids, renamed-id guesses, changed exits,
+  and whether existing saves may require review.
+
+These APIs do not modify active `GameState`, active sessions, or saves. They
+are local authoring tools only and must stay behind `ENABLE_AUTHORING_API`.
+
+## Save Migration System
+
+v0.6 formalizes save migration. Save metadata includes engine/schema/content
+version fields and migration history. `GameState` also carries a
+`schema_version`.
+
+Migration APIs and CLI support:
+
+- list available migrations
+- migration status
+- dry-run migration
+- apply migration with backup
+
+Migration is deterministic, does not call the LLM, does not drop `EventLog`,
+and must not change hidden/debug visibility classifications. Failed migration
+rolls back rather than overwriting the original save.
+
+## Visual Relationship and Faction Graphs
+
+v0.6 adds graph response schemas and APIs for relationship/faction inspection:
+
+- player graph endpoints return player-visible nodes/edges only
+- debug graph endpoints return fuller graph data only when debug API is enabled
+- graph generation is deterministic and does not infer hidden relationships
+
+The frontend renders these as lightweight lists/SVG summaries. Debug graphs
+must remain in the debug panel.
+
+## Automated Playtesting Agents
+
+v0.6 adds local playtesting agents:
+
+- `random_valid_action_agent`
+- `explore_agent`
+- `quest_following_agent`
+- `stress_agent`
+
+Agents receive `VisibleStateResponse` and return player input text. The runner
+sends that text through `GameLoop`, records events, checks invariants, and can
+exercise save/load. Agents do not directly mutate `GameState` and do not call
+real LLM APIs.
+
+## Narrative Quality Evals
+
+Narrative quality evals are deterministic test/eval utilities. They check
+whether a `NarrativeResult` contradicts the `ActionResult`, invents key content,
+leaks hidden facts/witnesses, becomes too long, omits visible consequences, or
+suggests illegal actions. They do not use an external LLM judge.
+
+## Performance Instrumentation
+
+v0.6 adds local performance samples for game loop stages, save/load,
+memory search, and authoring validation. Samples are in-memory, controlled by
+`ENABLE_PERF_LOGGING`, and exposed only through debug performance APIs gated by
+`ENABLE_DEBUG_API`.
+
+Performance data must not include prompt text, API keys, hidden fact text, raw
+`GameState`, or raw `state_deltas`. Performance work must never bypass
+`StateDelta`, `EventLog`, visibility, schema validation, or rule correctness.
+
 ## Plugin / Mod Packaging
 
-v0.5 includes a content-only mod packaging layer. A mod manifest can describe:
+The engine includes a content-only mod packaging layer. A v0.6 mod manifest can
+describe:
 
 - `id`
 - `name`
 - `version`
 - `engine_version_min`
 - `engine_version_max`
+- `content_schema_version`
 - `dependencies`
+- `optional_dependencies`
 - `conflicts`
+- `load_order_hint`
+- `compatible_worlds`
+- `migration_notes`
 - `entry_worlds`
 - `content_paths`
 - `author`
@@ -381,9 +480,32 @@ Mods may contain YAML content packs only. The loader does not execute Python,
 JavaScript, shell scripts, or arbitrary code. It rejects paths outside the mod
 directory and validates entry worlds through the same content validation path.
 
-Known v0.5 limitation: some invalid mod manifest errors may include local file
+Dependency, conflict, engine-version, content-schema, and load-order checks are
+simple and deterministic in v0.6. There is no online download, SAT solver, hot
+reload of active saves, or arbitrary script execution.
+
+Known limitation: some invalid mod manifest errors may include local file
 paths in diagnostics. Keep mod validation local until path sanitization is
 tightened further.
+
+## Desktop Packaging Prototype
+
+v0.6 adds a local desktop packaging prototype document and a Windows launcher
+script. It starts the FastAPI backend and Vite frontend locally and opens the
+browser. It is not a formal installer, does not sign code, does not auto-update,
+does not sync to cloud, and does not embed `.env` or API keys into frontend
+assets.
+
+## Local Model Provider Slice
+
+v0.6 adds provider factory support for:
+
+- `local_stub`: deterministic test/offline provider
+- `local_http`: configuration-checked interface stub for future local HTTP
+  model service integration
+
+Both remain behind `LLMProvider`. Local model output has no new authority and
+cannot directly modify `GameState`.
 
 ## Multi-world Save Browser
 
@@ -411,11 +533,15 @@ This data must remain separated from player APIs and narrator prompts.
 ## Current Limits
 
 - No account system, cloud sync, or remote publishing.
-- No graphical world editor beyond a textarea authoring UI.
+- No formal desktop installer.
+- No graphical world editor beyond the current local authoring panels.
 - No automatic YAML repair.
 - No arbitrary mod code execution.
+- No online mod download or complex mod version solver.
 - No large-scale social simulation, diplomacy AI, or war simulation.
 - No external vector database requirement.
+- No external LLM judge in evals.
+- No production APM/telemetry; performance samples remain local.
 - NPC planning is limited to deterministic candidate actions.
 - Procedural side quests are drafts only.
 - Memory retrieval is context support, not canonical truth.

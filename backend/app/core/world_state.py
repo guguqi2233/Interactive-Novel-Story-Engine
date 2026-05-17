@@ -3,6 +3,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
 
+CURRENT_GAME_STATE_SCHEMA_VERSION = "0.6"
+
 
 class ActorCondition(StrEnum):
     HEALTHY = "healthy"
@@ -392,6 +394,7 @@ class CombatStatus(StrEnum):
 class CombatantStance(StrEnum):
     AGGRESSIVE = "aggressive"
     DEFENSIVE = "defensive"
+    CAUTIOUS = "cautious"
     FLEEING = "fleeing"
     INCAPACITATED = "incapacitated"
 
@@ -415,6 +418,7 @@ class CombatState(BaseModel):
 
 
 class GameState(BaseModel):
+    schema_version: str = CURRENT_GAME_STATE_SCHEMA_VERSION
     world_id: str
     turn: int = 0
     current_time: GameTime = Field(default_factory=GameTime)
@@ -441,6 +445,7 @@ class GameState(BaseModel):
 def migrate_game_state_payload(payload: dict[str, Any]) -> dict[str, Any]:
     """Fill fields added after v0.3 so older save JSON can be validated."""
     migrated = dict(payload)
+    migrated.setdefault("schema_version", CURRENT_GAME_STATE_SCHEMA_VERSION)
     migrated.setdefault("factions", {})
     migrated.setdefault("rumors", {})
     migrated.setdefault("crimes", {})

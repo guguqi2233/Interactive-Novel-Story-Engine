@@ -4,6 +4,8 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
+from app.core.world_state import CURRENT_GAME_STATE_SCHEMA_VERSION
+from app.db.migrations import CURRENT_ENGINE_VERSION
 from app.engine.content.validator import ValidationIssue, ValidationReport, ValidationSeverity, validate_world_pack
 
 
@@ -17,12 +19,18 @@ class ModManifest(BaseModel):
     version: str
     engine_version_min: str
     engine_version_max: str | None = None
+    content_schema_version: str = CURRENT_GAME_STATE_SCHEMA_VERSION
     dependencies: list[str] = Field(default_factory=list)
+    optional_dependencies: list[str] = Field(default_factory=list)
     conflicts: list[str] = Field(default_factory=list)
+    load_order_hint: int = 0
+    compatible_worlds: list[str] = Field(default_factory=list)
+    migration_notes: str = ""
     entry_worlds: list[str] = Field(default_factory=list)
     content_paths: list[str] = Field(default_factory=list)
     author: str | None = None
     description: str = ""
+    model_config = {"extra": "forbid"}
 
     @model_validator(mode="after")
     def validate_lists(self) -> "ModManifest":
@@ -86,6 +94,18 @@ class ConflictReport(BaseModel):
     conflicts: list[tuple[str, str]] = Field(default_factory=list)
 
 
+class ModVersionReport(BaseModel):
+    ok: bool
+    errors: dict[str, list[str]] = Field(default_factory=dict)
+    warnings: dict[str, list[str]] = Field(default_factory=dict)
+
+
+class LoadOrderReport(BaseModel):
+    ok: bool
+    load_order: list[str] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
+
+
 FORBIDDEN_CODE_SUFFIXES = {
     ".py",
     ".pyc",
@@ -124,11 +144,19 @@ class ModLoader:
     def validate_mod(self, mod_id: str) -> ModValidationReport:
         mod = self._get_mod(mod_id)
         report = ModValidationReport(mod_id=mod.manifest.id)
+        self._validate_manifest_version(mod, report)
         self._validate_safe_paths(mod, report)
         self._validate_no_executable_code(mod, report)
         self._validate_worlds(mod, report)
         report.ok = not report.errors and all(world_report.ok for world_report in report.world_reports.values())
         return report
+
+    def validate_mod_version(self, mod_id: str) -> ModVersionReport:
+        mod = self._get_mod(mod_id)
+        errors: dict[str, list[str]] = {}
+        warnings: dict[str, list[str]] = {}
+        self._collect_version_issues(mod.manifest, errors, warnings)
+        return ModVersionReport(ok=not errors, errors=errors, warnings=warnings)
 
     def resolve_dependencies(self, enabled_mod_ids: list[str] | None = None) -> DependencyResolutionReport:
         mods = {mod.manifest.id: mod.manifest for mod in self.discover_mods()}
@@ -139,10 +167,17 @@ class ModLoader:
             if manifest is None:
                 missing[mod_id] = ["mod_not_found"]
                 continue
-            absent = [dependency for dependency in manifest.dependencies if dependency not in selected_ids]
+            absent = [
+                dependency
+                for dependency in manifest.dependencies
+                if _dependency_id(dependency) not in selected_ids
+            ]
             if absent:
                 missing[mod_id] = absent
         return DependencyResolutionReport(ok=not missing, missing_dependencies=missing)
+
+    def detect_dependency_errors(self, enabled_mod_ids: list[str] | None = None) -> DependencyResolutionReport:
+        return self.resolve_dependencies(enabled_mod_ids)
 
     def detect_conflicts(self, enabled_mod_ids: list[str] | None = None) -> ConflictReport:
         mods = {mod.manifest.id: mod.manifest for mod in self.discover_mods()}
@@ -153,13 +188,57 @@ class ModLoader:
             if manifest is None:
                 continue
             for conflict_id in manifest.conflicts:
-                if conflict_id in selected_ids:
-                    conflicts.add(tuple(sorted((mod_id, conflict_id))))
+                active_conflict_id = _dependency_id(conflict_id)
+                if active_conflict_id in selected_ids:
+                    conflicts.add(tuple(sorted((mod_id, active_conflict_id))))
         return ConflictReport(ok=not conflicts, conflicts=sorted(conflicts))
+
+    def detect_engine_incompatibility(self, enabled_mod_ids: list[str] | None = None) -> ModVersionReport:
+        errors: dict[str, list[str]] = {}
+        warnings: dict[str, list[str]] = {}
+        for mod in self.list_enabled_mods(enabled_mod_ids):
+            self._collect_engine_issues(mod.manifest, errors, warnings)
+        return ModVersionReport(ok=not errors, errors=errors, warnings=warnings)
+
+    def detect_content_schema_incompatibility(self, enabled_mod_ids: list[str] | None = None) -> ModVersionReport:
+        errors: dict[str, list[str]] = {}
+        warnings: dict[str, list[str]] = {}
+        for mod in self.list_enabled_mods(enabled_mod_ids):
+            self._collect_content_schema_issues(mod.manifest, errors, warnings)
+        return ModVersionReport(ok=not errors, errors=errors, warnings=warnings)
+
+    def resolve_load_order(self, enabled_mod_ids: list[str] | None = None) -> LoadOrderReport:
+        mods = {mod.manifest.id: mod.manifest for mod in self.discover_mods()}
+        selected_ids = sorted(enabled_mod_ids or mods)
+        dependency_report = self.resolve_dependencies(selected_ids)
+        if not dependency_report.ok:
+            return LoadOrderReport(
+                ok=False,
+                errors=[
+                    f"{mod_id} missing dependencies: {','.join(dependencies)}"
+                    for mod_id, dependencies in sorted(dependency_report.missing_dependencies.items())
+                ],
+            )
+        remaining = set(selected_ids)
+        resolved: list[str] = []
+        while remaining:
+            ready = [
+                mod_id
+                for mod_id in remaining
+                if all(_dependency_id(dependency) in resolved for dependency in mods[mod_id].dependencies)
+            ]
+            if not ready:
+                return LoadOrderReport(ok=False, errors=["cyclic_mod_dependency"])
+            ready.sort(key=lambda mod_id: (mods[mod_id].load_order_hint, mod_id))
+            next_mod = ready[0]
+            resolved.append(next_mod)
+            remaining.remove(next_mod)
+        return LoadOrderReport(ok=True, load_order=resolved)
 
     def list_enabled_mods(self, enabled_mod_ids: list[str] | None = None) -> list[ModInfo]:
         discovered = {mod.manifest.id: mod for mod in self.discover_mods()}
-        selected_ids = sorted(enabled_mod_ids or discovered)
+        order_report = self.resolve_load_order(enabled_mod_ids)
+        selected_ids = order_report.load_order if order_report.ok else sorted(enabled_mod_ids or discovered)
         return [discovered[mod_id] for mod_id in selected_ids if mod_id in discovered]
 
     def _get_mod(self, mod_id: str) -> ModInfo:
@@ -178,6 +257,20 @@ class ModLoader:
             raise ModLoaderError(f"Invalid mod manifest {path}: {exc}") from exc
 
     def _validate_safe_paths(self, mod: ModInfo, report: ModValidationReport) -> None:
+        for forbidden_field, values in {
+            "dependencies": mod.manifest.dependencies,
+            "optional_dependencies": mod.manifest.optional_dependencies,
+            "conflicts": mod.manifest.conflicts,
+        }.items():
+            for value in values:
+                if any(part in value for part in ["/", "\\", ".."]):
+                    report.add(
+                        ValidationSeverity.ERROR,
+                        f"mod.yaml.{forbidden_field}",
+                        f"Unsafe mod reference: {value}",
+                        code="unsafe_mod_reference",
+                        ref_id=value,
+                    )
         for content_path in mod.manifest.content_paths:
             try:
                 self._safe_mod_relative_path(mod.path, content_path)
@@ -190,6 +283,65 @@ class ModLoader:
                     ref_id=content_path,
                     suggestion="Use a relative content path inside the mod directory.",
                 )
+
+    def _validate_manifest_version(self, mod: ModInfo, report: ModValidationReport) -> None:
+        errors: dict[str, list[str]] = {}
+        warnings: dict[str, list[str]] = {}
+        self._collect_version_issues(mod.manifest, errors, warnings)
+        for messages in errors.values():
+            for message in messages:
+                report.add(
+                    ValidationSeverity.ERROR,
+                    "mod.yaml.version",
+                    message,
+                    code="mod_version_incompatible",
+                    ref_id=mod.manifest.id,
+                )
+        for messages in warnings.values():
+            for message in messages:
+                report.add(
+                    ValidationSeverity.WARNING,
+                    "mod.yaml.version",
+                    message,
+                    code="mod_version_warning",
+                    ref_id=mod.manifest.id,
+                )
+
+    def _collect_version_issues(
+        self,
+        manifest: ModManifest,
+        errors: dict[str, list[str]],
+        warnings: dict[str, list[str]],
+    ) -> None:
+        self._collect_engine_issues(manifest, errors, warnings)
+        self._collect_content_schema_issues(manifest, errors, warnings)
+
+    def _collect_engine_issues(
+        self,
+        manifest: ModManifest,
+        errors: dict[str, list[str]],
+        warnings: dict[str, list[str]],
+    ) -> None:
+        if compare_versions(CURRENT_ENGINE_VERSION, manifest.engine_version_min) < 0:
+            errors.setdefault(manifest.id, []).append(
+                f"Engine {CURRENT_ENGINE_VERSION} is below required minimum {manifest.engine_version_min}."
+            )
+        if manifest.engine_version_max and compare_versions(CURRENT_ENGINE_VERSION, manifest.engine_version_max) > 0:
+            errors.setdefault(manifest.id, []).append(
+                f"Engine {CURRENT_ENGINE_VERSION} is above supported maximum {manifest.engine_version_max}."
+            )
+
+    def _collect_content_schema_issues(
+        self,
+        manifest: ModManifest,
+        errors: dict[str, list[str]],
+        warnings: dict[str, list[str]],
+    ) -> None:
+        if compare_versions(CURRENT_GAME_STATE_SCHEMA_VERSION, manifest.content_schema_version) != 0:
+            warnings.setdefault(manifest.id, []).append(
+                f"Content schema {manifest.content_schema_version} differs from engine schema "
+                f"{CURRENT_GAME_STATE_SCHEMA_VERSION}."
+            )
 
     def _validate_no_executable_code(self, mod: ModInfo, report: ModValidationReport) -> None:
         try:
@@ -259,6 +411,36 @@ def _read_yaml_mapping(path: Path) -> dict[str, Any]:
 
 def _is_safe_id(value: str) -> bool:
     return bool(value) and all(character.isalnum() or character in {"_", "-"} for character in value)
+
+
+def parse_version(value: str) -> tuple[int, ...]:
+    parts: list[int] = []
+    for raw_part in value.replace("-", ".").split("."):
+        digits = "".join(character for character in raw_part if character.isdigit())
+        if digits == "":
+            break
+        parts.append(int(digits))
+    return tuple(parts or [0])
+
+
+def compare_versions(left: str, right: str) -> int:
+    left_parts = list(parse_version(left))
+    right_parts = list(parse_version(right))
+    length = max(len(left_parts), len(right_parts))
+    left_parts.extend([0] * (length - len(left_parts)))
+    right_parts.extend([0] * (length - len(right_parts)))
+    if left_parts < right_parts:
+        return -1
+    if left_parts > right_parts:
+        return 1
+    return 0
+
+
+def _dependency_id(value: str) -> str:
+    for operator in [">=", "<=", "==", ">", "<"]:
+        if operator in value:
+            return value.split(operator, 1)[0].strip()
+    return value.strip()
 
 
 def _file_from_path(path: str) -> str:

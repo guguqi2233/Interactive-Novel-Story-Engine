@@ -4,6 +4,7 @@ from uuid import uuid4
 from pydantic import BaseModel, Field
 
 from app.core.event_log import Event, EventLog
+from app.core.instrumentation import PerformanceSpan, get_performance_recorder, performance_logging_enabled
 from app.core.state_delta import StateDelta, StateDeltaOperation, apply_delta
 from app.core.world_state import GameState
 from app.engine.action_dispatcher import ActionDispatcher
@@ -43,7 +44,9 @@ class GameLoop:
         self.rng = rng or Random()
 
     def step(self, player_input: str, tone: str = "quiet") -> GameLoopResult:
-        intent = self.intent_parser.parse(player_input)
+        perf_span = PerformanceSpan("game_loop.step", tags={"world_id": self.state.world_id})
+        with perf_span.stage("intent_parse"):
+            intent = self.intent_parser.parse(player_input)
 
         if intent.requires_clarification:
             narrative = NarrativeResult(
@@ -86,23 +89,26 @@ class GameLoop:
             )
 
         original_state = self.state
-        action_result = self.action_dispatcher.resolve(intent, original_state, self.rng)
+        with perf_span.stage("action_resolve"):
+            action_result = self.action_dispatcher.resolve(intent, original_state, self.rng)
         next_state = self.state
         action_deltas = action_result.state_deltas
         event_deltas = list(action_deltas)
 
-        for delta in action_deltas:
-            next_state = apply_delta(next_state, delta)
+        with perf_span.stage("apply_delta"):
+            for delta in action_deltas:
+                next_state = apply_delta(next_state, delta)
 
         if action_result.success_level in {SuccessLevel.SUCCESS, SuccessLevel.PARTIAL_SUCCESS}:
-            quest_deltas = resolve_quest_triggers(
-                original_state,
-                next_state,
-                intent,
-                action_result,
-            )
-            for delta in quest_deltas:
-                next_state = apply_delta(next_state, delta)
+            with perf_span.stage("apply_delta"):
+                quest_deltas = resolve_quest_triggers(
+                    original_state,
+                    next_state,
+                    intent,
+                    action_result,
+                )
+                for delta in quest_deltas:
+                    next_state = apply_delta(next_state, delta)
             event_deltas.extend(quest_deltas)
 
             turn_delta = StateDelta(
@@ -111,25 +117,28 @@ class GameLoop:
                 value=1,
                 reason="Successful player action advances the game turn.",
             )
-            next_state = apply_delta(next_state, turn_delta)
+            with perf_span.stage("apply_delta"):
+                next_state = apply_delta(next_state, turn_delta)
             event_deltas.append(turn_delta)
 
         system_events: list[Event] = []
         if action_result.success_level in {SuccessLevel.SUCCESS, SuccessLevel.PARTIAL_SUCCESS}:
-            tick_result = run_world_tick(next_state, self.rng)
-            if tick_result.state_deltas:
-                for delta in tick_result.state_deltas:
-                    next_state = apply_delta(next_state, delta)
-            if tick_result.event is not None:
-                system_events.append(tick_result.event)
+            with perf_span.stage("world_tick"):
+                tick_result = run_world_tick(next_state, self.rng)
+                if tick_result.state_deltas:
+                    for delta in tick_result.state_deltas:
+                        next_state = apply_delta(next_state, delta)
+                if tick_result.event is not None:
+                    system_events.append(tick_result.event)
 
-        narrative = self.narrator.render(
-            player_input=player_input,
-            action_result=action_result,
-            visible_facts=action_result.visible_facts,
-            current_location=next_state.player.location_id,
-            tone=tone,
-        )
+        with perf_span.stage("narrator"):
+            narrative = self.narrator.render(
+                player_input=player_input,
+                action_result=action_result,
+                visible_facts=action_result.visible_facts,
+                current_location=next_state.player.location_id,
+                tone=tone,
+            )
         event = Event(
             event_id=str(uuid4()),
             turn=next_state.turn,
@@ -145,8 +154,9 @@ class GameLoop:
         )
         crime_deltas = resolve_crime_from_event(event, next_state)
         if crime_deltas:
-            for delta in crime_deltas:
-                next_state = apply_delta(next_state, delta)
+            with perf_span.stage("apply_delta"):
+                for delta in crime_deltas:
+                    next_state = apply_delta(next_state, delta)
             system_events.append(
                 build_crime_event(
                     event_id=str(uuid4()),
@@ -158,6 +168,15 @@ class GameLoop:
         self.event_log.append(event)
         for system_event in system_events:
             self.event_log.append(system_event)
+        if performance_logging_enabled():
+            get_performance_recorder().record(
+                perf_span.finish(
+                    tags={
+                        "action_type": intent.action_type.value,
+                        "result": action_result.success_level.value,
+                    }
+                )
+            )
 
         return GameLoopResult(
             state=self.state,

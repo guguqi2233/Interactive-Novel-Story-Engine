@@ -1,0 +1,42 @@
+{
+  "save_id": "fixture-old-content-version",
+  "engine_version": "0.5.0",
+  "schema_version": "0.5",
+  "world_id": "fixture_world",
+  "world_version": "0.5.0",
+  "content_pack_version": "0.1.0",
+  "migration_history": [],
+  "state": {
+    "schema_version": "0.5",
+    "world_id": "fixture_world",
+    "turn": 8,
+    "player": {
+      "location_id": "square"
+    },
+    "locations": {
+      "square": {
+        "id": "square",
+        "name": "Fixture Square",
+        "exits": {}
+      }
+    },
+    "objects": {},
+    "npcs": {},
+    "flags": {},
+    "facts": {},
+    "player_visible_facts": [],
+    "npc_knowledge": {},
+    "quests": {},
+    "delayed_consequences": [],
+    "factions": {},
+    "rumors": {},
+    "crimes": {},
+    "witnesses": {},
+    "social_consequences": {},
+    "social_flags": {},
+    "relationships": {},
+    "combats": {}
+  },
+  "events": [],
+  "memories": []
+}

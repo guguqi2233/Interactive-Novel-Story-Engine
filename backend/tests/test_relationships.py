@@ -99,6 +99,51 @@ def test_hidden_relationship_does_not_enter_visible_state() -> None:
     assert [item.id for item in get_visible_relationships(state)] == ["harlan_mira_trust"]
 
 
+def test_known_relationship_with_hidden_endpoint_does_not_enter_visible_state() -> None:
+    state = make_state()
+    state.npcs["shadow"] = NPCState(
+        id="shadow",
+        location_id="square",
+        visible=True,
+        hidden=True,
+    )
+    state.relationships["shadow_player"] = RelationshipState(
+        id="shadow_player",
+        source_id="shadow",
+        target_id="player",
+        relation_type="watching",
+        known_by_player=True,
+    )
+
+    payload = build_visible_state(state).model_dump(mode="json")
+
+    assert "shadow_player" not in str(payload)
+    assert "shadow" not in str(payload)
+    assert "shadow_player" not in {item.id for item in get_visible_relationships(state)}
+
+
+def test_known_relationship_with_discovered_hidden_endpoint_can_enter_visible_state() -> None:
+    state = make_state()
+    state.npcs["shadow"] = NPCState(
+        id="shadow",
+        location_id="square",
+        visible=True,
+        hidden=True,
+        discovered_by=["player"],
+    )
+    state.relationships["shadow_player"] = RelationshipState(
+        id="shadow_player",
+        source_id="shadow",
+        target_id="player",
+        relation_type="watching",
+        known_by_player=True,
+    )
+
+    visible_ids = {item.id for item in get_visible_relationships(state)}
+
+    assert "shadow_player" in visible_ids
+
+
 def test_rumor_spreads_to_high_trust_npc() -> None:
     state = make_state()
     state.rumors["bridge_rumor"] = RumorState(

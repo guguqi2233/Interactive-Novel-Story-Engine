@@ -1,0 +1,58 @@
+{
+  "save_id": "fixture-v03",
+  "engine_version": "0.3.0",
+  "schema_version": "0.3",
+  "world_id": "fixture_world",
+  "world_version": "0.3.0",
+  "content_pack_version": "0.3.0",
+  "migration_history": [],
+  "state": {
+    "schema_version": "0.3",
+    "world_id": "fixture_world",
+    "turn": 3,
+    "player": {
+      "location_id": "square"
+    },
+    "locations": {
+      "square": {
+        "id": "square",
+        "name": "Fixture Square",
+        "exits": {}
+      }
+    },
+    "objects": {},
+    "npcs": {},
+    "flags": {},
+    "facts": {
+      "public_notice": {
+        "id": "public_notice",
+        "text": "The square is open.",
+        "visibility": "public"
+      }
+    },
+    "player_visible_facts": [
+      "public_notice"
+    ],
+    "npc_knowledge": {},
+    "quests": {},
+    "delayed_consequences": []
+  },
+  "events": [
+    {
+      "event_id": "fixture-v03-event-1",
+      "turn": 1,
+      "actor_id": "player",
+      "action_type": "observe",
+      "result": "success",
+      "visible_to_player": true,
+      "state_deltas": [
+        {
+          "operation": "inc",
+          "path": "turn",
+          "value": 1
+        }
+      ]
+    }
+  ],
+  "memories": []
+}

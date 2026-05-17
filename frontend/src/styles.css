@@ -45,6 +45,15 @@ select {
   padding: 8px 10px;
 }
 
+input,
+textarea {
+  border: 1px solid #a7b0b9;
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: #ffffff;
+  color: #1f2933;
+}
+
 .side-panel section {
   display: grid;
   gap: 8px;
@@ -136,6 +145,11 @@ select {
   background: #f8fafc;
   font-size: 11px;
   line-height: 1.4;
+}
+
+.compact-error {
+  margin: 0;
+  font-size: 12px;
 }
 
 .save-browser-actions {
@@ -267,9 +281,70 @@ select {
   font-size: 12px;
 }
 
+.graph-panel {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #c7cdd3;
+  border-radius: 6px;
+  background: #f8fafc;
+  padding: 10px;
+  margin-top: 8px;
+}
+
+.graph-panel h3,
+.graph-panel h4 {
+  margin: 0;
+  font-size: 12px;
+  color: #4c5965;
+}
+
+.graph-lists {
+  display: grid;
+  gap: 10px;
+}
+
+.mini-graph {
+  width: 100%;
+  max-width: 230px;
+  min-height: 150px;
+  border: 1px solid #d7dde2;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.mini-graph line {
+  stroke-width: 2;
+}
+
+.mini-graph .player-edge {
+  stroke: #486581;
+}
+
+.mini-graph .debug-edge {
+  stroke: #9b1c1c;
+  stroke-dasharray: 5 4;
+}
+
+.mini-graph .player-node {
+  fill: #f0f7ff;
+  stroke: #486581;
+  stroke-width: 2;
+}
+
+.mini-graph .debug-node {
+  fill: #fff1f1;
+  stroke: #9b1c1c;
+  stroke-width: 2;
+}
+
+.mini-graph text {
+  fill: #344250;
+  font-size: 9px;
+}
+
 .authoring-panel {
   display: grid;
-  grid-template-rows: auto auto minmax(280px, 1fr) auto auto;
+  grid-template-rows: auto auto auto minmax(420px, 1fr) auto auto;
   gap: 14px;
   min-height: 0;
 }
@@ -286,9 +361,24 @@ select {
   font-size: 26px;
 }
 
+.authoring-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dirty-badge {
+  border: 1px solid #b7791f;
+  background: #fff7df;
+  color: #7a4a10;
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
 .authoring-controls {
   display: grid;
-  grid-template-columns: minmax(160px, 1fr) minmax(160px, 1fr) auto auto;
+  grid-template-columns: minmax(160px, 1fr) minmax(160px, 220px) repeat(4, auto);
   gap: 10px;
   align-items: end;
 }
@@ -300,9 +390,89 @@ select {
   font-size: 13px;
 }
 
+.authoring-workspace {
+  display: grid;
+  grid-template-columns: minmax(180px, 230px) minmax(320px, 1fr) minmax(220px, 300px);
+  grid-template-rows: minmax(220px, 1fr) minmax(180px, auto);
+  grid-template-areas:
+    "tree editor preview"
+    "tree validation preview";
+  gap: 14px;
+  min-height: 0;
+}
+
+.authoring-file-tree {
+  grid-area: tree;
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  overflow: auto;
+  border-right: 1px solid #c7cdd3;
+  padding-right: 12px;
+}
+
+.authoring-file-tree h2,
+.authoring-editor-pane h2,
+.authoring-preview h2 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.authoring-file-tree h3,
+.authoring-preview h3 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: #4c5965;
+  text-transform: uppercase;
+}
+
+.file-button-list {
+  display: grid;
+  gap: 6px;
+}
+
+.file-button {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  background: #f8fafc;
+}
+
+.file-button.selected {
+  border-color: #1f2933;
+  background: #ffffff;
+}
+
+.file-category,
+.file-issues {
+  color: #64727f;
+  font-size: 11px;
+}
+
+.file-issues {
+  color: #8a5a00;
+}
+
+.authoring-editor-pane {
+  grid-area: editor;
+  display: grid;
+  grid-template-rows: auto minmax(280px, 1fr);
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.authoring-pane-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 .yaml-editor {
   width: 100%;
-  min-height: 320px;
+  min-height: 100%;
   resize: vertical;
   border: 1px solid #a7b0b9;
   border-radius: 6px;
@@ -314,6 +484,51 @@ select {
   line-height: 1.55;
 }
 
+.form-editor {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+  overflow: auto;
+  border: 1px solid #a7b0b9;
+  border-radius: 6px;
+  background: #fffdf8;
+  padding: 14px;
+}
+
+.form-editor label,
+.form-editor-empty {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.form-grid .wide-field {
+  grid-column: 1 / -1;
+}
+
+.form-grid textarea {
+  min-height: 92px;
+  resize: vertical;
+}
+
+.checkbox-field {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  align-self: end;
+  min-height: 38px;
+}
+
+.checkbox-field input {
+  width: auto;
+}
+
 .notice {
   border: 1px solid #d6b45f;
   background: #fff7df;
@@ -323,10 +538,12 @@ select {
 }
 
 .validation-panel {
+  grid-area: validation;
   display: grid;
   gap: 12px;
   border-top: 1px solid #c7cdd3;
   padding-top: 12px;
+  overflow: auto;
 }
 
 .validation-panel h2 {
@@ -349,6 +566,65 @@ select {
   gap: 8px;
   border-top: 1px solid #d7dde2;
   padding-top: 10px;
+}
+
+.diff-summary {
+  border: 1px solid #d7dde2;
+  border-radius: 6px;
+  background: #f8fafc;
+  padding: 10px;
+}
+
+.diff-summary dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: 86px minmax(0, 1fr);
+  gap: 5px 8px;
+}
+
+.diff-summary dt {
+  font-weight: 700;
+}
+
+.diff-summary dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.authoring-preview {
+  grid-area: preview;
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  overflow: auto;
+  border-left: 1px solid #c7cdd3;
+  padding-left: 12px;
+}
+
+.authoring-preview dl {
+  margin: 0;
+}
+
+.authoring-preview dt {
+  font-weight: 700;
+  margin-top: 8px;
+}
+
+.authoring-preview dd {
+  margin: 3px 0 0;
+  color: #64727f;
+  overflow-wrap: anywhere;
+}
+
+.authoring-preview pre {
+  overflow: auto;
+  max-height: 320px;
+  margin: 0;
+  padding: 12px;
+  background: #111827;
+  color: #d1d5db;
+  border-radius: 6px;
+  font-size: 12px;
 }
 
 .issue-button {
@@ -446,6 +722,25 @@ select {
   }
 
   .authoring-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .authoring-workspace {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "tree"
+      "editor"
+      "validation"
+      "preview";
+  }
+
+  .authoring-file-tree,
+  .authoring-preview {
+    border: 0;
+    padding: 0;
+  }
+
+  .form-grid {
     grid-template-columns: 1fr;
   }
 }

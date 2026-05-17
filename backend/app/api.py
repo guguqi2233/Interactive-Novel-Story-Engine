@@ -96,6 +96,16 @@ class VisibleFactionConflictResponse(BaseModel):
     conflict_tags: list[str] = Field(default_factory=list)
 
 
+class VisibleCombatSummaryResponse(BaseModel):
+    combat_id: str
+    location_id: str
+    status: str
+    player_stance: str
+    player_condition: str
+    player_status_effects: list[str] = Field(default_factory=list)
+    visible_combatants: list[str] = Field(default_factory=list)
+
+
 class VisibleStateResponse(BaseModel):
     world_id: str
     turn: int
@@ -111,6 +121,7 @@ class VisibleStateResponse(BaseModel):
     known_crimes: list[VisibleCrimeResponse] = Field(default_factory=list)
     relationships: list[VisibleRelationshipResponse] = Field(default_factory=list)
     faction_conflicts: list[VisibleFactionConflictResponse] = Field(default_factory=list)
+    active_combat: VisibleCombatSummaryResponse | None = None
 
 
 class StartGameRequest(BaseModel):
@@ -152,6 +163,7 @@ class SaveSummaryResponse(BaseModel):
     created_at: str
     updated_at: str
     player_summary: str | None = None
+    enabled_mods: dict[str, str] = Field(default_factory=dict)
 
 
 class SaveListResponse(BaseModel):
@@ -177,6 +189,49 @@ class LoadGameResponse(BaseModel):
     turn: int
 
 
+class MigrationHistoryEntryResponse(BaseModel):
+    migration_id: str
+    source_version: str
+    target_version: str
+    description: str
+    applied_at: str
+
+
+class SaveMigrationStatusResponse(BaseModel):
+    save_id: str
+    engine_version: str
+    schema_version: str
+    world_id: str
+    world_version: str
+    content_pack_version: str
+    needs_migration: bool
+    target_schema_version: str
+    migration_path: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class MigrationInfoResponse(BaseModel):
+    migration_id: str
+    source_version: str
+    target_version: str
+    description: str
+
+
+class MigrationListResponse(BaseModel):
+    migrations: list[MigrationInfoResponse] = Field(default_factory=list)
+
+
+class SaveMigrationResponse(BaseModel):
+    save_id: str
+    source_version: str
+    target_version: str
+    dry_run: bool
+    backup_save_id: str | None = None
+    success: bool
+    warnings: list[str] = Field(default_factory=list)
+    applied_migrations: list[MigrationHistoryEntryResponse] = Field(default_factory=list)
+
+
 class DebugEventResponse(BaseModel):
     turn: int
     event_id: str
@@ -191,6 +246,36 @@ class DebugEventResponse(BaseModel):
 class DebugEventListResponse(BaseModel):
     local_only: bool = True
     events: list[DebugEventResponse] = Field(default_factory=list)
+
+
+class DebugPerformanceSampleResponse(BaseModel):
+    sample_id: str
+    name: str
+    duration_ms: float
+    started_at: str
+    stage_durations_ms: dict[str, float] = Field(default_factory=dict)
+    tags: dict[str, str] = Field(default_factory=dict)
+
+
+class DebugPerformanceRecentResponse(BaseModel):
+    local_only: bool = True
+    enabled: bool
+    samples: list[DebugPerformanceSampleResponse] = Field(default_factory=list)
+
+
+class DebugPerformanceSummaryEntryResponse(BaseModel):
+    name: str
+    count: int
+    total_duration_ms: float
+    average_duration_ms: float
+    max_duration_ms: float
+
+
+class DebugPerformanceSummaryResponse(BaseModel):
+    local_only: bool = True
+    enabled: bool
+    sample_count: int
+    entries: list[DebugPerformanceSummaryEntryResponse] = Field(default_factory=list)
 
 
 class AuthoringValidationIssueResponse(BaseModel):
@@ -248,6 +333,46 @@ class AuthoringFileWriteRequest(BaseModel):
     content: str
 
 
+class AuthoringDraftFileRequest(BaseModel):
+    file_name: str
+    proposed_content: str
+
+
+class AuthoringDiffSummaryResponse(BaseModel):
+    added_ids: list[str] = Field(default_factory=list)
+    removed_ids: list[str] = Field(default_factory=list)
+    changed_ids: list[str] = Field(default_factory=list)
+    line_count_before: int = 0
+    line_count_after: int = 0
+
+
+class AuthoringImpactAnalysisResponse(BaseModel):
+    removed_ids: list[str] = Field(default_factory=list)
+    renamed_ids: list[str] = Field(default_factory=list)
+    changed_location_exits: list[str] = Field(default_factory=list)
+    removed_locations: list[str] = Field(default_factory=list)
+    removed_npcs: list[str] = Field(default_factory=list)
+    removed_items: list[str] = Field(default_factory=list)
+    removed_facts: list[str] = Field(default_factory=list)
+    removed_quests: list[str] = Field(default_factory=list)
+    removed_factions: list[str] = Field(default_factory=list)
+    may_break_saves: bool = False
+    notes: list[str] = Field(default_factory=list)
+
+
+class AuthoringFilePreviewResponse(BaseModel):
+    local_only: bool = True
+    world_id: str
+    file_name: str
+    parsed_ok: bool
+    validation_report: AuthoringValidationResponse
+    normalized_yaml: str | None = None
+    diff_summary: AuthoringDiffSummaryResponse
+    affected_refs: list[str] = Field(default_factory=list)
+    potential_save_migration_required: bool = False
+    impact: AuthoringImpactAnalysisResponse
+
+
 class AuthoringFileWriteResponse(BaseModel):
     local_only: bool = True
     world_id: str
@@ -274,8 +399,13 @@ class AuthoringModSummaryResponse(BaseModel):
     version: str
     engine_version_min: str
     engine_version_max: str | None = None
+    content_schema_version: str = ""
     dependencies: list[str] = Field(default_factory=list)
+    optional_dependencies: list[str] = Field(default_factory=list)
     conflicts: list[str] = Field(default_factory=list)
+    load_order_hint: int = 0
+    compatible_worlds: list[str] = Field(default_factory=list)
+    migration_notes: str = ""
     entry_worlds: list[str] = Field(default_factory=list)
     content_paths: list[str] = Field(default_factory=list)
     author: str | None = None

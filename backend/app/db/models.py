@@ -6,6 +6,13 @@ from pydantic import BaseModel, Field
 class SaveGame(BaseModel):
     save_id: str
     state_json: str
+    engine_version: str = "legacy"
+    schema_version: str = "legacy"
+    world_id: str = "unknown"
+    world_version: str = "unknown"
+    content_pack_version: str = "unknown"
+    enabled_mods: str = "[]"
+    migration_history: str = "[]"
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 

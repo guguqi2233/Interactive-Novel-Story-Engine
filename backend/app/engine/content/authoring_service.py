@@ -1,10 +1,19 @@
 from pathlib import Path
+from shutil import copytree
+from tempfile import TemporaryDirectory
+from time import perf_counter
 from typing import Any
 
 import yaml
 from pydantic import BaseModel
 
-from app.engine.content.validator import ValidationReport, validate_world_pack
+from app.core.instrumentation import record_performance_sample
+from app.engine.content.validator import (
+    ValidationIssue,
+    ValidationReport,
+    ValidationSeverity,
+    validate_world_pack,
+)
 from app.engine.content.world_loader import WorldManifest
 
 
@@ -42,6 +51,38 @@ class AuthoringWorldSummary(BaseModel):
     description: str = ""
     version: str | None = None
     file_count: int = 0
+
+
+class AuthoringDiffSummary(BaseModel):
+    added_ids: list[str] = []
+    removed_ids: list[str] = []
+    changed_ids: list[str] = []
+    line_count_before: int = 0
+    line_count_after: int = 0
+
+
+class AuthoringImpactReport(BaseModel):
+    removed_ids: list[str] = []
+    renamed_ids: list[str] = []
+    changed_location_exits: list[str] = []
+    removed_locations: list[str] = []
+    removed_npcs: list[str] = []
+    removed_items: list[str] = []
+    removed_facts: list[str] = []
+    removed_quests: list[str] = []
+    removed_factions: list[str] = []
+    may_break_saves: bool = False
+    notes: list[str] = []
+
+
+class AuthoringPreviewReport(BaseModel):
+    parsed_ok: bool
+    validation_report: ValidationReport
+    normalized_yaml: str | None = None
+    diff_summary: AuthoringDiffSummary
+    affected_refs: list[str] = []
+    potential_save_migration_required: bool = False
+    impact: AuthoringImpactReport
 
 
 class ContentAuthoringService:
@@ -94,7 +135,125 @@ class ContentAuthoringService:
 
     def validate_world(self, world_id: str) -> ValidationReport:
         self._safe_world_path(world_id)
-        return validate_world_pack(world_id, worlds_root=self.worlds_root)
+        started = perf_counter()
+        report = validate_world_pack(world_id, worlds_root=self.worlds_root)
+        record_performance_sample(
+            "authoring.validation",
+            (perf_counter() - started) * 1000,
+            tags={"world_id": world_id},
+        )
+        return report
+
+    def preview_file_change(
+        self,
+        world_id: str,
+        file_name: str,
+        proposed_content: str,
+    ) -> AuthoringPreviewReport:
+        path = self._safe_file_path(world_id, file_name)
+        old_content = path.read_text(encoding="utf-8") if path.exists() else ""
+        parse_error: str | None = None
+        parsed_data: dict[str, Any] | None = None
+        try:
+            parsed_data = self._parse_yaml(proposed_content, file_name)
+        except AuthoringError as exc:
+            parse_error = str(exc)
+
+        report = self.validate_draft(world_id, file_name, proposed_content)
+        if parse_error:
+            report.add(
+                ValidationSeverity.ERROR,
+                file_name,
+                parse_error,
+                code="draft_yaml_parse_error",
+                suggestion="Fix YAML syntax before saving.",
+            )
+
+        impact = self.analyze_file_impact(world_id, file_name, proposed_content)
+        diff_summary = _diff_summary(file_name, old_content, proposed_content)
+        affected_refs = sorted(
+            set(diff_summary.added_ids)
+            | set(diff_summary.removed_ids)
+            | set(diff_summary.changed_ids)
+            | set(impact.changed_location_exits)
+        )
+        return AuthoringPreviewReport(
+            parsed_ok=parse_error is None,
+            validation_report=report,
+            normalized_yaml=(
+                yaml.safe_dump(parsed_data, sort_keys=False, allow_unicode=True)
+                if parsed_data is not None
+                else None
+            ),
+            diff_summary=diff_summary,
+            affected_refs=affected_refs,
+            potential_save_migration_required=impact.may_break_saves,
+            impact=impact,
+        )
+
+    def validate_draft(
+        self,
+        world_id: str,
+        file_name: str,
+        proposed_content: str,
+    ) -> ValidationReport:
+        self._safe_file_path(world_id, file_name)
+        try:
+            self._parse_yaml(proposed_content, file_name)
+        except AuthoringError as exc:
+            report = ValidationReport(world_id=world_id)
+            report.add(
+                ValidationSeverity.ERROR,
+                file_name,
+                str(exc),
+                code="draft_yaml_parse_error",
+                suggestion="Fix YAML syntax before saving.",
+            )
+            return report
+        return self._validate_with_draft_file(world_id, file_name, proposed_content)
+
+    def analyze_file_impact(
+        self,
+        world_id: str,
+        file_name: str,
+        proposed_content: str,
+    ) -> AuthoringImpactReport:
+        path = self._safe_file_path(world_id, file_name)
+        old_content = path.read_text(encoding="utf-8") if path.exists() else ""
+        old_data = _safe_parse_mapping(old_content)
+        new_data = _safe_parse_mapping(proposed_content)
+        old_ids = _ids_for_file(file_name, old_data)
+        new_ids = _ids_for_file(file_name, new_data)
+        removed_ids = sorted(old_ids - new_ids)
+        added_ids = sorted(new_ids - old_ids)
+        renamed_ids = _guess_renamed_ids(removed_ids, added_ids)
+        changed_location_exits = (
+            _changed_location_exits(old_data, new_data) if file_name == "locations.yaml" else []
+        )
+        removed_by_kind = {
+            "locations.yaml": "removed_locations",
+            "npcs.yaml": "removed_npcs",
+            "items.yaml": "removed_items",
+            "facts.yaml": "removed_facts",
+            "quests.yaml": "removed_quests",
+            "factions.yaml": "removed_factions",
+        }
+        impact = AuthoringImpactReport(
+            removed_ids=removed_ids,
+            renamed_ids=renamed_ids,
+            changed_location_exits=changed_location_exits,
+            may_break_saves=bool(removed_ids or renamed_ids or changed_location_exits),
+        )
+        field_name = removed_by_kind.get(file_name)
+        if field_name:
+            setattr(impact, field_name, removed_ids)
+        if removed_ids:
+            impact.notes.append("Removed ids may break existing saves or references.")
+        if changed_location_exits:
+            impact.notes.append("Changed exits may affect navigation and saved player/NPC positions.")
+        if renamed_ids:
+            impact.notes.append("Potential renames require manual save/content review.")
+        return impact
 
     def create_world(
         self,
@@ -144,6 +303,19 @@ class ContentAuthoringService:
         if world_path.resolve() != path.parent:
             raise AuthoringError("Content file path escapes world pack")
         return path
+
+    def _validate_with_draft_file(
+        self,
+        world_id: str,
+        file_name: str,
+        proposed_content: str,
+    ) -> ValidationReport:
+        world_path = self._safe_world_path(world_id)
+        with TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir) / "worlds"
+            copytree(world_path, tmp_root / world_id)
+            (tmp_root / world_id / file_name).write_text(proposed_content, encoding="utf-8")
+            return validate_world_pack(world_id, worlds_root=tmp_root)
 
     def _read_manifest(self, path: Path) -> WorldManifest | None:
         if not path.exists():
@@ -198,3 +370,79 @@ class ContentAuthoringService:
 
 def _is_safe_id(value: str) -> bool:
     return bool(value) and all(character.isalnum() or character in {"_", "-"} for character in value)
+
+
+def _safe_parse_mapping(content: str) -> dict[str, Any]:
+    try:
+        data = yaml.safe_load(content) or {}
+    except yaml.YAMLError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _ids_for_file(file_name: str, data: dict[str, Any]) -> set[str]:
+    key = LIST_FILE_KEYS.get(file_name)
+    if key is None:
+        return set()
+    raw_items = data.get(key, [])
+    if not isinstance(raw_items, list):
+        return set()
+    return {
+        str(item["id"])
+        for item in raw_items
+        if isinstance(item, dict) and item.get("id") is not None
+    }
+
+
+def _items_by_id(file_name: str, data: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    key = LIST_FILE_KEYS.get(file_name)
+    if key is None:
+        return {}
+    raw_items = data.get(key, [])
+    if not isinstance(raw_items, list):
+        return {}
+    return {
+        str(item["id"]): item
+        for item in raw_items
+        if isinstance(item, dict) and item.get("id") is not None
+    }
+
+
+def _diff_summary(file_name: str, before: str, after: str) -> AuthoringDiffSummary:
+    before_data = _safe_parse_mapping(before)
+    after_data = _safe_parse_mapping(after)
+    before_items = _items_by_id(file_name, before_data)
+    after_items = _items_by_id(file_name, after_data)
+    before_ids = set(before_items)
+    after_ids = set(after_items)
+    changed_ids = sorted(
+        item_id
+        for item_id in before_ids & after_ids
+        if before_items[item_id] != after_items[item_id]
+    )
+    return AuthoringDiffSummary(
+        added_ids=sorted(after_ids - before_ids),
+        removed_ids=sorted(before_ids - after_ids),
+        changed_ids=changed_ids,
+        line_count_before=len(before.splitlines()),
+        line_count_after=len(after.splitlines()),
+    )
+
+
+def _changed_location_exits(
+    before_data: dict[str, Any],
+    after_data: dict[str, Any],
+) -> list[str]:
+    before_locations = _items_by_id("locations.yaml", before_data)
+    after_locations = _items_by_id("locations.yaml", after_data)
+    changed: list[str] = []
+    for location_id in sorted(set(before_locations) & set(after_locations)):
+        if before_locations[location_id].get("exits", {}) != after_locations[location_id].get("exits", {}):
+            changed.append(location_id)
+    return changed
+
+
+def _guess_renamed_ids(removed_ids: list[str], added_ids: list[str]) -> list[str]:
+    if len(removed_ids) == 1 and len(added_ids) == 1:
+        return [f"{removed_ids[0]} -> {added_ids[0]}"]
+    return []

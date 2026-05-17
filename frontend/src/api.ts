@@ -99,9 +99,13 @@ export type VisibleActorCondition = {
 };
 
 export type ActiveCombatSummary = {
-  id: string;
+  combat_id: string;
+  location_id: string;
   status: string;
-  combatants?: string[];
+  player_stance: string;
+  player_condition: string;
+  player_status_effects: string[];
+  visible_combatants: string[];
 };
 
 export type StateDelta = {
@@ -127,6 +131,33 @@ export type DebugEvent = {
 export type DebugEventListResponse = {
   local_only: boolean;
   events: DebugEvent[];
+};
+
+export type GraphVisibility = "player_visible" | "debug_only";
+
+export type GraphNode = {
+  id: string;
+  label: string;
+  type: "npc" | "faction" | "player" | "location" | "quest";
+  visibility: GraphVisibility;
+  tags: string[];
+};
+
+export type GraphEdge = {
+  source: string;
+  target: string;
+  type: string;
+  weight?: number | null;
+  label?: string | null;
+  visibility: GraphVisibility;
+  metadata_safe?: Record<string, string | number | boolean>;
+};
+
+export type GraphResponse = {
+  local_only: boolean;
+  scope: GraphVisibility;
+  nodes: GraphNode[];
+  edges: GraphEdge[];
 };
 
 export type AuthoringValidationIssue = {
@@ -185,6 +216,41 @@ export type AuthoringFileWriteResponse = {
   world_id: string;
   file_name: string;
   validation: AuthoringValidation;
+};
+
+export type AuthoringDiffSummary = {
+  added_ids: string[];
+  removed_ids: string[];
+  changed_ids: string[];
+  line_count_before: number;
+  line_count_after: number;
+};
+
+export type AuthoringImpactAnalysis = {
+  removed_ids: string[];
+  renamed_ids: string[];
+  changed_location_exits: string[];
+  removed_locations: string[];
+  removed_npcs: string[];
+  removed_items: string[];
+  removed_facts: string[];
+  removed_quests: string[];
+  removed_factions: string[];
+  may_break_saves: boolean;
+  notes: string[];
+};
+
+export type AuthoringFilePreviewResponse = {
+  local_only: boolean;
+  world_id: string;
+  file_name: string;
+  parsed_ok: boolean;
+  validation_report: AuthoringValidation;
+  normalized_yaml?: string | null;
+  diff_summary: AuthoringDiffSummary;
+  affected_refs: string[];
+  potential_save_migration_required: boolean;
+  impact: AuthoringImpactAnalysis;
 };
 
 export type VisibleState = {
@@ -326,6 +392,28 @@ export async function fetchSaveDebugEvents(saveId: string): Promise<DebugEventLi
   return requestJson<DebugEventListResponse>(`/debug/saves/${encodeURIComponent(saveId)}/events`);
 }
 
+export async function fetchPlayerRelationshipGraph(sessionId: string): Promise<GraphResponse> {
+  return requestJson<GraphResponse>(
+    `/game/${encodeURIComponent(sessionId)}/graphs/relationships`
+  );
+}
+
+export async function fetchPlayerFactionGraph(sessionId: string): Promise<GraphResponse> {
+  return requestJson<GraphResponse>(`/game/${encodeURIComponent(sessionId)}/graphs/factions`);
+}
+
+export async function fetchDebugRelationshipGraph(sessionId: string): Promise<GraphResponse> {
+  return requestJson<GraphResponse>(
+    `/debug/sessions/${encodeURIComponent(sessionId)}/graphs/relationships`
+  );
+}
+
+export async function fetchDebugFactionGraph(sessionId: string): Promise<GraphResponse> {
+  return requestJson<GraphResponse>(
+    `/debug/sessions/${encodeURIComponent(sessionId)}/graphs/factions`
+  );
+}
+
 export async function fetchAuthoringWorlds(): Promise<AuthoringWorldListResponse> {
   return requestJson<AuthoringWorldListResponse>("/authoring/worlds");
 }
@@ -373,6 +461,26 @@ export async function validateAuthoringWorld(worldId: string): Promise<Authoring
     `/authoring/worlds/${encodeURIComponent(worldId)}/validate`,
     {
       method: "POST"
+    }
+  );
+}
+
+export async function previewAuthoringFileChange(
+  worldId: string,
+  fileName: string,
+  proposedContent: string
+): Promise<AuthoringFilePreviewResponse> {
+  return requestJson<AuthoringFilePreviewResponse>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/preview-file-change`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        file_name: fileName,
+        proposed_content: proposedContent
+      })
     }
   );
 }

@@ -41,7 +41,7 @@ All handled player actions, system ticks, NPC planning ticks, and system consequ
 
 Authoring APIs edit content-pack YAML, not active `GameState`. Procedural quest generation produces drafts only.
 
-## Current v0.5 Gameplay Loop
+## Current v0.6 Gameplay Loop
 
 1. Player submits text through API or frontend.
 2. `IntentParser` returns schema-validated `PlayerIntent`.
@@ -56,7 +56,7 @@ Authoring APIs edit content-pack YAML, not active `GameState`. Procedural quest 
 11. Narrator receives visible action facts and returns `NarrativeResult`.
 12. API returns narration plus filtered `visible_state`.
 
-## v0.5 Included Scope
+## v0.6 Included Scope
 
 Backend:
 
@@ -66,6 +66,10 @@ Backend:
 - Content-pack validation CLI and structured validation report.
 - Local authoring API for whitelisted YAML files.
 - Content-only mod manifest discovery and validation.
+- Save migration status, dry-run, apply, backup metadata, and CLI.
+- Authoring diff/preview/dry-run and content impact analysis.
+- Relationship/faction graph APIs in player-safe and debug scopes.
+- Debug performance APIs for local timing samples.
 - Multi-world save browser summaries.
 - LLM provider factory using `LLM_PROVIDER`.
 
@@ -84,6 +88,8 @@ World engine:
 - Crime and witness system.
 - Social consequence tick.
 - Combat core: attack, defend, flee.
+- Advanced combat slice: guarded/stunned/bleeding, cautious/fleeing stances,
+  non-lethal attack, flee risk, and visible combat summary.
 - Injury, death, and incapacitation rules.
 - NPC reaction rules.
 - NPC goals and deterministic NPC planning tick.
@@ -104,6 +110,9 @@ Frontend:
 - Player-visible social/status panels.
 - Local debug timeline and classified debug panels.
 - Authoring panel for reading/editing/saving/validating content-pack YAML.
+- Lightweight graph panels for player-visible and debug relationship/faction
+  graph data.
+- Local studio launcher prototype documented for Windows PowerShell.
 
 Testing:
 
@@ -111,7 +120,9 @@ Testing:
 - FastAPI tests.
 - SQLite save/load tests with temporary databases.
 - Boundary eval tests for narrative visibility leaks.
-- v0.3, v0.4, and v0.5 integration regression tests.
+- v0.3, v0.4, v0.5, and v0.6 integration regression tests.
+- Migration compatibility fixtures.
+- Deterministic playtesting agents and narrative quality evals.
 - Fake/mock LLM providers in automated tests.
 
 ## Persistence Model
@@ -175,6 +186,11 @@ They can show raw `state_deltas`, including hidden/system-only information. They
 
 The frontend shows debug data only in the debug panel.
 
+Performance debug endpoints are also controlled by `ENABLE_DEBUG_API`.
+Performance recording is controlled by `ENABLE_PERF_LOGGING`, stores samples in
+memory, and must not record prompt text, API keys, hidden fact text, raw
+`GameState`, or raw `state_deltas`.
+
 ## Authoring Model
 
 Authoring endpoints are local-development tools controlled by `ENABLE_AUTHORING_API`.
@@ -182,6 +198,24 @@ Authoring endpoints are local-development tools controlled by `ENABLE_AUTHORING_
 They can list, read, save, and validate whitelisted YAML files in content packs. They are not player APIs and may show hidden world content to the local author.
 
 Authoring saves YAML files and runs validation. It does not write active session `GameState`.
+
+v0.6 authoring preview/dry-run endpoints parse proposed YAML, validate it in a
+temporary draft, calculate diff/impact summaries, and report possible save
+migration risk without writing disk or active saves.
+
+## Save Migration Model
+
+Saves carry engine/schema/world/content metadata and migration history. The
+v0.6 migration system can report status, dry-run, and apply migration with a
+backup. Migrations are deterministic code, do not call LLMs, must preserve
+EventLog, and must not reclassify hidden/debug data as player-visible.
+
+## Correctness Over Performance
+
+Performance instrumentation and future optimizations must not bypass
+`StateDelta`, `EventLog`, Pydantic/schema validation, content validation,
+visibility filtering, provider abstraction, or migration validation. A faster
+path that weakens rule correctness or privacy is invalid.
 
 ## Forbidden Practices
 
@@ -197,7 +231,7 @@ Authoring saves YAML files and runs validation. It does not write active session
 - Do not let authoring or mod packaging execute arbitrary code.
 - Do not let procedural side quest generation write active saves or content files without explicit authoring review/export.
 
-## Not In v0.5
+## Not In v0.6
 
 - Hosted service security, auth, accounts, cloud sync, or multiplayer.
 - Tactical grid combat or multi-round combat AI.
@@ -209,8 +243,14 @@ Authoring saves YAML files and runs validation. It does not write active session
 - Arbitrary plugin code execution or online mod download.
 - Full vector database or embedding pipeline as a hard dependency.
 - Automatic content repair.
+- Formal desktop installer, code signing, or auto-update.
+- External LLM judge for narrative quality.
+- Required local model server or mandatory local LLM integration.
+- Production APM, telemetry upload, or hosted monitoring.
+- Complex mod version SAT solving or online mod download.
+- Any performance optimization that bypasses correctness boundaries.
 
-## v0.5 Known Hardening Items
+## v0.6 Known Hardening Items
 
 - Split `ActionResult.reason` into player-safe and debug-only reason fields.
 - Move raw faction reputation out of player API.
@@ -219,3 +259,9 @@ Authoring saves YAML files and runs validation. It does not write active session
 - Classify LLM-generated memory summaries from hidden/debug event sources as `debug_only` or `hidden` by default.
 - Keep frontend debug panel closed by default if used for non-debug playtesting.
 - Rewrite any mojibake prompt text into clean UTF-8.
+- Fix `visible_state.relationships` so player API filters relationship
+  endpoints by actor visibility, matching player graph behavior.
+- Normalize invalid mod manifest errors so authoring/debug APIs do not expose
+  absolute local paths.
+- Keep desktop DB/log defaults out of source control and move them to OS app
+  data directories before any formal packaging milestone.

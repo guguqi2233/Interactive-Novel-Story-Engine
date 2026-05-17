@@ -1,0 +1,69 @@
+{
+  "save_id": "fixture-debug-memory",
+  "engine_version": "0.5.0",
+  "schema_version": "0.5",
+  "world_id": "fixture_world",
+  "world_version": "0.5.0",
+  "content_pack_version": "0.5.0",
+  "migration_history": [],
+  "state": {
+    "schema_version": "0.5",
+    "world_id": "fixture_world",
+    "turn": 7,
+    "player": {
+      "location_id": "square"
+    },
+    "locations": {
+      "square": {
+        "id": "square",
+        "name": "Fixture Square",
+        "exits": {}
+      }
+    },
+    "objects": {},
+    "npcs": {},
+    "flags": {},
+    "facts": {},
+    "player_visible_facts": [],
+    "npc_knowledge": {},
+    "quests": {},
+    "delayed_consequences": [],
+    "factions": {},
+    "rumors": {},
+    "crimes": {},
+    "witnesses": {},
+    "social_consequences": {},
+    "social_flags": {},
+    "relationships": {},
+    "combats": {}
+  },
+  "events": [],
+  "memories": [
+    {
+      "id": "debug-memory-1",
+      "content": "Debug-only migration note.",
+      "source_event_ids": [],
+      "tags": [
+        "debug"
+      ],
+      "entity_ids": [],
+      "fact_ids": [],
+      "visibility": "debug_only",
+      "importance": 1,
+      "created_turn": 7
+    },
+    {
+      "id": "hidden-memory-1",
+      "content": "Hidden memory stays hidden.",
+      "source_event_ids": [],
+      "tags": [
+        "hidden"
+      ],
+      "entity_ids": [],
+      "fact_ids": [],
+      "visibility": "hidden",
+      "importance": 1,
+      "created_turn": 7
+    }
+  ]
+}

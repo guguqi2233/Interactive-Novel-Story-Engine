@@ -33,12 +33,17 @@ Required fields:
 ```yaml
 world_id: mist_valley
 name: Mist Valley
-version: 0.5.0
+version: 0.6.0
 start_location_id: village_square
 description: A small valley world used for local testing.
 ```
 
 `world_id` must match the directory id used by `/game/start`.
+
+The manifest `version` is treated as the content pack version for save
+metadata where available. Runtime saves also carry `schema_version`,
+`world_version`, `content_pack_version`, and `migration_history`; those are
+save metadata, not player-visible facts.
 
 ## locations.yaml
 
@@ -392,14 +397,20 @@ Content-only mods use `mod.yaml`:
 id: sample_mod
 name: Sample Mod
 version: 0.1.0
-engine_version_min: 0.5.0
+engine_version_min: 0.6.0
 engine_version_max:
+content_schema_version: "6"
 dependencies: []
+optional_dependencies: []
 conflicts: []
+load_order_hint: 0
+compatible_worlds:
+  - mist_valley
 entry_worlds:
   - mist_valley
 content_paths:
   - worlds/mist_valley
+migration_notes: "No migration required."
 author: Local Author
 description: Adds local content for testing.
 ```
@@ -410,7 +421,72 @@ Rules:
 - Mods must not execute Python, JavaScript, shell, or arbitrary code.
 - Paths must stay inside the mod directory.
 - Entry worlds are validated through the normal world validation pipeline.
-- Dependency and conflict checks are simple and deterministic in v0.5.
+- Dependency, optional dependency, conflict, engine-version,
+  content-schema-version, and load-order checks are simple and deterministic in
+  v0.6.
+- There is no online registry, automatic download, arbitrary script execution,
+  hot reload of active saves, or complex SAT-style version solver.
+
+## Save Migration Notes
+
+v0.6 saves include migration metadata:
+
+- `engine_version`
+- `schema_version`
+- `world_id`
+- `world_version`
+- `content_pack_version`
+- `created_at`
+- `updated_at`
+- `migration_history`
+- enabled mod ids and versions where available
+
+Migrations are deterministic local code. They do not call the LLM, do not drop
+event history, and must not change hidden/debug classifications into
+player-visible data. Authoring preview and impact analysis can warn about
+removed or renamed ids that may require migration work, but they do not apply a
+migration or write active saves.
+
+## Graph Visibility Fields
+
+Relationship and faction graphs derive visibility from existing structured
+fields:
+
+- `known_by_player` on factions and relationships.
+- actor/object visibility fields such as `hidden`, `visible`, and
+  `discovered_by`.
+- player-known facts, rumors, crimes, and quest state where graph labels refer
+  to world knowledge.
+
+Player graph APIs must return only player-known nodes and edges. Debug graph
+APIs may include more complete graph information, but only when
+`ENABLE_DEBUG_API=true`, and must not return API keys, environment variables,
+raw `GameState`, or raw `state_deltas`.
+
+Known v0.6 hardening note: player graph filtering is currently stricter than
+the `visible_state.relationships` summary. Before v0.6 acceptance, the player
+visible-state relationship summary should also filter relationship endpoints by
+actor visibility.
+
+## Combat and Life Fields
+
+Combat/life state fields used by v0.6 include:
+
+- `alive`
+- `hp`
+- `max_hp`
+- `condition`: `healthy`, `wounded`, `critical`, `incapacitated`, `dead`
+- `status_effects`: currently includes support for `guarded`, `stunned`, and
+  `bleeding`
+- `stance`: currently includes `aggressive`, `defensive`, `cautious`, and
+  `fleeing`
+
+`defend` can set guarded/defensive state, attacks can consume guarded state,
+stunned actors cannot take normal combat actions, bleeding is a lightweight
+tracked status, and non-lethal attacks prefer incapacitation over death.
+Combat outcomes remain deterministic rule-engine decisions and do not call the
+LLM. Player-visible combat summaries must not reveal hidden NPCs or hidden
+witnesses.
 
 ## Validation Commands
 
@@ -460,10 +536,12 @@ The CLI returns a non-zero exit code when errors are present.
 
 ## Current Limits
 
-- No graphical schema-aware editor beyond the v0.5 textarea UI.
+- The v0.6 authoring UI is richer than a textarea editor, but it is still not a
+  full IDE or graphical quest graph editor.
 - No automatic YAML repair.
 - No online mod registry or download support.
 - No hot reload of running saves after authoring edits.
 - No complex version solver for mods.
 - No dynamic economy simulation.
 - No LLM-powered automatic content rewriting.
+- No formal desktop installer or auto-update path.

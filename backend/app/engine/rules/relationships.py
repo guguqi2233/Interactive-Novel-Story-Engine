@@ -160,6 +160,8 @@ def get_visible_relationships(state: GameState) -> list[VisibleRelationship]:
         )
         for relationship in sorted(state.relationships.values(), key=lambda item: item.id)
         if relationship.known_by_player
+        and _actor_visible_to_player(state, relationship.source_id)
+        and _actor_visible_to_player(state, relationship.target_id)
     ]
 
 
@@ -210,3 +212,12 @@ def _require_relationship(
 def _require_actor(state: GameState, actor_id: str) -> None:
     if actor_id != "player" and actor_id not in state.npcs:
         raise RelationshipRuleError(f"Unknown actor_id: {actor_id}")
+
+
+def _actor_visible_to_player(state: GameState, actor_id: str) -> bool:
+    if actor_id == "player":
+        return True
+    npc = state.npcs.get(actor_id)
+    if npc is None or not npc.visible:
+        return False
+    return not npc.hidden or state.player.id in npc.discovered_by

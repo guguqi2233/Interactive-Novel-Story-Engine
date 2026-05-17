@@ -1,0 +1,48 @@
+{
+  "save_id": "fixture-legacy",
+  "engine_version": "legacy",
+  "world_id": "fixture_world",
+  "world_version": "unknown",
+  "content_pack_version": "unknown",
+  "migration_history": [],
+  "state": {
+    "world_id": "fixture_world",
+    "turn": 1,
+    "player": {
+      "location_id": "square"
+    },
+    "locations": {
+      "square": {
+        "id": "square",
+        "name": "Fixture Square",
+        "exits": {}
+      }
+    },
+    "objects": {},
+    "npcs": {},
+    "flags": {},
+    "facts": {},
+    "player_visible_facts": [],
+    "npc_knowledge": {},
+    "quests": {},
+    "delayed_consequences": []
+  },
+  "events": [
+    {
+      "event_id": "fixture-legacy-event-1",
+      "turn": 1,
+      "actor_id": "player",
+      "action_type": "wait",
+      "result": "success",
+      "visible_to_player": true,
+      "state_deltas": [
+        {
+          "operation": "inc",
+          "path": "turn",
+          "value": 1
+        }
+      ]
+    }
+  ],
+  "memories": []
+}

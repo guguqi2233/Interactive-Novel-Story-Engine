@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 
 from fastapi.testclient import TestClient
 
@@ -284,3 +285,100 @@ def test_save_load_api_does_not_leak_hidden_facts(tmp_path: Path) -> None:
     assert "sealed_letter_under_stone" not in str(load_payload)
     assert "hidden_facts" not in str(list_payload)
     assert "hidden_facts" not in str(load_payload)
+
+
+def test_save_migration_status_for_current_save(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    session_id = client.post("/game/start").json()["session_id"]
+    save_id = client.post(f"/game/{session_id}/save").json()["save_id"]
+
+    response = client.get(f"/game/saves/{save_id}/migration-status")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["save_id"] == save_id
+    assert payload["schema_version"] == "0.6"
+    assert payload["needs_migration"] is False
+    assert "state_json" not in str(payload)
+    assert "state_deltas" not in str(payload)
+
+
+def test_migration_list_api_returns_available_migrations() -> None:
+    client = make_client()
+
+    response = client.get("/migrations")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["migrations"][0]["migration_id"] == "legacy->0.6"
+
+
+def test_save_migration_alias_apply_migrates_and_records_history(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    session_id = client.post("/game/start").json()["session_id"]
+    save_id = client.post(f"/game/{session_id}/save").json()["save_id"]
+    repository = app.state.save_repository
+    save = repository.get_save(save_id)
+    state_payload = json.loads(save.state_json)
+    state_payload.pop("schema_version", None)
+    with repository._connect() as connection:  # noqa: SLF001 - test fixture setup
+        connection.execute(
+            """
+            UPDATE save_games
+            SET state_json = ?, schema_version = 'legacy', engine_version = 'legacy'
+            WHERE save_id = ?
+            """,
+            (json.dumps(state_payload), save_id),
+        )
+
+    response = client.post(f"/saves/{save_id}/migrate")
+    migrated = repository.get_save(save_id)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["dry_run"] is False
+    assert payload["backup_save_id"] == f"{save_id}.backup"
+    assert payload["applied_migrations"][0]["migration_id"] == "legacy->0.6"
+    assert migrated.schema_version == "0.6"
+    assert "legacy->0.6" in migrated.migration_history
+
+
+def test_missing_save_migration_api_returns_clear_error(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+
+    status_response = client.get("/saves/missing/migration-status")
+    dry_run_response = client.post("/saves/missing/migrate-dry-run")
+
+    assert status_response.status_code == 404
+    assert status_response.json()["detail"] == "Save not found: missing"
+    assert dry_run_response.status_code == 400
+    assert dry_run_response.json()["detail"] == "Save not found: missing"
+
+
+def test_save_migration_dry_run_does_not_mutate_legacy_save(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    session_id = client.post("/game/start").json()["session_id"]
+    save_id = client.post(f"/game/{session_id}/save").json()["save_id"]
+    repository = app.state.save_repository
+    save = repository.get_save(save_id)
+    state_payload = json.loads(save.state_json)
+    state_payload.pop("schema_version", None)
+    with repository._connect() as connection:  # noqa: SLF001 - test fixture setup
+        connection.execute(
+            """
+            UPDATE save_games
+            SET state_json = ?, schema_version = 'legacy', engine_version = 'legacy'
+            WHERE save_id = ?
+            """,
+            (json.dumps(state_payload), save_id),
+        )
+
+    response = client.post(f"/game/saves/{save_id}/migrate-dry-run")
+    after = repository.get_save(save_id)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["dry_run"] is True
+    assert payload["applied_migrations"][0]["migration_id"] == "legacy->0.6"
+    assert after.schema_version == "legacy"
+    assert after.migration_history == "[]"

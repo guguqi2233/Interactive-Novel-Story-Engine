@@ -4,7 +4,7 @@ from uuid import uuid4
 
 from app.core.event_log import Event, EventLog
 from app.core.game_loop import GameLoop
-from app.core.world_state import GameState
+from app.core.world_state import CombatState, GameState
 from app.api import (
     KnownFactResponse,
     VisibleLocationResponse,
@@ -13,6 +13,7 @@ from app.api import (
     VisibleFactionResponse,
     VisibleRumorResponse,
     VisibleCrimeResponse,
+    VisibleCombatSummaryResponse,
     VisibleRelationshipResponse,
     VisibleFactionConflictResponse,
     VisibleQuestObjectiveResponse,
@@ -213,6 +214,7 @@ def build_visible_state(state: GameState) -> VisibleStateResponse:
             )
             for conflict in get_visible_faction_conflicts(state)
         ],
+        active_combat=_visible_combat_summary(state),
     )
 
 
@@ -230,3 +232,25 @@ def _npc_visible_to_player(state: GameState, npc_id: str) -> bool:
     if npc is None or not npc.visible:
         return False
     return not npc.hidden or state.player.id in npc.discovered_by
+
+
+def _visible_combat_summary(state: GameState) -> VisibleCombatSummaryResponse | None:
+    for raw_combat in state.combats.values():
+        combat = raw_combat if isinstance(raw_combat, CombatState) else CombatState.model_validate(raw_combat)
+        if combat.status != "active" or combat.location_id != state.player.location_id:
+            continue
+        visible_combatants = [
+            actor_id
+            for actor_id in combat.combatant_ids
+            if actor_id == state.player.id or _npc_visible_to_player(state, actor_id)
+        ]
+        return VisibleCombatSummaryResponse(
+            combat_id=combat.id,
+            location_id=combat.location_id,
+            status=combat.status.value,
+            player_stance=state.player.combat_stance,
+            player_condition=state.player.condition.value,
+            player_status_effects=list(state.player.status_effects),
+            visible_combatants=visible_combatants,
+        )
+    return None

@@ -1,6 +1,7 @@
 import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import {
   AuthoringValidation,
+  AuthoringFilePreviewResponse,
   AuthoringWorldSummary,
   DebugEvent,
   deleteSave,
@@ -9,11 +10,17 @@ import {
   fetchAuthoringWorld,
   fetchAuthoringWorlds,
   fetchGameState,
+  fetchDebugFactionGraph,
+  fetchDebugRelationshipGraph,
+  fetchPlayerFactionGraph,
+  fetchPlayerRelationshipGraph,
   fetchSaveDebugEvents,
   fetchSessionDebugEvents,
   GameInputResponse,
+  GraphResponse,
   listSaves,
   loadGame,
+  previewAuthoringFileChange,
   saveGame,
   saveAuthoringFile,
   SaveSummary,
@@ -41,6 +48,92 @@ const AUTHORING_FILES = [
   "relationships.yaml"
 ];
 
+const AUTHORING_FILE_GROUPS = [
+  {
+    title: "Core",
+    files: ["manifest.yaml", "locations.yaml", "npcs.yaml", "items.yaml", "quests.yaml", "facts.yaml"]
+  },
+  {
+    title: "Social",
+    files: ["factions.yaml", "rumors.yaml", "relationships.yaml"]
+  },
+  {
+    title: "Economy / Mods",
+    files: ["items.yaml", "npcs.yaml", "mod.yaml", "manifest.yaml"]
+  }
+];
+
+const FORM_SUPPORTED_FILES = new Set([
+  "locations.yaml",
+  "npcs.yaml",
+  "items.yaml",
+  "facts.yaml",
+  "quests.yaml"
+]);
+
+const ROOT_KEYS: Record<string, string> = {
+  "locations.yaml": "locations",
+  "npcs.yaml": "npcs",
+  "items.yaml": "items",
+  "facts.yaml": "facts",
+  "quests.yaml": "quests",
+  "factions.yaml": "factions",
+  "rumors.yaml": "rumors",
+  "relationships.yaml": "relationships"
+};
+
+const FORM_FIELDS: Record<string, AuthoringFormField[]> = {
+  "locations.yaml": [
+    { name: "id", label: "Id", kind: "text" },
+    { name: "name", label: "Name", kind: "text" },
+    { name: "description", label: "Description", kind: "textarea" }
+  ],
+  "npcs.yaml": [
+    { name: "id", label: "Id", kind: "text" },
+    { name: "name", label: "Name", kind: "text" },
+    { name: "location_id", label: "Location", kind: "text" },
+    { name: "faction_id", label: "Faction", kind: "text" },
+    { name: "personality", label: "Personality", kind: "textarea" }
+  ],
+  "items.yaml": [
+    { name: "id", label: "Id", kind: "text" },
+    { name: "name", label: "Name", kind: "text" },
+    { name: "description", label: "Description", kind: "textarea" },
+    { name: "location_id", label: "Location", kind: "text" },
+    { name: "portable", label: "Portable", kind: "boolean" },
+    { name: "hidden", label: "Hidden", kind: "boolean" },
+    { name: "discoverable", label: "Discoverable", kind: "boolean" },
+    { name: "base_price", label: "Base price", kind: "number" },
+    { name: "tradeable", label: "Tradeable", kind: "boolean" }
+  ],
+  "facts.yaml": [
+    { name: "id", label: "Id", kind: "text" },
+    { name: "text", label: "Text", kind: "textarea" },
+    { name: "visibility", label: "Visibility", kind: "select", options: ["public", "hidden", "discoverable"] }
+  ],
+  "quests.yaml": [
+    { name: "id", label: "Id", kind: "text" },
+    { name: "title", label: "Title", kind: "text" },
+    { name: "description", label: "Description", kind: "textarea" },
+    { name: "initial_stage", label: "Initial stage", kind: "text" },
+    { name: "visibility", label: "Visibility", kind: "select", options: ["public", "hidden"] }
+  ]
+};
+
+type AuthoringViewMode = "raw" | "form";
+type AuthoringFormField = {
+  name: string;
+  label: string;
+  kind: "text" | "textarea" | "boolean" | "number" | "select";
+  options?: string[];
+};
+type ParsedAuthoringEntity = {
+  id: string;
+  startLine: number;
+  endLine: number;
+  fields: Record<string, string>;
+};
+
 export function App() {
   const [sessionId, setSessionId] = useState<string>("");
   const [selectedWorldId, setSelectedWorldId] = useState<string>("mist_valley");
@@ -53,6 +146,12 @@ export function App() {
   const [lastResponse, setLastResponse] = useState<unknown>(null);
   const [timeline, setTimeline] = useState<DebugEvent[]>([]);
   const [timelineError, setTimelineError] = useState<string>("");
+  const [playerRelationshipGraph, setPlayerRelationshipGraph] = useState<GraphResponse | null>(null);
+  const [playerFactionGraph, setPlayerFactionGraph] = useState<GraphResponse | null>(null);
+  const [debugRelationshipGraph, setDebugRelationshipGraph] = useState<GraphResponse | null>(null);
+  const [debugFactionGraph, setDebugFactionGraph] = useState<GraphResponse | null>(null);
+  const [graphError, setGraphError] = useState<string>("");
+  const [debugGraphError, setDebugGraphError] = useState<string>("");
   const [saves, setSaves] = useState<SaveSummary[]>([]);
   const [selectedSaveId, setSelectedSaveId] = useState<string>("");
   const [saveWorldFilter, setSaveWorldFilter] = useState<string>("");
@@ -104,6 +203,8 @@ export function App() {
       setStory([{ id: Date.now(), text: "A new local story session has started." }]);
       setLastResponse(response);
       void refreshTimeline(response.session_id);
+      void refreshPlayerGraphs(response.session_id);
+      void refreshDebugGraphs(response.session_id);
     } catch (err) {
       setError(toErrorMessage(err));
     } finally {
@@ -144,6 +245,8 @@ export function App() {
       setTurn(response.turn);
       setLastResponse(response);
       void refreshTimeline(sessionId);
+      void refreshPlayerGraphs(sessionId);
+      void refreshDebugGraphs(sessionId);
     } catch (err) {
       setError(toErrorMessage(err));
     } finally {
@@ -186,6 +289,8 @@ export function App() {
       setStory([{ id: Date.now(), text: `Loaded save ${response.save_id}.` }]);
       setLastResponse(response);
       void refreshTimeline(response.session_id);
+      void refreshPlayerGraphs(response.session_id);
+      void refreshDebugGraphs(response.session_id);
     } catch (err) {
       setError(toErrorMessage(err));
     } finally {
@@ -235,6 +340,8 @@ export function App() {
     setTurn(response.turn);
     setLastResponse(response);
     void refreshTimeline(sessionId);
+    void refreshPlayerGraphs(sessionId);
+    void refreshDebugGraphs(sessionId);
   }
 
   async function refreshTimeline(nextSessionId = sessionId) {
@@ -262,6 +369,44 @@ export function App() {
     } catch (err) {
       setTimeline([]);
       setTimelineError(toErrorMessage(err));
+    }
+  }
+
+  async function refreshPlayerGraphs(nextSessionId = sessionId) {
+    if (!nextSessionId) {
+      return;
+    }
+    setGraphError("");
+    try {
+      const [relationshipGraph, factionGraph] = await Promise.all([
+        fetchPlayerRelationshipGraph(nextSessionId),
+        fetchPlayerFactionGraph(nextSessionId)
+      ]);
+      setPlayerRelationshipGraph(filterPlayerGraph(relationshipGraph));
+      setPlayerFactionGraph(filterPlayerGraph(factionGraph));
+    } catch (err) {
+      setPlayerRelationshipGraph(null);
+      setPlayerFactionGraph(null);
+      setGraphError(toErrorMessage(err));
+    }
+  }
+
+  async function refreshDebugGraphs(nextSessionId = sessionId) {
+    if (!nextSessionId) {
+      return;
+    }
+    setDebugGraphError("");
+    try {
+      const [relationshipGraph, factionGraph] = await Promise.all([
+        fetchDebugRelationshipGraph(nextSessionId),
+        fetchDebugFactionGraph(nextSessionId)
+      ]);
+      setDebugRelationshipGraph(relationshipGraph);
+      setDebugFactionGraph(factionGraph);
+    } catch (err) {
+      setDebugRelationshipGraph(null);
+      setDebugFactionGraph(null);
+      setDebugGraphError(toErrorMessage(err));
     }
   }
 
@@ -367,6 +512,21 @@ export function App() {
         </section>
 
         <section>
+          <h2>Graphs</h2>
+          {graphError && <p className="error compact-error">{graphError}</p>}
+          <GraphPanel
+            title="Relationships"
+            graph={playerRelationshipGraph}
+            emptyText="No known relationships."
+          />
+          <GraphPanel
+            title="Factions"
+            graph={playerFactionGraph}
+            emptyText="No known faction links."
+          />
+        </section>
+
+        <section>
           <h2>Status</h2>
           <StatusPanel visibleState={visibleState} />
         </section>
@@ -431,6 +591,9 @@ export function App() {
             <button type="button" onClick={() => void refreshTimeline()} disabled={!sessionId || isLoading}>
               Refresh Timeline
             </button>
+            <button type="button" onClick={() => void refreshDebugGraphs()} disabled={!sessionId || isLoading}>
+              Refresh Graphs
+            </button>
             <button
               type="button"
               onClick={() => void refreshSaveTimeline()}
@@ -474,6 +637,25 @@ export function App() {
                   <pre>{JSON.stringify(event.state_deltas, null, 2)}</pre>
                 </details>
               ))}
+            </section>
+            <section className="debug-group">
+              <h2>Debug Graphs</h2>
+              {debugGraphError && <p className="error">{debugGraphError}</p>}
+              {debugGraphError && debugGraphError.toLowerCase().includes("debug") && (
+                <p className="muted">debug disabled</p>
+              )}
+              <GraphPanel
+                title="Relationship Graph"
+                graph={debugRelationshipGraph}
+                emptyText="No debug relationship graph."
+                showVisibility
+              />
+              <GraphPanel
+                title="Faction Graph"
+                graph={debugFactionGraph}
+                emptyText="No debug faction graph."
+                showVisibility
+              />
             </section>
             <section className="debug-group">
               <h2>Social Consequences</h2>
@@ -669,11 +851,129 @@ function StatusPanel({ visibleState }: { visibleState: VisibleState | null }) {
         <h3>Combat</h3>
         <p className="muted">
           {visibleState?.active_combat
-            ? `${visibleState.active_combat.id} (${visibleState.active_combat.status})`
+            ? `${visibleState.active_combat.combat_id} (${visibleState.active_combat.status})`
             : "None"}
         </p>
       </div>
     </div>
+  );
+}
+
+function GraphPanel({
+  title,
+  graph,
+  emptyText,
+  showVisibility = false
+}: {
+  title: string;
+  graph: GraphResponse | null;
+  emptyText: string;
+  showVisibility?: boolean;
+}) {
+  const safeGraph = showVisibility ? graph : graph ? filterPlayerGraph(graph) : null;
+  if (!safeGraph || (safeGraph.nodes.length === 0 && safeGraph.edges.length === 0)) {
+    return (
+      <div className="graph-panel">
+        <h3>{title}</h3>
+        <p className="muted">{emptyText}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="graph-panel">
+      <h3>{title}</h3>
+      <MiniGraph graph={safeGraph} showVisibility={showVisibility} />
+      <div className="graph-lists">
+        <div>
+          <h4>Nodes</h4>
+          <ItemList
+            emptyText="None"
+            items={safeGraph.nodes.map((node) => (
+              <span key={node.id}>
+                {node.label} <span className="badge">{node.type}</span>
+                {showVisibility && <span className="badge">{node.visibility}</span>}
+              </span>
+            ))}
+          />
+        </div>
+        <div>
+          <h4>Edges</h4>
+          <ItemList
+            emptyText="None"
+            items={safeGraph.edges.map((edge, index) => (
+              <span key={`${edge.source}-${edge.target}-${edge.type}-${index}`}>
+                {edge.source} {"->"} {edge.target} <span className="badge">{edge.label ?? edge.type}</span>
+                {edge.weight !== null && edge.weight !== undefined && (
+                  <span className="badge">{edge.weight}</span>
+                )}
+                {showVisibility && <span className="badge">{edge.visibility}</span>}
+              </span>
+            ))}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MiniGraph({
+  graph,
+  showVisibility
+}: {
+  graph: GraphResponse;
+  showVisibility: boolean;
+}) {
+  const nodes = graph.nodes.slice(0, 8);
+  const positions = nodes.map((node, index) => {
+    const angle = (Math.PI * 2 * index) / Math.max(nodes.length, 1) - Math.PI / 2;
+    return {
+      node,
+      x: 105 + Math.cos(angle) * 72,
+      y: 82 + Math.sin(angle) * 56
+    };
+  });
+  const positionById = new Map(positions.map((item) => [item.node.id, item]));
+  const edges = graph.edges.filter(
+    (edge) =>
+      positionById.has(edge.source) &&
+      positionById.has(edge.target) &&
+      (showVisibility || edge.visibility === "player_visible")
+  );
+
+  return (
+    <svg className="mini-graph" viewBox="0 0 210 164" role="img" aria-label={`${graph.scope} graph`}>
+      {edges.map((edge, index) => {
+        const source = positionById.get(edge.source);
+        const target = positionById.get(edge.target);
+        if (!source || !target) {
+          return null;
+        }
+        return (
+          <line
+            key={`${edge.source}-${edge.target}-${index}`}
+            x1={source.x}
+            y1={source.y}
+            x2={target.x}
+            y2={target.y}
+            className={edge.visibility === "debug_only" ? "debug-edge" : "player-edge"}
+          />
+        );
+      })}
+      {positions.map(({ node, x, y }) => (
+        <g key={node.id}>
+          <circle
+            cx={x}
+            cy={y}
+            r={node.type === "player" ? 13 : 11}
+            className={node.visibility === "debug_only" ? "debug-node" : "player-node"}
+          />
+          <text x={x} y={y + 24} textAnchor="middle">
+            {shortLabel(node.label)}
+          </text>
+        </g>
+      ))}
+    </svg>
   );
 }
 
@@ -683,7 +983,11 @@ function AuthoringPanel() {
   const [files, setFiles] = useState<string[]>([]);
   const [selectedFile, setSelectedFile] = useState<string>("manifest.yaml");
   const [content, setContent] = useState<string>("");
+  const [diskContent, setDiskContent] = useState<string>("");
+  const [viewMode, setViewMode] = useState<AuthoringViewMode>("raw");
+  const [selectedEntityId, setSelectedEntityId] = useState<string>("");
   const [validation, setValidation] = useState<AuthoringValidation | null>(null);
+  const [preview, setPreview] = useState<AuthoringFilePreviewResponse | null>(null);
   const [selectedIssuePath, setSelectedIssuePath] = useState<string>("");
   const [isBusy, setIsBusy] = useState<boolean>(false);
   const [message, setMessage] = useState<string>("");
@@ -747,8 +1051,13 @@ function AuthoringPanel() {
     try {
       const response = await fetchAuthoringFile(worldId, fileName);
       setContent(response.content);
+      setDiskContent(response.content);
+      setPreview(null);
+      setSelectedEntityId("");
+      setViewMode(FORM_SUPPORTED_FILES.has(fileName) ? "form" : "raw");
     } catch (err) {
       setContent("");
+      setDiskContent("");
       setError(authoringErrorMessage(err));
     } finally {
       setIsBusy(false);
@@ -773,8 +1082,48 @@ function AuthoringPanel() {
     }
   }
 
+  async function handlePreview() {
+    if (!selectedWorldId || !selectedFile) {
+      return null;
+    }
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await previewAuthoringFileChange(selectedWorldId, selectedFile, content);
+      setPreview(response);
+      setValidation(response.validation_report);
+      setMessage(
+        response.validation_report.ok
+          ? "Preview complete. Draft is valid."
+          : "Preview found validation errors."
+      );
+      return response;
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+      return null;
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
   async function handleSave() {
     if (!selectedWorldId || !selectedFile) {
+      return;
+    }
+    const previewResponse = await handlePreview();
+    if (!previewResponse) {
+      return;
+    }
+    if (!previewResponse.validation_report.ok) {
+      setError("Validation errors block saving. Fix the draft before saving.");
+      return;
+    }
+    if (
+      (previewResponse.validation_report.warnings.length > 0 ||
+        previewResponse.potential_save_migration_required) &&
+      !window.confirm("Warnings or save-impact risks were found. Save this local file anyway?")
+    ) {
       return;
     }
     const confirmed = window.confirm(
@@ -789,6 +1138,8 @@ function AuthoringPanel() {
     try {
       const response = await saveAuthoringFile(selectedWorldId, selectedFile, content);
       setValidation(response.validation);
+      setPreview(null);
+      setDiskContent(content);
       setMessage("Saved and validated.");
     } catch (err) {
       setError(authoringErrorMessage(err));
@@ -799,17 +1150,27 @@ function AuthoringPanel() {
 
   const usableFiles = files.length > 0 ? files : AUTHORING_FILES;
   const disabled = isBusy || worlds.length === 0;
+  const isDirty = content !== diskContent;
+  const parsedEntities = useMemo(
+    () => parseAuthoringEntities(selectedFile, content),
+    [selectedFile, content]
+  );
+  const selectedEntity =
+    parsedEntities.find((entity) => entity.id === selectedEntityId) ?? parsedEntities[0] ?? null;
 
   return (
     <section className="authoring-panel">
       <header className="authoring-header">
         <div>
           <h1>World Authoring</h1>
-          <p className="muted">Local YAML editor backed by the authoring API and validator.</p>
+          <p className="muted">Local structured editor backed by the authoring API and validator.</p>
         </div>
-        <button type="button" onClick={() => void loadWorlds()} disabled={isBusy}>
-          Refresh
-        </button>
+        <div className="authoring-header-actions">
+          {isDirty && <span className="dirty-badge">Unsaved changes</span>}
+          <button type="button" onClick={() => void loadWorlds()} disabled={isBusy}>
+            Refresh Worlds
+          </button>
+        </div>
       </header>
 
       {error.toLowerCase().includes("authoring api is disabled") && (
@@ -836,36 +1197,126 @@ function AuthoringPanel() {
           </select>
         </label>
 
-        <label>
-          File
-          <select
-            value={selectedFile}
-            onChange={(event) => setSelectedFile(event.target.value)}
-            disabled={disabled}
+        <div className="segmented">
+          <button
+            type="button"
+            className={viewMode === "form" ? "active" : ""}
+            onClick={() => setViewMode("form")}
+            disabled={!FORM_SUPPORTED_FILES.has(selectedFile)}
           >
-            {usableFiles.map((fileName) => (
-              <option key={fileName} value={fileName}>
-                {fileName}
-              </option>
-            ))}
-          </select>
-        </label>
+            Form
+          </button>
+          <button
+            type="button"
+            className={viewMode === "raw" ? "active" : ""}
+            onClick={() => setViewMode("raw")}
+          >
+            Raw YAML
+          </button>
+        </div>
 
         <button type="button" onClick={handleValidate} disabled={!selectedWorldId || isBusy}>
           Validate
         </button>
+        <button type="button" onClick={() => void handlePreview()} disabled={!selectedWorldId || isBusy}>
+          Preview
+        </button>
         <button type="button" onClick={handleSave} disabled={!selectedWorldId || !selectedFile || isBusy}>
           Save
         </button>
+        <button
+          type="button"
+          onClick={() => {
+            setContent(diskContent);
+            setMessage("Discarded local edits.");
+          }}
+          disabled={!isDirty || isBusy}
+        >
+          Discard
+        </button>
+        <button
+          type="button"
+          onClick={() => selectedWorldId && selectedFile && void loadFile(selectedWorldId, selectedFile)}
+          disabled={!selectedWorldId || !selectedFile || isBusy}
+        >
+          Reload
+        </button>
       </div>
 
-      <textarea
-        className="yaml-editor"
-        value={content}
-        onChange={(event) => setContent(event.target.value)}
-        spellCheck={false}
-        disabled={disabled}
-      />
+      <div className="authoring-workspace">
+        <WorldFileTree
+          files={usableFiles}
+          selectedFile={selectedFile}
+          validation={validation}
+          onSelectFile={(fileName) => {
+            if (isDirty && !window.confirm("Discard unsaved local edits and switch files?")) {
+              return;
+            }
+            setSelectedFile(fileName);
+          }}
+        />
+
+        <section className="authoring-editor-pane">
+          <div className="authoring-pane-header">
+            <div>
+              <h2>{selectedFile}</h2>
+              <p className="muted">{fileCategoryLabel(selectedFile)}</p>
+            </div>
+            <span className="badge">{viewMode === "form" ? "Form" : "Raw YAML"}</span>
+          </div>
+          {viewMode === "form" && FORM_SUPPORTED_FILES.has(selectedFile) ? (
+            <AuthoringFormEditor
+              fileName={selectedFile}
+              entities={parsedEntities}
+              selectedEntity={selectedEntity}
+              selectedEntityId={selectedEntityId}
+              disabled={disabled}
+              onSelectEntity={setSelectedEntityId}
+              onChangeField={(fieldName, value) => {
+                if (!selectedEntity) {
+                  return;
+                }
+                setPreview(null);
+                setContent(updateEntityField(content, selectedEntity, fieldName, value));
+              }}
+            />
+          ) : (
+            <textarea
+              className="yaml-editor"
+              value={content}
+              onChange={(event) => {
+                setPreview(null);
+                setContent(event.target.value);
+              }}
+              spellCheck={false}
+              disabled={disabled}
+            />
+          )}
+        </section>
+
+        <ValidationPanel
+          validation={validation}
+          preview={preview}
+          onSelectIssue={(issue) => {
+            setSelectedIssuePath(issue.path);
+            if (issue.file && usableFiles.includes(issue.file)) {
+              if (isDirty && issue.file !== selectedFile && !window.confirm("Discard unsaved local edits and switch files?")) {
+                return;
+              }
+              setSelectedFile(issue.file);
+            }
+          }}
+        />
+
+        <AuthoringPreviewPanel
+          fileName={selectedFile}
+          content={content}
+          validation={validation}
+          preview={preview}
+          entities={parsedEntities}
+          selectedEntity={selectedEntity}
+        />
+      </div>
 
       {message && <p className="muted">{message}</p>}
       {error && <p className="error">{error}</p>}
@@ -874,24 +1325,17 @@ function AuthoringPanel() {
           Selected issue path: <code>{selectedIssuePath}</code>
         </p>
       )}
-      <ValidationPanel
-        validation={validation}
-        onSelectIssue={(issue) => {
-          setSelectedIssuePath(issue.path);
-          if (issue.file && usableFiles.includes(issue.file)) {
-            setSelectedFile(issue.file);
-          }
-        }}
-      />
     </section>
   );
 }
 
 function ValidationPanel({
   validation,
+  preview,
   onSelectIssue
 }: {
   validation: AuthoringValidation | null;
+  preview?: AuthoringFilePreviewResponse | null;
   onSelectIssue: (issue: AuthoringValidation["errors"][number]) => void;
 }) {
   if (!validation) {
@@ -904,6 +1348,27 @@ function ValidationPanel({
       <p className={validation.ok ? "validation-ok" : "error"}>
         {validation.ok ? "Loadable" : "Errors must be fixed before loading."}
       </p>
+      {preview && (
+        <section className="diff-summary">
+          <h3>Dry Run / Diff</h3>
+          <dl>
+            <dt>Parsed</dt>
+            <dd>{preview.parsed_ok ? "ok" : "failed"}</dd>
+            <dt>Lines</dt>
+            <dd>
+              {preview.diff_summary.line_count_before} {"->"} {preview.diff_summary.line_count_after}
+            </dd>
+            <dt>Added</dt>
+            <dd>{preview.diff_summary.added_ids.join(", ") || "None"}</dd>
+            <dt>Removed</dt>
+            <dd>{preview.diff_summary.removed_ids.join(", ") || "None"}</dd>
+            <dt>Changed</dt>
+            <dd>{preview.diff_summary.changed_ids.join(", ") || "None"}</dd>
+            <dt>Save impact</dt>
+            <dd>{preview.potential_save_migration_required ? "review required" : "none detected"}</dd>
+          </dl>
+        </section>
+      )}
       {Object.entries(groupedIssues).map(([file, issues]) => (
         <div className="validation-file-group" key={file}>
           <h3>{file}</h3>
@@ -912,6 +1377,243 @@ function ValidationPanel({
       ))}
       {Object.keys(groupedIssues).length === 0 && <p className="muted">No issues.</p>}
     </section>
+  );
+}
+
+function WorldFileTree({
+  files,
+  selectedFile,
+  validation,
+  onSelectFile
+}: {
+  files: string[];
+  selectedFile: string;
+  validation: AuthoringValidation | null;
+  onSelectFile: (fileName: string) => void;
+}) {
+  const validationCounts = useMemo(() => fileIssueCounts(validation), [validation]);
+  return (
+    <aside className="authoring-file-tree">
+      <h2>World Files</h2>
+      {AUTHORING_FILE_GROUPS.map((group) => {
+        const groupFiles = group.files.filter((fileName, index) => {
+          return files.includes(fileName) && group.files.indexOf(fileName) === index;
+        });
+        if (groupFiles.length === 0) {
+          return null;
+        }
+        return (
+          <section key={group.title}>
+            <h3>{group.title}</h3>
+            <div className="file-button-list">
+              {groupFiles.map((fileName) => {
+                const counts = validationCounts[fileName] ?? { errors: 0, warnings: 0 };
+                return (
+                  <button
+                    type="button"
+                    key={`${group.title}-${fileName}`}
+                    className={`file-button ${selectedFile === fileName ? "selected" : ""}`}
+                    onClick={() => onSelectFile(fileName)}
+                  >
+                    <span>{fileName}</span>
+                    <span className="file-category">{fileCategoryLabel(fileName)}</span>
+                    {(counts.errors > 0 || counts.warnings > 0) && (
+                      <span className="file-issues">
+                        {counts.errors > 0 ? `${counts.errors} errors` : ""}
+                        {counts.errors > 0 && counts.warnings > 0 ? " / " : ""}
+                        {counts.warnings > 0 ? `${counts.warnings} warnings` : ""}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        );
+      })}
+    </aside>
+  );
+}
+
+function AuthoringFormEditor({
+  fileName,
+  entities,
+  selectedEntity,
+  selectedEntityId,
+  disabled,
+  onSelectEntity,
+  onChangeField
+}: {
+  fileName: string;
+  entities: ParsedAuthoringEntity[];
+  selectedEntity: ParsedAuthoringEntity | null;
+  selectedEntityId: string;
+  disabled: boolean;
+  onSelectEntity: (entityId: string) => void;
+  onChangeField: (fieldName: string, value: string) => void;
+}) {
+  const fields = FORM_FIELDS[fileName] ?? [];
+  if (entities.length === 0 || !selectedEntity) {
+    return (
+      <div className="form-editor-empty">
+        <p className="muted">
+          No editable entities were detected for this file. Use Raw YAML for complex changes.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="form-editor">
+      <label>
+        Entity
+        <select
+          value={selectedEntityId || selectedEntity.id}
+          onChange={(event) => onSelectEntity(event.target.value)}
+          disabled={disabled}
+        >
+          {entities.map((entity) => (
+            <option key={entity.id} value={entity.id}>
+              {entity.id}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className="form-grid">
+        {fields.map((field) => {
+          const value = selectedEntity.fields[field.name] ?? "";
+          if (field.kind === "textarea") {
+            return (
+              <label key={field.name} className="wide-field">
+                {field.label}
+                <textarea
+                  value={value}
+                  onChange={(event) => onChangeField(field.name, event.target.value)}
+                  disabled={disabled}
+                />
+              </label>
+            );
+          }
+          if (field.kind === "boolean") {
+            return (
+              <label key={field.name} className="checkbox-field">
+                <input
+                  type="checkbox"
+                  checked={value === "true"}
+                  onChange={(event) => onChangeField(field.name, event.target.checked ? "true" : "false")}
+                  disabled={disabled}
+                />
+                {field.label}
+              </label>
+            );
+          }
+          if (field.kind === "select") {
+            return (
+              <label key={field.name}>
+                {field.label}
+                <select
+                  value={value}
+                  onChange={(event) => onChangeField(field.name, event.target.value)}
+                  disabled={disabled}
+                >
+                  <option value="">Unset</option>
+                  {(field.options ?? []).map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            );
+          }
+          return (
+            <label key={field.name}>
+              {field.label}
+              <input
+                type={field.kind === "number" ? "number" : "text"}
+                value={value}
+                onChange={(event) => onChangeField(field.name, event.target.value)}
+                disabled={disabled}
+              />
+            </label>
+          );
+        })}
+      </div>
+      <p className="muted">
+        Form edits update simple top-level fields only. Use Raw YAML for nested schedules, stages,
+        triggers, goals, and relationship details.
+      </p>
+    </div>
+  );
+}
+
+function AuthoringPreviewPanel({
+  fileName,
+  content,
+  validation,
+  preview,
+  entities,
+  selectedEntity
+}: {
+  fileName: string;
+  content: string;
+  validation: AuthoringValidation | null;
+  preview?: AuthoringFilePreviewResponse | null;
+  entities: ParsedAuthoringEntity[];
+  selectedEntity: ParsedAuthoringEntity | null;
+}) {
+  const issues = validation
+    ? [...validation.errors, ...validation.warnings, ...validation.suggestions].filter(
+        (issue) => issue.file === fileName
+      )
+    : [];
+  return (
+    <aside className="authoring-preview">
+      <h2>Preview</h2>
+      <dl>
+        <dt>File</dt>
+        <dd>{fileName}</dd>
+        <dt>Entities</dt>
+        <dd>{entities.length}</dd>
+        <dt>Validation issues</dt>
+        <dd>{issues.length}</dd>
+        <dt>Size</dt>
+        <dd>{content.length} chars</dd>
+      </dl>
+      {selectedEntity ? (
+        <div>
+          <h3>{selectedEntity.id}</h3>
+          <pre>{JSON.stringify(selectedEntity.fields, null, 2)}</pre>
+        </div>
+      ) : (
+        <p className="muted">Select an entity or use Raw YAML for manifest-level files.</p>
+      )}
+      {preview && (
+        <div>
+          <h3>Impact Analysis</h3>
+          <ItemList
+            emptyText="No potentially affected objects."
+            items={[
+              ...preview.impact.removed_locations.map((id) => <span key={`loc-${id}`}>removed location: {id}</span>),
+              ...preview.impact.removed_npcs.map((id) => <span key={`npc-${id}`}>removed NPC: {id}</span>),
+              ...preview.impact.removed_items.map((id) => <span key={`item-${id}`}>removed item: {id}</span>),
+              ...preview.impact.removed_facts.map((id) => <span key={`fact-${id}`}>removed fact: {id}</span>),
+              ...preview.impact.removed_quests.map((id) => <span key={`quest-${id}`}>removed quest: {id}</span>),
+              ...preview.impact.removed_factions.map((id) => <span key={`faction-${id}`}>removed faction: {id}</span>),
+              ...preview.impact.changed_location_exits.map((id) => <span key={`exit-${id}`}>changed exits: {id}</span>),
+              ...preview.impact.renamed_ids.map((id) => <span key={`rename-${id}`}>possible rename: {id}</span>)
+            ]}
+          />
+          {preview.impact.notes.length > 0 && (
+            <ul className="compact-list">
+              {preview.impact.notes.map((note) => (
+                <li key={note}>{note}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </aside>
   );
 }
 
@@ -1004,6 +1706,160 @@ function isCombatDebugEvent(event: DebugEvent): boolean {
     actionType.includes("death") ||
     event.state_deltas.some((delta) => /^(combats|player\.hp|npcs\.[^.]+\.hp)/.test(delta.path))
   );
+}
+
+function filterPlayerGraph(graph: GraphResponse): GraphResponse {
+  const nodes = graph.nodes.filter((node) => node.visibility === "player_visible");
+  const nodeIds = new Set(nodes.map((node) => node.id));
+  const edges = graph.edges.filter(
+    (edge) =>
+      edge.visibility === "player_visible" &&
+      nodeIds.has(edge.source) &&
+      nodeIds.has(edge.target)
+  );
+  return {
+    ...graph,
+    scope: "player_visible",
+    nodes,
+    edges
+  };
+}
+
+function shortLabel(label: string): string {
+  return label.length > 12 ? `${label.slice(0, 11)}...` : label;
+}
+
+function parseAuthoringEntities(fileName: string, yaml: string): ParsedAuthoringEntity[] {
+  const rootKey = ROOT_KEYS[fileName];
+  if (!rootKey) {
+    return [];
+  }
+  const lines = yaml.split(/\r?\n/);
+  const entities: ParsedAuthoringEntity[] = [];
+  let current: ParsedAuthoringEntity | null = null;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const listMatch = line.match(/^  -\s+([A-Za-z0-9_]+):\s*(.*)$/);
+    if (listMatch) {
+      if (current) {
+        current.endLine = index - 1;
+        entities.push(current);
+      }
+      const firstField = listMatch[1];
+      const firstValue = normalizeYamlScalar(listMatch[2]);
+      current = {
+        id: firstField === "id" && firstValue ? firstValue : `item-${entities.length + 1}`,
+        startLine: index,
+        endLine: index,
+        fields: { [firstField]: firstValue }
+      };
+      continue;
+    }
+
+    if (!current) {
+      continue;
+    }
+
+    const fieldMatch = line.match(/^    ([A-Za-z0-9_]+):\s*(.*)$/);
+    if (fieldMatch) {
+      const fieldName = fieldMatch[1];
+      const fieldValue = normalizeYamlScalar(fieldMatch[2]);
+      current.fields[fieldName] = fieldValue;
+      if (fieldName === "id" && fieldValue) {
+        current.id = fieldValue;
+      }
+    }
+  }
+
+  if (current) {
+    current.endLine = lines.length - 1;
+    entities.push(current);
+  }
+  return entities;
+}
+
+function updateEntityField(
+  yaml: string,
+  entity: ParsedAuthoringEntity,
+  fieldName: string,
+  value: string
+): string {
+  const lines = yaml.split(/\r?\n/);
+  const inlineIdPattern = new RegExp(`^(\\s*-\\s+${escapeRegExp(fieldName)}:\\s*).*$`);
+  const fieldPattern = new RegExp(`^(\\s{4}${escapeRegExp(fieldName)}:\\s*).*$`);
+  const serialized = serializeYamlScalar(value);
+
+  for (let index = entity.startLine; index <= entity.endLine && index < lines.length; index += 1) {
+    if (inlineIdPattern.test(lines[index])) {
+      lines[index] = lines[index].replace(inlineIdPattern, `$1${serialized}`);
+      return lines.join("\n");
+    }
+    if (fieldPattern.test(lines[index])) {
+      lines[index] = lines[index].replace(fieldPattern, `$1${serialized}`);
+      return lines.join("\n");
+    }
+  }
+
+  const insertAt = Math.min(entity.endLine + 1, lines.length);
+  lines.splice(insertAt, 0, `    ${fieldName}: ${serialized}`);
+  return lines.join("\n");
+}
+
+function normalizeYamlScalar(value: string): string {
+  const trimmed = value.trim();
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1);
+  }
+  return trimmed;
+}
+
+function serializeYamlScalar(value: string): string {
+  if (value === "true" || value === "false" || /^-?\d+(\.\d+)?$/.test(value)) {
+    return value;
+  }
+  if (value === "") {
+    return '""';
+  }
+  if (/[:#\n\r]/.test(value)) {
+    return JSON.stringify(value);
+  }
+  return value;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function fileCategoryLabel(fileName: string): string {
+  if (fileName === "manifest.yaml" || fileName === "mod.yaml") {
+    return "mod manifest";
+  }
+  if (fileName === "items.yaml") {
+    return "items / economy fields";
+  }
+  return fileName.replace(".yaml", "");
+}
+
+function fileIssueCounts(validation: AuthoringValidation | null) {
+  const counts: Record<string, { errors: number; warnings: number }> = {};
+  if (!validation) {
+    return counts;
+  }
+  for (const issue of validation.errors) {
+    const file = issue.file || "world";
+    counts[file] = counts[file] ?? { errors: 0, warnings: 0 };
+    counts[file].errors += 1;
+  }
+  for (const issue of validation.warnings) {
+    const file = issue.file || "world";
+    counts[file] = counts[file] ?? { errors: 0, warnings: 0 };
+    counts[file].warnings += 1;
+  }
+  return counts;
 }
 
 function groupValidationIssues(validation: AuthoringValidation) {

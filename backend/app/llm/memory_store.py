@@ -1,10 +1,12 @@
 from abc import ABC, abstractmethod
 from enum import StrEnum
+from time import perf_counter
 from typing import Any, Protocol
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
+from app.core.instrumentation import record_performance_sample
 from app.llm.schemas import MemorySummary
 
 
@@ -139,11 +141,12 @@ class InMemoryMemoryStore(MemoryStore):
         return record
 
     def search_memory(self, query: str | MemoryQuery) -> list[MemoryRecord]:
+        started = perf_counter()
         memory_query = (
             MemoryQuery(substring=query) if isinstance(query, str) else query
         )
         if memory_query.semantic_query and self._embedding_backend is not None:
-            return self._embedding_backend.search(
+            result = self._embedding_backend.search(
                 memory_query.semantic_query,
                 [
                     memory
@@ -152,7 +155,9 @@ class InMemoryMemoryStore(MemoryStore):
                 ],
                 memory_query.limit,
             )
-        return _rank_memories(
+            _record_memory_search_duration(started, "in_memory")
+            return result
+        result = _rank_memories(
             [
                 memory
                 for memory in self._memories.values()
@@ -160,6 +165,8 @@ class InMemoryMemoryStore(MemoryStore):
             ],
             memory_query.limit,
         )
+        _record_memory_search_duration(started, "in_memory")
+        return result
 
     def list_recent_memories(
         self,
@@ -254,11 +261,14 @@ class SQLiteMemoryStore(MemoryStore):
         return record
 
     def search_memory(self, query: str | MemoryQuery) -> list[MemoryRecord]:
-        return _search_records(
+        started = perf_counter()
+        result = _search_records(
             self._repository.list_memories(self._save_id),
             query,
             self._embedding_backend,
         )
+        _record_memory_search_duration(started, "sqlite")
+        return result
 
     def list_recent_memories(
         self,
@@ -449,3 +459,11 @@ def _rank_recent_memories(memories: list[MemoryRecord], limit: int) -> list[Memo
         memories,
         key=lambda memory: (-memory.created_turn, -memory.importance, memory.id),
     )[:limit]
+
+
+def _record_memory_search_duration(started: float, backend: str) -> None:
+    record_performance_sample(
+        "memory.search",
+        (perf_counter() - started) * 1000,
+        tags={"backend": backend},
+    )

@@ -5,6 +5,7 @@ from app.core.event_log import EventLog
 from app.core.game_loop import GameLoop
 from app.core.state_delta import apply_delta
 from app.core.world_state import (
+    ActorCondition,
     CombatStatus,
     FactionState,
     GameState,
@@ -238,3 +239,115 @@ def test_save_load_preserves_combat_state(tmp_path: Path) -> None:
 
     assert loaded.combats == state.combats
     assert loaded.npcs["bandit"].hp == state.npcs["bandit"].hp
+
+
+def test_defensive_stance_reduces_attack_result() -> None:
+    normal_state = make_combat_state()
+    normal_state.player.attack = 0
+    defensive_state = make_combat_state()
+    defensive_state.player.attack = 0
+    defensive_state.npcs["bandit"].combat_stance = CombatantStance.DEFENSIVE
+
+    normal_result, _ = resolve_attack(normal_state, "player", "bandit", Random(0))
+    defensive_result, _ = resolve_attack(defensive_state, "player", "bandit", Random(0))
+
+    assert normal_result.damage is not None
+    assert defensive_result.damage is not None
+    assert defensive_result.damage.damage < normal_result.damage.damage
+
+
+def test_guarded_status_is_consumed_and_reduces_damage() -> None:
+    state = make_combat_state()
+    state.npcs["bandit"].status_effects.append("guarded")
+
+    attack_result, deltas = resolve_attack(state, "player", "bandit", Random(0))
+    for delta in deltas:
+        state = apply_delta(state, delta)
+
+    assert attack_result.damage is not None
+    assert attack_result.damage.damage == 1
+    assert "guarded" not in state.npcs["bandit"].status_effects
+
+
+def test_stunned_actor_cannot_attack() -> None:
+    state = make_combat_state()
+    state.player.status_effects.append("stunned")
+
+    attack_result, deltas = resolve_attack(state, "player", "bandit", Random(0))
+
+    assert attack_result.outcome == AttackOutcome.INVALID
+    assert deltas == []
+
+
+def test_bleeding_status_can_be_marked_by_heavy_damage() -> None:
+    state = make_combat_state()
+    state.player.attack = 10
+
+    _, deltas = resolve_attack(state, "player", "bandit", Random(0))
+    for delta in deltas:
+        state = apply_delta(state, delta)
+
+    assert "bleeding" in state.npcs["bandit"].status_effects
+
+
+def test_non_lethal_attack_does_not_mark_dead() -> None:
+    provider = FakeLLMProvider(
+        json_responses=[
+            {
+                "action_type": "attack",
+                "target_id": "bandit",
+                "raw_text": "non-lethal attack bandit",
+                "confidence": 1.0,
+                "requires_clarification": False,
+            },
+            {"text": "You strike to subdue.", "suggested_actions": [], "short_summary": "Subdued."},
+        ]
+    )
+    state = make_combat_state()
+    state.npcs["bandit"].hp = 1
+    loop = GameLoop(
+        state=state,
+        event_log=EventLog(),
+        intent_parser=IntentParser(provider),
+        action_dispatcher=ActionDispatcher(),
+        narrator=Narrator(provider),
+        rng=Random(0),
+    )
+
+    loop.step("non-lethal attack bandit")
+
+    assert loop.state.npcs["bandit"].condition == ActorCondition.INCAPACITATED
+    assert loop.state.npcs["bandit"].alive is True
+
+
+def test_flee_failure_has_consequence() -> None:
+    state = make_combat_state()
+    state.npcs["bandit"].hostile_to.append("player")
+    state.npcs["bandit"].alertness = 10
+
+    success, deltas, reason = flee(state, "player", "road", Random(0))
+    for delta in deltas:
+        state = apply_delta(state, delta)
+
+    assert success is False
+    assert "failed to flee" in reason
+    assert state.player.location_id == "square"
+    assert state.player.combat_stance == CombatantStance.FLEEING
+    assert "stunned" in state.player.status_effects
+
+
+def test_visible_state_combat_summary_hides_hidden_combatant() -> None:
+    state = make_combat_state(hidden_witness=True)
+    state.combats["combat-square"] = {
+        "id": "combat-square",
+        "location_id": "square",
+        "combatant_ids": ["player", "bandit", "witness"],
+        "status": "active",
+        "started_turn": 0,
+    }
+
+    visible_state = build_visible_state(state)
+
+    assert visible_state.active_combat is not None
+    assert "bandit" in visible_state.active_combat.visible_combatants
+    assert "witness" not in visible_state.active_combat.visible_combatants

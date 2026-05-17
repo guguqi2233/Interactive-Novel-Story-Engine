@@ -62,6 +62,17 @@ def can_attack(state: GameState, attacker_id: str, target_id: str) -> tuple[bool
 
 
 def resolve_attack(state: GameState, attacker_id: str, target_id: str, rng: Random) -> tuple[AttackResult, list[StateDelta]]:
+    return resolve_attack_with_options(state, attacker_id, target_id, rng, lethal=False)
+
+
+def resolve_attack_with_options(
+    state: GameState,
+    attacker_id: str,
+    target_id: str,
+    rng: Random,
+    *,
+    lethal: bool = False,
+) -> tuple[AttackResult, list[StateDelta]]:
     allowed, reason = can_attack(state, attacker_id, target_id)
     if not allowed:
         return AttackResult(outcome=AttackOutcome.INVALID, attacker_id=attacker_id, target_id=target_id, reason=reason), []
@@ -70,7 +81,7 @@ def resolve_attack(state: GameState, attacker_id: str, target_id: str, rng: Rand
     target = state.npcs[target_id]
     roll = rng.randint(1, 10)
     attack_score = roll + attacker.attack
-    defense_score = 6 + target.defense + (2 if target.combat_stance == CombatantStance.DEFENSIVE else 0)
+    defense_score = 6 + target.defense + _defense_bonus(target)
 
     if attack_score >= defense_score + 6:
         outcome = AttackOutcome.CRITICAL
@@ -84,6 +95,8 @@ def resolve_attack(state: GameState, attacker_id: str, target_id: str, rng: Rand
     else:
         outcome = AttackOutcome.MISS
         damage = 0
+    if "guarded" in target.status_effects and damage > 0:
+        damage = max(damage - 2, 0)
 
     deltas = [
         _combat_state_delta(state, attacker_id, target_id),
@@ -108,8 +121,18 @@ def resolve_attack(state: GameState, attacker_id: str, target_id: str, rng: Rand
 
     damage_result: DamageResult | None = None
     if damage > 0:
-        damage_result, damage_deltas = apply_damage(state, target_id, damage)
+        damage_result, damage_deltas = apply_damage(state, target_id, damage, lethal=lethal)
         deltas.extend(damage_deltas)
+    if "guarded" in target.status_effects and outcome != AttackOutcome.MISS:
+        deltas.append(
+            StateDelta(
+                operation=StateDeltaOperation.REMOVE,
+                path=f"npcs.{target_id}.status_effects",
+                value="guarded",
+                reason="Guarded status was consumed by an incoming attack.",
+                metadata={"source": "combat", "combat_action": "attack", "target_id": target_id},
+            )
+        )
 
     return (
         AttackResult(
@@ -123,7 +146,7 @@ def resolve_attack(state: GameState, attacker_id: str, target_id: str, rng: Rand
     )
 
 
-def apply_damage(state: GameState, target_id: str, damage: int) -> tuple[DamageResult, list[StateDelta]]:
+def apply_damage(state: GameState, target_id: str, damage: int, *, lethal: bool = False) -> tuple[DamageResult, list[StateDelta]]:
     target = state.npcs.get(target_id)
     if target is None:
         raise CombatRuleError(f"Damage target does not exist: {target_id}")
@@ -136,11 +159,22 @@ def apply_damage(state: GameState, target_id: str, damage: int) -> tuple[DamageR
                     **delta.metadata,
                     "source": "combat",
                     "target_id": target_id,
-                }
+                    "lethal": str(lethal).lower(),
+                },
             }
         )
-        for delta in apply_life_damage(state, target_id, damage)
+        for delta in apply_life_damage(state, target_id, damage, lethal=lethal)
     ]
+    if damage >= 5 and "bleeding" not in target.status_effects and resulting_hp > 0:
+        deltas.append(
+            StateDelta(
+                operation=StateDeltaOperation.ADD,
+                path=f"npcs.{target_id}.status_effects",
+                value="bleeding",
+                reason="Heavy damage caused bleeding.",
+                metadata={"source": "combat", "target_id": target_id, "status_effect": "bleeding"},
+            )
+        )
     return DamageResult(target_id=target_id, damage=damage, resulting_hp=resulting_hp, status_effects=status_effects), deltas
 
 
@@ -169,7 +203,12 @@ def defend(state: GameState, actor_id: str) -> list[StateDelta]:
     return deltas
 
 
-def flee(state: GameState, actor_id: str, target_location_id: str | None = None) -> tuple[bool, list[StateDelta], str]:
+def flee(
+    state: GameState,
+    actor_id: str,
+    target_location_id: str | None = None,
+    rng: Random | None = None,
+) -> tuple[bool, list[StateDelta], str]:
     if actor_id != state.player.id:
         return False, [], "Only player flee is supported in v0.4.7."
     location = state.locations.get(state.player.location_id)
@@ -178,6 +217,37 @@ def flee(state: GameState, actor_id: str, target_location_id: str | None = None)
     destination = target_location_id or next(iter(location.exits.values()), None)
     if destination is None or destination not in set(location.exits.values()):
         return False, [], "No reachable flee destination."
+    hostile_observers = [
+        npc
+        for npc in state.npcs.values()
+        if npc.location_id == state.player.location_id
+        and state.player.id in npc.hostile_to
+        and can_act(state, npc.id)
+    ]
+    if rng is not None and hostile_observers:
+        difficulty = 4 + max(npc.alertness for npc in hostile_observers)
+        roll = rng.randint(1, 10)
+        if roll < difficulty:
+            return (
+                False,
+                [
+                    StateDelta(
+                        operation=StateDeltaOperation.SET,
+                        path="player.combat_stance",
+                        value=CombatantStance.FLEEING,
+                        reason="Player tried to flee but was blocked.",
+                        metadata={"source": "combat", "combat_action": "flee", "visible_to_player": "true"},
+                    ),
+                    StateDelta(
+                        operation=StateDeltaOperation.ADD,
+                        path="player.status_effects",
+                        value="stunned",
+                        reason="Failed flee left the player momentarily stunned.",
+                        metadata={"source": "combat", "combat_action": "flee", "visible_to_player": "true"},
+                    ),
+                ],
+                "Player failed to flee and was momentarily stunned.",
+            )
     deltas = [
         StateDelta(
             operation=StateDeltaOperation.SET,
@@ -261,3 +331,14 @@ def _status_effects_for_hp(hp: int) -> list[str]:
     if hp == 0:
         return ["incapacitated"]
     return ["injured"]
+
+
+def _defense_bonus(target: NPCState) -> int:
+    bonus = 0
+    if target.combat_stance == CombatantStance.DEFENSIVE:
+        bonus += 2
+    if target.combat_stance == CombatantStance.CAUTIOUS:
+        bonus += 1
+    if "guarded" in target.status_effects:
+        bonus += 2
+    return bonus

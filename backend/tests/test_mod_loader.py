@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from app.config import Settings
 from app.db.repository import SQLiteSaveRepository
-from app.engine.content.mod_loader import ModLoader, ModLoaderError
+from app.engine.content.mod_loader import ModLoader, ModLoaderError, compare_versions, parse_version
 from app.main import app
 from app.session_store import InMemorySessionStore
 
@@ -19,6 +19,9 @@ def write_mod(
     conflicts: list[str] | None = None,
     content_paths: list[str] | None = None,
     copy_world: bool = True,
+    engine_version_min: str = "0.5.0",
+    content_schema_version: str = "0.6",
+    load_order_hint: int = 0,
 ) -> Path:
     mod_path = tmp_path / "mods" / mod_id
     mod_path.mkdir(parents=True)
@@ -32,9 +35,15 @@ def write_mod(
 id: {mod_id}
 name: Mist Mod
 version: 0.1.0
-engine_version_min: 0.5.0
+engine_version_min: {engine_version_min}
+content_schema_version: "{content_schema_version}"
 dependencies: {dependencies or []}
+optional_dependencies: []
 conflicts: {conflicts or []}
+load_order_hint: {load_order_hint}
+compatible_worlds:
+  - mist_valley
+migration_notes: ""
 entry_worlds:
   - mist_valley
 content_paths:
@@ -156,3 +165,50 @@ def test_authoring_mod_api_obeys_authoring_toggle(tmp_path: Path) -> None:
     response = client.get("/authoring/mods")
 
     assert response.status_code == 403
+
+
+def test_version_parser_and_comparator() -> None:
+    assert parse_version("1.2.3") == (1, 2, 3)
+    assert compare_versions("1.2.0", "1.2") == 0
+    assert compare_versions("1.3.0", "1.2.9") == 1
+    assert compare_versions("1.0.0", "1.0.1") == -1
+
+
+def test_valid_mod_version_passes(tmp_path: Path) -> None:
+    write_mod(tmp_path)
+
+    report = ModLoader(tmp_path / "mods").validate_mod_version("mist_mod")
+
+    assert report.ok
+    assert report.errors == {}
+
+
+def test_engine_version_min_not_satisfied_is_error(tmp_path: Path) -> None:
+    write_mod(tmp_path, engine_version_min="9.0.0")
+
+    report = ModLoader(tmp_path / "mods").validate_mod("mist_mod")
+
+    assert not report.ok
+    assert any(issue.code == "mod_version_incompatible" for issue in report.errors)
+
+
+def test_load_order_is_deterministic_and_dependency_aware(tmp_path: Path) -> None:
+    write_mod(tmp_path, "base_mod", load_order_hint=10)
+    write_mod(tmp_path, "addon_mod", dependencies=["base_mod"], load_order_hint=0)
+
+    report = ModLoader(tmp_path / "mods").resolve_load_order(["addon_mod", "base_mod"])
+
+    assert report.ok
+    assert report.load_order == ["base_mod", "addon_mod"]
+
+
+def test_mod_cannot_declare_executable_entry(tmp_path: Path) -> None:
+    mod_path = write_mod(tmp_path)
+    manifest = mod_path / "mod.yaml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8") + "\npython_entrypoint: evil.py\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ModLoaderError, match="Invalid mod manifest"):
+        ModLoader(tmp_path / "mods").discover_mods()

@@ -1,0 +1,76 @@
+{
+  "save_id": "fixture-hidden-facts",
+  "engine_version": "0.4.0",
+  "schema_version": "0.4",
+  "world_id": "fixture_world",
+  "world_version": "0.4.0",
+  "content_pack_version": "0.4.0",
+  "migration_history": [],
+  "state": {
+    "schema_version": "0.4",
+    "world_id": "fixture_world",
+    "turn": 6,
+    "player": {
+      "location_id": "square"
+    },
+    "locations": {
+      "square": {
+        "id": "square",
+        "name": "Fixture Square",
+        "exits": {}
+      }
+    },
+    "objects": {},
+    "npcs": {},
+    "flags": {},
+    "facts": {
+      "public_notice": {
+        "id": "public_notice",
+        "text": "The square is open.",
+        "visibility": "public"
+      },
+      "hidden_cache": {
+        "id": "hidden_cache",
+        "text": "A sealed cache is below the stones.",
+        "visibility": "hidden"
+      },
+      "discoverable_mark": {
+        "id": "discoverable_mark",
+        "text": "A faint mark waits to be found.",
+        "visibility": "discoverable"
+      }
+    },
+    "player_visible_facts": [
+      "public_notice"
+    ],
+    "npc_knowledge": {},
+    "quests": {},
+    "delayed_consequences": [],
+    "factions": {},
+    "rumors": {},
+    "crimes": {},
+    "witnesses": {},
+    "social_consequences": {},
+    "social_flags": {},
+    "relationships": {},
+    "combats": {}
+  },
+  "events": [
+    {
+      "event_id": "fixture-hidden-event-1",
+      "turn": 4,
+      "actor_id": "player",
+      "action_type": "search",
+      "result": "failure",
+      "visible_to_player": true,
+      "state_deltas": [
+        {
+          "operation": "inc",
+          "path": "turn",
+          "value": 1
+        }
+      ]
+    }
+  ],
+  "memories": []
+}

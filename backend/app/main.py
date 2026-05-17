@@ -1,3 +1,4 @@
+import json
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException
@@ -6,12 +7,16 @@ from app.api import (
     AuthoringCreateWorldRequest,
     AuthoringCreateWorldResponse,
     AuthoringFileListResponse,
+    AuthoringFilePreviewResponse,
     AuthoringFileResponse,
+    AuthoringDraftFileRequest,
     AuthoringFileWriteRequest,
     AuthoringFileWriteResponse,
     AuthoringModListResponse,
     AuthoringModSummaryResponse,
     AuthoringModValidationResponse,
+    AuthoringDiffSummaryResponse,
+    AuthoringImpactAnalysisResponse,
     AuthoringValidationIssueResponse,
     AuthoringValidationResponse,
     AuthoringWorldDetailResponse,
@@ -23,17 +28,32 @@ from app.api import (
     GameStateResponse,
     DebugEventListResponse,
     DebugEventResponse,
+    DebugPerformanceRecentResponse,
+    DebugPerformanceSampleResponse,
+    DebugPerformanceSummaryEntryResponse,
+    DebugPerformanceSummaryResponse,
     LoadGameResponse,
+    MigrationHistoryEntryResponse,
+    MigrationInfoResponse,
+    MigrationListResponse,
     SaveGameResponse,
     SaveListResponse,
+    SaveMigrationResponse,
+    SaveMigrationStatusResponse,
     SaveSummaryResponse,
     StartGameRequest,
     StartGameResponse,
 )
 from app.config import get_settings
 from app.core.event_log import Event
+from app.core.instrumentation import (
+    get_performance_recorder,
+    performance_logging_enabled,
+    set_performance_logging_enabled,
+)
 from app.core.world_state import GameState
 from app.db.models import SaveGame
+from app.db.migration_service import MigrationService
 from app.db.repository import SaveRepositoryError, SQLiteSaveRepository
 from app.db.save_service import SaveService
 from app.engine.content.authoring_service import AuthoringError, ContentAuthoringService
@@ -42,6 +62,12 @@ from app.engine.content.validator import ValidationReport
 from app.engine.content.world_loader import WorldLoaderError
 from app.engine.content.world_loader import WorldLoader
 from app.engine.rules.time import format_game_time
+from app.engine.rules.graphs import (
+    FactionGraph,
+    RelationshipGraph,
+    build_faction_graph,
+    build_relationship_graph,
+)
 from app.llm.provider_base import LLMProviderError
 from app.session_store import InMemorySessionStore, build_visible_state
 
@@ -55,6 +81,7 @@ def _sqlite_path_from_url(database_url: str) -> str:
 
 
 settings = get_settings()
+set_performance_logging_enabled(settings.enable_perf_logging)
 
 app = FastAPI(title=settings.app_name, version="0.1.0")
 app.state.session_store = InMemorySessionStore()
@@ -78,9 +105,18 @@ def get_save_repository() -> SQLiteSaveRepository:
     return app.state.save_repository
 
 
+def get_migration_service() -> MigrationService:
+    return MigrationService(get_save_repository())
+
+
 def debug_api_enabled() -> bool:
     active_settings = getattr(app.state, "settings", settings)
     return bool(active_settings.enable_debug_api)
+
+
+def sync_runtime_settings() -> None:
+    active_settings = getattr(app.state, "settings", settings)
+    set_performance_logging_enabled(bool(active_settings.enable_perf_logging))
 
 
 def authoring_api_enabled() -> bool:
@@ -89,6 +125,7 @@ def authoring_api_enabled() -> bool:
 
 
 def require_debug_api() -> None:
+    sync_runtime_settings()
     if not debug_api_enabled():
         raise HTTPException(status_code=403, detail="Debug API is disabled")
 
@@ -132,6 +169,7 @@ def start_game(request: StartGameRequest | None = None) -> StartGameResponse:
 
 @app.post("/game/input", response_model=GameInputResponse)
 def submit_game_input(request: GameInputRequest) -> GameInputResponse:
+    sync_runtime_settings()
     game_loop = get_session_store().get_session(request.session_id)
     if game_loop is None:
         raise HTTPException(status_code=404, detail=f"Unknown game session: {request.session_id}")
@@ -163,6 +201,22 @@ def get_game_state(session_id: str) -> GameStateResponse:
     )
 
 
+@app.get("/game/{session_id}/graphs/relationships", response_model=RelationshipGraph)
+def get_player_relationship_graph(session_id: str) -> RelationshipGraph:
+    game_loop = get_session_store().get_session(session_id)
+    if game_loop is None:
+        raise HTTPException(status_code=404, detail=f"Unknown game session: {session_id}")
+    return build_relationship_graph(game_loop.state, debug=False)
+
+
+@app.get("/game/{session_id}/graphs/factions", response_model=FactionGraph)
+def get_player_faction_graph(session_id: str) -> FactionGraph:
+    game_loop = get_session_store().get_session(session_id)
+    if game_loop is None:
+        raise HTTPException(status_code=404, detail=f"Unknown game session: {session_id}")
+    return build_faction_graph(game_loop.state, debug=False)
+
+
 @app.get("/game/saves", response_model=SaveListResponse)
 def list_saves(world_id: str | None = None) -> SaveListResponse:
     try:
@@ -190,7 +244,22 @@ def _save_summary_response(save: SaveGame) -> SaveSummaryResponse:
         created_at=save.created_at.isoformat(),
         updated_at=save.updated_at.isoformat(),
         player_summary=f"Turn {state.turn} at {location.name if location else state.player.location_id}",
+        enabled_mods=_enabled_mods_from_save(save),
     )
+
+
+def _enabled_mods_from_save(save: SaveGame) -> dict[str, str]:
+    try:
+        payload = json.loads(save.enabled_mods)
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(payload, list):
+        return {}
+    result: dict[str, str] = {}
+    for item in payload:
+        if isinstance(item, dict) and isinstance(item.get("id"), str):
+            result[item["id"]] = str(item.get("version", "unknown"))
+    return result
 
 
 def _world_name_for_state(state: GameState) -> str:
@@ -203,6 +272,7 @@ def _world_name_for_state(state: GameState) -> str:
 
 @app.post("/game/{session_id}/save", response_model=SaveGameResponse)
 def save_game(session_id: str) -> SaveGameResponse:
+    sync_runtime_settings()
     game_loop = get_session_store().get_session(session_id)
     if game_loop is None:
         raise HTTPException(status_code=404, detail=f"Unknown game session: {session_id}")
@@ -231,6 +301,7 @@ def delete_save(save_id: str) -> DeleteSaveResponse:
 
 @app.post("/game/load/{save_id}", response_model=LoadGameResponse)
 def load_game(save_id: str) -> LoadGameResponse:
+    sync_runtime_settings()
     repository = get_save_repository()
     try:
         state = repository.load_save(save_id)
@@ -247,6 +318,92 @@ def load_game(save_id: str) -> LoadGameResponse:
     )
 
 
+@app.get("/game/saves/{save_id}/migration-status", response_model=SaveMigrationStatusResponse)
+def get_save_migration_status(save_id: str) -> SaveMigrationStatusResponse:
+    return _get_save_migration_status(save_id)
+
+
+@app.get("/saves/{save_id}/migration-status", response_model=SaveMigrationStatusResponse)
+def get_save_migration_status_alias(save_id: str) -> SaveMigrationStatusResponse:
+    return _get_save_migration_status(save_id)
+
+
+def _get_save_migration_status(save_id: str) -> SaveMigrationStatusResponse:
+    try:
+        status = get_migration_service().status(
+            save_id,
+            available_mod_versions={
+                mod.manifest.id: mod.manifest.version
+                for mod in get_mod_loader().discover_mods()
+            },
+        )
+    except SaveRepositoryError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return SaveMigrationStatusResponse(
+        save_id=status.save_id,
+        engine_version=status.engine_version,
+        schema_version=status.schema_version,
+        world_id=status.world_id,
+        world_version=status.world_version,
+        content_pack_version=status.content_pack_version,
+        needs_migration=status.needs_migration,
+        target_schema_version=status.target_schema_version,
+        migration_path=[item.migration_id for item in status.migration_path],
+        warnings=status.warnings,
+    )
+
+
+@app.post("/game/saves/{save_id}/migrate-dry-run", response_model=SaveMigrationResponse)
+def dry_run_save_migration(save_id: str) -> SaveMigrationResponse:
+    return _dry_run_save_migration(save_id)
+
+
+@app.post("/saves/{save_id}/migrate-dry-run", response_model=SaveMigrationResponse)
+def dry_run_save_migration_alias(save_id: str) -> SaveMigrationResponse:
+    return _dry_run_save_migration(save_id)
+
+
+def _dry_run_save_migration(save_id: str) -> SaveMigrationResponse:
+    try:
+        report = get_migration_service().dry_run(save_id)
+    except SaveRepositoryError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _migration_response(report)
+
+
+@app.post("/game/saves/{save_id}/migrate", response_model=SaveMigrationResponse)
+def migrate_save(save_id: str) -> SaveMigrationResponse:
+    return _migrate_save(save_id)
+
+
+@app.post("/saves/{save_id}/migrate", response_model=SaveMigrationResponse)
+def migrate_save_alias(save_id: str) -> SaveMigrationResponse:
+    return _migrate_save(save_id)
+
+
+def _migrate_save(save_id: str) -> SaveMigrationResponse:
+    try:
+        report = get_migration_service().apply(save_id)
+    except SaveRepositoryError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _migration_response(report)
+
+
+@app.get("/migrations", response_model=MigrationListResponse)
+def list_migrations() -> MigrationListResponse:
+    return MigrationListResponse(
+        migrations=[
+            MigrationInfoResponse(
+                migration_id=migration.migration_id,
+                source_version=migration.source_version,
+                target_version=migration.target_version,
+                description=migration.description,
+            )
+            for migration in get_migration_service().list_available_migrations()
+        ]
+    )
+
+
 @app.get("/debug/sessions/{session_id}/events", response_model=DebugEventListResponse)
 def get_debug_session_events(session_id: str) -> DebugEventListResponse:
     require_debug_api()
@@ -256,6 +413,24 @@ def get_debug_session_events(session_id: str) -> DebugEventListResponse:
     return DebugEventListResponse(
         events=[_debug_event_response(event) for event in game_loop.event_log.list_events()]
     )
+
+
+@app.get("/debug/sessions/{session_id}/graphs/relationships", response_model=RelationshipGraph)
+def get_debug_relationship_graph(session_id: str) -> RelationshipGraph:
+    require_debug_api()
+    game_loop = get_session_store().get_session(session_id)
+    if game_loop is None:
+        raise HTTPException(status_code=404, detail=f"Unknown game session: {session_id}")
+    return build_relationship_graph(game_loop.state, debug=True)
+
+
+@app.get("/debug/sessions/{session_id}/graphs/factions", response_model=FactionGraph)
+def get_debug_faction_graph(session_id: str) -> FactionGraph:
+    require_debug_api()
+    game_loop = get_session_store().get_session(session_id)
+    if game_loop is None:
+        raise HTTPException(status_code=404, detail=f"Unknown game session: {session_id}")
+    return build_faction_graph(game_loop.state, debug=True)
 
 
 @app.get("/debug/saves/{save_id}/events", response_model=DebugEventListResponse)
@@ -270,6 +445,46 @@ def get_debug_save_events(save_id: str) -> DebugEventListResponse:
     )
 
 
+@app.get("/debug/performance/recent", response_model=DebugPerformanceRecentResponse)
+def get_debug_performance_recent(limit: int = 50) -> DebugPerformanceRecentResponse:
+    require_debug_api()
+    recorder = get_performance_recorder()
+    return DebugPerformanceRecentResponse(
+        enabled=performance_logging_enabled(),
+        samples=[
+            DebugPerformanceSampleResponse(
+                sample_id=sample.sample_id,
+                name=sample.name,
+                duration_ms=sample.duration_ms,
+                started_at=sample.started_at.isoformat(),
+                stage_durations_ms=sample.stage_durations_ms,
+                tags=sample.tags,
+            )
+            for sample in recorder.recent(limit)
+        ],
+    )
+
+
+@app.get("/debug/performance/summary", response_model=DebugPerformanceSummaryResponse)
+def get_debug_performance_summary() -> DebugPerformanceSummaryResponse:
+    require_debug_api()
+    summary = get_performance_recorder().summary()
+    return DebugPerformanceSummaryResponse(
+        enabled=summary.enabled,
+        sample_count=summary.sample_count,
+        entries=[
+            DebugPerformanceSummaryEntryResponse(
+                name=entry.name,
+                count=entry.count,
+                total_duration_ms=entry.total_duration_ms,
+                average_duration_ms=entry.average_duration_ms,
+                max_duration_ms=entry.max_duration_ms,
+            )
+            for entry in summary.entries
+        ],
+    )
+
+
 def _debug_event_response(event: Event) -> DebugEventResponse:
     return DebugEventResponse(
         turn=event.turn,
@@ -280,6 +495,28 @@ def _debug_event_response(event: Event) -> DebugEventResponse:
         state_deltas=event.state_deltas,
         visible_to_player=event.visible_to_player,
         created_at=event.created_at.isoformat(),
+    )
+
+
+def _migration_response(report: object) -> SaveMigrationResponse:
+    return SaveMigrationResponse(
+        save_id=getattr(report, "save_id"),
+        source_version=getattr(report, "source_version"),
+        target_version=getattr(report, "target_version"),
+        dry_run=getattr(report, "dry_run"),
+        backup_save_id=getattr(report, "backup_save_id"),
+        success=getattr(report, "success"),
+        warnings=getattr(report, "warnings"),
+        applied_migrations=[
+            MigrationHistoryEntryResponse(
+                migration_id=entry.migration_id,
+                source_version=entry.source_version,
+                target_version=entry.target_version,
+                description=entry.description,
+                applied_at=entry.applied_at,
+            )
+            for entry in getattr(report, "applied_migrations")
+        ],
     )
 
 
@@ -370,6 +607,66 @@ def write_authoring_file(
     )
 
 
+@app.post(
+    "/authoring/worlds/{world_id}/preview-file-change",
+    response_model=AuthoringFilePreviewResponse,
+)
+def preview_authoring_file_change(
+    world_id: str,
+    request: AuthoringDraftFileRequest,
+) -> AuthoringFilePreviewResponse:
+    require_authoring_api()
+    try:
+        report = get_authoring_service().preview_file_change(
+            world_id,
+            request.file_name,
+            request.proposed_content,
+        )
+    except AuthoringError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _authoring_preview_response(world_id, request.file_name, report)
+
+
+@app.post(
+    "/authoring/worlds/{world_id}/validate-draft",
+    response_model=AuthoringValidationResponse,
+)
+def validate_authoring_draft(
+    world_id: str,
+    request: AuthoringDraftFileRequest,
+) -> AuthoringValidationResponse:
+    require_authoring_api()
+    try:
+        report = get_authoring_service().validate_draft(
+            world_id,
+            request.file_name,
+            request.proposed_content,
+        )
+    except AuthoringError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _authoring_validation_response(report)
+
+
+@app.post(
+    "/authoring/worlds/{world_id}/impact-analysis",
+    response_model=AuthoringImpactAnalysisResponse,
+)
+def analyze_authoring_draft_impact(
+    world_id: str,
+    request: AuthoringDraftFileRequest,
+) -> AuthoringImpactAnalysisResponse:
+    require_authoring_api()
+    try:
+        report = get_authoring_service().analyze_file_impact(
+            world_id,
+            request.file_name,
+            request.proposed_content,
+        )
+    except AuthoringError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _authoring_impact_response(report)
+
+
 @app.post("/authoring/worlds/{world_id}/validate", response_model=AuthoringValidationResponse)
 def validate_authoring_world(world_id: str) -> AuthoringValidationResponse:
     require_authoring_api()
@@ -418,8 +715,13 @@ def _authoring_mod_response(mod: ModInfo) -> AuthoringModSummaryResponse:
         version=manifest.version,
         engine_version_min=manifest.engine_version_min,
         engine_version_max=manifest.engine_version_max,
+        content_schema_version=manifest.content_schema_version,
         dependencies=manifest.dependencies,
+        optional_dependencies=manifest.optional_dependencies,
         conflicts=manifest.conflicts,
+        load_order_hint=manifest.load_order_hint,
+        compatible_worlds=manifest.compatible_worlds,
+        migration_notes=manifest.migration_notes,
         entry_worlds=manifest.entry_worlds,
         content_paths=manifest.content_paths,
         author=manifest.author,
@@ -469,6 +771,33 @@ def _authoring_mod_validation_response(report: ModValidationReport) -> Authoring
         ],
         world_report_ids=sorted(report.world_reports),
     )
+
+
+def _authoring_preview_response(
+    world_id: str,
+    file_name: str,
+    report: object,
+) -> AuthoringFilePreviewResponse:
+    return AuthoringFilePreviewResponse(
+        world_id=world_id,
+        file_name=file_name,
+        parsed_ok=getattr(report, "parsed_ok"),
+        validation_report=_authoring_validation_response(getattr(report, "validation_report")),
+        normalized_yaml=getattr(report, "normalized_yaml"),
+        diff_summary=AuthoringDiffSummaryResponse.model_validate(
+            getattr(report, "diff_summary").model_dump(mode="json")
+        ),
+        affected_refs=getattr(report, "affected_refs"),
+        potential_save_migration_required=getattr(
+            report,
+            "potential_save_migration_required",
+        ),
+        impact=_authoring_impact_response(getattr(report, "impact")),
+    )
+
+
+def _authoring_impact_response(report: object) -> AuthoringImpactAnalysisResponse:
+    return AuthoringImpactAnalysisResponse.model_validate(report.model_dump(mode="json"))
 
 
 def _authoring_validation_response(report: ValidationReport) -> AuthoringValidationResponse:

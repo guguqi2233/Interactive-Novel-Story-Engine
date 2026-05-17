@@ -1,0 +1,64 @@
+{
+  "save_id": "fixture-v04",
+  "engine_version": "0.4.0",
+  "schema_version": "0.4",
+  "world_id": "fixture_world",
+  "world_version": "0.4.0",
+  "content_pack_version": "0.4.0",
+  "migration_history": [],
+  "state": {
+    "schema_version": "0.4",
+    "world_id": "fixture_world",
+    "turn": 4,
+    "player": {
+      "location_id": "square"
+    },
+    "locations": {
+      "square": {
+        "id": "square",
+        "name": "Fixture Square",
+        "exits": {}
+      }
+    },
+    "objects": {},
+    "npcs": {},
+    "flags": {},
+    "facts": {},
+    "player_visible_facts": [],
+    "npc_knowledge": {},
+    "quests": {},
+    "delayed_consequences": [],
+    "factions": {
+      "town_watch": {
+        "id": "town_watch",
+        "name": "Town Watch",
+        "known_by_player": true
+      }
+    },
+    "rumors": {},
+    "crimes": {},
+    "witnesses": {},
+    "social_consequences": {},
+    "social_flags": {},
+    "relationships": {},
+    "combats": {}
+  },
+  "events": [
+    {
+      "event_id": "fixture-v04-event-1",
+      "turn": 2,
+      "actor_id": "system",
+      "action_type": "world_tick",
+      "result": "success",
+      "visible_to_player": false,
+      "state_deltas": [
+        {
+          "operation": "set",
+          "path": "social_flags.fixture_tick",
+          "value": true
+        }
+      ]
+    }
+  ],
+  "memories": []
+}

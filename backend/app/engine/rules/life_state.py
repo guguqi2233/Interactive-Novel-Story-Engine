@@ -127,7 +127,11 @@ def mark_dead(state: GameState, actor_id: str) -> list[StateDelta]:
 
 def can_act(state: GameState, actor_id: str) -> bool:
     actor = _get_actor(state, actor_id)
-    return actor.alive and actor.condition not in {ActorCondition.INCAPACITATED, ActorCondition.DEAD}
+    return (
+        actor.alive
+        and actor.condition not in {ActorCondition.INCAPACITATED, ActorCondition.DEAD}
+        and "stunned" not in actor.status_effects
+    )
 
 
 def can_move(state: GameState, actor_id: str) -> bool:

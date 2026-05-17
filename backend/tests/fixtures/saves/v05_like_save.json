@@ -1,0 +1,65 @@
+{
+  "save_id": "fixture-v05",
+  "engine_version": "0.5.0",
+  "schema_version": "0.5",
+  "world_id": "fixture_world",
+  "world_version": "0.5.0",
+  "content_pack_version": "0.5.0",
+  "migration_history": [],
+  "state": {
+    "schema_version": "0.5",
+    "world_id": "fixture_world",
+    "turn": 5,
+    "player": {
+      "location_id": "square",
+      "currency": 12
+    },
+    "locations": {
+      "square": {
+        "id": "square",
+        "name": "Fixture Square",
+        "exits": {}
+      }
+    },
+    "objects": {},
+    "npcs": {
+      "harlan": {
+        "id": "harlan",
+        "location_id": "square",
+        "knowledge": []
+      }
+    },
+    "flags": {},
+    "facts": {},
+    "player_visible_facts": [],
+    "npc_knowledge": {},
+    "quests": {},
+    "delayed_consequences": [],
+    "factions": {},
+    "rumors": {},
+    "crimes": {},
+    "witnesses": {},
+    "social_consequences": {},
+    "social_flags": {},
+    "relationships": {},
+    "combats": {}
+  },
+  "events": [
+    {
+      "event_id": "fixture-v05-event-1",
+      "turn": 3,
+      "actor_id": "player",
+      "action_type": "wait",
+      "result": "success",
+      "visible_to_player": true,
+      "state_deltas": [
+        {
+          "operation": "inc",
+          "path": "turn",
+          "value": 1
+        }
+      ]
+    }
+  ],
+  "memories": []
+}
