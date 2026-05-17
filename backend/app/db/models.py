@@ -18,3 +18,11 @@ class StoredEvent(BaseModel):
     sequence: int = 0
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
+
+class StoredMemory(BaseModel):
+    memory_id: str
+    save_id: str
+    memory_json: str
+    created_turn: int = 0
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+

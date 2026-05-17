@@ -4,6 +4,7 @@ from app.core.state_delta import StateDelta, StateDeltaOperation
 from app.core.world_state import GameState, LocationState
 from app.engine.actions.base import ActionHandler
 from app.engine.actions.schemas import ActionResult, SuccessLevel
+from app.engine.rules.life_state import can_act
 from app.engine.rules.time import make_time_delta
 from app.llm.schemas import PlayerActionType, PlayerIntent
 
@@ -118,6 +119,7 @@ def _possible_observers(state: GameState, destination_id: str) -> list[str]:
         npc.id
         for npc in state.npcs.values()
         if npc.location_id in {state.player.location_id, destination_id}
+        and can_act(state, npc.id)
     ]
 
 

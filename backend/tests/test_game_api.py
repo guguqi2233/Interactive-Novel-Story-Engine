@@ -25,6 +25,8 @@ def assert_visible_state_schema(visible_state: dict) -> None:
         "visible_npcs",
         "known_facts",
         "quests",
+        "factions",
+        "known_rumors",
     }
     assert set(visible_state["time"]) >= {"day", "minutes_of_day", "time_of_day", "formatted"}
     assert set(visible_state["location"]) >= {"id", "name", "exits"}
@@ -33,6 +35,8 @@ def assert_visible_state_schema(visible_state: dict) -> None:
     assert isinstance(visible_state["visible_npcs"], list)
     assert isinstance(visible_state["known_facts"], list)
     assert isinstance(visible_state["quests"], list)
+    assert isinstance(visible_state["factions"], list)
+    assert isinstance(visible_state["known_rumors"], list)
 
 
 def test_start_game_returns_initial_visible_state() -> None:
@@ -93,6 +97,8 @@ def test_visible_state_time_inventory_and_quests_are_present() -> None:
     assert visible_state["quests"][0]["status"] == "active"
     assert visible_state["quests"][0]["current_stage"] == "ask_harlan"
     assert not any(quest["id"] == "sealed_letter" for quest in visible_state["quests"])
+    assert any(faction["id"] == "village_council" for faction in visible_state["factions"])
+    assert not any(faction["id"] == "old_road_smugglers" for faction in visible_state["factions"])
 
 
 def test_visible_state_exposes_only_visible_objects_npcs_and_known_facts() -> None:

@@ -40,7 +40,7 @@ def apply_delta(state: GameState, delta: StateDelta) -> GameState:
 
     if delta.operation == StateDeltaOperation.SET:
         _set_value(parent, key, delta.value)
-        return next_state
+        return _validate_dict_entry_delta(next_state, delta.path)
 
     current_value = _get_value(parent, key)
 
@@ -181,6 +181,23 @@ def _validate_model_field_value(container: BaseModel, key: str, value: Any) -> A
         return TypeAdapter(field.annotation).validate_python(value)
     except Exception as exc:
         raise StateDeltaError(f"Invalid value for state path segment: {key}") from exc
+
+
+def _validate_dict_entry_delta(state: GameState, path: str) -> GameState:
+    parts = path.split(".")
+    if len(parts) != 2:
+        return state
+    field = GameState.model_fields.get(parts[0])
+    if field is None:
+        return state
+    field_value = getattr(state, parts[0], None)
+    if not isinstance(field_value, dict) or parts[1] not in field_value:
+        return state
+    try:
+        field_value[parts[1]] = TypeAdapter(field.annotation).validate_python(field_value)[parts[1]]
+        return state
+    except Exception as exc:
+        raise StateDeltaError(f"StateDelta produced invalid value for state path: {path}") from exc
 
 
 def _collection_contains(collection: Any, value: Any) -> bool:

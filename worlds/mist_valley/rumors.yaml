@@ -1,0 +1,14 @@
+rumors:
+  - id: forge_tools_missing_rumor
+    fact_id: sealed_letter_under_stone
+    text_for_player: People mutter that the missing tools may not be simple bad luck.
+    truth_status: unknown
+    known_by_npcs:
+      - harlan
+    known_by_factions:
+      - village_council
+    known_by_player: false
+    spread_level: 1
+    tags:
+      - tools
+      - village

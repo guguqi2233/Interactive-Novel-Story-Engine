@@ -7,8 +7,10 @@ from app.core.event_log import Event
 from app.core.state_delta import StateDelta, StateDeltaOperation, apply_delta
 from app.core.world_state import GameState
 from app.engine.actions.schemas import ActionResult, SuccessLevel
+from app.engine.rules.npc_reactions import resolve_npc_reactions
 from app.engine.rules.quests import resolve_quest_triggers
 from app.engine.rules.schedule import resolve_npc_schedules
+from app.engine.rules.social_tick import run_social_consequence_tick
 from app.llm.schemas import PlayerActionType, PlayerIntent
 
 
@@ -30,6 +32,19 @@ def run_world_tick(
         deltas.append(delta)
         working_state = apply_delta(working_state, delta)
 
+    quest_deltas = _resolve_quest_tick(before_tick_state, working_state)
+    for delta in quest_deltas:
+        deltas.append(delta)
+        working_state = apply_delta(working_state, delta)
+
+    for delta in run_social_consequence_tick(working_state):
+        deltas.append(delta)
+        working_state = apply_delta(working_state, delta)
+
+    for delta in resolve_npc_reactions(working_state):
+        deltas.append(delta)
+        working_state = apply_delta(working_state, delta)
+
     for delta in _resolve_suspicion_decay(working_state):
         deltas.append(delta)
         working_state = apply_delta(working_state, delta)
@@ -39,13 +54,8 @@ def run_world_tick(
         deltas.append(delta)
         working_state = apply_delta(working_state, delta)
 
-    quest_deltas = resolve_quest_triggers(
-        before_tick_state,
-        working_state,
-        _system_intent(),
-        ActionResult(success_level=SuccessLevel.SUCCESS, reason="System tick."),
-    )
-    for delta in quest_deltas:
+    post_delayed_quest_deltas = _resolve_quest_tick(before_tick_state, working_state)
+    for delta in post_delayed_quest_deltas:
         deltas.append(delta)
         working_state = apply_delta(working_state, delta)
 
@@ -81,6 +91,15 @@ def _resolve_suspicion_decay(state: GameState) -> list[StateDelta]:
                 )
             )
     return deltas
+
+
+def _resolve_quest_tick(before_state: GameState, working_state: GameState) -> list[StateDelta]:
+    return resolve_quest_triggers(
+        before_state,
+        working_state,
+        _system_intent(),
+        ActionResult(success_level=SuccessLevel.SUCCESS, reason="System tick."),
+    )
 
 
 def _resolve_due_delayed_consequences(state: GameState) -> list[StateDelta]:

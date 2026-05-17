@@ -3,8 +3,9 @@ import sqlite3
 from pathlib import Path
 
 from app.core.event_log import Event
-from app.core.world_state import GameState
-from app.db.models import SaveGame, StoredEvent
+from app.core.world_state import GameState, load_game_state_payload
+from app.db.models import SaveGame, StoredEvent, StoredMemory
+from app.llm.memory_store import MemoryRecord
 
 
 class SaveRepositoryError(RuntimeError):
@@ -54,7 +55,7 @@ class SQLiteSaveRepository:
             ).fetchone()
         if row is None:
             raise SaveRepositoryError(f"Save not found: {save_id}")
-        return GameState.model_validate(json.loads(row["state_json"]))
+        return load_game_state_payload(json.loads(row["state_json"]))
 
     def save_state(self, save_id: str, state: GameState) -> SaveGame:
         state_json = _dump_model_json(state)
@@ -101,7 +102,13 @@ class SQLiteSaveRepository:
             ).fetchone()
         return _row_to_event(row)
 
-    def save_snapshot(self, save_id: str, state: GameState, events: list[Event]) -> SaveGame:
+    def save_snapshot(
+        self,
+        save_id: str,
+        state: GameState,
+        events: list[Event],
+        memories: list[MemoryRecord] | None = None,
+    ) -> SaveGame:
         state_json = _dump_model_json(state)
         with self._connect() as connection:
             try:
@@ -128,6 +135,8 @@ class SQLiteSaveRepository:
                         """,
                         (event.event_id, save_id, event.turn, _dump_model_json(event), sequence),
                     )
+                if memories is not None:
+                    self._replace_memories(connection, save_id, memories)
                 row = connection.execute(
                     "SELECT save_id, state_json, created_at, updated_at FROM save_games WHERE save_id = ?",
                     (save_id,),
@@ -140,6 +149,66 @@ class SQLiteSaveRepository:
                 connection.rollback()
                 raise
         return _row_to_save(row)
+
+    def save_memories(self, save_id: str, memories: list[MemoryRecord]) -> list[MemoryRecord]:
+        if not self._save_exists(save_id):
+            raise SaveRepositoryError(f"Save not found: {save_id}")
+        with self._connect() as connection:
+            try:
+                connection.execute("BEGIN")
+                self._replace_memories(connection, save_id, memories)
+                connection.commit()
+            except Exception:
+                connection.rollback()
+                raise
+        return list(memories)
+
+    def append_memory(self, save_id: str, memory: MemoryRecord) -> StoredMemory:
+        if not self._save_exists(save_id):
+            raise SaveRepositoryError(f"Save not found: {save_id}")
+        with self._connect() as connection:
+            try:
+                connection.execute(
+                    """
+                    INSERT INTO stored_memories (memory_id, save_id, memory_json, created_turn, created_at)
+                    VALUES (?, ?, ?, ?, datetime('now'))
+                    ON CONFLICT(save_id, memory_id) DO UPDATE SET
+                        memory_json = excluded.memory_json,
+                        created_turn = excluded.created_turn
+                    """,
+                    (
+                        memory.id,
+                        save_id,
+                        _dump_model_json(memory),
+                        memory.created_turn,
+                    ),
+                )
+            except sqlite3.IntegrityError as exc:
+                raise SaveRepositoryError(f"Could not store memory: {memory.id}") from exc
+            row = connection.execute(
+                """
+                SELECT memory_id, save_id, memory_json, created_turn, created_at
+                FROM stored_memories
+                WHERE save_id = ? AND memory_id = ?
+                """,
+                (save_id, memory.id),
+            ).fetchone()
+        return _row_to_memory(row)
+
+    def list_memories(self, save_id: str) -> list[MemoryRecord]:
+        if not self._save_exists(save_id):
+            raise SaveRepositoryError(f"Save not found: {save_id}")
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT memory_json
+                FROM stored_memories
+                WHERE save_id = ?
+                ORDER BY created_turn DESC, memory_id ASC
+                """,
+                (save_id,),
+            ).fetchall()
+        return [MemoryRecord.model_validate(json.loads(row["memory_json"])) for row in rows]
 
     def list_events(self, save_id: str) -> list[Event]:
         if not self._save_exists(save_id):
@@ -188,6 +257,25 @@ class SQLiteSaveRepository:
                 ON stored_events(save_id, sequence)
                 """
             )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS stored_memories (
+                    memory_id TEXT NOT NULL,
+                    save_id TEXT NOT NULL,
+                    memory_json TEXT NOT NULL,
+                    created_turn INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY (save_id, memory_id),
+                    FOREIGN KEY (save_id) REFERENCES save_games(save_id)
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_stored_memories_save_turn
+                ON stored_memories(save_id, created_turn)
+                """
+            )
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.database_path)
@@ -220,8 +308,27 @@ class SQLiteSaveRepository:
             "ALTER TABLE stored_events ADD COLUMN sequence INTEGER NOT NULL DEFAULT 0"
         )
 
+    def _replace_memories(
+        self,
+        connection: sqlite3.Connection,
+        save_id: str,
+        memories: list[MemoryRecord],
+    ) -> None:
+        connection.execute(
+            "DELETE FROM stored_memories WHERE save_id = ?",
+            (save_id,),
+        )
+        for memory in memories:
+            connection.execute(
+                """
+                INSERT INTO stored_memories (memory_id, save_id, memory_json, created_turn, created_at)
+                VALUES (?, ?, ?, ?, datetime('now'))
+                """,
+                (memory.id, save_id, _dump_model_json(memory), memory.created_turn),
+            )
 
-def _dump_model_json(model: GameState | Event) -> str:
+
+def _dump_model_json(model: GameState | Event | MemoryRecord) -> str:
     return model.model_dump_json()
 
 
@@ -236,3 +343,8 @@ def _row_to_event(row: sqlite3.Row | None) -> StoredEvent:
         raise SaveRepositoryError("Expected event row")
     return StoredEvent.model_validate(dict(row))
 
+
+def _row_to_memory(row: sqlite3.Row | None) -> StoredMemory:
+    if row is None:
+        raise SaveRepositoryError("Expected memory row")
+    return StoredMemory.model_validate(dict(row))

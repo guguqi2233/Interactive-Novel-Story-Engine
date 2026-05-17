@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field, ValidationError, model_validator
 from app.core.world_state import (
     FactState,
     FactVisibility,
+    FactionState,
     GameState,
     LocationState,
     NPCState,
@@ -19,6 +20,9 @@ from app.core.world_state import (
     QuestTriggerAction,
     QuestTriggerType,
     QuestVisibility,
+    ReputationState,
+    RumorState,
+    RumorTruthStatus,
     WorldObjectState,
 )
 
@@ -50,6 +54,7 @@ class NPCDef(BaseModel):
     name: str
     location_id: str
     personality: str
+    faction_id: str | None = None
     knowledge: list[str] = Field(default_factory=list)
     visible: bool = True
     hidden: bool = False
@@ -122,6 +127,57 @@ class FactDef(BaseModel):
     tags: list[str] = Field(default_factory=list)
 
 
+class FactionDef(BaseModel):
+    id: str
+    name: str
+    description: str = ""
+    default_reputation: int = 0
+    known_by_player: bool = False
+    tags: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def accept_v041_field_names(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        normalized = dict(data)
+        if "default_reputation" not in normalized and "initial_reputation" in normalized:
+            normalized["default_reputation"] = normalized["initial_reputation"]
+        if "known_by_player" not in normalized and "known_to_player" in normalized:
+            normalized["known_by_player"] = normalized["known_to_player"]
+        return normalized
+
+
+class RumorDef(BaseModel):
+    id: str
+    source_event_id: str | None = None
+    fact_id: str | None = None
+    text_for_player: str | None = None
+    truth_status: RumorTruthStatus = RumorTruthStatus.UNKNOWN
+    known_by_npcs: list[str] = Field(default_factory=list)
+    known_by_factions: list[str] = Field(default_factory=list)
+    known_by_player: bool = False
+    spread_level: int = Field(default=0, ge=0)
+    created_turn: int = 0
+    tags: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def accept_legacy_field_names(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        normalized = dict(data)
+        if "text_for_player" not in normalized and "text" in normalized:
+            normalized["text_for_player"] = normalized["text"]
+        if "known_by_npcs" not in normalized and "known_by" in normalized:
+            normalized["known_by_npcs"] = normalized["known_by"]
+        if "known_by_player" not in normalized and "known_to_player" in normalized:
+            normalized["known_by_player"] = normalized["known_to_player"]
+        if "spread_level" not in normalized and "credibility" in normalized:
+            normalized["spread_level"] = normalized["credibility"]
+        return normalized
+
+
 class WorldPack(BaseModel):
     manifest: WorldManifest
     locations: list[LocationDef]
@@ -129,8 +185,23 @@ class WorldPack(BaseModel):
     items: list[ItemDef] = Field(default_factory=list)
     quests: list[QuestDef] = Field(default_factory=list)
     facts: list[FactDef] = Field(default_factory=list)
+    factions: list[FactionDef] = Field(default_factory=list)
+    rumors: list[RumorDef] = Field(default_factory=list)
 
     def to_game_state(self) -> GameState:
+        factions = {
+            faction.id: FactionState(
+                id=faction.id,
+                name=faction.name,
+                description=faction.description,
+                reputation=ReputationState(
+                    value=faction.default_reputation,
+                    known_to_player=faction.known_by_player,
+                ),
+                tags=faction.tags,
+            )
+            for faction in self.factions
+        }
         facts = {
             fact.id: FactState(
                 id=fact.id,
@@ -180,6 +251,26 @@ class WorldPack(BaseModel):
             )
             for quest in self.quests
         }
+        rumors = {
+            rumor.id: RumorState(
+                id=rumor.id,
+                source_event_id=rumor.source_event_id,
+                fact_id=rumor.fact_id,
+                text_for_player=rumor.text_for_player,
+                truth_status=rumor.truth_status,
+                known_by_npcs=set(rumor.known_by_npcs),
+                known_by_factions=set(rumor.known_by_factions),
+                known_by_player=rumor.known_by_player,
+                spread_level=rumor.spread_level,
+                created_turn=rumor.created_turn,
+                text=rumor.text_for_player,
+                known_by=set(rumor.known_by_npcs) | set(rumor.known_by_factions),
+                credibility=rumor.spread_level,
+                known_to_player=rumor.known_by_player,
+                tags=rumor.tags,
+            )
+            for rumor in self.rumors
+        }
         return GameState(
             world_id=self.manifest.world_id,
             player=PlayerState(location_id=self.manifest.start_location_id),
@@ -218,6 +309,7 @@ class WorldPack(BaseModel):
                 npc.id: NPCState(
                     id=npc.id,
                     location_id=npc.location_id,
+                    faction_id=npc.faction_id,
                     visible=npc.visible,
                     hidden=npc.hidden,
                     discovered_by=npc.discovered_by,
@@ -232,6 +324,8 @@ class WorldPack(BaseModel):
                 fact.id for fact in self.facts if fact.visibility == FactVisibility.PUBLIC
             },
             quests=quests,
+            factions=factions,
+            rumors=rumors,
         )
 
 
@@ -267,6 +361,14 @@ class WorldLoader:
                     FactDef.model_validate(item)
                     for item in _read_yaml_list(world_path / "facts.yaml", "facts", required=False)
                 ],
+                factions=[
+                    FactionDef.model_validate(item)
+                    for item in _read_yaml_list(world_path / "factions.yaml", "factions", required=False)
+                ],
+                rumors=[
+                    RumorDef.model_validate(item)
+                    for item in _read_yaml_list(world_path / "rumors.yaml", "rumors", required=False)
+                ],
             )
         except ValidationError as exc:
             raise WorldLoaderError(f"World pack schema validation failed: {exc}") from exc
@@ -277,6 +379,7 @@ class WorldLoader:
     def _validate_references(self, pack: WorldPack) -> None:
         location_ids = {location.id for location in pack.locations}
         npc_ids = {npc.id for npc in pack.npcs}
+        faction_ids = {faction.id for faction in pack.factions}
 
         if pack.manifest.start_location_id not in location_ids:
             raise WorldLoaderError(
@@ -295,6 +398,10 @@ class WorldLoader:
             if npc.location_id not in location_ids:
                 raise WorldLoaderError(
                     f"NPC {npc.id} references missing location_id: {npc.location_id}"
+                )
+            if npc.faction_id and npc.faction_id not in faction_ids:
+                raise WorldLoaderError(
+                    f"NPC {npc.id} references missing faction_id: {npc.faction_id}"
                 )
             for schedule_entry in npc.schedule:
                 if schedule_entry.location_id not in location_ids:
@@ -321,6 +428,21 @@ class WorldLoader:
 
         fact_ids = {fact.id for fact in pack.facts}
         item_ids = {item.id for item in pack.items}
+        for rumor in pack.rumors:
+            if rumor.fact_id and rumor.fact_id not in fact_ids:
+                raise WorldLoaderError(
+                    f"Rumor {rumor.id} references missing fact id: {rumor.fact_id}"
+                )
+            for npc_id in rumor.known_by_npcs:
+                if npc_id not in npc_ids and npc_id not in faction_ids:
+                    raise WorldLoaderError(
+                        f"Rumor {rumor.id} known_by_npcs references missing NPC id: {npc_id}"
+                    )
+            for faction_id in rumor.known_by_factions:
+                if faction_id not in faction_ids:
+                    raise WorldLoaderError(
+                        f"Rumor {rumor.id} known_by_factions references missing faction id: {faction_id}"
+                    )
         for quest in pack.quests:
             stage_ids = {stage.id for stage in quest.stages}
             if quest.initial_stage not in stage_ids:

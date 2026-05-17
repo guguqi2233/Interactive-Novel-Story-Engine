@@ -2,7 +2,7 @@ from random import Random
 
 from app.core.event_log import EventLog
 from app.core.state_delta import apply_delta
-from app.core.world_state import GameState, LocationState, NPCState, PlayerState, WorldObjectState
+from app.core.world_state import ActorCondition, GameState, LocationState, NPCState, PlayerState, WorldObjectState
 from app.engine.action_dispatcher import ActionDispatcher
 from app.engine.actions.sneak import SneakActionHandler
 from app.llm.fake_provider import FakeLLMProvider
@@ -130,6 +130,21 @@ def test_hidden_npc_does_not_enter_visible_state() -> None:
     visible_state = build_visible_state(make_state())
 
     assert "hidden_watcher" not in visible_state.model_dump_json()
+
+
+def test_dead_or_incapacitated_npcs_do_not_observe_sneak() -> None:
+    state = make_state()
+    state.npcs["guard"].condition = ActorCondition.DEAD
+    state.npcs["guard"].alive = False
+    state.npcs["guard"].alertness = 100
+    state.npcs["hidden_watcher"].condition = ActorCondition.INCAPACITATED
+    state.npcs["hidden_watcher"].alertness = 100
+
+    result = SneakActionHandler().resolve(make_intent("garden"), state, Random(1))
+
+    assert result.success_level == "success"
+    assert not any(delta.path == "npcs.guard.suspicion" for delta in result.state_deltas)
+    assert not any(delta.path == "npcs.hidden_watcher.suspicion" for delta in result.state_deltas)
 
 
 def test_sneak_generates_event_and_consumes_time() -> None:

@@ -2,6 +2,7 @@ npcs:
   - id: harlan
     name: Harlan
     location_id: blacksmith
+    faction_id: village_council
     personality: Wary, practical, and slow to trust strangers.
     knowledge:
       - old_bridge_creaks_at_midnight

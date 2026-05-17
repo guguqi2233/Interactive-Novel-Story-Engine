@@ -3,12 +3,14 @@ from random import Random
 from app.core.state_delta import StateDelta, StateDeltaOperation
 from app.core.world_state import GameState
 from app.engine.actions.base import ActionHandler
+from app.engine.actions.combat import AttackActionHandler, DefendActionHandler, FleeActionHandler
 from app.engine.actions.lockpick import LockpickActionHandler
 from app.engine.actions.search import SearchActionHandler
 from app.engine.actions.sneak import SneakActionHandler
 from app.engine.actions.schemas import ActionResult, SuccessLevel
 from app.engine.rules.inventory import item_is_accessible
 from app.engine.rules.knowledge import get_npc_context_for_dialogue
+from app.engine.rules.life_state import can_talk
 from app.engine.rules.time import make_time_delta
 from app.engine.rules.visibility import get_visible_facts
 from app.llm.schemas import PlayerActionType, PlayerIntent
@@ -97,6 +99,16 @@ class TalkActionHandler(ActionHandler):
                 success_level=SuccessLevel.FAILURE,
                 reason="Target NPC is not present.",
             )
+        if not can_talk(state, npc.id):
+            return ActionResult(
+                success_level=SuccessLevel.FAILURE,
+                reason="Target NPC cannot talk.",
+            )
+        if "refuse_talk" in npc.status_effects:
+            return ActionResult(
+                success_level=SuccessLevel.FAILURE,
+                reason="Target NPC refuses to talk.",
+            )
 
         return ActionResult(
             success_level=SuccessLevel.SUCCESS,
@@ -147,6 +159,9 @@ def default_action_handlers() -> list[ActionHandler]:
         SearchActionHandler(),
         LockpickActionHandler(),
         SneakActionHandler(),
+        AttackActionHandler(),
+        DefendActionHandler(),
+        FleeActionHandler(),
         MoveActionHandler(),
         TalkActionHandler(),
         UseItemActionHandler(),

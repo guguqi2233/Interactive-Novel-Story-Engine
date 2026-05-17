@@ -8,6 +8,7 @@ from app.core.state_delta import StateDelta, StateDeltaOperation, apply_delta
 from app.core.world_state import GameState
 from app.engine.action_dispatcher import ActionDispatcher
 from app.engine.actions.schemas import ActionResult, SuccessLevel
+from app.engine.rules.crime import build_crime_event, resolve_crime_from_event
 from app.engine.rules.quests import resolve_quest_triggers
 from app.engine.rules.world_tick import run_world_tick
 from app.llm.intent_parser import IntentParser
@@ -41,33 +42,47 @@ class GameLoop:
         self.narrator = narrator
         self.rng = rng or Random()
 
-    def step(self, player_input: str, tone: str = "简洁、清晰") -> GameLoopResult:
+    def step(self, player_input: str, tone: str = "quiet") -> GameLoopResult:
         intent = self.intent_parser.parse(player_input)
 
         if intent.requires_clarification:
             narrative = NarrativeResult(
-                text=intent.clarification_question or "你想做什么？",
+                text=intent.clarification_question or "Please clarify your action.",
                 suggested_actions=[],
-                short_summary="玩家输入需要澄清。",
+                short_summary="Clarification requested.",
+            )
+            event = self._record_noop_event(
+                intent=intent,
+                player_input=player_input,
+                result="clarification",
+                narrative=narrative,
             )
             return GameLoopResult(
                 state=self.state,
                 intent=intent,
                 action_result=None,
                 narrative=narrative,
+                event=event,
             )
 
         if intent.action_type == PlayerActionType.UNKNOWN:
             narrative = NarrativeResult(
-                text="我还无法理解你的行动。请换一种更具体的说法。",
+                text="I could not understand that action.",
                 suggested_actions=[],
-                short_summary="玩家输入无法解析。",
+                short_summary="Unknown action.",
+            )
+            event = self._record_noop_event(
+                intent=intent,
+                player_input=player_input,
+                result="unknown",
+                narrative=narrative,
             )
             return GameLoopResult(
                 state=self.state,
                 intent=intent,
                 action_result=None,
                 narrative=narrative,
+                event=event,
             )
 
         original_state = self.state
@@ -128,6 +143,17 @@ class GameLoop:
             visible_to_player=True,
             narrative_text=narrative.text,
         )
+        crime_deltas = resolve_crime_from_event(event, next_state)
+        if crime_deltas:
+            for delta in crime_deltas:
+                next_state = apply_delta(next_state, delta)
+            system_events.append(
+                build_crime_event(
+                    event_id=str(uuid4()),
+                    turn=next_state.turn,
+                    state_deltas=crime_deltas,
+                )
+            )
         self.state = next_state
         self.event_log.append(event)
         for system_event in system_events:
@@ -141,3 +167,26 @@ class GameLoop:
             event=event,
             system_events=system_events,
         )
+
+    def _record_noop_event(
+        self,
+        intent: PlayerIntent,
+        player_input: str,
+        result: str,
+        narrative: NarrativeResult,
+    ) -> Event:
+        event = Event(
+            event_id=str(uuid4()),
+            turn=self.state.turn,
+            actor_id=self.state.player.id,
+            action_type=intent.action_type.value,
+            target_id=intent.target_id,
+            input_text=player_input,
+            result=result,
+            state_deltas=[],
+            allow_empty_delta=True,
+            visible_to_player=True,
+            narrative_text=narrative.text,
+        )
+        self.event_log.append(event)
+        return event

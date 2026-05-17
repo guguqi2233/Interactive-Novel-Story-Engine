@@ -24,6 +24,7 @@ class VisibleNPCResponse(BaseModel):
     id: str
     mood: str
     relationship_to_player: int
+    condition: str = "healthy"
 
 
 class KnownFactResponse(BaseModel):
@@ -49,6 +50,32 @@ class VisibleQuestResponse(BaseModel):
     objectives: list[VisibleQuestObjectiveResponse] = Field(default_factory=list)
 
 
+class VisibleFactionResponse(BaseModel):
+    id: str
+    name: str
+    description: str = ""
+    reputation: int
+    band: str
+    tags: list[str] = Field(default_factory=list)
+
+
+class VisibleRumorResponse(BaseModel):
+    id: str
+    text_for_player: str
+    truth_status: str
+    spread_level: int
+    tags: list[str] = Field(default_factory=list)
+
+
+class VisibleCrimeResponse(BaseModel):
+    id: str
+    crime_type: str
+    location_id: str
+    severity: int
+    status: str
+    created_turn: int
+
+
 class VisibleStateResponse(BaseModel):
     world_id: str
     turn: int
@@ -59,6 +86,9 @@ class VisibleStateResponse(BaseModel):
     visible_npcs: list[VisibleNPCResponse] = Field(default_factory=list)
     known_facts: list[KnownFactResponse] = Field(default_factory=list)
     quests: list[VisibleQuestResponse] = Field(default_factory=list)
+    factions: list[VisibleFactionResponse] = Field(default_factory=list)
+    known_rumors: list[VisibleRumorResponse] = Field(default_factory=list)
+    known_crimes: list[VisibleCrimeResponse] = Field(default_factory=list)
 
 
 class StartGameRequest(BaseModel):

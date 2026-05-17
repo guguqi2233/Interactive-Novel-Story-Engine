@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import {
   DebugEvent,
   fetchGameState,
@@ -46,6 +46,28 @@ export function App() {
   const knownFacts = useMemo(
     () => visibleState?.known_facts ?? [],
     [visibleState?.known_facts]
+  );
+  const socialDebugEvents = useMemo(
+    () => timeline.filter((event) => isSocialDebugEvent(event)),
+    [timeline]
+  );
+  const combatDebugEvents = useMemo(
+    () => timeline.filter((event) => isCombatDebugEvent(event)),
+    [timeline]
+  );
+  const rawReputationDeltas = useMemo(
+    () =>
+      timeline.flatMap((event) =>
+        event.state_deltas
+          .filter((delta) => delta.path.startsWith("factions."))
+          .map((delta) => ({
+            event_id: event.event_id,
+            turn: event.turn,
+            action_type: event.action_type,
+            delta
+          }))
+      ),
+    [timeline]
   );
 
   async function handleStart() {
@@ -268,11 +290,24 @@ export function App() {
 
         <section>
           <h2>Quests</h2>
-          <p className="muted">
-            {visibleState?.quests.length
-              ? visibleState.quests.map((quest) => `${quest.name} (${quest.status})`).join(", ")
-              : "None"}
-          </p>
+          <ItemList
+            emptyText="None"
+            items={(visibleState?.quests ?? []).map((quest) => (
+              <span key={quest.id}>
+                {quest.name} ({quest.status})
+              </span>
+            ))}
+          />
+        </section>
+
+        <section>
+          <h2>Social</h2>
+          <SocialPanel visibleState={visibleState} />
+        </section>
+
+        <section>
+          <h2>Status</h2>
+          <StatusPanel visibleState={visibleState} />
         </section>
       </aside>
 
@@ -355,6 +390,9 @@ export function App() {
             <section className="timeline">
               <h2>Timeline</h2>
               {timelineError && <p className="error">{timelineError}</p>}
+              {timelineError && timelineError.toLowerCase().includes("debug") && (
+                <p className="muted">debug disabled</p>
+              )}
               {timeline.length === 0 && !timelineError && <p className="muted">No events yet.</p>}
               {timeline.map((event) => (
                 <details className="timeline-event" key={event.event_id}>
@@ -368,11 +406,159 @@ export function App() {
                 </details>
               ))}
             </section>
-            <pre>{JSON.stringify({ visibleState, saves, lastResponse }, null, 2)}</pre>
+            <section className="debug-group">
+              <h2>Social Consequences</h2>
+              <DebugEventSummary events={socialDebugEvents} emptyText="No social events." />
+            </section>
+            <section className="debug-group">
+              <h2>Combat / Injury</h2>
+              <DebugEventSummary events={combatDebugEvents} emptyText="No combat events." />
+            </section>
+            <section className="debug-group">
+              <h2>Raw Reputation</h2>
+              {rawReputationDeltas.length === 0 ? (
+                <p className="muted">No reputation deltas.</p>
+              ) : (
+                <pre>{JSON.stringify(rawReputationDeltas, null, 2)}</pre>
+              )}
+            </section>
+            <section className="debug-group">
+              <h2>Debug Snapshot</h2>
+              <pre>{JSON.stringify({ visibleState, saves, lastResponse }, null, 2)}</pre>
+            </section>
           </div>
         )}
       </aside>
     </main>
+  );
+}
+
+function SocialPanel({ visibleState }: { visibleState: VisibleState | null }) {
+  const factions = visibleState?.factions ?? [];
+  const rumors = visibleState?.known_rumors ?? [];
+  const crimes = visibleState?.known_crimes ?? [];
+
+  return (
+    <div className="stack">
+      <div>
+        <h3>Known Factions</h3>
+        <ItemList
+          emptyText="None"
+          items={factions.map((faction) => (
+            <span key={faction.id}>
+              {faction.name} <span className="badge">{faction.band}</span>
+            </span>
+          ))}
+        />
+      </div>
+      <div>
+        <h3>Known Rumors</h3>
+        <ItemList
+          emptyText="None"
+          items={rumors.map((rumor) => (
+            <span key={rumor.id}>{rumor.text_for_player}</span>
+          ))}
+        />
+      </div>
+      <div>
+        <h3>Known Crimes</h3>
+        <ItemList
+          emptyText="None"
+          items={crimes.map((crime) => (
+            <span key={crime.id}>
+              {crime.crime_type} <span className="badge">{crime.status}</span>
+            </span>
+          ))}
+        />
+      </div>
+    </div>
+  );
+}
+
+function StatusPanel({ visibleState }: { visibleState: VisibleState | null }) {
+  const visibleInjuries = (visibleState?.visible_npcs ?? []).filter(
+    (npc) => npc.condition && npc.condition !== "healthy"
+  );
+  return (
+    <div className="stack">
+      <p className="muted">
+        Player: {visibleState?.player_condition?.condition ?? "healthy"}
+      </p>
+      <div>
+        <h3>Visible Injuries</h3>
+        <ItemList
+          emptyText="None"
+          items={visibleInjuries.map((npc) => (
+            <span key={npc.id}>
+              {npc.id} <span className="badge">{npc.condition}</span>
+            </span>
+          ))}
+        />
+      </div>
+      <div>
+        <h3>Combat</h3>
+        <p className="muted">
+          {visibleState?.active_combat
+            ? `${visibleState.active_combat.id} (${visibleState.active_combat.status})`
+            : "None"}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function ItemList({ items, emptyText }: { items: ReactNode[]; emptyText: string }) {
+  if (items.length === 0) {
+    return <p className="muted">{emptyText}</p>;
+  }
+  return <ul className="compact-list">{items.map((item, index) => <li key={index}>{item}</li>)}</ul>;
+}
+
+function DebugEventSummary({ events, emptyText }: { events: DebugEvent[]; emptyText: string }) {
+  if (events.length === 0) {
+    return <p className="muted">{emptyText}</p>;
+  }
+  return (
+    <div className="debug-event-list">
+      {events.map((event) => (
+        <details className="timeline-event" key={event.event_id}>
+          <summary>
+            <span>Turn {event.turn}</span>
+            <span>{event.action_type}</span>
+            <span>{event.actor_id}</span>
+            <span>{event.result}</span>
+          </summary>
+          <pre>{JSON.stringify(event.state_deltas, null, 2)}</pre>
+        </details>
+      ))}
+    </div>
+  );
+}
+
+function isSocialDebugEvent(event: DebugEvent): boolean {
+  const actionType = event.action_type.toLowerCase();
+  return (
+    actionType.includes("social") ||
+    actionType.includes("crime") ||
+    actionType.includes("rumor") ||
+    actionType.includes("faction") ||
+    actionType.includes("reaction") ||
+    event.state_deltas.some((delta) =>
+      /^(social_consequences|crimes|rumors|factions|witnesses)\./.test(delta.path)
+    )
+  );
+}
+
+function isCombatDebugEvent(event: DebugEvent): boolean {
+  const actionType = event.action_type.toLowerCase();
+  return (
+    actionType.includes("combat") ||
+    actionType.includes("attack") ||
+    actionType.includes("defend") ||
+    actionType.includes("flee") ||
+    actionType.includes("injury") ||
+    actionType.includes("death") ||
+    event.state_deltas.some((delta) => /^(combats|player\.hp|npcs\.[^.]+\.hp)/.test(delta.path))
   );
 }
 

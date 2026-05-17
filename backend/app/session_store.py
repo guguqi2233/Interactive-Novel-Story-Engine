@@ -10,6 +10,9 @@ from app.api import (
     VisibleLocationResponse,
     VisibleNPCResponse,
     VisibleObjectResponse,
+    VisibleFactionResponse,
+    VisibleRumorResponse,
+    VisibleCrimeResponse,
     VisibleQuestObjectiveResponse,
     VisibleQuestResponse,
     VisibleStateResponse,
@@ -18,7 +21,10 @@ from app.api import (
 from app.engine.action_dispatcher import ActionDispatcher
 from app.engine.content.world_loader import WorldLoader
 from app.engine.rules.inventory import get_inventory
+from app.engine.rules.factions import get_visible_factions
+from app.engine.rules.crime import get_player_known_crimes
 from app.engine.rules.quests import get_visible_quests
+from app.engine.rules.rumors import get_visible_rumors
 from app.engine.rules.time import format_game_time, get_time_of_day
 from app.llm.intent_parser import IntentParser
 from app.llm.narrator import Narrator
@@ -95,6 +101,7 @@ def build_visible_state(state: GameState) -> VisibleStateResponse:
             id=npc.id,
             mood=npc.mood,
             relationship_to_player=npc.relationship_to_player,
+            condition=npc.condition.value,
         )
         for npc in state.npcs.values()
         if npc.location_id == location_id and _npc_visible_to_player(state, npc.id)
@@ -146,6 +153,38 @@ def build_visible_state(state: GameState) -> VisibleStateResponse:
         visible_npcs=visible_npcs,
         known_facts=known_facts,
         quests=quests,
+        factions=[
+            VisibleFactionResponse(
+                id=faction.id,
+                name=faction.name,
+                description=faction.description,
+                reputation=faction.reputation,
+                band=faction.band.value,
+                tags=faction.tags,
+            )
+            for faction in get_visible_factions(state)
+        ],
+        known_rumors=[
+            VisibleRumorResponse(
+                id=rumor.id,
+                text_for_player=rumor.text_for_player,
+                truth_status=rumor.truth_status.value,
+                spread_level=rumor.spread_level,
+                tags=rumor.tags,
+            )
+            for rumor in get_visible_rumors(state)
+        ],
+        known_crimes=[
+            VisibleCrimeResponse(
+                id=crime.id,
+                crime_type=crime.crime_type,
+                location_id=crime.location_id,
+                severity=crime.severity,
+                status=crime.status.value,
+                created_turn=crime.created_turn,
+            )
+            for crime in get_player_known_crimes(state)
+        ],
     )
 
 

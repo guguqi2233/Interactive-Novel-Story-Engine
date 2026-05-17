@@ -78,6 +78,12 @@ select {
   text-transform: uppercase;
 }
 
+.side-panel h3 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: #4c5965;
+}
+
 .side-panel section {
   border-top: 1px solid #c7cdd3;
   padding-top: 16px;
@@ -86,6 +92,37 @@ select {
 
 .muted {
   color: #64727f;
+}
+
+.stack {
+  display: grid;
+  gap: 12px;
+}
+
+.compact-list {
+  display: grid;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  color: #64727f;
+}
+
+.compact-list li {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.badge {
+  display: inline-block;
+  border: 1px solid #b6c0ca;
+  border-radius: 999px;
+  padding: 1px 6px;
+  margin-left: 4px;
+  color: #344250;
+  background: #f8fafc;
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .story-panel {
@@ -194,11 +231,24 @@ select {
   gap: 8px;
 }
 
-.timeline h2 {
+.timeline h2,
+.debug-group h2 {
   margin: 4px 0 0;
   font-size: 13px;
   color: #4c5965;
   text-transform: uppercase;
+}
+
+.debug-group {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid #c7cdd3;
+  padding-top: 12px;
+}
+
+.debug-event-list {
+  display: grid;
+  gap: 8px;
 }
 
 .timeline-event {

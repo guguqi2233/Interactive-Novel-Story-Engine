@@ -21,6 +21,7 @@ export type VisibleNPC = {
   id: string;
   mood: string;
   relationship_to_player: number;
+  condition?: string;
 };
 
 export type KnownFact = {
@@ -31,8 +32,56 @@ export type KnownFact = {
 
 export type VisibleQuest = {
   id: string;
+  title?: string;
   name: string;
+  description?: string;
   status: string;
+  current_stage?: string;
+  stage_title?: string;
+  stage_description?: string;
+  objectives?: VisibleQuestObjective[];
+};
+
+export type VisibleQuestObjective = {
+  id: string;
+  completed: boolean;
+};
+
+export type VisibleFaction = {
+  id: string;
+  name: string;
+  description?: string;
+  reputation?: number;
+  band: string;
+  tags: string[];
+};
+
+export type VisibleRumor = {
+  id: string;
+  text_for_player: string;
+  truth_status: string;
+  spread_level: number;
+  tags: string[];
+};
+
+export type VisibleCrime = {
+  id: string;
+  crime_type: string;
+  location_id: string;
+  severity: number;
+  status: string;
+  created_turn: number;
+};
+
+export type VisibleActorCondition = {
+  actor_id: string;
+  condition: string;
+};
+
+export type ActiveCombatSummary = {
+  id: string;
+  status: string;
+  combatants?: string[];
 };
 
 export type StateDelta = {
@@ -70,6 +119,11 @@ export type VisibleState = {
   visible_npcs: VisibleNPC[];
   known_facts: KnownFact[];
   quests: VisibleQuest[];
+  factions?: VisibleFaction[];
+  known_rumors?: VisibleRumor[];
+  known_crimes?: VisibleCrime[];
+  player_condition?: VisibleActorCondition;
+  active_combat?: ActiveCombatSummary | null;
 };
 
 export type StartGameResponse = {

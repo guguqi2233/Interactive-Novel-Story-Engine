@@ -1,5 +1,6 @@
 from app.core.state_delta import StateDelta, StateDeltaOperation
 from app.core.world_state import GameState, NPCScheduleEntry
+from app.engine.rules.life_state import can_move
 from app.engine.rules.time import get_time_of_day
 
 
@@ -12,6 +13,8 @@ def resolve_npc_schedules(state: GameState) -> list[StateDelta]:
     deltas: list[StateDelta] = []
 
     for npc in state.npcs.values():
+        if not can_move(state, npc.id):
+            continue
         entry = _schedule_entry_for_time(npc.schedule, time_of_day)
         if entry is None:
             continue
