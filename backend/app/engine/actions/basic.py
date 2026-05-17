@@ -7,6 +7,7 @@ from app.engine.actions.combat import AttackActionHandler, DefendActionHandler, 
 from app.engine.actions.lockpick import LockpickActionHandler
 from app.engine.actions.search import SearchActionHandler
 from app.engine.actions.sneak import SneakActionHandler
+from app.engine.actions.trade import BuyActionHandler, SellActionHandler
 from app.engine.actions.schemas import ActionResult, SuccessLevel
 from app.engine.rules.inventory import item_is_accessible
 from app.engine.rules.knowledge import get_npc_context_for_dialogue
@@ -162,6 +163,8 @@ def default_action_handlers() -> list[ActionHandler]:
         AttackActionHandler(),
         DefendActionHandler(),
         FleeActionHandler(),
+        BuyActionHandler(),
+        SellActionHandler(),
         MoveActionHandler(),
         TalkActionHandler(),
         UseItemActionHandler(),

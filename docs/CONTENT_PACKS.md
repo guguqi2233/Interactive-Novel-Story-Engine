@@ -1,294 +1,469 @@
-# Content Pack Authoring Guide
+# Content Pack Format
 
-This document describes the v0.4 content pack format for the local interactive novel world engine.
+World content lives under `worlds/{world_id}`. Content packs are local YAML
+data. They are loaded and validated by the world loader before they become
+runtime `GameState`.
 
-Content packs define world data. They do not own rules. Rules live in the Python world engine, and all runtime changes still flow through `StateDelta` and `Event`.
+The engine must not hardcode a specific world. `mist_valley` is only the sample
+world.
 
 ## Directory Layout
 
-Each world lives under `worlds/{world_id}/`.
-
-Example:
-
 ```text
-worlds/mist_valley/
-  manifest.yaml
-  locations.yaml
-  npcs.yaml
-  items.yaml
-  facts.yaml
-  quests.yaml
-  factions.yaml
-  rumors.yaml
+worlds/
+  mist_valley/
+    manifest.yaml
+    locations.yaml
+    npcs.yaml
+    items.yaml
+    quests.yaml
+    facts.yaml
+    factions.yaml
+    rumors.yaml
+    relationships.yaml
 ```
 
-`factions.yaml` and `rumors.yaml` are v0.4 additions. `rumors.yaml` is optional; missing rumor files are treated as an empty seed rumor list.
+Optional local mods may live under `mods/{mod_id}` and contain a `mod.yaml`
+manifest plus content paths. Mods are content-only and must not execute code.
 
-## Validation
+## manifest.yaml
 
-Run:
+Required fields:
+
+```yaml
+world_id: mist_valley
+name: Mist Valley
+version: 0.5.0
+start_location_id: village_square
+description: A small valley world used for local testing.
+```
+
+`world_id` must match the directory id used by `/game/start`.
+
+## locations.yaml
+
+Each location must define:
+
+```yaml
+- id: village_square
+  name: Village Square
+  description: A wind-worn square at the center of the valley.
+  exits:
+    north: blacksmith
+  visible: true
+  hidden: false
+  discovered_by:
+    - player
+  cover_level: 1
+  light_level: 2
+```
+
+Validation checks that exits point to existing locations.
+
+## npcs.yaml
+
+NPCs may define schedule, knowledge, social state, life state, goals, merchant
+fields, and planning metadata.
+
+```yaml
+- id: harlan
+  name: Harlan
+  location_id: blacksmith
+  personality: terse but fair
+  knowledge:
+    - fact_old_road_closed
+  goals:
+    - id: keep_shop_safe
+      description: Keep the forge and tools safe.
+      priority: 10
+      status: active
+      conditions: []
+      desired_state: {}
+      allowed_actions:
+        - guard_location
+        - report_crime
+      forbidden_actions: []
+  priorities:
+    safety: 10
+  constraints:
+    avoid_locations: []
+  current_goal_id: keep_shop_safe
+  plan_state:
+    last_action: guard_location
+  secrets:
+    - fact_hidden_debt
+  mood: neutral
+  relationship_to_player: neutral
+  faction_id: village_council
+  alertness: 1
+  suspicion: 0
+  alive: true
+  hp: 10
+  max_hp: 10
+  condition: healthy
+  status_effects: []
+  merchant: true
+  shop_inventory:
+    - simple_lockpick
+  buy_price_modifier: 1.1
+  sell_price_modifier: 0.6
+  schedule:
+    - time_of_day: morning
+      location_id: blacksmith
+      activity: opening the forge
+```
+
+Validation checks:
+
+- `location_id` exists.
+- `faction_id` exists when provided.
+- schedule locations exist.
+- life fields are valid.
+- goal ids and statuses are valid.
+
+NPC secrets are not player-visible by default.
+
+## items.yaml
+
+Items define ownership, visibility, portability, lock state, and economy data.
+
+```yaml
+- id: simple_lockpick
+  name: Simple Lockpick
+  description: A small bent tool used for cheap locks.
+  location_id: village_square
+  owner_id:
+  container_id:
+  portable: true
+  hidden: false
+  discovered_by:
+    - player
+  tags:
+    - tool
+    - lockpick
+  locked: false
+  lock_difficulty: 0
+  lock_state: intact
+  base_price: 12
+  tradeable: true
+  rarity: common
+```
+
+Ownership fields must not conflict. An item should not simultaneously belong
+to a location, owner, and container unless a future container rule explicitly
+supports it.
+
+Economy fields:
+
+- `base_price`: non-negative integer.
+- `tradeable`: whether merchants can trade the item.
+- `rarity`: author-defined rarity label.
+
+Hidden items do not appear in `visible_state` until discovered.
+
+## facts.yaml
+
+Facts are structured knowledge records:
+
+```yaml
+- id: fact_old_road_closed
+  text: The old road is blocked by a recent rockslide.
+  visibility: public
+  known_by:
+    - harlan
+  tags:
+    - road
+```
+
+Visibility values:
+
+- `public`: can enter initial player-known facts.
+- `hidden`: not player-visible by default.
+- `discoverable`: visible only after discovery.
+
+Validation checks that `known_by` NPC ids exist.
+
+Hidden fact text must not be copied into player-visible descriptions, rumors,
+or quest draft fields.
+
+## quests.yaml
+
+Quests define stages, objectives, visibility, and triggers.
+
+```yaml
+- id: find_the_old_road
+  title: Find the Old Road
+  description: Learn what happened beyond the village.
+  visibility: public
+  initial_stage: start
+  stages:
+    - id: start
+      title: Ask Around
+      description: Find someone who knows about the old road.
+      objectives:
+        - id: ask_harlan
+          description: Talk to Harlan.
+          completed: false
+      next_stages:
+        - road_known
+    - id: road_known
+      title: The Road Is Blocked
+      description: The old road is blocked.
+      objectives: []
+      next_stages: []
+  triggers:
+    - type: fact_discovered
+      fact_id: fact_old_road_closed
+      next_stage: road_known
+```
+
+Trigger references may include facts, items, NPCs, locations, reputation,
+conversation, or quest state depending on the rule path. Validation checks
+known references where supported.
+
+Hidden quests do not enter `visible_state` until activated or revealed.
+
+## factions.yaml
+
+Factions define reputation and conflict metadata:
+
+```yaml
+- id: village_council
+  name: Village Council
+  description: The informal authority in Mist Valley.
+  default_reputation: 0
+  known_by_player: true
+  tags:
+    - local
+  relations:
+    bandits: -30
+  conflict_tags:
+    - road_dispute
+  default_alert_level: 0
+  resources:
+    coin: 100
+```
+
+Runtime state tracks:
+
+- reputation toward the player
+- reputation band
+- known/hidden status
+- relations to other factions
+- conflict level
+- alert level
+- resources
+
+Validation checks relation targets when possible. Hidden factions should not be
+referenced by player-facing text.
+
+## rumors.yaml
+
+Rumors are structured social knowledge:
+
+```yaml
+- id: rumor_locked_shed
+  source_event_id:
+  fact_id:
+  text_for_player: Someone has been asking about the locked shed.
+  truth_status: unknown
+  known_by_npcs:
+    - harlan
+  known_by_factions:
+    - village_council
+  known_by_player: false
+  spread_level: 1
+  tags:
+    - shed
+  created_turn: 0
+```
+
+Rumors linked to hidden facts must use safe player-facing text. They must not
+expose the hidden fact's real text unless the fact is legitimately known.
+
+## relationships.yaml
+
+Relationships are directional records between NPCs or actors:
+
+```yaml
+- id: harlan_to_mira
+  source_id: harlan
+  target_id: mira
+  relation_type: coworker
+  trust: 40
+  fear: 0
+  affinity: 25
+  obligation: 10
+  tags:
+    - village
+  known_by_player: false
+```
+
+Validation checks that source and target actor ids exist. Hidden relationships
+do not enter player APIs.
+
+Relationship values can influence rumor propagation, NPC planning, and
+reactions. Changes must go through `StateDelta`.
+
+## NPC Goals
+
+NPC goals can be embedded in `npcs.yaml`. A goal contains:
+
+```yaml
+id: keep_shop_safe
+description: Keep the shop safe.
+priority: 10
+status: active
+conditions:
+  - type: knows_fact
+    fact_id: fact_old_road_closed
+desired_state:
+  location_id: blacksmith
+allowed_actions:
+  - guard_location
+  - report_crime
+forbidden_actions:
+  - flee_location
+```
+
+NPC goals are deterministic rule inputs. They do not call the LLM and do not
+allow NPCs to know unknown facts.
+
+## Economy and Trade Fields
+
+Items:
+
+- `base_price`
+- `tradeable`
+- `rarity`
+- `tags`
+
+NPC merchants:
+
+- `merchant`
+- `shop_inventory`
+- `buy_price_modifier`
+- `sell_price_modifier`
+
+Player currency is stored in `GameState`. Buy/sell actions are authoritative
+backend actions and must not be calculated only in the frontend.
+
+## Procedural Quest Drafts
+
+Procedural side quest generation produces `QuestDraft`, not runtime quest
+state:
+
+```yaml
+title: Missing Tools
+premise: A local craftsperson needs help recovering a lost tool.
+involved_npcs:
+  - harlan
+involved_locations:
+  - blacksmith
+involved_items:
+  - simple_lockpick
+required_facts:
+  - fact_old_road_closed
+stages:
+  - id: start
+    title: Ask Harlan
+    description: Speak with Harlan.
+triggers: []
+rewards:
+  coin: 5
+risk_flags:
+  - needs_author_review
+validation_notes:
+  - Generated as a draft; validate before saving.
+```
+
+Drafts must be reviewed by the local creator and saved explicitly through
+authoring tools if desired. The generator must not directly modify active
+saves, `GameState`, or `quests.yaml`.
+
+LLM-assisted draft generation is optional, goes through `LLMProvider`, and must
+be schema-validated. It may not silently create nonexistent references.
+
+## Mod Manifest
+
+Content-only mods use `mod.yaml`:
+
+```yaml
+id: sample_mod
+name: Sample Mod
+version: 0.1.0
+engine_version_min: 0.5.0
+engine_version_max:
+dependencies: []
+conflicts: []
+entry_worlds:
+  - mist_valley
+content_paths:
+  - worlds/mist_valley
+author: Local Author
+description: Adds local content for testing.
+```
+
+Rules:
+
+- Mods are local content packages only.
+- Mods must not execute Python, JavaScript, shell, or arbitrary code.
+- Paths must stay inside the mod directory.
+- Entry worlds are validated through the normal world validation pipeline.
+- Dependency and conflict checks are simple and deterministic in v0.5.
+
+## Validation Commands
+
+Validate the sample world:
 
 ```powershell
 python scripts\validate_world.py mist_valley
 ```
 
-The validator reports `errors`, `warnings`, and `suggestions`.
+Produce JSON:
 
-Exit code rules:
-
-- non-zero when errors exist
-- zero when only warnings or suggestions exist
-
-The tool checks schema shape, id references, invalid exits, NPC locations, NPC faction ids, item placement conflicts, quest trigger references, fact `known_by` references, rumor fact references, hidden fact player-text risks, schedule locations, and basic combat/life field consistency.
-
-## manifest.yaml
-
-Defines world identity and metadata.
-
-Expected fields:
-
-- `id`
-- `name`
-- `description`
-- optional author/version metadata, if supported by the loader
-
-The manifest `id` should match the directory name.
-
-## locations.yaml
-
-Each location must include:
-
-- `id`
-- `name`
-- `description`
-- `exits`
-
-Useful optional fields include:
-
-- `visible`
-- `hidden`
-- `discovered_by`
-- `cover_level`
-- `light_level`
-- `tags`
-
-`exits` must point to existing location ids.
-
-## npcs.yaml
-
-Each NPC must include:
-
-- `id`
-- `name`
-- `location_id`
-- `personality`
-- `knowledge`
-
-Common optional fields:
-
-- `faction_id`
-- `visible`
-- `hidden`
-- `discovered_by`
-- `schedule`
-- `goals`
-- `secrets`
-- `mood`
-- `relationship_to_player`
-
-`schedule` entries support:
-
-- `time_of_day`
-- `location_id`
-- `activity`
-
-Schedule `location_id` values must exist.
-
-Runtime v0.4 life/combat state supports HP, stamina, alive/dead state, condition, status effects, hostility, suspicion, and alertness. The current content pack loader initializes the runtime defaults and loads only the authorable fields supported by `NPCDef`; do not assume arbitrary combat stat fields in YAML are accepted unless the schema is extended.
-
-NPC secrets are never player-visible by default. NPCs must not act on facts or rumors they do not know.
-
-## items.yaml
-
-Items support structured ownership and placement.
-
-Core fields:
-
-- `id`
-- `name`
-- `description`
-- optional `location_id`
-- optional `owner_id`
-- optional `container_id`
-- `portable`
-- `hidden`
-- `discovered_by`
-- `tags`
-
-Lock-related optional fields:
-
-- `locked`
-- `lock_difficulty`
-- `lock_state`
-
-Only one of `location_id`, `owner_id`, and `container_id` should be active for a normal item placement. The validator warns or errors on conflicting ownership.
-
-v0.4 combat does not yet implement authored weapons, armor, damage types, or equipment progression.
-
-## facts.yaml
-
-Facts make important world information structured instead of leaving it only in prose.
-
-Each fact includes:
-
-- `id`
-- `text`
-- `visibility`: `public`, `hidden`, or `discoverable`
-- `known_by`
-- `tags`
-
-Rules:
-
-- `known_by` NPC ids must exist.
-- `public` facts may enter initial player-visible facts.
-- `hidden` facts do not enter `visible_state` by default.
-- `discoverable` facts enter player-visible known facts only after discovery through rules such as `search`, quest triggers, or other explicit deltas.
-
-Rumor text must not expose hidden fact text unless that text is intentionally safe for the player.
-
-## quests.yaml
-
-Quest definitions support structured state and triggers.
-
-Fields:
-
-- `id`
-- `title`
-- `description`
-- `initial_stage`
-- `stages`
-- `visibility`
-- `triggers`
-
-Each stage includes:
-
-- `id`
-- `title`
-- `description`
-- `objectives`
-- `next_stages`
-
-Trigger sources can reference:
-
-- discovered facts
-- acquired items
-- NPC talked
-- visited locations
-- reputation conditions, when rule support exists
-
-Triggers must reference existing ids. Quest state changes are applied through `StateDelta`; the LLM does not decide quest progress.
-
-## factions.yaml
-
-v0.4 faction definitions support reputation and player-known faction filtering.
-
-Each faction includes:
-
-- `id`
-- `name`
-- `description`
-- `default_reputation`
-- `known_by_player`
-- `tags`
-
-Example:
-
-```yaml
-factions:
-  - id: valley_watch
-    name: Valley Watch
-    description: Local guards and patrols.
-    default_reputation: 0
-    known_by_player: true
-    tags: ["law", "settlement"]
+```powershell
+python scripts\validate_world.py mist_valley --json
 ```
 
-Rules:
+Authoring API validation:
 
-- `default_reputation` initializes `GameState.factions`.
-- `known_by_player=false` factions should not appear in player-facing `visible_state`.
-- Reputation changes are rule-generated `StateDelta` values, never LLM decisions.
-
-The frontend currently displays reputation bands. Raw reputation values should be treated as debug/internal unless the player API intentionally exposes them.
-
-## rumors.yaml
-
-v0.4 seed rumors are optional. Runtime rumors can also be created by crime, combat, quest, or social tick rules.
-
-Each rumor supports:
-
-- `id`
-- optional `source_event_id`
-- optional `fact_id`
-- optional `text_for_player`
-- `truth_status`: `true`, `false`, `distorted`, or `unknown`
-- `known_by_npcs`
-- `known_by_factions`
-- `known_by_player`
-- `spread_level`
-- `tags`
-- `created_turn`
-
-Example:
-
-```yaml
-rumors:
-  - id: rumor_old_road
-    fact_id: old_road_smugglers
-    text_for_player: People whisper about strange traffic near the old road.
-    truth_status: unknown
-    known_by_npcs: ["harlan"]
-    known_by_factions: []
-    known_by_player: false
-    spread_level: 1
-    tags: ["road", "whisper"]
-    created_turn: 0
+```text
+POST /authoring/worlds/{world_id}/validate
+POST /authoring/mods/{mod_id}/validate
 ```
 
-Rules:
+Validation reports contain:
 
-- `fact_id`, when present, must reference an existing fact.
-- NPC ids in `known_by_npcs` must exist.
-- Faction ids in `known_by_factions` must exist.
-- Rumors about hidden facts must use safe `text_for_player` or another vague text.
-- Rumor propagation is deterministic in v0.4 and must not reveal hidden fact truth directly.
+- `errors`
+- `warnings`
+- `suggestions`
+- issue `file`
+- YAML `path`
+- `code`
+- `message`
+- `severity`
+- optional reference id and fix suggestion
 
-## Crime And Witness Data
+The CLI returns a non-zero exit code when errors are present.
 
-Crime and witness records are runtime state in v0.4. They are generated by rules from player actions, combat, lockpicking, theft, social tick, and related consequences.
+## Security and Visibility Rules
 
-Do not author canonical crime records in a content pack for v0.4. Future versions may add seed criminal history or law-zone content files.
-
-Player-facing APIs expose only known or public crime consequences. Hidden witnesses remain hidden from player output and Narrator prompts.
-
-## Debug Data
-
-Debug timeline data is not player-facing content. It can include raw `state_deltas`, hidden witnesses, hidden consequences, and internal ids.
-
-Debug APIs are local-only and controlled by `ENABLE_DEBUG_API`.
-
-Never write content assuming debug data will be available to the Narrator or player UI.
+- Content packs cannot access local secrets.
+- Authoring API may read/write only whitelisted YAML files.
+- Debug data is not player-facing content.
+- Hidden facts must not be copied into public text.
+- Hidden NPCs, witnesses, relationships, and factions remain hidden unless
+  revealed by rules.
+- Memory records are context aids, not content pack facts.
+- Mods are data only and cannot execute code.
 
 ## Current Limits
 
-v0.4 content packs do not yet support:
-
-- authored combat equipment stats
-- weapon damage tables
-- armor systems
-- shops or economy
-- legal zones or law codes as separate files
-- visual map authoring
-- automatic content repair
-- graphical world editor
-- vector memory configuration
+- No graphical schema-aware editor beyond the v0.5 textarea UI.
+- No automatic YAML repair.
+- No online mod registry or download support.
+- No hot reload of running saves after authoring edits.
+- No complex version solver for mods.
+- No dynamic economy simulation.
+- No LLM-powered automatic content rewriting.

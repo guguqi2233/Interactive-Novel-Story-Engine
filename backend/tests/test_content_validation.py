@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 
 import pytest
 
@@ -188,6 +189,11 @@ def test_invalid_npc_location_reports_error(tmp_path: Path) -> None:
     report = validate_world_pack("test_world", worlds_root=tmp_path)
 
     assert any("NPC references missing location: nowhere" in message for message in messages(report, ValidationSeverity.ERROR))
+    issue = report.errors[0]
+    assert issue.file == "npcs.yaml"
+    assert issue.path == "npcs.yaml.smith.location_id"
+    assert issue.code == "npc_missing_location"
+    assert issue.ref_id == "nowhere"
 
 
 def test_invalid_faction_id_reports_error(tmp_path: Path) -> None:
@@ -230,6 +236,9 @@ def test_missing_quest_trigger_fact_reports_error(tmp_path: Path) -> None:
     report = validate_world_pack("test_world", worlds_root=tmp_path)
 
     assert any("Trigger references missing fact: missing_fact" in message for message in messages(report, ValidationSeverity.ERROR))
+    issue = next(item for item in report.errors if item.code == "quest_trigger_missing_fact")
+    assert issue.file == "quests.yaml"
+    assert issue.ref_id == "missing_fact"
 
 
 def test_hidden_fact_player_known_warning_does_not_fail(tmp_path: Path) -> None:
@@ -245,7 +254,38 @@ def test_hidden_fact_player_known_warning_does_not_fail(tmp_path: Path) -> None:
     report = validate_world_pack("test_world", worlds_root=tmp_path)
 
     assert report.ok
-    assert any("Hidden fact is marked known_by player" in message for message in messages(report, ValidationSeverity.WARNING))
+    warning = next(item for item in report.warnings if item.code == "hidden_fact_known_by_player")
+    assert "Hidden fact is marked known_by player" in warning.message
+    assert warning.file == "facts.yaml"
+
+
+def test_hidden_fact_rumor_text_warning_even_before_player_knows_rumor(tmp_path: Path) -> None:
+    world_path = write_valid_world(tmp_path)
+    (world_path / "rumors.yaml").write_text(
+        """
+rumors:
+  - id: vault_rumor
+    fact_id: hidden_fact
+    text_for_player: The key opens the council vault.
+    truth_status: unknown
+    known_by_npcs:
+      - smith
+    known_by_factions:
+      - council
+    known_by_player: false
+    spread_level: 1
+    tags:
+      - secret
+""".strip(),
+        encoding="utf-8",
+    )
+
+    report = validate_world_pack("test_world", worlds_root=tmp_path)
+
+    assert report.ok
+    warning = next(item for item in report.warnings if item.code == "rumor_reveals_hidden_fact")
+    assert warning.file == "rumors.yaml"
+    assert warning.ref_id == "hidden_fact"
 
 
 def test_cli_exit_code_is_zero_for_warnings_and_nonzero_for_errors(
@@ -271,3 +311,22 @@ def test_cli_exit_code_is_zero_for_warnings_and_nonzero_for_errors(
     )
 
     assert validate_world_main(["test_world", "--worlds-root", str(tmp_path)]) == 1
+
+
+def test_cli_json_outputs_structured_report(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    world_path = write_valid_world(tmp_path)
+    (world_path / "npcs.yaml").write_text(
+        (world_path / "npcs.yaml").read_text(encoding="utf-8").replace("location_id: forge", "location_id: nowhere", 1),
+        encoding="utf-8",
+    )
+
+    assert validate_world_main(["test_world", "--worlds-root", str(tmp_path), "--json"]) == 1
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["world_id"] == "test_world"
+    assert payload["errors"][0]["file"] == "npcs.yaml"
+    assert payload["errors"][0]["code"] == "npc_missing_location"
+    assert payload["errors"][0]["ref_id"] == "nowhere"

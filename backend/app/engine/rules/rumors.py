@@ -4,6 +4,7 @@ from app.core.event_log import Event
 from app.core.state_delta import StateDelta, StateDeltaOperation
 from app.core.world_state import GameState, RumorState, RumorTruthStatus
 from app.engine.rules.life_state import can_talk
+from app.engine.rules.relationships import can_share_rumor, relationship_score
 
 
 class RumorRuleError(ValueError):
@@ -168,30 +169,46 @@ def propagate_rumors(state: GameState) -> list[StateDelta]:
                 continue
             if not can_talk(state, source_npc_id):
                 continue
-            for target_npc in sorted(state.npcs.values(), key=lambda npc: npc.id):
-                if target_npc.id == source_npc_id or target_npc.id in rumor.known_by_npcs:
-                    continue
-                if not can_talk(state, target_npc.id):
-                    continue
-                if target_npc.location_id != source_npc.location_id:
-                    continue
-                deltas.extend(add_rumor_to_npc(state, rumor.id, target_npc.id))
-                deltas.append(
-                    StateDelta(
-                        operation=StateDeltaOperation.INC,
-                        path=f"rumors.{rumor.id}.spread_level",
-                        value=1,
-                        reason=f"Rumor {rumor.id} spread from {source_npc_id} to {target_npc.id}.",
-                        metadata={
-                            "source": "rumor_propagation",
-                            "rumor_id": rumor.id,
-                            "from_npc_id": source_npc_id,
-                            "to_npc_id": target_npc.id,
-                        },
-                    )
+            target_npc_id = best_rumor_target(state, source_npc_id, set(rumor.known_by_npcs))
+            if target_npc_id is None:
+                continue
+            deltas.extend(add_rumor_to_npc(state, rumor.id, target_npc_id))
+            deltas.append(
+                StateDelta(
+                    operation=StateDeltaOperation.INC,
+                    path=f"rumors.{rumor.id}.spread_level",
+                    value=1,
+                    reason=f"Rumor {rumor.id} spread from {source_npc_id} to {target_npc_id}.",
+                    metadata={
+                        "source": "rumor_propagation",
+                        "rumor_id": rumor.id,
+                        "from_npc_id": source_npc_id,
+                        "to_npc_id": target_npc_id,
+                    },
                 )
-                return deltas
+            )
+            return deltas
     return deltas
+
+
+def best_rumor_target(state: GameState, source_npc_id: str, excluded_ids: set[str] | None = None) -> str | None:
+    source_npc = state.npcs.get(source_npc_id)
+    if source_npc is None or not can_talk(state, source_npc_id):
+        return None
+    blocked = excluded_ids or set()
+    candidates = [
+        target
+        for target in state.npcs.values()
+        if target.id != source_npc_id
+        and target.id not in blocked
+        and target.location_id == source_npc.location_id
+        and can_talk(state, target.id)
+        and can_share_rumor(state, source_npc_id, target.id)
+    ]
+    if not candidates:
+        return None
+    candidates.sort(key=lambda npc: (-relationship_score(state, source_npc_id, npc.id), npc.id))
+    return candidates[0].id
 
 
 def build_rumor_event(event_id: str, turn: int, state_deltas: list[StateDelta]) -> Event:
@@ -207,6 +224,9 @@ def build_rumor_event(event_id: str, turn: int, state_deltas: list[StateDelta]) 
 
 
 def _safe_rumor_text(state: GameState, rumor: RumorState) -> str:
+    if _rumor_points_to_unknown_protected_fact(state, rumor):
+        if _rumor_text_reveals_fact(state, rumor):
+            return "You have heard a vague rumor, but not enough to confirm the details."
     if rumor.text_for_player:
         return rumor.text_for_player
     if rumor.fact_id and rumor.fact_id in state.player_visible_facts:
@@ -214,6 +234,24 @@ def _safe_rumor_text(state: GameState, rumor: RumorState) -> str:
         if fact and fact.text:
             return fact.text
     return "You have heard a vague rumor, but not enough to confirm the details."
+
+
+def _rumor_points_to_unknown_protected_fact(state: GameState, rumor: RumorState) -> bool:
+    if not rumor.fact_id or rumor.fact_id in state.player_visible_facts:
+        return False
+    fact = state.facts.get(rumor.fact_id)
+    if fact is None:
+        return False
+    return fact.visibility.value in {"hidden", "discoverable"}
+
+
+def _rumor_text_reveals_fact(state: GameState, rumor: RumorState) -> bool:
+    if not rumor.fact_id or not rumor.text_for_player:
+        return False
+    fact = state.facts.get(rumor.fact_id)
+    if fact is None or not fact.text:
+        return False
+    return fact.text.strip().lower() in rumor.text_for_player.strip().lower()
 
 
 def _require_rumor(state: GameState, rumor_id: str) -> RumorState:

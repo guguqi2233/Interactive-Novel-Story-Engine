@@ -4,6 +4,11 @@ factions:
     description: The informal council that keeps Mist Valley's daily peace.
     default_reputation: 0
     known_by_player: true
+    relations:
+      old_road_smugglers: -10
+    conflict_tags:
+      - law_vs_smuggling
+    default_alert_level: 0
     tags:
       - local
       - civic
@@ -12,6 +17,11 @@ factions:
     description: A hidden network moving goods through abandoned valley paths.
     default_reputation: 0
     known_by_player: false
+    relations:
+      village_council: -10
+    conflict_tags:
+      - law_vs_smuggling
+    default_alert_level: 0
     tags:
       - hidden
       - criminal

@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field
 
 from app.core.state_delta import StateDelta, StateDeltaOperation, apply_delta
-from app.core.world_state import GameState, NPCState
+from app.core.world_state import GameState, NPCGoalState, NPCState
 
 
 class KnowledgeRuleError(ValueError):
@@ -51,7 +51,7 @@ def get_npc_context_for_dialogue(state: GameState, npc_id: str) -> NPCDialogueCo
         mood=npc.mood,
         relationship_to_player=npc.relationship_to_player,
         knowledge=public_or_known_facts,
-        goals=list(npc.goals),
+        goals=_dialogue_goal_ids(npc),
     )
 
 
@@ -73,3 +73,10 @@ def _fact_allowed_for_dialogue(state: GameState, npc: NPCState, fact_id: str) ->
         return False
 
     return fact_id not in npc.secrets
+
+
+def _dialogue_goal_ids(npc: NPCState) -> list[str]:
+    return [
+        goal.id if isinstance(goal, NPCGoalState) else goal
+        for goal in npc.goals
+    ]

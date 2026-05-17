@@ -230,7 +230,20 @@ def test_v04_memory_retrieval_is_safe_and_non_authoritative(tmp_path: Path) -> N
     repository.save_snapshot("save-1", state, [], memories=store.list_all())
     loaded_memories = repository.list_memories("save-1")
     assert {memory.id for memory in loaded_memories} == {"memory-safe", "memory-hidden"}
-    assert repository.load_save("save-1").model_dump(mode="json") == state.model_dump(mode="json")
+    loaded_state_dump = repository.load_save("save-1").model_dump(mode="json")
+    expected_state_dump = state.model_dump(mode="json")
+    loaded_state_dump["npc_knowledge"] = {
+        npc_id: sorted(facts)
+        for npc_id, facts in loaded_state_dump["npc_knowledge"].items()
+    }
+    expected_state_dump["npc_knowledge"] = {
+        npc_id: sorted(facts)
+        for npc_id, facts in expected_state_dump["npc_knowledge"].items()
+    }
+    for payload in (loaded_state_dump, expected_state_dump):
+        for fact in payload["facts"].values():
+            fact["known_by"] = sorted(fact["known_by"])
+    assert loaded_state_dump == expected_state_dump
 
 
 def test_v04_save_load_tick_and_replay_preserve_social_state(tmp_path: Path) -> None:

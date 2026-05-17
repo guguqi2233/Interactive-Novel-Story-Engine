@@ -1,49 +1,93 @@
 # Local LLM Interactive Novel World Engine
 
-A local-only interactive fiction engine where an LLM handles language-facing work and a deterministic Python world engine owns canonical state, rules, events, visibility, social consequences, combat outcomes, and saves.
+A local-first interactive novel world engine. The LLM is used for intent
+parsing, narration, and memory summarization, while the local engine owns
+world state, rule resolution, event logs, saves, visibility, social systems,
+combat, and content validation.
 
-v0.4 includes a playable local backend, a minimal React/Vite frontend, content packs, SQLite save/load, NPC schedules, search, inventory rules, lockpick, sneak, quests, factions, rumors, crime/witnesses, social tick, combat, life state rules, NPC reactions, advanced memory retrieval, content validation, and a local debug timeline.
+This project is for local personal use. It is not designed as a hosted service.
+
+## Current Version Scope
+
+v0.5 adds authoring and local world-building support on top of the v0.4 social
+and conflict systems:
+
+- Multi-world content packs.
+- Structured `GameState`, `StateDelta`, `EventLog`, and SQLite save/load.
+- Structured `visible_state` for frontend use.
+- NPC schedule, search, inventory, lockpick, sneak, quest state machine, and
+  world tick.
+- Faction reputation, rumors, crime/witness, social consequences, combat,
+  life state, NPC reactions, and debug timeline.
+- Content authoring API and frontend authoring UI.
+- Structured world validation reports.
+- Local memory backends and safe `MemoryContextBuilder`.
+- NPC goals, planning tick, relationship graph, and faction conflict.
+- Economy/trade rules.
+- Procedural side quest drafts.
+- Content-only mod packaging and validation.
+- Multi-world save browser.
+- Automated narrative boundary evals.
+
+The LLM is still not the world judge. Rule outcomes are decided by local code.
 
 ## Requirements
 
 - Python 3.11+
-- Node.js and npm
-- SQLite
+- Node.js 18+
+- npm
 
-## Install Backend Dependencies
+## Setup
+
+Install backend dependencies:
 
 ```powershell
 python -m pip install -e ".[dev]"
 ```
 
-## Configure Environment
-
-Copy `.env.example` to your local environment file or set variables in your shell. Do not commit a real `.env`.
-
-Useful defaults:
+Install frontend dependencies:
 
 ```powershell
-$env:PYTHONPATH="backend"
-$env:DATABASE_URL="sqlite:///./world_engine.db"
-$env:LLM_PROVIDER="mock"
-$env:ENABLE_DEBUG_API="true"
+cd frontend
+npm install
 ```
 
-For OpenAI:
+## Configuration
 
-```powershell
-$env:LLM_PROVIDER="openai"
-$env:LLM_API_KEY="your-local-key"
+Copy `.env.example` to a local `.env` if desired. Do not commit `.env`.
+
+Important variables:
+
+```env
+DATABASE_URL=sqlite:///./world_engine.db
+LLM_PROVIDER=mock
+LLM_MODEL=gpt-4.1-mini
+LLM_API_KEY=
+ENABLE_DEBUG_API=true
+ENABLE_AUTHORING_API=false
+VITE_API_BASE_URL=http://127.0.0.1:8000
+MEMORY_BACKEND=sqlite
+AUTHORING_ROOT=worlds
+MODS_ROOT=mods
 ```
 
-API keys must come from environment variables. Do not put keys in code, tests, logs, docs, saves, or database fixtures.
+`LLM_PROVIDER=mock` is the local development default. Use `openai` only when
+you explicitly want real API calls and have set the API key through the
+environment. API keys must never be committed, logged, or placed in frontend
+code.
 
-## Start Backend
+`AUTHORING_ROOT`, `MODS_ROOT`, and `MEMORY_BACKEND` document the intended
+local configuration surface for v0.5. Some runtime paths still use the current
+repository defaults.
+
+## Start the Backend
 
 From the repository root:
 
 ```powershell
-$env:PYTHONPATH="backend"
+$env:PYTHONPATH = "backend"
+$env:DATABASE_URL = "sqlite:///./world_engine.db"
+$env:LLM_PROVIDER = "mock"
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
@@ -53,56 +97,20 @@ Health check:
 Invoke-RestMethod http://127.0.0.1:8000/health
 ```
 
-## Start Frontend
-
-From `frontend/`:
-
-```powershell
-npm install
-npm run dev
-```
-
-The frontend reads the backend URL from:
-
-```text
-VITE_API_BASE_URL
-```
-
-If unset, it defaults to:
-
-```text
-http://127.0.0.1:8000
-```
-
-Example:
-
-```powershell
-$env:VITE_API_BASE_URL="http://127.0.0.1:8000"
-npm run dev
-```
-
-Build frontend:
+## Start the Frontend
 
 ```powershell
 cd frontend
-npm run build
+$env:VITE_API_BASE_URL = "http://127.0.0.1:8000"
+npm run dev
 ```
 
-## Choose A World
+The frontend includes a play view, debug panel, authoring view, and save
+browser. It does not store API keys.
 
-World content packs live under:
+## Choose a World
 
-```text
-worlds/{world_id}/
-```
-
-The included world is:
-
-```text
-mist_valley
-```
-
-Start a session with the default world:
+Start a game with the default world:
 
 ```powershell
 Invoke-RestMethod -Method Post http://127.0.0.1:8000/game/start
@@ -111,172 +119,200 @@ Invoke-RestMethod -Method Post http://127.0.0.1:8000/game/start
 Start a specific world:
 
 ```powershell
-Invoke-RestMethod `
-  -Method Post `
-  -Uri http://127.0.0.1:8000/game/start `
+Invoke-RestMethod -Method Post http://127.0.0.1:8000/game/start `
   -ContentType "application/json" `
   -Body '{"world_id":"mist_valley"}'
 ```
 
-The frontend provides a world selector with `mist_valley`.
+The frontend world selector uses the same `world_id` flow.
 
-## Play Through API
-
-Submit player input:
+## Send Player Input
 
 ```powershell
-Invoke-RestMethod `
-  -Method Post `
-  -Uri http://127.0.0.1:8000/game/input `
+Invoke-RestMethod -Method Post http://127.0.0.1:8000/game/input `
   -ContentType "application/json" `
-  -Body '{"session_id":"SESSION_ID","player_input":"observe"}'
+  -Body '{"session_id":"SESSION_ID","player_input":"观察四周"}'
 ```
 
-Get current visible state:
+The response includes narration, suggested actions, current turn, and
+structured `visible_state`. Player APIs do not return raw `state_deltas`,
+hidden facts, NPC secrets, hidden witnesses, or debug memory.
 
-```powershell
-Invoke-RestMethod http://127.0.0.1:8000/game/state/SESSION_ID
-```
+## Save and Load
 
-`visible_state` is filtered. It should not include hidden facts, hidden NPCs, hidden witnesses, undiscovered hidden objects, NPC secrets, hidden inactive quests, hidden factions, or debug-only details.
-
-## Save And Load
-
-List saves:
+List saves, optionally filtered by world:
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:8000/game/saves
+Invoke-RestMethod "http://127.0.0.1:8000/game/saves?world_id=mist_valley"
 ```
 
-Save active session:
+Save an active session:
 
 ```powershell
 Invoke-RestMethod -Method Post http://127.0.0.1:8000/game/SESSION_ID/save
 ```
 
-Load save:
+Load a save into an active session:
 
 ```powershell
 Invoke-RestMethod -Method Post http://127.0.0.1:8000/game/load/SAVE_ID
 ```
 
-Loading returns a new active `session_id` that can continue receiving input.
-
-## Debug Timeline
-
-Debug timeline is local-development only and controlled by:
-
-```text
-ENABLE_DEBUG_API
-```
-
-When enabled:
+Delete a save:
 
 ```powershell
-Invoke-RestMethod http://127.0.0.1:8000/debug/sessions/SESSION_ID/events
-Invoke-RestMethod http://127.0.0.1:8000/debug/saves/SAVE_ID/events
+Invoke-RestMethod -Method Delete http://127.0.0.1:8000/game/saves/SAVE_ID
 ```
 
-The debug timeline may include raw `state_deltas`, including hidden/system-only information. It is intentionally separate from player-facing APIs and appears only in the frontend debug panel.
+Save summaries are safe summaries. They do not expose raw `GameState`, hidden
+facts, raw event deltas, or debug memory.
 
-Do not expose debug endpoints on an untrusted network.
+## Debug API
 
-## Validate A World Pack
+Debug APIs are local-development tools only. Enable them with:
 
-Run local content validation:
+```powershell
+$env:ENABLE_DEBUG_API = "true"
+```
+
+Endpoints:
+
+- `GET /debug/sessions/{session_id}/events`
+- `GET /debug/saves/{save_id}/events`
+
+Debug events may include raw `state_deltas`. They are intentionally separated
+from player APIs and narrator input.
+
+## Authoring API
+
+The authoring API is disabled by default. Enable it only for local editing:
+
+```powershell
+$env:ENABLE_AUTHORING_API = "true"
+```
+
+Endpoints:
+
+- `GET /authoring/worlds`
+- `POST /authoring/worlds`
+- `GET /authoring/worlds/{world_id}`
+- `GET /authoring/worlds/{world_id}/files`
+- `GET /authoring/worlds/{world_id}/files/{file_name}`
+- `PUT /authoring/worlds/{world_id}/files/{file_name}`
+- `POST /authoring/worlds/{world_id}/validate`
+- `GET /authoring/mods`
+- `POST /authoring/mods/{mod_id}/validate`
+
+The API can read/write only whitelisted YAML content files and rejects path
+traversal. It does not mutate active session `GameState` and does not call the
+LLM.
+
+## Authoring UI
+
+The frontend includes a local authoring view. It can:
+
+- list world packs
+- select a world
+- select whitelisted YAML files
+- edit YAML in a textarea
+- save YAML through the authoring API
+- run validation
+- show structured errors, warnings, and suggestions grouped by file
+
+If the authoring API is disabled, the UI shows an unavailable state. The
+authoring view is separate from the player narrative view.
+
+## World Validation
+
+Run validation from the repository root:
 
 ```powershell
 python scripts\validate_world.py mist_valley
 ```
 
-The validator reports:
+JSON output:
 
-- errors
-- warnings
-- suggestions
-
-Exit codes:
-
-- non-zero when errors exist
-- zero when only warnings/suggestions exist
-
-Validation checks schema, ids, exits, NPC locations, NPC faction references, item placement, quest triggers, fact `known_by`, rumor references, hidden fact leak warnings, schedule locations, and basic combat/life fields.
-
-## v0.4 Features
-
-### Social State
-
-- `factions.yaml` loads faction state.
-- Reputation changes are rule-generated `StateDelta` values.
-- `known_rumors` and `known_crimes` appear only when player-visible.
-- Crime/witness records can drive reputation and rumor consequences.
-
-### Social Tick
-
-World tick can process:
-
-- NPC schedule
-- quest triggers
-- crime reports
-- rumor propagation
-- reputation consequences
-- NPC reactions
-- delayed consequences
-
-### Combat And Life State
-
-Implemented player actions:
-
-- `attack`
-- `defend`
-- `flee`
-
-Combat and injury outcomes are deterministic rules. The LLM only renders resolved outcomes. Dead/incapacitated NPCs cannot talk, move by schedule, or spread rumors.
-
-### Memory Retrieval
-
-Memory records can be searched by:
-
-- tags
-- entity ids
-- fact ids
-- substring
-- turn range
-
-Memory is not authoritative state. Hidden/debug memory is filtered from narrator/player contexts.
-
-## Content Pack Structure
-
-Example:
-
-```text
-worlds/mist_valley/
-  manifest.yaml
-  locations.yaml
-  npcs.yaml
-  items.yaml
-  facts.yaml
-  quests.yaml
-  factions.yaml
-  rumors.yaml
+```powershell
+python scripts\validate_world.py mist_valley --json
 ```
 
-See `docs/CONTENT_PACKS.md` for v0.4 content-pack fields and authoring notes.
+Validation checks include schema fields, references, exits, NPC locations,
+schedule locations, faction ids, item ownership conflicts, quest triggers,
+fact known-by references, rumor fact ids, hidden fact leakage warnings, life
+fields, economy fields, and reserved plugin manifest checks.
 
-## Run Tests
+The CLI exits non-zero when errors are present.
+
+## Mod Validation
+
+v0.5 supports content-only local mods. Mods may contain YAML content packs but
+must not execute Python, JavaScript, shell scripts, or arbitrary code.
+
+When the authoring API is enabled:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8000/authoring/mods
+Invoke-RestMethod -Method Post http://127.0.0.1:8000/authoring/mods/MOD_ID/validate
+```
+
+Mod validation reuses world validation for entry worlds and checks
+dependencies, conflicts, content paths, engine version bounds, and executable
+file restrictions.
+
+## Narrative Boundary Evals
+
+Run the automated boundary evals:
+
+```powershell
+python -m pytest backend/tests/evals
+```
+
+The evals cover hidden facts, NPC secrets, hidden witnesses, debug deltas,
+hidden/debug memory, rumor safety, and procedural quest draft safety. They use
+mock providers and do not call real APIs.
+
+## Full Verification
+
+Backend tests:
 
 ```powershell
 python -m pytest
 ```
 
-## Known v0.4 Limits
+Frontend build:
 
-- No tactical grid combat or multi-round NPC combat AI.
-- No guard pursuit, arrest, trial, or full legal system.
-- No economy, shop, crafting, equipment progression, or weight systems.
-- No complex NPC planning or LLM-driven agents.
-- No pathfinding.
-- No world editor UI.
-- No vector database memory.
-- Debug API has no production auth; keep it local-only.
-- Raw faction reputation is still present in player API, though the frontend displays only the band.
+```powershell
+cd frontend
+npm run build
+```
+
+## Content Pack Files
+
+World packs live under `worlds/{world_id}`. The current schema supports:
+
+- `manifest.yaml`
+- `locations.yaml`
+- `npcs.yaml`
+- `items.yaml`
+- `quests.yaml`
+- `facts.yaml`
+- `factions.yaml`
+- `rumors.yaml`
+- `relationships.yaml`
+
+See `docs/CONTENT_PACKS.md` for file-level details.
+
+## Known Limits
+
+- Authoring and debug APIs are local-only tools, not production features.
+- No accounts, cloud sync, or online mod publishing.
+- The authoring UI is a minimal textarea editor, not a full IDE.
+- Validation reports identify issues but do not auto-fix YAML.
+- The local vector memory layer currently has deterministic fallback behavior;
+  no external vector database is required.
+- Memory is not authoritative and cannot overwrite `GameState` or `EventLog`.
+- Procedural side quest generation produces drafts only.
+- NPC planning is deterministic and limited to predefined action types.
+- Economy is lightweight and does not model dynamic supply/demand.
+- Faction conflict does not simulate war or diplomacy AI.

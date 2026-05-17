@@ -73,6 +73,26 @@ export type VisibleCrime = {
   created_turn: number;
 };
 
+export type VisibleRelationship = {
+  id: string;
+  source_id: string;
+  target_id: string;
+  relation_type: string;
+  trust: number;
+  fear: number;
+  affinity: number;
+  obligation: number;
+  tags: string[];
+};
+
+export type VisibleFactionConflict = {
+  faction_id: string;
+  alert_level: number;
+  conflict_level: number;
+  relationships_to_other_factions: Record<string, number>;
+  conflict_tags: string[];
+};
+
 export type VisibleActorCondition = {
   actor_id: string;
   condition: string;
@@ -109,6 +129,64 @@ export type DebugEventListResponse = {
   events: DebugEvent[];
 };
 
+export type AuthoringValidationIssue = {
+  severity: string;
+  file: string;
+  path: string;
+  code: string;
+  message: string;
+  ref_id?: string | null;
+  suggestion?: string | null;
+};
+
+export type AuthoringValidation = {
+  world_id: string;
+  ok: boolean;
+  errors: AuthoringValidationIssue[];
+  warnings: AuthoringValidationIssue[];
+  suggestions: AuthoringValidationIssue[];
+};
+
+export type AuthoringWorldSummary = {
+  world_id: string;
+  name?: string | null;
+  description: string;
+  version?: string | null;
+  file_count: number;
+};
+
+export type AuthoringWorldListResponse = {
+  local_only: boolean;
+  worlds: AuthoringWorldSummary[];
+};
+
+export type AuthoringWorldDetailResponse = {
+  local_only: boolean;
+  world: AuthoringWorldSummary;
+  files: string[];
+  validation: AuthoringValidation;
+};
+
+export type AuthoringFileListResponse = {
+  local_only: boolean;
+  world_id: string;
+  files: string[];
+};
+
+export type AuthoringFileResponse = {
+  local_only: boolean;
+  world_id: string;
+  file_name: string;
+  content: string;
+};
+
+export type AuthoringFileWriteResponse = {
+  local_only: boolean;
+  world_id: string;
+  file_name: string;
+  validation: AuthoringValidation;
+};
+
 export type VisibleState = {
   world_id: string;
   turn: number;
@@ -122,6 +200,8 @@ export type VisibleState = {
   factions?: VisibleFaction[];
   known_rumors?: VisibleRumor[];
   known_crimes?: VisibleCrime[];
+  relationships?: VisibleRelationship[];
+  faction_conflicts?: VisibleFactionConflict[];
   player_condition?: VisibleActorCondition;
   active_combat?: ActiveCombatSummary | null;
 };
@@ -149,9 +229,13 @@ export type GameStateResponse = {
 export type SaveSummary = {
   save_id: string;
   world_id: string;
+  world_name: string;
   turn: number;
+  current_location_name: string;
+  formatted_time: string;
   created_at: string;
   updated_at: string;
+  player_summary?: string | null;
 };
 
 export type SaveListResponse = {
@@ -163,6 +247,11 @@ export type SaveGameResponse = {
   session_id: string;
   world_id: string;
   turn: number;
+};
+
+export type DeleteSaveResponse = {
+  save_id: string;
+  deleted: boolean;
 };
 
 export type LoadGameResponse = {
@@ -204,8 +293,9 @@ export async function fetchGameState(sessionId: string): Promise<GameStateRespon
   return requestJson<GameStateResponse>(`/game/state/${encodeURIComponent(sessionId)}`);
 }
 
-export async function listSaves(): Promise<SaveListResponse> {
-  return requestJson<SaveListResponse>("/game/saves");
+export async function listSaves(worldId?: string): Promise<SaveListResponse> {
+  const query = worldId ? `?world_id=${encodeURIComponent(worldId)}` : "";
+  return requestJson<SaveListResponse>(`/game/saves${query}`);
 }
 
 export async function saveGame(sessionId: string): Promise<SaveGameResponse> {
@@ -220,6 +310,12 @@ export async function loadGame(saveId: string): Promise<LoadGameResponse> {
   });
 }
 
+export async function deleteSave(saveId: string): Promise<DeleteSaveResponse> {
+  return requestJson<DeleteSaveResponse>(`/game/saves/${encodeURIComponent(saveId)}`, {
+    method: "DELETE"
+  });
+}
+
 export async function fetchSessionDebugEvents(sessionId: string): Promise<DebugEventListResponse> {
   return requestJson<DebugEventListResponse>(
     `/debug/sessions/${encodeURIComponent(sessionId)}/events`
@@ -228,6 +324,57 @@ export async function fetchSessionDebugEvents(sessionId: string): Promise<DebugE
 
 export async function fetchSaveDebugEvents(saveId: string): Promise<DebugEventListResponse> {
   return requestJson<DebugEventListResponse>(`/debug/saves/${encodeURIComponent(saveId)}/events`);
+}
+
+export async function fetchAuthoringWorlds(): Promise<AuthoringWorldListResponse> {
+  return requestJson<AuthoringWorldListResponse>("/authoring/worlds");
+}
+
+export async function fetchAuthoringWorld(worldId: string): Promise<AuthoringWorldDetailResponse> {
+  return requestJson<AuthoringWorldDetailResponse>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}`
+  );
+}
+
+export async function fetchAuthoringFiles(worldId: string): Promise<AuthoringFileListResponse> {
+  return requestJson<AuthoringFileListResponse>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/files`
+  );
+}
+
+export async function fetchAuthoringFile(
+  worldId: string,
+  fileName: string
+): Promise<AuthoringFileResponse> {
+  return requestJson<AuthoringFileResponse>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/files/${encodeURIComponent(fileName)}`
+  );
+}
+
+export async function saveAuthoringFile(
+  worldId: string,
+  fileName: string,
+  content: string
+): Promise<AuthoringFileWriteResponse> {
+  return requestJson<AuthoringFileWriteResponse>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/files/${encodeURIComponent(fileName)}`,
+    {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ content })
+    }
+  );
+}
+
+export async function validateAuthoringWorld(worldId: string): Promise<AuthoringValidation> {
+  return requestJson<AuthoringValidation>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/validate`,
+    {
+      method: "POST"
+    }
+  );
 }
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {

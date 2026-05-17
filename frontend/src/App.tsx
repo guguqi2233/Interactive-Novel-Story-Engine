@@ -1,6 +1,13 @@
 import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import {
+  AuthoringValidation,
+  AuthoringWorldSummary,
   DebugEvent,
+  deleteSave,
+  fetchAuthoringFile,
+  fetchAuthoringFiles,
+  fetchAuthoringWorld,
+  fetchAuthoringWorlds,
   fetchGameState,
   fetchSaveDebugEvents,
   fetchSessionDebugEvents,
@@ -8,9 +15,11 @@ import {
   listSaves,
   loadGame,
   saveGame,
+  saveAuthoringFile,
   SaveSummary,
   startGame,
   submitPlayerInput,
+  validateAuthoringWorld,
   VisibleState
 } from "./api";
 
@@ -20,6 +29,17 @@ type StoryEntry = {
 };
 
 const WORLD_OPTIONS = [{ id: "mist_valley", name: "Mist Valley" }];
+const AUTHORING_FILES = [
+  "manifest.yaml",
+  "locations.yaml",
+  "npcs.yaml",
+  "items.yaml",
+  "quests.yaml",
+  "facts.yaml",
+  "factions.yaml",
+  "rumors.yaml",
+  "relationships.yaml"
+];
 
 export function App() {
   const [sessionId, setSessionId] = useState<string>("");
@@ -35,8 +55,10 @@ export function App() {
   const [timelineError, setTimelineError] = useState<string>("");
   const [saves, setSaves] = useState<SaveSummary[]>([]);
   const [selectedSaveId, setSelectedSaveId] = useState<string>("");
+  const [saveWorldFilter, setSaveWorldFilter] = useState<string>("");
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>("");
+  const [mode, setMode] = useState<"play" | "authoring">("play");
 
   useEffect(() => {
     void handleStart();
@@ -171,8 +193,31 @@ export function App() {
     }
   }
 
-  async function refreshSaves(nextSelectedSaveId?: string) {
-    const response = await listSaves();
+  async function handleDeleteSave(saveId = selectedSaveId) {
+    if (!saveId || isLoading) {
+      return;
+    }
+    const confirmed = window.confirm(`Delete local save ${saveId}?`);
+    if (!confirmed) {
+      return;
+    }
+    setIsLoading(true);
+    setError("");
+    try {
+      await deleteSave(saveId);
+      await refreshSaves(selectedSaveId === saveId ? undefined : selectedSaveId);
+      if (selectedSaveId === saveId) {
+        setSelectedSaveId("");
+      }
+    } catch (err) {
+      setError(toErrorMessage(err));
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function refreshSaves(nextSelectedSaveId?: string, worldFilter = saveWorldFilter) {
+    const response = await listSaves(worldFilter || undefined);
     setSaves(response.saves);
     setSelectedSaveId(nextSelectedSaveId ?? response.saves[0]?.save_id ?? "");
   }
@@ -229,6 +274,28 @@ export function App() {
         </div>
 
         <section>
+          <h2>Mode</h2>
+          <div className="segmented">
+            <button
+              type="button"
+              className={mode === "play" ? "active" : ""}
+              onClick={() => setMode("play")}
+            >
+              Play
+            </button>
+            <button
+              type="button"
+              className={mode === "authoring" ? "active" : ""}
+              onClick={() => setMode("authoring")}
+            >
+              Authoring
+            </button>
+          </div>
+        </section>
+
+        {mode === "play" && (
+          <>
+        <section>
           <h2>World</h2>
           <select
             value={selectedWorldId}
@@ -246,27 +313,21 @@ export function App() {
           </button>
         </section>
 
-        <section>
-          <h2>Save</h2>
-          <button type="button" onClick={handleSave} disabled={!sessionId || isLoading}>
-            Save
-          </button>
-          <select
-            value={selectedSaveId}
-            onChange={(event) => setSelectedSaveId(event.target.value)}
-            disabled={saves.length === 0 || isLoading}
-          >
-            <option value="">No saves</option>
-            {saves.map((save) => (
-              <option key={save.save_id} value={save.save_id}>
-                {save.world_id} turn {save.turn}
-              </option>
-            ))}
-          </select>
-          <button type="button" onClick={handleLoad} disabled={!selectedSaveId || isLoading}>
-            Load
-          </button>
-        </section>
+        <SaveBrowser
+          saves={saves}
+          selectedSaveId={selectedSaveId}
+          saveWorldFilter={saveWorldFilter}
+          isLoading={isLoading}
+          onSave={handleSave}
+          onLoad={handleLoad}
+          onDelete={(saveId) => void handleDeleteSave(saveId)}
+          onRefresh={() => void refreshSaves(selectedSaveId)}
+          onSelectSave={setSelectedSaveId}
+          onFilterWorld={(worldId) => {
+            setSaveWorldFilter(worldId);
+            void refreshSaves(undefined, worldId);
+          }}
+        />
 
         <section>
           <h2>Location</h2>
@@ -309,9 +370,15 @@ export function App() {
           <h2>Status</h2>
           <StatusPanel visibleState={visibleState} />
         </section>
+          </>
+        )}
       </aside>
 
       <section className="story-panel">
+        {mode === "authoring" ? (
+          <AuthoringPanel />
+        ) : (
+          <>
         <div className="story-scroll">
           {story.map((entry) => (
             <article className="story-entry" key={entry.id}>
@@ -344,6 +411,8 @@ export function App() {
         </form>
 
         {error && <p className="error">{error}</p>}
+          </>
+        )}
       </section>
 
       <aside className={`debug-panel ${debugOpen ? "open" : "closed"}`}>
@@ -437,6 +506,8 @@ function SocialPanel({ visibleState }: { visibleState: VisibleState | null }) {
   const factions = visibleState?.factions ?? [];
   const rumors = visibleState?.known_rumors ?? [];
   const crimes = visibleState?.known_crimes ?? [];
+  const relationships = visibleState?.relationships ?? [];
+  const conflicts = visibleState?.faction_conflicts ?? [];
 
   return (
     <div className="stack">
@@ -471,7 +542,106 @@ function SocialPanel({ visibleState }: { visibleState: VisibleState | null }) {
           ))}
         />
       </div>
+      <div>
+        <h3>Known Relationships</h3>
+        <ItemList
+          emptyText="None"
+          items={relationships.map((relationship) => (
+            <span key={relationship.id}>
+              {relationship.source_id} {relationship.relation_type} {relationship.target_id}
+            </span>
+          ))}
+        />
+      </div>
+      <div>
+        <h3>Faction Conflicts</h3>
+        <ItemList
+          emptyText="None"
+          items={conflicts.map((conflict) => (
+            <span key={conflict.faction_id}>
+              {conflict.faction_id} alert {conflict.alert_level}
+            </span>
+          ))}
+        />
+      </div>
     </div>
+  );
+}
+
+function SaveBrowser({
+  saves,
+  selectedSaveId,
+  saveWorldFilter,
+  isLoading,
+  onSave,
+  onLoad,
+  onDelete,
+  onRefresh,
+  onSelectSave,
+  onFilterWorld
+}: {
+  saves: SaveSummary[];
+  selectedSaveId: string;
+  saveWorldFilter: string;
+  isLoading: boolean;
+  onSave: () => void;
+  onLoad: () => void;
+  onDelete: (saveId: string) => void;
+  onRefresh: () => void;
+  onSelectSave: (saveId: string) => void;
+  onFilterWorld: (worldId: string) => void;
+}) {
+  const worldOptions = Array.from(new Set(saves.map((save) => save.world_id))).sort();
+  return (
+    <section>
+      <h2>Save Browser</h2>
+      <div className="save-browser-actions">
+        <button type="button" onClick={onSave} disabled={isLoading}>
+          Save
+        </button>
+        <button type="button" onClick={onLoad} disabled={!selectedSaveId || isLoading}>
+          Load
+        </button>
+        <button type="button" onClick={() => onDelete(selectedSaveId)} disabled={!selectedSaveId || isLoading}>
+          Delete
+        </button>
+        <button type="button" onClick={onRefresh} disabled={isLoading}>
+          Refresh
+        </button>
+      </div>
+      <label>
+        World filter
+        <select
+          value={saveWorldFilter}
+          onChange={(event) => onFilterWorld(event.target.value)}
+          disabled={isLoading}
+        >
+          <option value="">All worlds</option>
+          {worldOptions.map((worldId) => (
+            <option key={worldId} value={worldId}>
+              {worldId}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className="save-list">
+        {saves.length === 0 && <p className="muted">No saves.</p>}
+        {saves.map((save) => (
+          <button
+            type="button"
+            className={`save-card ${selectedSaveId === save.save_id ? "selected" : ""}`}
+            key={save.save_id}
+            onClick={() => onSelectSave(save.save_id)}
+          >
+            <strong>{save.world_name || save.world_id}</strong>
+            <span>{save.current_location_name}</span>
+            <span>{save.formatted_time}</span>
+            <span>Turn {save.turn}</span>
+            <span className="muted">{save.updated_at}</span>
+          </button>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -503,6 +673,279 @@ function StatusPanel({ visibleState }: { visibleState: VisibleState | null }) {
             : "None"}
         </p>
       </div>
+    </div>
+  );
+}
+
+function AuthoringPanel() {
+  const [worlds, setWorlds] = useState<AuthoringWorldSummary[]>([]);
+  const [selectedWorldId, setSelectedWorldId] = useState<string>("");
+  const [files, setFiles] = useState<string[]>([]);
+  const [selectedFile, setSelectedFile] = useState<string>("manifest.yaml");
+  const [content, setContent] = useState<string>("");
+  const [validation, setValidation] = useState<AuthoringValidation | null>(null);
+  const [selectedIssuePath, setSelectedIssuePath] = useState<string>("");
+  const [isBusy, setIsBusy] = useState<boolean>(false);
+  const [message, setMessage] = useState<string>("");
+  const [error, setError] = useState<string>("");
+
+  useEffect(() => {
+    void loadWorlds();
+  }, []);
+
+  useEffect(() => {
+    if (selectedWorldId) {
+      void loadFiles(selectedWorldId);
+    }
+  }, [selectedWorldId]);
+
+  useEffect(() => {
+    if (selectedWorldId && selectedFile) {
+      void loadFile(selectedWorldId, selectedFile);
+    }
+  }, [selectedWorldId, selectedFile]);
+
+  async function loadWorlds() {
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await fetchAuthoringWorlds();
+      setWorlds(response.worlds);
+      setSelectedWorldId((current) => current || response.worlds[0]?.world_id || "");
+    } catch (err) {
+      setWorlds([]);
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function loadFiles(worldId: string) {
+    setIsBusy(true);
+    setError("");
+    try {
+      const response = await fetchAuthoringFiles(worldId);
+      setFiles(response.files);
+      setSelectedFile((current) =>
+        response.files.includes(current) ? current : response.files[0] ?? "manifest.yaml"
+      );
+      const detail = await fetchAuthoringWorld(worldId);
+      setValidation(detail.validation);
+    } catch (err) {
+      setFiles([]);
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function loadFile(worldId: string, fileName: string) {
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await fetchAuthoringFile(worldId, fileName);
+      setContent(response.content);
+    } catch (err) {
+      setContent("");
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleValidate() {
+    if (!selectedWorldId) {
+      return;
+    }
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await validateAuthoringWorld(selectedWorldId);
+      setValidation(response);
+      setMessage(response.ok ? "Validation passed." : "Validation found errors.");
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleSave() {
+    if (!selectedWorldId || !selectedFile) {
+      return;
+    }
+    const confirmed = window.confirm(
+      "This saves a local content pack file on this machine. Continue?"
+    );
+    if (!confirmed) {
+      return;
+    }
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await saveAuthoringFile(selectedWorldId, selectedFile, content);
+      setValidation(response.validation);
+      setMessage("Saved and validated.");
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  const usableFiles = files.length > 0 ? files : AUTHORING_FILES;
+  const disabled = isBusy || worlds.length === 0;
+
+  return (
+    <section className="authoring-panel">
+      <header className="authoring-header">
+        <div>
+          <h1>World Authoring</h1>
+          <p className="muted">Local YAML editor backed by the authoring API and validator.</p>
+        </div>
+        <button type="button" onClick={() => void loadWorlds()} disabled={isBusy}>
+          Refresh
+        </button>
+      </header>
+
+      {error.toLowerCase().includes("authoring api is disabled") && (
+        <div className="notice">
+          Authoring API is disabled. Set <code>ENABLE_AUTHORING_API=true</code> on the backend to
+          use the local editor.
+        </div>
+      )}
+
+      <div className="authoring-controls">
+        <label>
+          World
+          <select
+            value={selectedWorldId}
+            onChange={(event) => setSelectedWorldId(event.target.value)}
+            disabled={disabled}
+          >
+            {worlds.length === 0 && <option value="">Unavailable</option>}
+            {worlds.map((world) => (
+              <option key={world.world_id} value={world.world_id}>
+                {world.name || world.world_id}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          File
+          <select
+            value={selectedFile}
+            onChange={(event) => setSelectedFile(event.target.value)}
+            disabled={disabled}
+          >
+            {usableFiles.map((fileName) => (
+              <option key={fileName} value={fileName}>
+                {fileName}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <button type="button" onClick={handleValidate} disabled={!selectedWorldId || isBusy}>
+          Validate
+        </button>
+        <button type="button" onClick={handleSave} disabled={!selectedWorldId || !selectedFile || isBusy}>
+          Save
+        </button>
+      </div>
+
+      <textarea
+        className="yaml-editor"
+        value={content}
+        onChange={(event) => setContent(event.target.value)}
+        spellCheck={false}
+        disabled={disabled}
+      />
+
+      {message && <p className="muted">{message}</p>}
+      {error && <p className="error">{error}</p>}
+      {selectedIssuePath && (
+        <p className="muted">
+          Selected issue path: <code>{selectedIssuePath}</code>
+        </p>
+      )}
+      <ValidationPanel
+        validation={validation}
+        onSelectIssue={(issue) => {
+          setSelectedIssuePath(issue.path);
+          if (issue.file && usableFiles.includes(issue.file)) {
+            setSelectedFile(issue.file);
+          }
+        }}
+      />
+    </section>
+  );
+}
+
+function ValidationPanel({
+  validation,
+  onSelectIssue
+}: {
+  validation: AuthoringValidation | null;
+  onSelectIssue: (issue: AuthoringValidation["errors"][number]) => void;
+}) {
+  if (!validation) {
+    return <p className="muted">No validation result yet.</p>;
+  }
+  const groupedIssues = groupValidationIssues(validation);
+  return (
+    <section className="validation-panel">
+      <h2>Validation</h2>
+      <p className={validation.ok ? "validation-ok" : "error"}>
+        {validation.ok ? "Loadable" : "Errors must be fixed before loading."}
+      </p>
+      {Object.entries(groupedIssues).map(([file, issues]) => (
+        <div className="validation-file-group" key={file}>
+          <h3>{file}</h3>
+          <ValidationIssueList issues={issues} onSelectIssue={onSelectIssue} />
+        </div>
+      ))}
+      {Object.keys(groupedIssues).length === 0 && <p className="muted">No issues.</p>}
+    </section>
+  );
+}
+
+function ValidationIssueList({
+  issues,
+  onSelectIssue
+}: {
+  issues: AuthoringValidation["errors"];
+  onSelectIssue: (issue: AuthoringValidation["errors"][number]) => void;
+}) {
+  return (
+    <div>
+      {issues.length === 0 ? (
+        <p className="muted">None</p>
+      ) : (
+        <ul className="compact-list">
+          {issues.map((issue, index) => (
+            <li key={`${issue.path}-${index}`}>
+              <button
+                className="issue-button"
+                type="button"
+                onClick={() => onSelectIssue(issue)}
+              >
+                <span className={`severity ${issue.severity}`}>{issue.severity}</span>
+                <strong>{issue.path}</strong>
+                <span>{issue.code}</span>
+                <span>{issue.message}</span>
+                {issue.ref_id && <span>ref: {issue.ref_id}</span>}
+                {issue.suggestion && <span>fix: {issue.suggestion}</span>}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
@@ -542,9 +985,10 @@ function isSocialDebugEvent(event: DebugEvent): boolean {
     actionType.includes("crime") ||
     actionType.includes("rumor") ||
     actionType.includes("faction") ||
+    actionType.includes("relationship") ||
     actionType.includes("reaction") ||
     event.state_deltas.some((delta) =>
-      /^(social_consequences|crimes|rumors|factions|witnesses)\./.test(delta.path)
+      /^(social_consequences|crimes|rumors|factions|witnesses|relationships)\./.test(delta.path)
     )
   );
 }
@@ -562,9 +1006,30 @@ function isCombatDebugEvent(event: DebugEvent): boolean {
   );
 }
 
+function groupValidationIssues(validation: AuthoringValidation) {
+  const groups: Record<string, AuthoringValidation["errors"]> = {};
+  for (const issue of [
+    ...validation.errors,
+    ...validation.warnings,
+    ...validation.suggestions
+  ]) {
+    const file = issue.file || "world";
+    groups[file] = [...(groups[file] ?? []), issue];
+  }
+  return groups;
+}
+
 function toErrorMessage(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
   }
   return "Request failed.";
+}
+
+function authoringErrorMessage(error: unknown): string {
+  const message = toErrorMessage(error);
+  if (message.includes("[object Object]")) {
+    return "Authoring request failed. Check validation errors from the backend.";
+  }
+  return message;
 }

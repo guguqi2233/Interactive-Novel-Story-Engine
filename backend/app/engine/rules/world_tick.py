@@ -7,6 +7,7 @@ from app.core.event_log import Event
 from app.core.state_delta import StateDelta, StateDeltaOperation, apply_delta
 from app.core.world_state import GameState
 from app.engine.actions.schemas import ActionResult, SuccessLevel
+from app.engine.rules.npc_planning import resolve_npc_planning_tick
 from app.engine.rules.npc_reactions import resolve_npc_reactions
 from app.engine.rules.quests import resolve_quest_triggers
 from app.engine.rules.schedule import resolve_npc_schedules
@@ -42,6 +43,11 @@ def run_world_tick(
         working_state = apply_delta(working_state, delta)
 
     for delta in resolve_npc_reactions(working_state):
+        deltas.append(delta)
+        working_state = apply_delta(working_state, delta)
+
+    planning_result = resolve_npc_planning_tick(working_state)
+    for delta in planning_result.state_deltas:
         deltas.append(delta)
         working_state = apply_delta(working_state, delta)
 

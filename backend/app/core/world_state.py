@@ -16,6 +16,7 @@ class PlayerState(BaseModel):
     id: str = "player"
     location_id: str = "start"
     inventory: list[str] = Field(default_factory=list)
+    currency: int = Field(default=20, ge=0)
     health: int = 100
     hp: int = 10
     max_hp: int = 10
@@ -28,6 +29,25 @@ class PlayerState(BaseModel):
     combat_stance: str = "neutral"
     status_effects: list[str] = Field(default_factory=list)
     stealth_modifier: int = 0
+
+
+class NPCGoalStatus(StrEnum):
+    INACTIVE = "inactive"
+    ACTIVE = "active"
+    BLOCKED = "blocked"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class NPCGoalState(BaseModel):
+    id: str
+    description: str = ""
+    priority: int = 0
+    status: NPCGoalStatus = NPCGoalStatus.INACTIVE
+    conditions: list[str] = Field(default_factory=list)
+    desired_state: dict[str, Any] = Field(default_factory=dict)
+    allowed_actions: list[str] = Field(default_factory=list)
+    forbidden_actions: list[str] = Field(default_factory=list)
 
 
 class NPCState(BaseModel):
@@ -53,10 +73,18 @@ class NPCState(BaseModel):
     status_effects: list[str] = Field(default_factory=list)
     hostile_to: list[str] = Field(default_factory=list)
     knowledge: list[str] = Field(default_factory=list)
-    goals: list[str] = Field(default_factory=list)
+    goals: list[str | NPCGoalState] = Field(default_factory=list)
+    priorities: dict[str, int] = Field(default_factory=dict)
+    constraints: list[str] = Field(default_factory=list)
+    current_goal_id: str | None = None
+    plan_state: dict[str, Any] = Field(default_factory=dict)
     secrets: list[str] = Field(default_factory=list)
     schedule: list["NPCScheduleEntry"] = Field(default_factory=list)
     current_activity: str | None = None
+    merchant: bool = False
+    shop_inventory: list[str] = Field(default_factory=list)
+    buy_price_modifier: float = Field(default=1.0, ge=0.0)
+    sell_price_modifier: float = Field(default=0.5, ge=0.0)
 
 
 class NPCScheduleEntry(BaseModel):
@@ -86,6 +114,9 @@ class WorldObjectState(BaseModel):
     discoverable: bool = False
     discovered_by: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
+    base_price: int = Field(default=0, ge=0)
+    tradeable: bool = True
+    rarity: str = "common"
     locked: bool = False
     lock_difficulty: int = Field(default=0, ge=0)
     lock_state: LockState = LockState.INTACT
@@ -198,6 +229,12 @@ class FactionState(BaseModel):
     name: str
     description: str = ""
     reputation: ReputationState = Field(default_factory=ReputationState)
+    relationships_to_other_factions: dict[str, int] = Field(default_factory=dict)
+    conflict_level: int = Field(default=0, ge=0)
+    alert_level: int = Field(default=0, ge=0)
+    resources: dict[str, int | float | str] = Field(default_factory=dict)
+    known_by_player: bool = False
+    conflict_tags: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
 
 
@@ -334,6 +371,19 @@ class SocialConsequenceState(BaseModel):
     known_to_player: bool = False
 
 
+class RelationshipState(BaseModel):
+    id: str
+    source_id: str
+    target_id: str
+    relation_type: str
+    trust: int = 0
+    fear: int = 0
+    affinity: int = 0
+    obligation: int = 0
+    tags: list[str] = Field(default_factory=list)
+    known_by_player: bool = False
+
+
 class CombatStatus(StrEnum):
     ACTIVE = "active"
     ENDED = "ended"
@@ -384,6 +434,7 @@ class GameState(BaseModel):
     witnesses: dict[str, WitnessRecord] = Field(default_factory=dict)
     social_consequences: dict[str, SocialConsequenceState] = Field(default_factory=dict)
     social_flags: dict[str, bool | int | float | str] = Field(default_factory=dict)
+    relationships: dict[str, RelationshipState] = Field(default_factory=dict)
     combats: dict[str, CombatState] = Field(default_factory=dict)
 
 
@@ -396,6 +447,7 @@ def migrate_game_state_payload(payload: dict[str, Any]) -> dict[str, Any]:
     migrated.setdefault("witnesses", {})
     migrated.setdefault("social_consequences", {})
     migrated.setdefault("social_flags", {})
+    migrated.setdefault("relationships", {})
     migrated.setdefault("combats", {})
     return migrated
 

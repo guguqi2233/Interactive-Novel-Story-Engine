@@ -2,8 +2,10 @@ import pytest
 
 from app.core.event_log import Event
 from app.core.state_delta import StateDelta, StateDeltaOperation
-from app.core.world_state import GameState
+from app.core.world_state import GameState, LocationState
+from app.engine.actions.schemas import ActionResult, SuccessLevel
 from app.llm.fake_provider import FakeLLMProvider
+from app.llm.context_builder import MemoryContextBuilder
 from app.llm.memory_store import InMemoryMemoryStore, MemoryVisibility
 from app.llm.memory_summarizer import MemorySummarizer
 from app.llm.provider_base import LLMProviderError
@@ -89,7 +91,32 @@ def test_in_memory_memory_store_accepts_legacy_summary_records() -> None:
     assert store.search_memory("sealed gate") == [second_record]
     assert len(store.list_recent_memories(1)) == 1
     assert store.list_recent_memories(0) == []
-    assert second_record.visibility == MemoryVisibility.NARRATOR_SAFE
+    assert second_record.visibility == MemoryVisibility.DEBUG_ONLY
+
+
+def test_legacy_summary_records_do_not_enter_narrator_context_by_default() -> None:
+    store = InMemoryMemoryStore()
+    summary = MemorySummary(summary="Debug-only summary from raw event deltas.")
+    record = store.add_memory(summary)
+    state = GameState(
+        world_id="memory-test",
+        locations={
+            "square": LocationState(id="square", name="Square", description="", exits={}),
+        },
+    )
+    builder = MemoryContextBuilder(store)
+
+    context = builder.build(
+        state=state,
+        actor_id=state.player.id,
+        current_location="square",
+        action_result=ActionResult(success_level=SuccessLevel.SUCCESS, reason="Observe."),
+        visible_facts=[],
+    )
+
+    assert record.visibility == MemoryVisibility.DEBUG_ONLY
+    assert context.narrator_safe_memories == []
+    assert any(reason.memory_id == record.id for reason in context.excluded_memory_reasons)
 
 
 def test_memory_summarizer_does_not_mutate_game_state() -> None:

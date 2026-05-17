@@ -2,9 +2,9 @@
 
 ## Purpose
 
-The LLM protocol defines how this project talks to model providers without letting model output become trusted world state. All LLM calls pass through `LLMProvider`, and structured outputs are validated with Pydantic schemas.
+The LLM protocol defines how this project talks to model providers without letting model output become trusted world state. All model calls pass through `LLMProvider`, and structured outputs are validated with Pydantic schemas.
 
-The LLM is a parser, narrator, and summarizer. It is not the world judge.
+The LLM is a parser, narrator, summarizer, and optional authoring draft assistant. It is not the world judge.
 
 ## Provider Boundary
 
@@ -62,6 +62,7 @@ Inputs include:
 - witness records
 - NPC secrets
 - hidden/debug memories
+- raw `state_deltas`
 
 Current caution: `Narrator` receives `ActionResult.reason`. Rule authors must keep this reason player-safe. A future hardening pass should split `player_reason` and `debug_reason`.
 
@@ -79,7 +80,7 @@ It does not:
 
 Because event payloads can contain raw `state_deltas`, summaries derived from hidden/debug events should be stored as `debug_only` or `hidden` unless explicitly sanitized.
 
-### Advanced Memory Retrieval
+### Memory Retrieval And Context
 
 Memory retrieval is local deterministic code and does not call the LLM.
 
@@ -90,11 +91,14 @@ Memory retrieval is local deterministic code and does not call the LLM.
 - `debug_only`
 - `hidden`
 
-Narrator-safe memory filtering must use:
+`MemoryContextBuilder` builds separate lists:
 
-- `filter_narrator_safe_memories`
+- `narrator_safe_memories`
+- `player_visible_memories`
+- `npc_known_memories`
+- debug-only exclusion reasons
 
-Allowed for narrator:
+Narrator-safe memory filtering allows only:
 
 - `player_visible`
 - `narrator_safe`
@@ -103,28 +107,53 @@ Forbidden for narrator:
 
 - `debug_only`
 - `hidden`
+- memory linked to hidden/discoverable facts the player has not discovered
+- memory tagged as `source_event_hidden`
 
-Player-facing memory filtering must use:
+NPC memory context also checks `npc_knows`; NPCs cannot receive memory tied to unknown facts.
 
-- `filter_player_visible_memories`
+Current runtime note: memory context is implemented and tested, but the main `GameLoop` currently calls `Narrator` with action-visible facts only. When memory is connected to runtime narration, it must pass through `MemoryContextBuilder`.
 
-Allowed for player response:
+### Procedural Side Quest Drafts
 
-- `player_visible`
+`side_quest_generator.py` supports:
 
-## v0.4 Rule Modules Do Not Call LLM
+- deterministic `rule_based_generate_side_quest`
+- optional `llm_assisted_generate_side_quest`
 
-The following v0.4 modules are deterministic rule/code paths and do not call `LLMProvider`:
+The LLM-assisted path:
 
-- content validation tools
-- faction reputation
-- rumor propagation
-- crime/witness rules
-- social consequence tick
-- combat core
-- injury/death/incapacitation rules
-- NPC reaction rules
-- advanced memory retrieval
+- accepts an injected `LLMProvider`
+- calls `generate_json` into the `QuestDraft` schema
+- validates references against the loaded `WorldPack`
+- rejects hidden fact text in player-facing draft fields
+- returns `QuestDraft` only
+
+It does not:
+
+- modify active `GameState`
+- apply `StateDelta`
+- write `quests.yaml`
+- activate or complete quests
+- bypass world validation
+
+Any future API/UI exposure for LLM-assisted drafts must remain authoring-only and require explicit user review/export.
+
+## v0.5 Rule Modules Do Not Call LLM
+
+The following v0.5 modules are deterministic rule/code paths and do not call `LLMProvider`:
+
+- content authoring service
+- structured content validator
+- local memory store retrieval backends
+- `MemoryContextBuilder`
+- NPC goals
+- NPC planning tick
+- relationship graph
+- faction conflict layer
+- economy/trade
+- mod loader and mod validation
+- multi-world save browser
 
 Existing deterministic v0.3/v0.4 rule paths also do not call the LLM:
 
@@ -135,6 +164,13 @@ Existing deterministic v0.3/v0.4 rule paths also do not call the LLM:
 - quest state machine
 - NPC schedule resolver
 - world tick
+- faction reputation
+- rumor propagation
+- crime/witness rules
+- social consequence tick
+- combat core
+- injury/death/incapacitation rules
+- NPC reaction rules
 - debug timeline API
 
 They may receive a schema-validated `PlayerIntent`, but action results and state changes are decided by Python rules and emitted as `StateDelta`.
@@ -146,6 +182,7 @@ All LLM JSON outputs must validate against Pydantic schemas:
 - `PlayerIntent`
 - `NarrativeResult`
 - `MemorySummary`
+- `QuestDraft`
 
 Schema validation failure must not silently modify state.
 
@@ -154,6 +191,7 @@ Observed behavior:
 - `IntentParser` falls back to a clarification/unknown intent.
 - `Narrator` errors propagate; `GameLoop` tests ensure state/event commit does not happen after narrator failure.
 - `MemorySummarizer` invalid schema raises provider error.
+- LLM-assisted side quest generation raises on invalid schema or invalid draft references.
 
 ## Error Handling
 
@@ -179,11 +217,12 @@ Prompt inputs must obey world visibility:
 - no raw `hidden_facts` field in narrator payloads
 - no hidden witness identities unless discovered
 
-The LLM can render prose, but it cannot create canonical items, NPCs, locations, quest progress, crimes, rumors, combat outcomes, faction changes, memories, or facts.
+The LLM can render prose or draft authoring candidates, but it cannot create canonical items, NPCs, locations, quest progress, crimes, rumors, combat outcomes, faction changes, memories, relationships, trade results, or facts.
 
-## Known v0.4 Hardening Items
+## Known v0.5 Hardening Items
 
 - Split `ActionResult.reason` into `player_reason` and `debug_reason`.
 - Classify memory summaries from raw non-player-visible events as `debug_only` or `hidden` by default.
+- Ensure any runtime memory-to-narrator integration uses only `MemoryContextBuilder.narrator_safe_memories`.
+- Sanitize mod manifest errors before returning them through authoring APIs.
 - Rewrite any mojibake prompt text into clean UTF-8 wording.
-- Keep raw debug data out of narrator-facing memory retrieval.

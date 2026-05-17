@@ -188,8 +188,27 @@ def test_save_game_success(tmp_path: Path) -> None:
     saves = client.get("/game/saves").json()["saves"]
     assert saves[0]["save_id"] == payload["save_id"]
     assert saves[0]["world_id"] == "mist_valley"
+    assert saves[0]["world_name"] == "Mist Valley"
     assert saves[0]["turn"] == 0
+    assert saves[0]["current_location_name"] == "Village Square"
+    assert saves[0]["formatted_time"] == "Day 1, 08:00"
     assert "hidden_facts" not in str(saves)
+
+
+def test_list_saves_world_filter_and_summary_do_not_leak_hidden_facts(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    session_id = client.post("/game/start").json()["session_id"]
+    client.post(f"/game/{session_id}/save")
+
+    filtered = client.get("/game/saves?world_id=mist_valley")
+    missing_world = client.get("/game/saves?world_id=missing_world")
+
+    assert filtered.status_code == 200
+    assert len(filtered.json()["saves"]) == 1
+    assert missing_world.status_code == 200
+    assert missing_world.json()["saves"] == []
+    assert "sealed_letter_under_stone" not in str(filtered.json())
+    assert "state_deltas" not in str(filtered.json())
 
 
 def test_load_game_success(tmp_path: Path) -> None:
@@ -236,6 +255,21 @@ def test_load_missing_save_returns_clear_404(tmp_path: Path) -> None:
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Save not found: missing"
+
+
+def test_delete_save_success_and_missing_error(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    session_id = client.post("/game/start").json()["session_id"]
+    save_id = client.post(f"/game/{session_id}/save").json()["save_id"]
+
+    delete_response = client.delete(f"/game/saves/{save_id}")
+    missing_response = client.delete("/game/saves/missing")
+
+    assert delete_response.status_code == 200
+    assert delete_response.json() == {"save_id": save_id, "deleted": True}
+    assert client.get("/game/saves").json()["saves"] == []
+    assert missing_response.status_code == 404
+    assert missing_response.json()["detail"] == "Save not found: missing"
 
 
 def test_save_load_api_does_not_leak_hidden_facts(tmp_path: Path) -> None:

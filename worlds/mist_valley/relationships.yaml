@@ -1,0 +1,12 @@
+relationships:
+  - id: harlan_player_wary
+    source_id: harlan
+    target_id: player
+    relation_type: wary
+    trust: -1
+    fear: 0
+    affinity: 0
+    obligation: 0
+    tags:
+      - blacksmith
+    known_by_player: true

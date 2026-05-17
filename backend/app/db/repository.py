@@ -36,7 +36,7 @@ class SQLiteSaveRepository:
             ).fetchone()
         return _row_to_save(row)
 
-    def list_saves(self) -> list[SaveGame]:
+    def list_saves(self, world_id: str | None = None) -> list[SaveGame]:
         with self._connect() as connection:
             rows = connection.execute(
                 """
@@ -45,7 +45,14 @@ class SQLiteSaveRepository:
                 ORDER BY updated_at DESC, save_id ASC
                 """
             ).fetchall()
-        return [_row_to_save(row) for row in rows]
+        saves = [_row_to_save(row) for row in rows]
+        if world_id is None:
+            return saves
+        return [
+            save
+            for save in saves
+            if load_game_state_payload(json.loads(save.state_json)).world_id == world_id
+        ]
 
     def load_save(self, save_id: str) -> GameState:
         with self._connect() as connection:
@@ -149,6 +156,23 @@ class SQLiteSaveRepository:
                 connection.rollback()
                 raise
         return _row_to_save(row)
+
+    def delete_save(self, save_id: str) -> None:
+        with self._connect() as connection:
+            try:
+                connection.execute("BEGIN")
+                if not self._save_exists_in_connection(connection, save_id):
+                    raise SaveRepositoryError(f"Save not found: {save_id}")
+                connection.execute("DELETE FROM stored_events WHERE save_id = ?", (save_id,))
+                connection.execute("DELETE FROM stored_memories WHERE save_id = ?", (save_id,))
+                connection.execute("DELETE FROM save_games WHERE save_id = ?", (save_id,))
+                connection.commit()
+            except SaveRepositoryError:
+                connection.rollback()
+                raise
+            except Exception:
+                connection.rollback()
+                raise
 
     def save_memories(self, save_id: str, memories: list[MemoryRecord]) -> list[MemoryRecord]:
         if not self._save_exists(save_id):
@@ -285,10 +309,14 @@ class SQLiteSaveRepository:
 
     def _save_exists(self, save_id: str) -> bool:
         with self._connect() as connection:
-            row = connection.execute(
-                "SELECT 1 FROM save_games WHERE save_id = ?",
-                (save_id,),
-            ).fetchone()
+            return self._save_exists_in_connection(connection, save_id)
+        return False
+
+    def _save_exists_in_connection(self, connection: sqlite3.Connection, save_id: str) -> bool:
+        row = connection.execute(
+            "SELECT 1 FROM save_games WHERE save_id = ?",
+            (save_id,),
+        ).fetchone()
         return row is not None
 
     def _next_event_sequence(self, connection: sqlite3.Connection, save_id: str) -> int:

@@ -11,6 +11,8 @@ class PlayerActionType(StrEnum):
     ATTACK = "attack"
     DEFEND = "defend"
     FLEE = "flee"
+    BUY = "buy"
+    SELL = "sell"
     MOVE = "move"
     TALK = "talk"
     USE_ITEM = "use_item"

@@ -4,8 +4,10 @@ from app.core.world_state import GameState
 from app.db.repository import SQLiteSaveRepository
 from app.llm.memory_store import (
     InMemoryMemoryStore,
+    LocalVectorMemoryStore,
     MemoryQuery,
     MemoryRecord,
+    SQLiteMemoryStore,
     MemoryVisibility,
     filter_narrator_safe_memories,
     filter_player_visible_memories,
@@ -22,6 +24,7 @@ def make_record(
     visibility: MemoryVisibility = MemoryVisibility.NARRATOR_SAFE,
     importance: int = 0,
     created_turn: int = 1,
+    embedding: list[float] | None = None,
 ) -> MemoryRecord:
     return MemoryRecord(
         id=memory_id,
@@ -32,7 +35,22 @@ def make_record(
         visibility=visibility,
         importance=importance,
         created_turn=created_turn,
+        embedding=embedding,
     )
+
+
+class FakeVectorBackend:
+    def search(self, query: str, memories: list[MemoryRecord], limit: int) -> list[MemoryRecord]:
+        query_terms = set(query.lower().split())
+        ranked = sorted(
+            memories,
+            key=lambda memory: (
+                -len(query_terms.intersection(memory.content.lower().split())),
+                -memory.importance,
+                memory.id,
+            ),
+        )
+        return ranked[:limit]
 
 
 def test_add_memory_and_search_by_tag() -> None:
@@ -142,3 +160,76 @@ def test_repository_can_replace_memories_without_touching_state(tmp_path: Path) 
 
     assert [memory.id for memory in repository.list_memories("save-1")] == ["memory-2"]
     assert repository.load_save("save-1").turn == 4
+
+
+def test_sqlite_memory_store_can_add_search_and_list(tmp_path: Path) -> None:
+    repository = SQLiteSaveRepository(tmp_path / "sqlite_store.db")
+    repository.create_save("save-1", GameState(world_id="memory-test"))
+    store = SQLiteMemoryStore(repository, "save-1")
+    first = make_record(
+        "memory-1",
+        "Harlan hid a bridge clue.",
+        tags=["quest", "bridge"],
+        entity_ids=["harlan"],
+        fact_ids=["bridge_fact"],
+        importance=2,
+        created_turn=4,
+        embedding=[0.1, 0.2],
+    )
+    second = make_record("memory-2", "The market was quiet.", tags=["market"], created_turn=2)
+
+    store.add_memory(first)
+    store.add_memory(second)
+
+    assert store.search_by_tags(["bridge"]) == [first]
+    assert store.search_by_entity("harlan") == [first]
+    assert store.search_by_fact("bridge_fact") == [first]
+    assert store.search_by_turn_range(1, 3) == [second]
+    assert store.search_memory("market") == [second]
+    assert store.list_recent_memories() == [first, second]
+    assert repository.list_memories("save-1")[0].embedding == [0.1, 0.2]
+
+
+def test_semantic_query_falls_back_to_substring_without_backend() -> None:
+    store = LocalVectorMemoryStore()
+    bridge = make_record("memory-bridge", "bridge clue under moonlight", importance=1)
+    market = make_record("memory-market", "market rumor", importance=5)
+    store.add_memory(bridge)
+    store.add_memory(market)
+
+    result = store.search_memory(MemoryQuery(semantic_query="bridge"))
+
+    assert result == [bridge]
+
+
+def test_semantic_query_uses_optional_vector_backend() -> None:
+    store = LocalVectorMemoryStore(embedding_backend=FakeVectorBackend())
+    low_importance_match = make_record("memory-1", "bridge clue", importance=1)
+    high_importance_nonmatch = make_record("memory-2", "market gossip", importance=9)
+    store.add_memory(high_importance_nonmatch)
+    store.add_memory(low_importance_match)
+
+    result = store.search_memory(MemoryQuery(semantic_query="bridge clue"))
+
+    assert result[0] == low_importance_match
+
+
+def test_sqlite_memory_store_filters_hidden_and_debug_memory(tmp_path: Path) -> None:
+    repository = SQLiteSaveRepository(tmp_path / "sqlite_store.db")
+    repository.create_save("save-1", GameState(world_id="memory-test"))
+    store = SQLiteMemoryStore(repository, "save-1")
+    safe = make_record("memory-safe", "safe clue", visibility=MemoryVisibility.NARRATOR_SAFE)
+    hidden = make_record("memory-hidden", "hidden clue", visibility=MemoryVisibility.HIDDEN)
+    debug = make_record("memory-debug", "debug clue", visibility=MemoryVisibility.DEBUG_ONLY)
+
+    store.add_memory(safe)
+    store.add_memory(hidden)
+    store.add_memory(debug)
+
+    assert store.search_memory(
+        MemoryQuery(
+            substring="clue",
+            allowed_visibility={MemoryVisibility.NARRATOR_SAFE, MemoryVisibility.PLAYER_VISIBLE},
+        )
+    ) == [safe]
+    assert filter_narrator_safe_memories(store.list_all()) == [safe]

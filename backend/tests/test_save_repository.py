@@ -112,3 +112,26 @@ def test_missing_save_errors_are_clear(tmp_path: Path) -> None:
 
     with pytest.raises(SaveRepositoryError, match="Save not found: missing"):
         repository.load_save("missing")
+
+
+def test_list_saves_can_filter_by_world_id(tmp_path: Path) -> None:
+    repository = make_repository(tmp_path)
+    repository.create_save("save-1", make_state())
+    other_state = make_state()
+    other_state.world_id = "other-world"
+    repository.create_save("save-2", other_state)
+
+    saves = repository.list_saves(world_id="other-world")
+
+    assert [save.save_id for save in saves] == ["save-2"]
+
+
+def test_delete_save_removes_state_events_and_memories(tmp_path: Path) -> None:
+    repository = make_repository(tmp_path)
+    repository.create_save("save-1", make_state())
+    repository.append_event("save-1", make_event())
+
+    repository.delete_save("save-1")
+
+    with pytest.raises(SaveRepositoryError, match="Save not found: save-1"):
+        repository.load_save("save-1")

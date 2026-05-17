@@ -10,6 +10,7 @@ from app.core.world_state import (
     FactionState,
     GameState,
     LocationState,
+    NPCGoalState,
     NPCState,
     NPCScheduleEntry,
     PlayerState,
@@ -21,6 +22,7 @@ from app.core.world_state import (
     QuestTriggerType,
     QuestVisibility,
     ReputationState,
+    RelationshipState,
     RumorState,
     RumorTruthStatus,
     WorldObjectState,
@@ -56,10 +58,19 @@ class NPCDef(BaseModel):
     personality: str
     faction_id: str | None = None
     knowledge: list[str] = Field(default_factory=list)
+    goals: list[str | NPCGoalState] = Field(default_factory=list)
+    priorities: dict[str, int] = Field(default_factory=dict)
+    constraints: list[str] = Field(default_factory=list)
+    current_goal_id: str | None = None
+    plan_state: dict[str, Any] = Field(default_factory=dict)
     visible: bool = True
     hidden: bool = False
     discovered_by: list[str] = Field(default_factory=list)
     schedule: list[NPCScheduleEntry] = Field(default_factory=list)
+    merchant: bool = False
+    shop_inventory: list[str] = Field(default_factory=list)
+    buy_price_modifier: float = Field(default=1.0, ge=0.0)
+    sell_price_modifier: float = Field(default=0.5, ge=0.0)
 
 
 class ItemDef(BaseModel):
@@ -75,6 +86,9 @@ class ItemDef(BaseModel):
     discoverable: bool = False
     discovered_by: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
+    base_price: int = Field(default=0, ge=0)
+    tradeable: bool = True
+    rarity: str = "common"
     locked: bool = False
     lock_difficulty: int = Field(default=0, ge=0)
     lock_state: str = "intact"
@@ -133,6 +147,10 @@ class FactionDef(BaseModel):
     description: str = ""
     default_reputation: int = 0
     known_by_player: bool = False
+    relations: dict[str, int] = Field(default_factory=dict)
+    conflict_tags: list[str] = Field(default_factory=list)
+    default_alert_level: int = Field(default=0, ge=0)
+    resources: dict[str, int | float | str] = Field(default_factory=dict)
     tags: list[str] = Field(default_factory=list)
 
     @model_validator(mode="before")
@@ -178,6 +196,22 @@ class RumorDef(BaseModel):
         return normalized
 
 
+class RelationshipDef(BaseModel):
+    id: str | None = None
+    source_id: str
+    target_id: str
+    relation_type: str
+    trust: int = 0
+    fear: int = 0
+    affinity: int = 0
+    obligation: int = 0
+    tags: list[str] = Field(default_factory=list)
+    known_by_player: bool = False
+
+    def relationship_id(self) -> str:
+        return self.id or f"{self.source_id}:{self.relation_type}:{self.target_id}"
+
+
 class WorldPack(BaseModel):
     manifest: WorldManifest
     locations: list[LocationDef]
@@ -187,6 +221,7 @@ class WorldPack(BaseModel):
     facts: list[FactDef] = Field(default_factory=list)
     factions: list[FactionDef] = Field(default_factory=list)
     rumors: list[RumorDef] = Field(default_factory=list)
+    relationships: list[RelationshipDef] = Field(default_factory=list)
 
     def to_game_state(self) -> GameState:
         factions = {
@@ -198,6 +233,12 @@ class WorldPack(BaseModel):
                     value=faction.default_reputation,
                     known_to_player=faction.known_by_player,
                 ),
+                relationships_to_other_factions=faction.relations,
+                conflict_level=0,
+                alert_level=faction.default_alert_level,
+                resources=faction.resources,
+                known_by_player=faction.known_by_player,
+                conflict_tags=faction.conflict_tags,
                 tags=faction.tags,
             )
             for faction in self.factions
@@ -271,6 +312,21 @@ class WorldPack(BaseModel):
             )
             for rumor in self.rumors
         }
+        relationships = {
+            relationship.relationship_id(): RelationshipState(
+                id=relationship.relationship_id(),
+                source_id=relationship.source_id,
+                target_id=relationship.target_id,
+                relation_type=relationship.relation_type,
+                trust=relationship.trust,
+                fear=relationship.fear,
+                affinity=relationship.affinity,
+                obligation=relationship.obligation,
+                tags=relationship.tags,
+                known_by_player=relationship.known_by_player,
+            )
+            for relationship in self.relationships
+        }
         return GameState(
             world_id=self.manifest.world_id,
             player=PlayerState(location_id=self.manifest.start_location_id),
@@ -299,6 +355,9 @@ class WorldPack(BaseModel):
                     discoverable=item.discoverable,
                     discovered_by=item.discovered_by,
                     tags=item.tags,
+                    base_price=item.base_price,
+                    tradeable=item.tradeable,
+                    rarity=item.rarity,
                     locked=item.locked,
                     lock_difficulty=item.lock_difficulty,
                     lock_state=item.lock_state,
@@ -314,7 +373,16 @@ class WorldPack(BaseModel):
                     hidden=npc.hidden,
                     discovered_by=npc.discovered_by,
                     knowledge=npc.knowledge,
+                    goals=npc.goals,
+                    priorities=npc.priorities,
+                    constraints=npc.constraints,
+                    current_goal_id=npc.current_goal_id,
+                    plan_state=npc.plan_state,
                     schedule=npc.schedule,
+                    merchant=npc.merchant,
+                    shop_inventory=npc.shop_inventory,
+                    buy_price_modifier=npc.buy_price_modifier,
+                    sell_price_modifier=npc.sell_price_modifier,
                 )
                 for npc in self.npcs
             },
@@ -326,6 +394,7 @@ class WorldPack(BaseModel):
             quests=quests,
             factions=factions,
             rumors=rumors,
+            relationships=relationships,
         )
 
 
@@ -369,6 +438,10 @@ class WorldLoader:
                     RumorDef.model_validate(item)
                     for item in _read_yaml_list(world_path / "rumors.yaml", "rumors", required=False)
                 ],
+                relationships=[
+                    RelationshipDef.model_validate(item)
+                    for item in _read_yaml_list(world_path / "relationships.yaml", "relationships", required=False)
+                ],
             )
         except ValidationError as exc:
             raise WorldLoaderError(f"World pack schema validation failed: {exc}") from exc
@@ -380,6 +453,7 @@ class WorldLoader:
         location_ids = {location.id for location in pack.locations}
         npc_ids = {npc.id for npc in pack.npcs}
         faction_ids = {faction.id for faction in pack.factions}
+        item_ids = {item.id for item in pack.items}
 
         if pack.manifest.start_location_id not in location_ids:
             raise WorldLoaderError(
@@ -409,6 +483,18 @@ class WorldLoader:
                         f"NPC {npc.id} schedule references missing location_id: "
                         f"{schedule_entry.location_id}"
                     )
+            for item_id in npc.shop_inventory:
+                if item_id not in item_ids:
+                    raise WorldLoaderError(
+                        f"NPC {npc.id} shop_inventory references missing item id: {item_id}"
+                    )
+
+        for faction in pack.factions:
+            for target_faction_id in faction.relations:
+                if target_faction_id not in faction_ids:
+                    raise WorldLoaderError(
+                        f"Faction {faction.id} relation references missing faction id: {target_faction_id}"
+                    )
 
         for item in pack.items:
             has_valid_location = item.location_id in location_ids if item.location_id else False
@@ -427,7 +513,7 @@ class WorldLoader:
                     )
 
         fact_ids = {fact.id for fact in pack.facts}
-        item_ids = {item.id for item in pack.items}
+        actor_ids = npc_ids | {"player"}
         for rumor in pack.rumors:
             if rumor.fact_id and rumor.fact_id not in fact_ids:
                 raise WorldLoaderError(
@@ -443,6 +529,20 @@ class WorldLoader:
                     raise WorldLoaderError(
                         f"Rumor {rumor.id} known_by_factions references missing faction id: {faction_id}"
                     )
+        relationship_ids: set[str] = set()
+        for relationship in pack.relationships:
+            relationship_id = relationship.relationship_id()
+            if relationship_id in relationship_ids:
+                raise WorldLoaderError(f"Duplicate relationship id: {relationship_id}")
+            relationship_ids.add(relationship_id)
+            if relationship.source_id not in actor_ids:
+                raise WorldLoaderError(
+                    f"Relationship {relationship_id} source_id references missing NPC id: {relationship.source_id}"
+                )
+            if relationship.target_id not in actor_ids:
+                raise WorldLoaderError(
+                    f"Relationship {relationship_id} target_id references missing NPC id: {relationship.target_id}"
+                )
         for quest in pack.quests:
             stage_ids = {stage.id for stage in quest.stages}
             if quest.initial_stage not in stage_ids:

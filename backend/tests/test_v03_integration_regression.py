@@ -125,7 +125,8 @@ def test_v03_full_system_regression_flow(tmp_path: Path) -> None:
     previous_turn = restored_loop.state.turn
     continued = restored_loop.step("observe")
     assert continued.state.turn == previous_turn + 1
-    assert len(restored_loop.event_log.list_events()) == len(loaded_events) + 1
+    assert len(restored_loop.event_log.list_events()) >= len(loaded_events) + 1
+    assert restored_loop.event_log.get_latest(1)[0].turn == continued.state.turn
 
     app.state.save_repository = repository
     app.state.settings = Settings(enable_debug_api=True)

@@ -13,6 +13,8 @@ from app.api import (
     VisibleFactionResponse,
     VisibleRumorResponse,
     VisibleCrimeResponse,
+    VisibleRelationshipResponse,
+    VisibleFactionConflictResponse,
     VisibleQuestObjectiveResponse,
     VisibleQuestResponse,
     VisibleStateResponse,
@@ -25,6 +27,8 @@ from app.engine.rules.factions import get_visible_factions
 from app.engine.rules.crime import get_player_known_crimes
 from app.engine.rules.quests import get_visible_quests
 from app.engine.rules.rumors import get_visible_rumors
+from app.engine.rules.relationships import get_visible_relationships
+from app.engine.rules.faction_conflict import get_visible_faction_conflicts
 from app.engine.rules.time import format_game_time, get_time_of_day
 from app.llm.intent_parser import IntentParser
 from app.llm.narrator import Narrator
@@ -93,8 +97,8 @@ def build_visible_state(state: GameState) -> VisibleStateResponse:
         if _object_visible_to_player(state, world_object.id, location_id)
     ]
     inventory = [
-        VisibleObjectResponse(id=item_id)
-        for item_id in [item.id for item in get_inventory(state, state.player.id)]
+        VisibleObjectResponse(id=item.id)
+        for item in get_inventory(state, state.player.id)
     ]
     visible_npcs = [
         VisibleNPCResponse(
@@ -184,6 +188,30 @@ def build_visible_state(state: GameState) -> VisibleStateResponse:
                 created_turn=crime.created_turn,
             )
             for crime in get_player_known_crimes(state)
+        ],
+        relationships=[
+            VisibleRelationshipResponse(
+                id=relationship.id,
+                source_id=relationship.source_id,
+                target_id=relationship.target_id,
+                relation_type=relationship.relation_type,
+                trust=relationship.trust,
+                fear=relationship.fear,
+                affinity=relationship.affinity,
+                obligation=relationship.obligation,
+                tags=relationship.tags,
+            )
+            for relationship in get_visible_relationships(state)
+        ],
+        faction_conflicts=[
+            VisibleFactionConflictResponse(
+                faction_id=conflict.faction_id,
+                alert_level=conflict.alert_level,
+                conflict_level=conflict.conflict_level,
+                relationships_to_other_factions=conflict.relationships_to_other_factions,
+                conflict_tags=conflict.conflict_tags,
+            )
+            for conflict in get_visible_faction_conflicts(state)
         ],
     )
 

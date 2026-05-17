@@ -1,6 +1,11 @@
 from app.core.state_delta import StateDelta, StateDeltaOperation, apply_delta
 from app.core.world_state import CrimeStatus, GameState
 from app.engine.rules.crime import apply_crime_consequences
+from app.engine.rules.faction_conflict import (
+    resolve_faction_conflicts_from_crimes,
+    resolve_faction_conflicts_from_reputation,
+    resolve_faction_conflicts_from_rumors,
+)
 from app.engine.rules.rumors import propagate_rumors
 
 
@@ -16,6 +21,24 @@ def run_social_consequence_tick(state: GameState) -> list[StateDelta]:
         deltas.append(delta)
         working_state = apply_delta(working_state, delta)
 
+    for delta in _resolve_faction_conflicts(working_state):
+        deltas.append(delta)
+        working_state = apply_delta(working_state, delta)
+
+    return deltas
+
+
+def _resolve_faction_conflicts(state: GameState) -> list[StateDelta]:
+    deltas: list[StateDelta] = []
+    working_state = state
+    for resolver in (
+        resolve_faction_conflicts_from_crimes,
+        resolve_faction_conflicts_from_rumors,
+        resolve_faction_conflicts_from_reputation,
+    ):
+        for delta in resolver(working_state):
+            deltas.append(delta)
+            working_state = apply_delta(working_state, delta)
     return deltas
 
 

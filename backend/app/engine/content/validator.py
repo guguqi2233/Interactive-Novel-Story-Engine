@@ -14,6 +14,7 @@ from app.engine.content.world_loader import (
     LocationDef,
     NPCDef,
     QuestDef,
+    RelationshipDef,
     RumorDef,
     WorldLoaderError,
     WorldManifest,
@@ -28,8 +29,12 @@ class ValidationSeverity(StrEnum):
 
 class ValidationIssue(BaseModel):
     severity: ValidationSeverity
+    file: str
     path: str
+    code: str
     message: str
+    ref_id: str | None = None
+    suggestion: str | None = None
 
 
 class ValidationReport(BaseModel):
@@ -42,8 +47,25 @@ class ValidationReport(BaseModel):
     def ok(self) -> bool:
         return not self.errors
 
-    def add(self, severity: ValidationSeverity, path: str, message: str) -> None:
-        issue = ValidationIssue(severity=severity, path=path, message=message)
+    def add(
+        self,
+        severity: ValidationSeverity,
+        path: str,
+        message: str,
+        *,
+        code: str | None = None,
+        ref_id: str | None = None,
+        suggestion: str | None = None,
+    ) -> None:
+        issue = ValidationIssue(
+            severity=severity,
+            file=_file_from_path(path),
+            path=path,
+            code=code or _code_from_message(message),
+            message=message,
+            ref_id=ref_id,
+            suggestion=suggestion,
+        )
         if severity == ValidationSeverity.ERROR:
             self.errors.append(issue)
         elif severity == ValidationSeverity.WARNING:
@@ -61,6 +83,7 @@ class RawWorldPack(BaseModel):
     facts: list[FactDef] = Field(default_factory=list)
     factions: list[FactionDef] = Field(default_factory=list)
     rumors: list[RumorDef] = Field(default_factory=list)
+    relationships: list[RelationshipDef] = Field(default_factory=list)
 
 
 CONTENT_FILES: dict[str, str] = {
@@ -71,6 +94,7 @@ CONTENT_FILES: dict[str, str] = {
     "facts.yaml": "facts",
     "factions.yaml": "factions",
     "rumors.yaml": "rumors",
+    "relationships.yaml": "relationships",
 }
 
 
@@ -85,6 +109,7 @@ def validate_world_pack(world_id: str, worlds_root: str | Path = "worlds") -> Va
     _validate_unique_ids(pack, report)
     _validate_references(pack, report)
     _validate_visibility_boundaries(pack, report)
+    _validate_optional_future_files(world_path, report)
     _add_authoring_suggestions(pack, report)
     return report
 
@@ -106,7 +131,10 @@ def format_validation_report(report: ValidationReport) -> str:
         lines.append("")
         lines.append(title)
         for issue in issues:
-            lines.append(f"- [{issue.severity}] {issue.path}: {issue.message}")
+            extra = f" ({issue.code})" if issue.code else ""
+            lines.append(f"- [{issue.severity}] {issue.file}:{issue.path}{extra}: {issue.message}")
+            if issue.suggestion:
+                lines.append(f"  suggestion: {issue.suggestion}")
     return "\n".join(lines)
 
 
@@ -126,6 +154,13 @@ def _load_raw_pack(world_path: Path, report: ValidationReport) -> RawWorldPack:
         facts=_load_model_list(world_path / "facts.yaml", "facts", FactDef, report),
         factions=_load_model_list(world_path / "factions.yaml", "factions", FactionDef, report),
         rumors=_load_model_list(world_path / "rumors.yaml", "rumors", RumorDef, report),
+        relationships=_load_model_list(
+            world_path / "relationships.yaml",
+            "relationships",
+            RelationshipDef,
+            report,
+            required=False,
+        ),
     )
 
 
@@ -157,11 +192,15 @@ def _load_model_list(
     | type[QuestDef]
     | type[FactDef]
     | type[FactionDef]
-    | type[RumorDef],
+    | type[RumorDef]
+    | type[RelationshipDef],
     report: ValidationReport,
+    *,
+    required: bool = True,
 ) -> list[Any]:
     if not path.exists():
-        report.add(ValidationSeverity.ERROR, path.name, f"Missing content file: {path.name}")
+        if required:
+            report.add(ValidationSeverity.ERROR, path.name, f"Missing content file: {path.name}")
         return []
     try:
         data = _read_yaml_mapping(path)
@@ -203,6 +242,7 @@ def _validate_unique_ids(pack: RawWorldPack, report: ValidationReport) -> None:
         "facts": [item.id for item in pack.facts],
         "factions": [item.id for item in pack.factions],
         "rumors": [item.id for item in pack.rumors],
+        "relationships": [item.relationship_id() for item in pack.relationships],
     }
     for group_name, ids in groups.items():
         for item_id, count in Counter(ids).items():
@@ -262,12 +302,18 @@ def _validate_references(pack: RawWorldPack, report: ValidationReport) -> None:
                 ValidationSeverity.ERROR,
                 f"npcs.yaml.{npc.id}.location_id",
                 f"NPC references missing location: {npc.location_id}",
+                code="npc_missing_location",
+                ref_id=npc.location_id,
+                suggestion="Use a location id from locations.yaml.",
             )
         if npc.faction_id and npc.faction_id not in faction_ids:
             report.add(
                 ValidationSeverity.ERROR,
                 f"npcs.yaml.{npc.id}.faction_id",
                 f"NPC references missing faction: {npc.faction_id}",
+                code="npc_missing_faction",
+                ref_id=npc.faction_id,
+                suggestion="Use a faction id from factions.yaml or remove faction_id.",
             )
         for schedule_index, schedule_entry in enumerate(npc.schedule):
             if schedule_entry.location_id not in location_ids:
@@ -275,6 +321,31 @@ def _validate_references(pack: RawWorldPack, report: ValidationReport) -> None:
                     ValidationSeverity.ERROR,
                     f"npcs.yaml.{npc.id}.schedule[{schedule_index}].location_id",
                     f"Schedule references missing location: {schedule_entry.location_id}",
+                    code="npc_schedule_missing_location",
+                    ref_id=schedule_entry.location_id,
+                    suggestion="Point the schedule entry to an existing location id.",
+                )
+        for item_id in npc.shop_inventory:
+            if item_id not in item_ids:
+                report.add(
+                    ValidationSeverity.ERROR,
+                    f"npcs.yaml.{npc.id}.shop_inventory",
+                    f"Shop inventory references missing item: {item_id}",
+                    code="npc_shop_inventory_missing_item",
+                    ref_id=item_id,
+                    suggestion="Use an item id from items.yaml.",
+                )
+
+    for faction in pack.factions:
+        for target_faction_id in faction.relations:
+            if target_faction_id not in faction_ids:
+                report.add(
+                    ValidationSeverity.ERROR,
+                    f"factions.yaml.{faction.id}.relations",
+                    f"Faction relation references missing faction: {target_faction_id}",
+                    code="faction_relation_missing_faction",
+                    ref_id=target_faction_id,
+                    suggestion="Use a faction id from factions.yaml.",
                 )
 
     for item in pack.items:
@@ -288,6 +359,9 @@ def _validate_references(pack: RawWorldPack, report: ValidationReport) -> None:
                 ValidationSeverity.ERROR,
                 f"items.yaml.{item.id}",
                 "Item cannot have multiple placements",
+                code="item_conflicting_ownership",
+                ref_id=item.id,
+                suggestion="Keep only one of location_id, owner_id, or container_id.",
             )
         if item.location_id and item.location_id not in location_ids:
             report.add(
@@ -312,6 +386,18 @@ def _validate_references(pack: RawWorldPack, report: ValidationReport) -> None:
                 ValidationSeverity.ERROR,
                 f"items.yaml.{item.id}.lock_difficulty",
                 "Lock difficulty must be non-negative",
+                code="invalid_lock_difficulty",
+                ref_id=item.id,
+                suggestion="Set lock_difficulty to 0 or a positive integer.",
+            )
+        if item.base_price < 0:
+            report.add(
+                ValidationSeverity.ERROR,
+                f"items.yaml.{item.id}.base_price",
+                "Item base_price must be non-negative",
+                code="item_negative_base_price",
+                ref_id=item.id,
+                suggestion="Set base_price to 0 or a positive integer.",
             )
 
     for fact in pack.facts:
@@ -329,6 +415,9 @@ def _validate_references(pack: RawWorldPack, report: ValidationReport) -> None:
                 ValidationSeverity.ERROR,
                 f"rumors.yaml.{rumor.id}.fact_id",
                 f"Rumor references missing fact: {rumor.fact_id}",
+                code="rumor_missing_fact",
+                ref_id=rumor.fact_id,
+                suggestion="Use a fact id from facts.yaml or remove fact_id.",
             )
         for npc_id in rumor.known_by_npcs:
             if npc_id not in npc_ids:
@@ -344,6 +433,38 @@ def _validate_references(pack: RawWorldPack, report: ValidationReport) -> None:
                     f"rumors.yaml.{rumor.id}.known_by_factions",
                     f"Rumor references missing faction: {faction_id}",
                 )
+
+    actor_ids = npc_ids | {"player"}
+    seen_relationship_ids: set[str] = set()
+    for relationship in pack.relationships:
+        relationship_id = relationship.relationship_id()
+        if relationship_id in seen_relationship_ids:
+            report.add(
+                ValidationSeverity.ERROR,
+                f"relationships.yaml.{relationship_id}",
+                f"Duplicate relationship id: {relationship_id}",
+                code="duplicate_relationship_id",
+                ref_id=relationship_id,
+            )
+        seen_relationship_ids.add(relationship_id)
+        if relationship.source_id not in actor_ids:
+            report.add(
+                ValidationSeverity.ERROR,
+                f"relationships.yaml.{relationship_id}.source_id",
+                f"Relationship source references missing NPC: {relationship.source_id}",
+                code="relationship_missing_source",
+                ref_id=relationship.source_id,
+                suggestion="Use player or an NPC id from npcs.yaml.",
+            )
+        if relationship.target_id not in actor_ids:
+            report.add(
+                ValidationSeverity.ERROR,
+                f"relationships.yaml.{relationship_id}.target_id",
+                f"Relationship target references missing NPC: {relationship.target_id}",
+                code="relationship_missing_target",
+                ref_id=relationship.target_id,
+                suggestion="Use player or an NPC id from npcs.yaml.",
+            )
 
     for quest in pack.quests:
         _validate_quest(quest, report, fact_ids, item_ids, npc_ids, location_ids)
@@ -383,24 +504,36 @@ def _validate_quest(
                 ValidationSeverity.ERROR,
                 f"quests.yaml.{quest.id}.triggers.{trigger.id}",
                 f"Trigger references missing fact: {trigger.id}",
+                code="quest_trigger_missing_fact",
+                ref_id=trigger.id,
+                suggestion="Use a fact id from facts.yaml.",
             )
         if trigger.type == QuestTriggerType.ITEM_ACQUIRED and trigger.id not in item_ids:
             report.add(
                 ValidationSeverity.ERROR,
                 f"quests.yaml.{quest.id}.triggers.{trigger.id}",
                 f"Trigger references missing item: {trigger.id}",
+                code="quest_trigger_missing_item",
+                ref_id=trigger.id,
+                suggestion="Use an item id from items.yaml.",
             )
         if trigger.type == QuestTriggerType.NPC_TALKED and trigger.id not in npc_ids:
             report.add(
                 ValidationSeverity.ERROR,
                 f"quests.yaml.{quest.id}.triggers.{trigger.id}",
                 f"Trigger references missing NPC: {trigger.id}",
+                code="quest_trigger_missing_npc",
+                ref_id=trigger.id,
+                suggestion="Use an NPC id from npcs.yaml.",
             )
         if trigger.type == QuestTriggerType.LOCATION_VISITED and trigger.id not in location_ids:
             report.add(
                 ValidationSeverity.ERROR,
                 f"quests.yaml.{quest.id}.triggers.{trigger.id}",
                 f"Trigger references missing location: {trigger.id}",
+                code="quest_trigger_missing_location",
+                ref_id=trigger.id,
+                suggestion="Use a location id from locations.yaml.",
             )
         if trigger.objective_id and trigger.objective_id not in objective_ids:
             report.add(
@@ -428,6 +561,9 @@ def _validate_visibility_boundaries(pack: RawWorldPack, report: ValidationReport
                 ValidationSeverity.WARNING,
                 f"facts.yaml.{fact_id}.known_by",
                 "Hidden fact is marked known_by player; prefer public/discoverable visibility or remove player.",
+                code="hidden_fact_known_by_player",
+                ref_id=fact_id,
+                suggestion="Remove player from known_by or change visibility to public/discoverable.",
             )
 
     for rumor in pack.rumors:
@@ -435,11 +571,14 @@ def _validate_visibility_boundaries(pack: RawWorldPack, report: ValidationReport
             continue
         hidden_text = (hidden_facts[rumor.fact_id].text or "").strip().lower()
         rumor_text = rumor.text_for_player.strip().lower()
-        if rumor.known_by_player and hidden_text and hidden_text in rumor_text:
+        if hidden_text and hidden_text in rumor_text:
             report.add(
                 ValidationSeverity.WARNING,
                 f"rumors.yaml.{rumor.id}.text_for_player",
-                "Player-known rumor appears to include the full hidden fact text.",
+                "Rumor player-facing text appears to include the full hidden fact text.",
+                code="rumor_reveals_hidden_fact",
+                ref_id=rumor.fact_id,
+                suggestion="Replace text_for_player with a vague player-safe version.",
             )
 
     for quest in pack.quests:
@@ -453,6 +592,9 @@ def _validate_visibility_boundaries(pack: RawWorldPack, report: ValidationReport
                     ValidationSeverity.WARNING,
                     f"quests.yaml.{quest.id}",
                     f"Public quest text appears to reveal hidden fact: {fact_id}",
+                    code="public_quest_reveals_hidden_fact",
+                    ref_id=fact_id,
+                    suggestion="Move the detail to a hidden/discoverable fact or rewrite the public text.",
                 )
 
 
@@ -468,7 +610,77 @@ def _add_authoring_suggestions(pack: RawWorldPack, report: ValidationReport) -> 
             ValidationSeverity.SUGGESTION,
             "rumors.yaml",
             "Seed rumors are optional, but useful for social consequence testing.",
+            code="seed_rumors_optional",
+            suggestion="Add rumors only when the world needs pre-existing social chatter.",
         )
+    if not pack.relationships:
+        report.add(
+            ValidationSeverity.SUGGESTION,
+            "relationships.yaml",
+            "Relationships are optional, but useful for NPC planning and rumor spread.",
+            code="relationships_optional",
+            suggestion="Add relationships when NPC social behavior should differ by trust or affinity.",
+        )
+
+
+def _validate_optional_future_files(world_path: Path, report: ValidationReport) -> None:
+    economy_path = world_path / "economy.yaml"
+    if economy_path.exists():
+        try:
+            data = _read_yaml_mapping(economy_path)
+        except WorldLoaderError as exc:
+            report.add(ValidationSeverity.ERROR, "economy.yaml", str(exc), code="invalid_economy_yaml")
+        else:
+            for index, item in enumerate(data.get("items", [])):
+                if not isinstance(item, dict):
+                    continue
+                price = item.get("price")
+                item_id = str(item.get("id", index))
+                if isinstance(price, (int, float)) and price < 0:
+                    report.add(
+                        ValidationSeverity.ERROR,
+                        f"economy.yaml.items[{item_id}].price",
+                        "Economy item price must be non-negative",
+                        code="economy_negative_price",
+                        ref_id=item_id,
+                        suggestion="Set price to 0 or a positive number.",
+                    )
+
+    for plugin_file in ("plugin.yaml", "mod.yaml"):
+        plugin_path = world_path / plugin_file
+        if not plugin_path.exists():
+            continue
+        try:
+            data = _read_yaml_mapping(plugin_path)
+        except WorldLoaderError as exc:
+            report.add(ValidationSeverity.ERROR, plugin_file, str(exc), code="invalid_plugin_manifest_yaml")
+            continue
+        for required_field in ("id", "name", "version"):
+            if not data.get(required_field):
+                report.add(
+                    ValidationSeverity.ERROR,
+                    f"{plugin_file}.{required_field}",
+                    f"Plugin manifest missing required field: {required_field}",
+                    code="plugin_manifest_missing_field",
+                    ref_id=required_field,
+                    suggestion="Add id, name, and version before packaging this content as a mod/plugin.",
+                )
+
+
+def _file_from_path(path: str) -> str:
+    if ".yaml" in path:
+        return path.split(".yaml", 1)[0] + ".yaml"
+    if path.endswith(".yaml"):
+        return path
+    if "/" in path or "\\" in path:
+        return Path(path).name
+    return path if path.endswith(".yaml") else "world"
+
+
+def _code_from_message(message: str) -> str:
+    normalized = "".join(character.lower() if character.isalnum() else "_" for character in message)
+    parts = [part for part in normalized.split("_") if part]
+    return "_".join(parts[:6]) or "validation_issue"
 
 
 def _read_yaml_mapping(path: Path) -> dict[str, Any]:

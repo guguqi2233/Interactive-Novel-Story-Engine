@@ -76,6 +76,26 @@ class VisibleCrimeResponse(BaseModel):
     created_turn: int
 
 
+class VisibleRelationshipResponse(BaseModel):
+    id: str
+    source_id: str
+    target_id: str
+    relation_type: str
+    trust: int
+    fear: int
+    affinity: int
+    obligation: int
+    tags: list[str] = Field(default_factory=list)
+
+
+class VisibleFactionConflictResponse(BaseModel):
+    faction_id: str
+    alert_level: int
+    conflict_level: int
+    relationships_to_other_factions: dict[str, int] = Field(default_factory=dict)
+    conflict_tags: list[str] = Field(default_factory=list)
+
+
 class VisibleStateResponse(BaseModel):
     world_id: str
     turn: int
@@ -89,6 +109,8 @@ class VisibleStateResponse(BaseModel):
     factions: list[VisibleFactionResponse] = Field(default_factory=list)
     known_rumors: list[VisibleRumorResponse] = Field(default_factory=list)
     known_crimes: list[VisibleCrimeResponse] = Field(default_factory=list)
+    relationships: list[VisibleRelationshipResponse] = Field(default_factory=list)
+    faction_conflicts: list[VisibleFactionConflictResponse] = Field(default_factory=list)
 
 
 class StartGameRequest(BaseModel):
@@ -123,9 +145,13 @@ class GameStateResponse(BaseModel):
 class SaveSummaryResponse(BaseModel):
     save_id: str
     world_id: str
+    world_name: str
     turn: int
+    current_location_name: str
+    formatted_time: str
     created_at: str
     updated_at: str
+    player_summary: str | None = None
 
 
 class SaveListResponse(BaseModel):
@@ -137,6 +163,11 @@ class SaveGameResponse(BaseModel):
     session_id: str
     world_id: str
     turn: int
+
+
+class DeleteSaveResponse(BaseModel):
+    save_id: str
+    deleted: bool = True
 
 
 class LoadGameResponse(BaseModel):
@@ -160,3 +191,107 @@ class DebugEventResponse(BaseModel):
 class DebugEventListResponse(BaseModel):
     local_only: bool = True
     events: list[DebugEventResponse] = Field(default_factory=list)
+
+
+class AuthoringValidationIssueResponse(BaseModel):
+    severity: str
+    file: str
+    path: str
+    code: str
+    message: str
+    ref_id: str | None = None
+    suggestion: str | None = None
+
+
+class AuthoringValidationResponse(BaseModel):
+    world_id: str
+    ok: bool
+    errors: list[AuthoringValidationIssueResponse] = Field(default_factory=list)
+    warnings: list[AuthoringValidationIssueResponse] = Field(default_factory=list)
+    suggestions: list[AuthoringValidationIssueResponse] = Field(default_factory=list)
+
+
+class AuthoringWorldSummaryResponse(BaseModel):
+    world_id: str
+    name: str | None = None
+    description: str = ""
+    version: str | None = None
+    file_count: int = 0
+
+
+class AuthoringWorldListResponse(BaseModel):
+    local_only: bool = True
+    worlds: list[AuthoringWorldSummaryResponse] = Field(default_factory=list)
+
+
+class AuthoringWorldDetailResponse(BaseModel):
+    local_only: bool = True
+    world: AuthoringWorldSummaryResponse
+    files: list[str] = Field(default_factory=list)
+    validation: AuthoringValidationResponse
+
+
+class AuthoringFileListResponse(BaseModel):
+    local_only: bool = True
+    world_id: str
+    files: list[str] = Field(default_factory=list)
+
+
+class AuthoringFileResponse(BaseModel):
+    local_only: bool = True
+    world_id: str
+    file_name: str
+    content: str
+
+
+class AuthoringFileWriteRequest(BaseModel):
+    content: str
+
+
+class AuthoringFileWriteResponse(BaseModel):
+    local_only: bool = True
+    world_id: str
+    file_name: str
+    validation: AuthoringValidationResponse
+
+
+class AuthoringCreateWorldRequest(BaseModel):
+    world_id: str = Field(pattern=r"^[A-Za-z0-9_-]+$")
+    name: str
+    description: str = ""
+    start_location_id: str = Field(default="start", pattern=r"^[A-Za-z0-9_-]+$")
+
+
+class AuthoringCreateWorldResponse(BaseModel):
+    local_only: bool = True
+    world: AuthoringWorldSummaryResponse
+    validation: AuthoringValidationResponse
+
+
+class AuthoringModSummaryResponse(BaseModel):
+    id: str
+    name: str
+    version: str
+    engine_version_min: str
+    engine_version_max: str | None = None
+    dependencies: list[str] = Field(default_factory=list)
+    conflicts: list[str] = Field(default_factory=list)
+    entry_worlds: list[str] = Field(default_factory=list)
+    content_paths: list[str] = Field(default_factory=list)
+    author: str | None = None
+    description: str = ""
+
+
+class AuthoringModListResponse(BaseModel):
+    local_only: bool = True
+    mods: list[AuthoringModSummaryResponse] = Field(default_factory=list)
+
+
+class AuthoringModValidationResponse(BaseModel):
+    local_only: bool = True
+    mod_id: str
+    ok: bool
+    errors: list[AuthoringValidationIssueResponse] = Field(default_factory=list)
+    warnings: list[AuthoringValidationIssueResponse] = Field(default_factory=list)
+    suggestions: list[AuthoringValidationIssueResponse] = Field(default_factory=list)
+    world_report_ids: list[str] = Field(default_factory=list)

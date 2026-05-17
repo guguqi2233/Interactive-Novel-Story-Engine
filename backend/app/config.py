@@ -12,6 +12,7 @@ class Settings(BaseModel):
     llm_model: str = Field(default="gpt-4.1-mini")
     llm_api_key: str | None = Field(default=None, repr=False)
     enable_debug_api: bool = True
+    enable_authoring_api: bool = False
 
 
 @lru_cache
@@ -24,6 +25,7 @@ def get_settings() -> Settings:
         llm_model=os.getenv("LLM_MODEL", "gpt-4.1-mini"),
         llm_api_key=os.getenv("LLM_API_KEY") or None,
         enable_debug_api=_read_bool_env("ENABLE_DEBUG_API", default=True),
+        enable_authoring_api=_read_bool_env("ENABLE_AUTHORING_API", default=False),
     )
 
 

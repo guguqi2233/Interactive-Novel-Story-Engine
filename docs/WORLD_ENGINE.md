@@ -1,295 +1,105 @@
 # World Engine
 
-## Purpose
+This document describes the local world engine as of v0.5. The engine is the
+only source of truth for world state, rules, consequences, persistence, and
+visibility. The LLM layer may parse intent, render narration, and summarize
+memory, but it does not decide rule outcomes or mutate `GameState`.
 
-The world engine is the deterministic authority for the fiction world. It owns canonical state, validates actions, applies rules, emits `StateDelta` objects, records `Event` entries, and supports SQLite saves.
+## Core Boundary
 
-The LLM may parse intent, render prose, and summarize memories. It does not decide world truth.
+- `GameState` is authoritative.
+- All state changes are represented as `StateDelta` entries.
+- Player actions and system ticks are recorded as `Event` records.
+- Rule systems never call the LLM.
+- Narration receives only player-visible facts and narrator-safe memory.
+- Hidden facts, NPC secrets, hidden witnesses, debug data, and hidden memory do
+  not enter player API responses or narrator prompts.
 
-## Core Concepts
+## Main Flow
 
-### GameState
+1. The API or CLI receives player input.
+2. `IntentParser` turns text into a structured intent through `LLMProvider`.
+3. `ActionDispatcher` routes the intent to a deterministic action handler.
+4. The handler returns `ActionResult` with `state_deltas`.
+5. `apply_delta` updates `GameState`.
+6. `EventLog` records the player event.
+7. `WorldTick` runs deterministic system rules and records system events.
+8. `Narrator` renders the visible result as text.
+9. APIs return `narrative_text`, suggested actions, and structured
+   `visible_state`.
 
-`GameState` is the canonical world snapshot. In v0.4 it includes:
+## GameState Areas
 
-- world id and turn
-- game time
-- player location, inventory ownership, HP, condition, combat stance, and status effects
-- locations and exits
-- objects/items, including hidden/discoverable/locked state
-- NPCs, knowledge, secrets, schedule, alertness, suspicion, faction, life state, and combat state
-- structured facts and player-visible fact ids
-- quest state and quest stages
-- delayed consequences
-- factions and reputation
-- rumors
-- crimes and witness records
-- social consequences and social flags
-- active or ended combat records
+The current state model includes:
 
-### StateDelta
+- Player: location, inventory ownership through item state, currency, health,
+  and stealth-related fields.
+- Locations: exits, visible objects, cover/light fields, and metadata.
+- NPCs: location, mood, relationship to player, knowledge, secrets, life state,
+  schedule, goals, plan state, merchant data, faction id, alertness, and
+  suspicion.
+- Items: location/owner/container ownership, portability, hidden/discovered
+  state, tags, price, rarity, and trade flags.
+- Facts: public, hidden, or discoverable structured facts with known-by data.
+- Quests: stages, objectives, visibility, triggers, and runtime state.
+- Social systems: factions, reputation, rumors, crimes, witnesses,
+  relationships, faction conflict, social flags, and consequence dedupe data.
+- Combat and life state: combatants, hp, condition, stance, and status effects.
+- Memory: memory records are persisted separately and are not authoritative
+  facts.
 
-Every canonical state change must be represented as a `StateDelta`.
+Old save JSON is loaded through Pydantic defaults and compatibility-friendly
+model fields. Missing v0.4/v0.5 social or memory fields should default rather
+than crash.
 
-Supported operations:
+## StateDelta Rules
 
-- `set`
-- `inc`
-- `add`
-- `remove`
-
-Delta paths use dot notation, for example:
+`StateDelta` supports structured operations such as `set`, `inc`, `add`, and
+`remove` over dot paths. Core paths used by v0.5 include:
 
 - `player.location_id`
-- `objects.sealed_letter.owner_id`
-- `npcs.harlan.location_id`
-- `quests.missing_tools.current_stage`
-- `factions.village_council.reputation.value`
-- `rumors.rumor_id.known_by_npcs`
-- `crimes.crime_id.status`
-- `combats.combat_id.status`
+- `player.currency`
+- `items.{item_id}.owner_id`
+- `items.{item_id}.location_id`
+- `npcs.{npc_id}.location_id`
+- `npcs.{npc_id}.goals`
+- `npcs.{npc_id}.plan_state`
+- `relationships.{relationship_id}.trust`
+- `factions.{faction_id}.reputation`
+- `factions.{faction_id}.alert_level`
+- `rumors.{rumor_id}.known_by_npcs`
+- `crimes.{crime_id}.status`
+- `witnesses.{witness_id}`
+- `combats.{combat_id}.combatants.{actor_id}.hp`
+- `quests.{quest_id}.current_stage`
 
-`apply_delta` type-validates Pydantic model field assignments and validates top-level dictionary entries such as `crimes.*`, `rumors.*`, and `witnesses.*` so replayed JSON deltas are restored as structured models where possible.
+Rules may prepare deltas, but they must not directly mutate `GameState`.
 
-### Event
+## Event Log
 
-Every handled player action is recorded as an `Event`. System changes such as world tick, crime consequences, social consequences, and NPC reactions are recorded as system events when they produce changes.
+Every player action and system consequence is represented as an `Event`.
+Events include:
 
-Events contain:
-
-- turn
-- actor id
-- action type
-- result
+- `event_id`
+- `turn`
+- `actor_id`
+- `action_type`
+- `target_id`
+- `input_text`
+- `result`
 - `state_deltas`
-- visibility marker
-- optional narrative text
-- timestamp
+- `visible_to_player`
+- `narrative_text`
+- `created_at`
 
-Events support debugging, persistence, replay, and memory summarization.
+Debug timeline APIs expose events only when debug mode is enabled. Player APIs
+do not expose raw `state_deltas`.
 
-## v0.4 Rule Systems
+## Content Packs
 
-### NPC Schedule
-
-NPCs can define schedule entries in content packs:
-
-- `time_of_day`
-- `location_id`
-- `activity`
-
-`resolve_npc_schedules(state)` returns deltas for NPC location and activity changes. Dead or incapacitated NPCs do not move.
-
-### Search
-
-`SearchActionHandler` lets the player search the current location, a visible/discovered object, or a visible/discovered NPC.
-
-Search can reveal discoverable objects and facts through `StateDelta`. Failure consumes time but does not reveal hidden facts.
-
-### Inventory Rules
-
-Inventory is derived from authoritative item placement in `GameState.objects`.
-
-Rules include:
-
-- `can_pick_up`
-- `pick_up_item`
-- `drop_item`
-- `has_item`
-- `get_inventory`
-
-Items support `location_id`, `owner_id`, `container_id`, `portable`, `hidden`, `discovered_by`, and `tags`. Pick up and drop operations return deltas.
-
-### Lockpick
-
-`LockpickActionHandler` supports locked object/container targets. It checks target existence, visibility/discovery, locked state, and tool availability. Outcomes can open, scratch, damage, or reject a target. Failed/partial attempts can generate visible lock-mark facts and crime consequences if witnessed.
-
-### Sneak
-
-`SneakActionHandler` supports sneaking to a connected location, to an object, or past/near an NPC. It considers cover, light, possible observers, NPC alertness/suspicion, and player stealth modifier.
-
-Hidden NPCs may influence rule difficulty, but their identity is not placed in player-facing facts.
-
-### Quest State Machine
-
-Quests are loaded from `quests.yaml` and stored in `GameState.quests`.
-
-Quest triggers can be based on:
-
-- fact discovered
-- item acquired
-- NPC talked
-- location visited
-
-Quest changes are emitted as deltas. Only known/active quests enter `visible_state.quests`.
-
-### Faction Reputation
-
-Factions are loaded from `factions.yaml`.
-
-Runtime state stores:
-
-- faction id/name/description/tags
-- reputation value
-- whether the faction is known to the player
-- recent reputation reasons
-
-Rules in `engine/rules/factions.py` provide:
-
-- `get_reputation`
-- `change_reputation`
-- `set_reputation`
-- `get_visible_factions`
-- `reputation_band`
-
-Reputation changes are `StateDelta` based and can be produced by crime/social consequences. Player API currently exposes visible factions and their reputation band; raw reputation is also present in the current response model and is listed as a known hardening target.
-
-### Rumor Propagation
-
-Rumors are loaded from optional `rumors.yaml` or created by rules.
-
-`RumorState` tracks:
-
-- id
-- optional source event and fact id
-- player-safe text
-- truth status
-- NPC/faction/player knowledge
-- spread level
-- tags
-
-Rules support creating rumors, adding rumors to NPCs/factions, marking rumors known by the player, filtering visible rumors, and deterministic propagation between NPCs in the same location.
-
-Rumors do not automatically reveal hidden fact text. If a rumor links to a hidden fact, player-facing text must be safe authored text or the vague fallback.
-
-### Crime And Witness
-
-Crime rules classify player events such as theft, lockpicking, assault, murder, vandalism, trespass, and reserved forbidden magic.
-
-Crime/witness rules support:
-
-- `classify_crime`
-- `detect_witnesses`
-- `create_crime_record`
-- `add_witness_record`
-- `apply_crime_consequences`
-- `get_player_known_crimes`
-
-Witness detection uses NPC location, visibility, life state, light/cover, alertness, suspicion, and sneak metadata. Hidden NPCs can witness events as rule observers, but their identity does not enter player API or narrator prompts.
-
-Visible crime summaries only include player-known or public/reported crime information and omit witness internals.
-
-### Social Consequence Tick
-
-`run_world_tick` includes social consequence processing after schedule and quest trigger resolution.
-
-The v0.4 tick sequence is:
-
-1. NPC schedule
-2. quest triggers
-3. social consequence tick
-4. NPC reaction rules
-5. suspicion decay
-6. delayed consequences
-7. post-delayed quest triggers
-
-Social tick handles deterministic consequences such as crime reporting, rumor generation/propagation, reputation changes, and dedupe flags so the same consequence does not repeat indefinitely.
-
-### Combat Core
-
-Combat is lightweight and narrative-RPG oriented. It is not a tactical grid system.
-
-Implemented actions:
-
-- `attack`
-- `defend`
-- `flee`
-
-Combat rules check target existence, reachability, visibility, and life state. Attack resolves deterministic hit/miss/glancing/critical style outcomes with seeded RNG. Damage and combat state changes are emitted as `StateDelta`.
-
-Public attacks can generate assault or murder crime records through the crime system.
-
-### Injury, Death, And Incapacitation
-
-Player and NPC life state includes:
-
-- `alive`
-- `hp`
-- `max_hp`
-- `condition`
-- `status_effects`
-
-Conditions:
-
-- `healthy`
-- `wounded`
-- `critical`
-- `incapacitated`
-- `dead`
-
-Rules in `life_state.py` include:
-
-- `apply_damage`
-- `heal_damage`
-- `update_condition`
-- `mark_incapacitated`
-- `mark_dead`
-- `can_act`
-- `can_move`
-- `can_talk`
-
-Dead or incapacitated NPCs do not talk, move on schedules, propagate rumors, or react normally.
-
-### NPC Reaction Rules
-
-NPC reactions are deterministic and based on structured state:
-
-- witnessed crime
-- faction reputation band
-- known rumor
-- relationship to player
-- combat/life state
-
-Reaction outcomes include suspicion changes, refusing talk, fleeing, spreading rumors, becoming hostile, and becoming friendly.
-
-Reaction changes use `StateDelta` and are recorded through world tick system events. NPCs cannot react to unknown facts or unknown rumors.
-
-### Advanced Memory Retrieval
-
-Memory remains non-authoritative. It does not replace `GameState` or `EventLog`.
-
-`MemoryRecord` supports:
-
-- id
-- content
-- source event ids
-- tags
-- entity ids
-- fact ids
-- visibility
-- importance
-- created turn
-
-Memory visibility values:
-
-- `player_visible`
-- `narrator_safe`
-- `debug_only`
-- `hidden`
-
-Retrieval supports deterministic local search by tags, entity ids, fact ids, substring, and turn range. Hidden/debug-only memories are filtered out of narrator/player contexts by explicit helper functions.
-
-SQLite can preserve memory records through repository methods, but no vector database is required in v0.4.
-
-### Content Validation Tools
-
-Local content validation is available through:
-
-```powershell
-python scripts\validate_world.py mist_valley
-```
-
-The validator checks schema and references across:
+World content lives under `worlds/{world_id}`. The loader validates YAML
+schemas and reference integrity before creating runtime state. Current content
+files include:
 
 - `manifest.yaml`
 - `locations.yaml`
@@ -299,54 +109,313 @@ The validator checks schema and references across:
 - `facts.yaml`
 - `factions.yaml`
 - `rumors.yaml`
+- `relationships.yaml`
 
-It reports errors, warnings, and suggestions. Errors return a non-zero exit code. Warnings do not.
+The engine must not hardcode content from `mist_valley` or any other world.
 
-## Visibility Boundary
+## Visibility
 
-`visible_state` is built from filtered state:
+Player-visible state is produced by explicit visibility rules. It may include:
 
-- hidden facts appear only if their id is in `player_visible_facts`
-- hidden objects appear only after discovery
-- hidden NPCs appear only after discovery
-- NPC secrets are not included in player-visible context by default
-- hidden inactive quests are not included
-- hidden factions are not included unless known to player
-- rumors are included only when known by player
-- crime records are included only when player-known, reported, or resolved
+- current location
+- formatted game time
+- inventory
+- visible objects
+- visible NPCs
+- known facts
+- visible quests
+- known factions and reputation bands
+- known rumors
+- known crimes or public consequences
+- known relationships
+- visible faction conflicts
 
-Narrator receives only action-visible facts and safe action result fields. It does not receive raw `hidden_facts`, system tick deltas, debug timeline events, witness records, or raw `GameState`.
+It must not include:
+
+- hidden facts not discovered by the player
+- hidden objects or NPCs not discovered by the player
+- NPC secrets
+- hidden witnesses
+- hidden faction details
+- hidden/debug memory
+- raw event `state_deltas`
+- API keys, environment variables, or local paths
+
+Known v0.5 limitation: visible faction conflict summaries include
+`conflict_tags` for player-known factions. Authors should avoid using those
+tags for secret-only content until a stricter public-label field is added.
+
+## Time, Schedule, and World Tick
+
+Game time is a simple day plus minutes-of-day structure. Actions advance time
+through deltas. After player action resolution, `WorldTick` runs deterministic
+system rules. The intended order is:
+
+1. Time advancement from the action result.
+2. NPC schedule resolution.
+3. Quest triggers.
+4. Crime witness/report handling.
+5. Rumor propagation.
+6. Reputation and faction consequences.
+7. NPC reactions.
+8. NPC planning.
+9. Delayed consequences.
+
+System changes are recorded as system events. Hidden system events may affect
+the world, but they do not become narration unless later visible through normal
+rules.
+
+## NPC Schedule
+
+NPC schedules are loaded from `npcs.yaml`. A schedule entry contains:
+
+- `time_of_day`
+- `location_id`
+- `activity`
+
+The resolver moves or updates NPCs using `StateDelta`. Dead or incapacitated
+NPCs do not follow schedules.
+
+## Search
+
+`search` is a deterministic action for discovering objects or facts near the
+current location, a visible object, or a visible NPC. Success can reveal
+discoverable objects/facts by updating discovered state through `StateDelta`.
+Failure consumes time but does not leak hidden content.
+
+## Inventory and Economy
+
+Inventory is derived from item ownership in `GameState`, not from frontend
+state. Items may have:
+
+- `location_id`
+- `owner_id`
+- `container_id`
+- `portable`
+- `hidden`
+- `discovered_by`
+- `base_price`
+- `tradeable`
+- `rarity`
+- `tags`
+
+Only one ownership location should be active at a time. Pickup, drop, use,
+buy, and sell actions produce `StateDelta` entries and events. Trade prices are
+rule-based and may consider merchant modifiers and reputation bands. The LLM
+does not price items.
+
+v0.5 does not implement a dynamic supply/demand economy, auctions, equipment
+slots, or full stolen-goods simulation.
+
+## Lockpick and Sneak
+
+`lockpick` supports locked doors and containers with structured lock state.
+Success, partial success, failure, and invalid results are rule outcomes.
+Failure can leave traces or create social consequences.
+
+`sneak` supports movement or approach attempts influenced by cover, light,
+NPC alertness, and player stealth fields. Hidden observers may affect the rule
+result, but their identity is not exposed to the narrator or player API.
+
+## Quest State Machine
+
+Quests are loaded from `quests.yaml` with stages, objectives, visibility, and
+triggers. Triggers may reference facts, items, NPC conversations, locations,
+reputation, crimes, or other structured state. Quest state changes go through
+`StateDelta` and are visible only when the quest is known or active.
+
+## Social Systems
+
+### Factions and Reputation
+
+`factions.yaml` defines factions, default player reputation, visibility, tags,
+and v0.5 conflict metadata. Reputation bands include hostile, suspicious,
+neutral, friendly, and trusted. Reputation changes are rule-driven and are not
+decided by the LLM.
+
+### Rumors
+
+Rumors are structured records with known-by NPCs/factions, player visibility,
+truth status, spread level, and safe player-facing text. A rumor linked to a
+hidden fact must not reveal the hidden fact text unless the fact is legitimately
+known to the player.
+
+### Crime and Witnesses
+
+Crime records and witness records represent theft, assault, murder,
+lockpicking, trespass, vandalism, and reserved crime types. Witness detection
+uses location, visibility, life state, light/cover, and sneak/combat context.
+Hidden witnesses may affect rules without being exposed to player APIs.
+
+### NPC Reactions
+
+NPC reactions include suspicion changes, refusing talk, fleeing, spreading
+rumors, calling for help, friendliness, and hostility. Reactions require
+structured inputs such as known crimes, known rumors, relationship state,
+faction reputation, combat status, or quest state. Dead or incapacitated NPCs
+do not react.
+
+### Faction Conflict
+
+Faction conflict tracks faction-to-faction relations, alert level, conflict
+level, resources, and conflict tags. Incidents can come from crimes, public
+combat, rumors, quest stages, or reputation bands. Conflict changes are
+deduped by source/consequence ids where supported and are visible only for
+player-known factions/conflicts.
+
+v0.5 does not simulate armies, diplomacy AI, territorial war, or complex
+conflict escalation.
+
+## Combat and Life State
+
+Combat is lightweight and rules-first. Actions include:
+
+- `attack`
+- `defend`
+- `flee`
+
+Damage, hit/miss, hp, condition, stance, incapacitation, and death are decided
+by deterministic rules. Public assault or killing can feed crime, witness,
+rumor, reputation, quest, and reaction systems.
+
+Life state prevents contradictions:
+
+- Dead NPCs do not move by schedule.
+- Dead NPCs do not talk.
+- Dead NPCs do not spread rumors.
+- Dead NPCs do not become new witnesses.
+- Incapacitated NPCs have restricted action.
+
+## Memory
+
+Memory is not authoritative state. It summarizes or indexes events for
+retrieval, but it does not replace `GameState`, facts, quests, or event logs.
+
+### MemoryStore Backends
+
+v0.5 supports:
+
+- `InMemoryMemoryStore`
+- `SQLiteMemoryStore`
+- `LocalVectorMemoryStore` / optional vector-style interface with deterministic
+  substring and metadata fallback
+
+Search supports tags, entities, facts, turn ranges, substring, recency, and
+semantic query only when a backend supports it. No external vector database is
+required.
+
+### MemoryContextBuilder
+
+`MemoryContextBuilder` builds safe memory context for narrator and NPC dialogue.
+It filters by:
+
+- memory visibility
+- player-known facts
+- NPC knowledge
+- location/entity/fact relevance
+- recent turns
+- importance
+
+`hidden` and `debug_only` memories do not enter narrator context. NPC dialogue
+does not receive memories tied to facts or rumors the NPC does not know.
+
+## Procedural Side Quest Drafts
+
+The side quest generator creates `QuestDraft` candidates. It has:
+
+- a rule-based mode that does not call the LLM
+- an optional LLM-assisted mode through `LLMProvider`
+
+Generated quests are drafts, not runtime quest state. They do not modify
+`GameState`, active saves, or `quests.yaml`. A creator must explicitly review
+and save content through authoring tools, and validation must pass before the
+pack is treated as valid.
+
+LLM-assisted drafts must be schema-validated and may only reference existing
+content unless new content is marked as proposed.
+
+## Authoring API and Validation UX
+
+The local authoring API is controlled by `ENABLE_AUTHORING_API`. It is intended
+for local development only. It can list worlds, read whitelisted YAML files,
+write whitelisted YAML after YAML parsing, create world pack skeletons, and run
+structured validation.
+
+Allowed world files are:
+
+- `manifest.yaml`
+- `locations.yaml`
+- `npcs.yaml`
+- `items.yaml`
+- `quests.yaml`
+- `facts.yaml`
+- `factions.yaml`
+- `rumors.yaml`
+- `relationships.yaml`
+
+The API rejects path traversal and non-whitelisted file names. It must not read
+`.env`, database files, logs, source files, or arbitrary local paths. It must
+not mutate active session `GameState`.
+
+Validation reports contain structured `errors`, `warnings`, and `suggestions`
+with file, path, code, message, severity, and optional reference ids. CLI
+validation still returns a non-zero exit code when errors are present.
+
+## Plugin / Mod Packaging
+
+v0.5 includes a content-only mod packaging layer. A mod manifest can describe:
+
+- `id`
+- `name`
+- `version`
+- `engine_version_min`
+- `engine_version_max`
+- `dependencies`
+- `conflicts`
+- `entry_worlds`
+- `content_paths`
+- `author`
+- `description`
+
+Mods may contain YAML content packs only. The loader does not execute Python,
+JavaScript, shell scripts, or arbitrary code. It rejects paths outside the mod
+directory and validates entry worlds through the same content validation path.
+
+Known v0.5 limitation: some invalid mod manifest errors may include local file
+paths in diagnostics. Keep mod validation local until path sanitization is
+tightened further.
+
+## Multi-world Save Browser
+
+Save listing supports world filtering, updated-time ordering, deletion, and
+safe summaries. A save summary may include:
+
+- save id
+- world id
+- world name
+- turn
+- current location name
+- formatted time
+- created and updated timestamps
+- optional player summary
+
+Save summaries must not include raw `GameState`, hidden facts, raw
+`state_deltas`, debug memory, or API keys.
 
 ## Debug Timeline
 
-Local debug endpoints expose event history:
+Debug timeline APIs are controlled by `ENABLE_DEBUG_API` and are for local
+development only. They expose event timelines and `state_deltas` for debugging.
+This data must remain separated from player APIs and narrator prompts.
 
-- `GET /debug/sessions/{session_id}/events`
-- `GET /debug/saves/{save_id}/events`
+## Current Limits
 
-They are controlled by `ENABLE_DEBUG_API`.
-
-Debug timeline may include raw `state_deltas`, including hidden/system details. It is for local development only and is not a player-facing narrative API.
-
-## Persistence
-
-SQLite persistence stores:
-
-- save metadata
-- current `GameState` JSON snapshot
-- full `Event` JSON payloads
-- optional `MemoryRecord` JSON payloads
-
-Save/load can restore state and event history. Event replay applies each event's `state_deltas` against the initial state within the currently supported replay scope.
-
-## Known v0.4 Limits
-
-- No tactical combat grid or multi-round NPC combat AI.
-- No guard pursuit, arrest, trial, or full legal system.
-- No economy/shop/crafting/equipment progression.
-- No pathfinding or large-scale world simulation.
-- No LLM-driven autonomous NPC planning.
-- No vector database or embedding pipeline.
-- Content validation is CLI/report only; it does not auto-fix YAML.
-- Debug API has no production authentication and must remain local-only.
-- Raw faction reputation is still present in player API and should be moved to debug-only in a future hardening pass.
+- No account system, cloud sync, or remote publishing.
+- No graphical world editor beyond a textarea authoring UI.
+- No automatic YAML repair.
+- No arbitrary mod code execution.
+- No large-scale social simulation, diplomacy AI, or war simulation.
+- No external vector database requirement.
+- NPC planning is limited to deterministic candidate actions.
+- Procedural side quests are drafts only.
+- Memory retrieval is context support, not canonical truth.

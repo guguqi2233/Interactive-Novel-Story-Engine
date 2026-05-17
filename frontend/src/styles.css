@@ -15,7 +15,8 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -47,6 +48,18 @@ select {
 .side-panel section {
   display: grid;
   gap: 8px;
+}
+
+.segmented {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.segmented button.active {
+  background: #1f2933;
+  color: #ffffff;
+  border-color: #1f2933;
 }
 
 .app-shell {
@@ -123,6 +136,34 @@ select {
   background: #f8fafc;
   font-size: 11px;
   line-height: 1.4;
+}
+
+.save-browser-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.save-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.save-card {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  padding: 10px;
+  text-align: left;
+  border: 1px solid #b6c0ca;
+  border-radius: 6px;
+  background: #f8fafc;
+  color: #1f2933;
+}
+
+.save-card.selected {
+  border-color: #1f2933;
 }
 
 .story-panel {
@@ -226,6 +267,124 @@ select {
   font-size: 12px;
 }
 
+.authoring-panel {
+  display: grid;
+  grid-template-rows: auto auto minmax(280px, 1fr) auto auto;
+  gap: 14px;
+  min-height: 0;
+}
+
+.authoring-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.authoring-header h1 {
+  margin: 0;
+  font-size: 26px;
+}
+
+.authoring-controls {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(160px, 1fr) auto auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.authoring-controls label {
+  display: grid;
+  gap: 6px;
+  color: #4c5965;
+  font-size: 13px;
+}
+
+.yaml-editor {
+  width: 100%;
+  min-height: 320px;
+  resize: vertical;
+  border: 1px solid #a7b0b9;
+  border-radius: 6px;
+  padding: 14px;
+  background: #fffdf8;
+  color: #1f2933;
+  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.notice {
+  border: 1px solid #d6b45f;
+  background: #fff7df;
+  color: #5f4814;
+  border-radius: 6px;
+  padding: 12px;
+}
+
+.validation-panel {
+  display: grid;
+  gap: 12px;
+  border-top: 1px solid #c7cdd3;
+  padding-top: 12px;
+}
+
+.validation-panel h2 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.validation-panel h3 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  color: #4c5965;
+}
+
+.validation-ok {
+  color: #166534;
+}
+
+.validation-file-group {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid #d7dde2;
+  padding-top: 10px;
+}
+
+.issue-button {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 82px minmax(120px, 1fr);
+  gap: 4px 10px;
+  text-align: left;
+  align-items: start;
+  background: #ffffff;
+}
+
+.issue-button span,
+.issue-button strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.severity {
+  text-transform: uppercase;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.severity.error {
+  color: #9b1c1c;
+}
+
+.severity.warning {
+  color: #8a5a00;
+}
+
+.severity.suggestion {
+  color: #1d4ed8;
+}
+
 .timeline {
   display: grid;
   gap: 8px;
@@ -284,5 +443,9 @@ select {
 
   .debug-panel.closed {
     padding: 12px 20px;
+  }
+
+  .authoring-controls {
+    grid-template-columns: 1fr;
   }
 }

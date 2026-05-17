@@ -7,6 +7,44 @@ npcs:
     knowledge:
       - old_bridge_creaks_at_midnight
       - mayor_hides_missing_tools
+    goals:
+      - id: share_bridge_warning
+        description: Warn trusted villagers about the old bridge.
+        priority: 5
+        status: active
+        conditions:
+          - knows:old_bridge_creaks_at_midnight
+        desired_state:
+          rumor: bridge_warning_shared
+        allowed_actions:
+          - talk_to_npc
+          - spread_rumor
+        forbidden_actions:
+          - attack
+      - id: recover_missing_tools
+        description: Find out what happened to the missing tools.
+        priority: 3
+        status: inactive
+        conditions:
+          - knows:mayor_hides_missing_tools
+        desired_state:
+          fact: tools_returned
+        allowed_actions:
+          - investigate
+          - talk_to_npc
+        forbidden_actions:
+          - flee
+    priorities:
+      community_safety: 5
+      personal_risk: 3
+    constraints:
+      - avoid_unnecessary_violence
+    plan_state: {}
+    merchant: true
+    shop_inventory:
+      - sealed_letter
+    buy_price_modifier: 1.0
+    sell_price_modifier: 0.5
     schedule:
       - time_of_day: morning
         location_id: blacksmith
