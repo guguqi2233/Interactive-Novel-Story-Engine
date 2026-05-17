@@ -1,6 +1,6 @@
 # World Engine
 
-This document describes the local world engine as of v0.6. The engine is the
+This document describes the local world engine as of v0.7. The engine is the
 only source of truth for world state, rules, consequences, persistence, and
 visibility. The LLM layer may parse intent, render narration, and summarize
 memory, but it does not decide rule outcomes or mutate `GameState`.
@@ -49,7 +49,7 @@ The current state model includes:
   facts.
 
 Old save JSON is loaded through Pydantic defaults, compatibility-friendly
-model fields, and the v0.6 save migration system. Missing v0.3-v0.5 fields
+model fields, and the v0.6+ save migration system. Missing v0.3-v0.6 fields
 should default or migrate rather than crash.
 
 ## StateDelta Rules
@@ -145,10 +145,9 @@ Known limitation: visible faction conflict summaries include
 `conflict_tags` for player-known factions. Authors should avoid using those
 tags for secret-only content until a stricter public-label field is added.
 
-Known v0.6 blocker from visibility/security audit: `visible_state.relationships`
-must filter relationship endpoints by actor visibility before v0.6 acceptance.
-The player graph already performs this filtering; the player API relationship
-summary should be aligned with it.
+Known v0.7 hardening note: authoring/debug views may intentionally show full
+local content, raw debug events, or raw deltas. They must stay visually and API
+separated from player views and narrator payloads.
 
 ## Time, Schedule, and World Tick
 
@@ -283,7 +282,7 @@ Damage, hit/miss, hp, condition, stance, incapacitation, and death are decided
 by deterministic rules. Public assault or killing can feed crime, witness,
 rumor, reputation, quest, and reaction systems.
 
-v0.6 adds a small combat expansion:
+v0.6+ includes a small combat expansion:
 
 - stances: `aggressive`, `defensive`, `cautious`, `fleeing`
 - status effects: `guarded`, `stunned`, `bleeding`
@@ -354,6 +353,42 @@ pack is treated as valid.
 LLM-assisted drafts must be schema-validated and may only reference existing
 content unless new content is marked as proposed.
 
+## Studio Home Dashboard
+
+v0.7 adds a local Studio Home panel backed by `GET /studio/status`. It is a
+safe summary surface for the local project. It can show:
+
+- engine version and backend health
+- available worlds count
+- recent safe save summaries
+- authoring/debug/performance API status
+- current `LLM_PROVIDER` and local provider status labels
+- recent validation and playtest summaries when available
+- shortcuts to Play, Authoring, Save Browser, Migration, Mod Manager, Graphs,
+  Narrative Evals, Performance, Playtesting, and Settings
+
+Studio Home is not a debug dump. It must not return API keys, raw environment
+variables, raw `GameState`, raw `state_deltas`, hidden facts, NPC secrets, or
+debug memory.
+
+## Settings and Local Privacy Panel
+
+v0.7 adds `GET /studio/config-summary` and a Settings / Local Privacy panel.
+The endpoint returns safe booleans and labels for:
+
+- `LLM_PROVIDER`
+- provider configured/status text
+- whether the configured provider may receive prompts
+- authoring/debug/performance/playtest/eval API status
+- whether a database is configured
+- a redacted database hint
+- whether an API key is configured, without returning the key
+
+The panel explains that saves, `GameState`, memory records, content packs, and
+mods stay local; only configured LLM providers may receive prompts; API keys
+are not exposed to the frontend; and local mods are validated as content-only
+packages.
+
 ## Authoring API and Validation UX
 
 The local authoring API is controlled by `ENABLE_AUTHORING_API`. It is intended
@@ -383,7 +418,7 @@ validation still returns a non-zero exit code when errors are present.
 
 ## Authoring Diff, Preview, and Dry Run
 
-v0.6 adds local authoring dry-run support:
+v0.6+ adds local authoring dry-run support:
 
 - `preview-file-change` parses proposed YAML, validates a draft in a temporary
   copy, returns normalized YAML when possible, and reports a diff summary.
@@ -394,9 +429,103 @@ v0.6 adds local authoring dry-run support:
 These APIs do not modify active `GameState`, active sessions, or saves. They
 are local authoring tools only and must stay behind `ENABLE_AUTHORING_API`.
 
+## Scenario Template System
+
+v0.7 adds local `ScenarioTemplate` support for reusable authoring drafts.
+Templates live under `templates/` and are YAML data, not executable scripts.
+
+`ScenarioTemplate` fields:
+
+- `id`
+- `name`
+- `description`
+- `template_type`: `world`, `quest`, `location_cluster`, `npc_set`,
+  `faction_set`, `mystery`, or `combat_encounter`
+- `required_variables`
+- `optional_variables`
+- `output_files`
+- `validation_rules`
+- `tags`
+
+The template renderer supports:
+
+- `list_templates`
+- `preview_template`
+- `render_template`
+- `validate_rendered_content`
+
+Rendering performs simple `{{variable}}` substitution. Variable names and
+values are checked for unsafe path traversal patterns, and output files must be
+normal authoring YAML files. Preview and render do not write disk, do not
+modify active `GameState`, and do not call the LLM.
+
+Rendered world templates are validated in a temporary world root with
+`validate_world_pack`. Non-world templates can be validated against a temporary
+copy of a target world. Applying rendered content is intentionally separate:
+creators must use the authoring API or another explicit save step, and the
+validator remains the gate.
+
+## Import / Export Workflow
+
+v0.7 adds local authoring-gated archive import/export for worlds, mods, and
+saves. Archives are zip files represented by the API as base64 payloads.
+
+Import/export endpoints:
+
+- `GET /authoring/export/worlds/{world_id}`
+- `POST /authoring/import/worlds`
+- `GET /authoring/export/mods/{mod_id}`
+- `POST /authoring/import/mods`
+- `GET /authoring/export/saves/{save_id}`
+- `POST /authoring/import/saves`
+
+Archive manifests are stored in `export_manifest.json` and include:
+
+- `export_type`: `world`, `mod`, or `save`
+- `id`
+- `schema_version`
+- optional content/mod version fields
+- included file list
+
+The importer rejects zip slip/path traversal, executable files, `.env`,
+secret files, local database files, and logs. World imports run world
+validation, mod imports run mod validation, and save imports check migration
+status. Import/export does not call the LLM and does not modify active session
+`GameState`.
+
+Save export can include full hidden save state by design. It is therefore a
+local authoring/backup workflow only and must stay behind
+`ENABLE_AUTHORING_API`.
+
+## Visual Quest Graph Authoring
+
+v0.7 adds an authoring-only quest graph layer for `quests.yaml`. It parses
+quests into:
+
+- quest nodes
+- stage nodes
+- objective nodes
+- trigger nodes
+- `next_stages` edges
+- trigger-to-stage edges
+
+The first UI slice supports viewing the graph and editing stage title, stage
+description, objective text, and `next_stages`. The frontend sends the edited
+graph to the backend preview endpoint, which converts it back to `quests.yaml`
+and runs draft validation. Saving still uses the normal authoring file save
+path, so validation remains the gate and active `GameState` is not modified.
+
+Quest graph APIs are local authoring endpoints behind `ENABLE_AUTHORING_API`:
+
+- `GET /authoring/worlds/{world_id}/quests/graph`
+- `POST /authoring/worlds/{world_id}/quests/graph/preview`
+
+Hidden quests can appear in the authoring UI because authoring is a local
+creator tool, but they must not enter player `visible_state`.
+
 ## Save Migration System
 
-v0.6 formalizes save migration. Save metadata includes engine/schema/content
+v0.6+ formalizes save migration. Save metadata includes engine/schema/content
 version fields and migration history. `GameState` also carries a
 `schema_version`.
 
@@ -411,9 +540,16 @@ Migration is deterministic, does not call the LLM, does not drop `EventLog`,
 and must not change hidden/debug visibility classifications. Failed migration
 rolls back rather than overwriting the original save.
 
+## Save Migration UI
+
+v0.7 exposes migration status, dry-run, apply, and history in the Save Browser.
+The UI uses existing migration APIs and does not return or display raw hidden
+save payloads. Applying migration requires confirmation. Dry-run is clearly
+marked as non-writing.
+
 ## Visual Relationship and Faction Graphs
 
-v0.6 adds graph response schemas and APIs for relationship/faction inspection:
+v0.6+ adds graph response schemas and APIs for relationship/faction inspection:
 
 - player graph endpoints return player-visible nodes/edges only
 - debug graph endpoints return fuller graph data only when debug API is enabled
@@ -422,9 +558,17 @@ v0.6 adds graph response schemas and APIs for relationship/faction inspection:
 The frontend renders these as lightweight lists/SVG summaries. Debug graphs
 must remain in the debug panel.
 
+## Mod Manager UI
+
+v0.7 adds a local Mod Manager panel backed by authoring-gated mod endpoints.
+It can list discovered content-only mods, show manifest fields, validate a
+mod, display dependency/conflict/version status, show deterministic load order,
+and display migration notes. It does not enable online downloads, does not
+execute scripts, and does not hot-reload active saves.
+
 ## Automated Playtesting Agents
 
-v0.6 adds local playtesting agents:
+v0.6+ adds local playtesting agents:
 
 - `random_valid_action_agent`
 - `explore_agent`
@@ -436,6 +580,19 @@ sends that text through `GameLoop`, records events, checks invariants, and can
 exercise save/load. Agents do not directly mutate `GameState` and do not call
 real LLM APIs.
 
+## Automated Playtesting Dashboard
+
+v0.7 adds playtest APIs and a local dashboard:
+
+- `GET /playtests/recent`
+- `POST /playtests/run`
+- `GET /playtests/{run_id}`
+
+The API is controlled by `ENABLE_PLAYTEST_API` or debug mode. Reports include
+turns run, actions taken, errors, invariant violations, visibility leak
+summaries, save/load failures, and safe final state summaries. Reports are
+studio/debug artifacts and must not enter player narration.
+
 ## Narrative Quality Evals
 
 Narrative quality evals are deterministic test/eval utilities. They check
@@ -443,9 +600,22 @@ whether a `NarrativeResult` contradicts the `ActionResult`, invents key content,
 leaks hidden facts/witnesses, becomes too long, omits visible consequences, or
 suggests illegal actions. They do not use an external LLM judge.
 
+## Narrative Quality Dashboard
+
+v0.7 adds local eval report APIs and a dashboard:
+
+- `GET /evals/narrative/recent`
+- `POST /evals/narrative/run`
+- `GET /evals/narrative/{run_id}`
+
+The current routes are debug-gated. Reports include run ids, timestamps, pass
+counts, failure reasons, categories, and safe case summaries. They do not
+modify `GameState`, do not call real model APIs, and must not display hidden
+fixture text in ordinary UI.
+
 ## Performance Instrumentation
 
-v0.6 adds local performance samples for game loop stages, save/load,
+v0.6+ adds local performance samples for game loop stages, save/load,
 memory search, and authoring validation. Samples are in-memory, controlled by
 `ENABLE_PERF_LOGGING`, and exposed only through debug performance APIs gated by
 `ENABLE_DEBUG_API`.
@@ -454,9 +624,18 @@ Performance data must not include prompt text, API keys, hidden fact text, raw
 `GameState`, or raw `state_deltas`. Performance work must never bypass
 `StateDelta`, `EventLog`, visibility, schema validation, or rule correctness.
 
+## Performance Dashboard
+
+v0.7 exposes the local performance samples in a dashboard. It shows recent
+samples and summaries for game loop, intent parsing, action resolution, world
+tick, narrator, save/load, memory search, and authoring validation when data is
+available. The dashboard is debug-gated, local-only, and must not display
+prompt text, hidden content, API keys, raw `GameState`, or raw
+`state_deltas`.
+
 ## Plugin / Mod Packaging
 
-The engine includes a content-only mod packaging layer. A v0.6 mod manifest can
+The engine includes a content-only mod packaging layer. A v0.6+ mod manifest can
 describe:
 
 - `id`
@@ -481,7 +660,7 @@ JavaScript, shell scripts, or arbitrary code. It rejects paths outside the mod
 directory and validates entry worlds through the same content validation path.
 
 Dependency, conflict, engine-version, content-schema, and load-order checks are
-simple and deterministic in v0.6. There is no online download, SAT solver, hot
+simple and deterministic in v0.7. There is no online download, SAT solver, hot
 reload of active saves, or arbitrary script execution.
 
 Known limitation: some invalid mod manifest errors may include local file
@@ -490,22 +669,24 @@ tightened further.
 
 ## Desktop Packaging Prototype
 
-v0.6 adds a local desktop packaging prototype document and a Windows launcher
-script. It starts the FastAPI backend and Vite frontend locally and opens the
-browser. It is not a formal installer, does not sign code, does not auto-update,
-does not sync to cloud, and does not embed `.env` or API keys into frontend
-assets.
+v0.7 keeps desktop packaging as a local launcher prototype and enhances the
+launcher scripts. The Windows and shell scripts check basic dependencies,
+start the FastAPI backend and Vite frontend or built preview, print safe local
+status, and open the browser. This is not a formal installer, does not sign
+code, does not auto-update, does not sync to cloud, and does not embed `.env`
+or API keys into frontend assets.
 
-## Local Model Provider Slice
+## Local Model Provider Full Integration
 
-v0.6 adds provider factory support for:
+v0.7 provides a more complete configurable local provider integration:
 
 - `local_stub`: deterministic test/offline provider
-- `local_http`: configuration-checked interface stub for future local HTTP
-  model service integration
+- `local_http`: OpenAI-compatible local HTTP chat endpoint integration
 
-Both remain behind `LLMProvider`. Local model output has no new authority and
-cannot directly modify `GameState`.
+`local_http` uses `LOCAL_LLM_BASE_URL`, `LOCAL_LLM_MODEL`,
+`LOCAL_LLM_TIMEOUT_SECONDS`, and `LOCAL_LLM_JSON_MODE`. It still goes through
+`LLMProvider`; outputs are schema-validated for JSON calls and have no new
+authority. Local model output cannot directly modify `GameState`.
 
 ## Multi-world Save Browser
 

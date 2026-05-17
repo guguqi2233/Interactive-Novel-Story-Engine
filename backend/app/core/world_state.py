@@ -1,9 +1,20 @@
 from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_serializer, model_validator
 
 CURRENT_GAME_STATE_SCHEMA_VERSION = "0.6"
+
+
+def _sorted_strings(values: set[str]) -> list[str]:
+    return sorted(values)
+
+
+def _sorted_string_sets(values: dict[str, set[str]]) -> dict[str, list[str]]:
+    return {
+        key: sorted(item_values)
+        for key, item_values in sorted(values.items())
+    }
 
 
 class ActorCondition(StrEnum):
@@ -164,6 +175,10 @@ class FactState(BaseModel):
     known_by: set[str] = Field(default_factory=set)
     tags: list[str] = Field(default_factory=list)
 
+    @field_serializer("known_by", when_used="json")
+    def serialize_known_by(self, known_by: set[str]) -> list[str]:
+        return _sorted_strings(known_by)
+
 
 class QuestVisibility(StrEnum):
     PUBLIC = "public"
@@ -218,6 +233,10 @@ class QuestState(BaseModel):
     known_to_player: bool = False
     completed_objectives: set[str] = Field(default_factory=set)
     triggers: list[QuestTrigger] = Field(default_factory=list)
+
+    @field_serializer("completed_objectives", when_used="json")
+    def serialize_completed_objectives(self, completed_objectives: set[str]) -> list[str]:
+        return _sorted_strings(completed_objectives)
 
 
 class ReputationState(BaseModel):
@@ -286,6 +305,10 @@ class RumorState(BaseModel):
         if "spread_level" not in migrated and "credibility" in migrated:
             migrated["spread_level"] = migrated["credibility"]
         return migrated
+
+    @field_serializer("known_by_npcs", "known_by_factions", "known_by", when_used="json")
+    def serialize_known_by_sets(self, values: set[str]) -> list[str]:
+        return _sorted_strings(values)
 
 
 class CrimeStatus(StrEnum):
@@ -440,6 +463,14 @@ class GameState(BaseModel):
     social_flags: dict[str, bool | int | float | str] = Field(default_factory=dict)
     relationships: dict[str, RelationshipState] = Field(default_factory=dict)
     combats: dict[str, CombatState] = Field(default_factory=dict)
+
+    @field_serializer("player_visible_facts", when_used="json")
+    def serialize_player_visible_facts(self, player_visible_facts: set[str]) -> list[str]:
+        return _sorted_strings(player_visible_facts)
+
+    @field_serializer("npc_knowledge", when_used="json")
+    def serialize_npc_knowledge(self, npc_knowledge: dict[str, set[str]]) -> dict[str, list[str]]:
+        return _sorted_string_sets(npc_knowledge)
 
 
 def migrate_game_state_payload(payload: dict[str, Any]) -> dict[str, Any]:

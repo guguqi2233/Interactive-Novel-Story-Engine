@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 from random import Random
+from typing import Any
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -172,7 +173,7 @@ def _round_trip_save_load(
         return [f"save_load_error:{exc}"]
 
     failures: list[str] = []
-    if json.loads(loaded_state.model_dump_json()) != json.loads(game_loop.state.model_dump_json()):
+    if _canonical_json(loaded_state.model_dump(mode="json")) != _canonical_json(game_loop.state.model_dump(mode="json")):
         failures.append("save_load_state_mismatch")
     if len(loaded_events) != len(game_loop.event_log.list_events()):
         failures.append("save_load_event_count_mismatch")
@@ -181,3 +182,14 @@ def _round_trip_save_load(
 
 def _dedupe(values: list[str]) -> list[str]:
     return list(dict.fromkeys(values))
+
+
+def _canonical_json(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: _canonical_json(value[key]) for key in sorted(value)}
+    if isinstance(value, list):
+        items = [_canonical_json(item) for item in value]
+        if all(not isinstance(item, dict | list) for item in items):
+            return sorted(items, key=lambda item: json.dumps(item, ensure_ascii=False, sort_keys=True))
+        return items
+    return value

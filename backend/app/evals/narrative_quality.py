@@ -1,4 +1,7 @@
+from datetime import datetime, timezone
 from enum import StrEnum
+from hashlib import sha256
+from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
@@ -39,16 +42,23 @@ class NarrativeQualityCase(BaseModel):
 
 class NarrativeQualityCaseResult(BaseModel):
     case_id: str
+    category: str = "general"
     passed: bool
+    skipped: bool = False
     failure_reasons: list[str] = Field(default_factory=list)
 
 
 class NarrativeQualityReport(BaseModel):
+    run_id: str = Field(default_factory=lambda: str(uuid4()))
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     total_cases: int
     passed: int
     failed: int
+    skipped: int = 0
     failure_reasons: dict[str, list[str]] = Field(default_factory=dict)
+    categories: dict[str, dict[str, int]] = Field(default_factory=dict)
     results: list[NarrativeQualityCaseResult] = Field(default_factory=list)
+    case_results: list[NarrativeQualityCaseResult] = Field(default_factory=list)
 
 
 def evaluate_narrative_quality(case: NarrativeQualityCase) -> NarrativeQualityCaseResult:
@@ -96,6 +106,7 @@ def evaluate_narrative_quality(case: NarrativeQualityCase) -> NarrativeQualityCa
 
     return NarrativeQualityCaseResult(
         case_id=case.id,
+        category=_case_category(case),
         passed=not reasons,
         failure_reasons=reasons,
     )
@@ -105,12 +116,15 @@ def run_narrative_quality_evals(cases: list[NarrativeQualityCase]) -> NarrativeQ
     results = [evaluate_narrative_quality(case) for case in cases]
     failures = {result.case_id: result.failure_reasons for result in results if not result.passed}
     passed = sum(1 for result in results if result.passed)
+    categories = _category_summary(results)
     return NarrativeQualityReport(
         total_cases=len(results),
         passed=passed,
         failed=len(results) - passed,
         failure_reasons=failures,
+        categories=categories,
         results=results,
+        case_results=results,
     )
 
 
@@ -159,7 +173,12 @@ def _check_forbidden_terms(
     text_to_search = text.lower()
     for term in terms:
         if term and term.lower() in text_to_search:
-            reasons.append(f"{rule}:forbidden:{term}")
+            reasons.append(f"{rule}:forbidden:{_redacted_term_marker(term)}")
+
+
+def _redacted_term_marker(term: str) -> str:
+    digest = sha256(term.encode("utf-8")).hexdigest()[:12]
+    return f"[redacted:{digest}]"
 
 
 def _suggested_action_allowed(suggestion: str, allowed_actions: list[str]) -> bool:
@@ -168,3 +187,29 @@ def _suggested_action_allowed(suggestion: str, allowed_actions: list[str]) -> bo
     if normalized in allowed:
         return True
     return normalized.startswith(("suggest:", "try ", "consider ", "maybe "))
+
+
+def _case_category(case: NarrativeQualityCase) -> str:
+    if case.hidden_fact_texts or case.hidden_witness_ids:
+        return "visibility"
+    if case.invented_item_terms or case.invented_npc_terms or case.invented_location_terms:
+        return "invention"
+    if case.require_visible_consequence or case.required_mentions:
+        return "continuity"
+    if case.allowed_suggested_actions:
+        return "suggested_actions"
+    return "general"
+
+
+def _category_summary(results: list[NarrativeQualityCaseResult]) -> dict[str, dict[str, int]]:
+    summary: dict[str, dict[str, int]] = {}
+    for result in results:
+        bucket = summary.setdefault(result.category, {"total": 0, "passed": 0, "failed": 0, "skipped": 0})
+        bucket["total"] += 1
+        if result.skipped:
+            bucket["skipped"] += 1
+        elif result.passed:
+            bucket["passed"] += 1
+        else:
+            bucket["failed"] += 1
+    return summary

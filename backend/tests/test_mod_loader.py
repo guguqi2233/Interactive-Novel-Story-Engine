@@ -149,13 +149,20 @@ def test_authoring_mod_api_lists_and_validates(tmp_path: Path) -> None:
     client = make_client(tmp_path)
 
     list_response = client.get("/authoring/mods")
+    detail_response = client.get("/authoring/mods/mist_mod")
     validate_response = client.post("/authoring/mods/mist_mod/validate")
+    load_order_response = client.get("/authoring/mods/load-order")
 
     assert list_response.status_code == 200
     assert list_response.json()["mods"][0]["id"] == "mist_mod"
+    assert detail_response.status_code == 200
+    assert detail_response.json()["mod"]["id"] == "mist_mod"
+    assert detail_response.json()["validation"]["ok"] is True
     assert validate_response.status_code == 200
     assert validate_response.json()["ok"] is True
     assert validate_response.json()["world_report_ids"]
+    assert load_order_response.status_code == 200
+    assert load_order_response.json()["load_order"] == ["mist_mod"]
 
 
 def test_authoring_mod_api_obeys_authoring_toggle(tmp_path: Path) -> None:
@@ -163,8 +170,12 @@ def test_authoring_mod_api_obeys_authoring_toggle(tmp_path: Path) -> None:
     client = make_client(tmp_path, authoring_enabled=False)
 
     response = client.get("/authoring/mods")
+    detail_response = client.get("/authoring/mods/mist_mod")
+    load_order_response = client.get("/authoring/mods/load-order")
 
     assert response.status_code == 403
+    assert detail_response.status_code == 403
+    assert load_order_response.status_code == 403
 
 
 def test_version_parser_and_comparator() -> None:

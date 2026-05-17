@@ -191,6 +191,175 @@ export type AuthoringWorldListResponse = {
   worlds: AuthoringWorldSummary[];
 };
 
+export type AuthoringModSummary = {
+  id: string;
+  name: string;
+  version: string;
+  engine_version_min: string;
+  engine_version_max?: string | null;
+  content_schema_version: string;
+  dependencies: string[];
+  optional_dependencies: string[];
+  conflicts: string[];
+  load_order_hint: number;
+  compatible_worlds: string[];
+  migration_notes: string;
+  entry_worlds: string[];
+  content_paths: string[];
+  author?: string | null;
+  description: string;
+};
+
+export type AuthoringModListResponse = {
+  local_only: boolean;
+  mods: AuthoringModSummary[];
+};
+
+export type AuthoringModValidation = {
+  local_only: boolean;
+  mod_id: string;
+  ok: boolean;
+  errors: AuthoringValidationIssue[];
+  warnings: AuthoringValidationIssue[];
+  suggestions: AuthoringValidationIssue[];
+  world_report_ids: string[];
+};
+
+export type AuthoringModDetailResponse = {
+  local_only: boolean;
+  mod: AuthoringModSummary;
+  validation?: AuthoringModValidation | null;
+};
+
+export type AuthoringModLoadOrderResponse = {
+  local_only: boolean;
+  ok: boolean;
+  load_order: string[];
+  errors: string[];
+};
+
+export type ArchiveExportResponse = {
+  local_only: boolean;
+  export_type: string;
+  id: string;
+  file_name: string;
+  archive_base64: string;
+};
+
+export type ArchiveImportResponse = {
+  local_only: boolean;
+  imported: boolean;
+  import_type: string;
+  id: string;
+  validation_ok: boolean;
+  errors: string[];
+  warnings: string[];
+  migration_needed: boolean;
+  migration_warnings: string[];
+};
+
+export type NarrativeEvalCaseResult = {
+  case_id: string;
+  category: string;
+  passed: boolean;
+  skipped: boolean;
+  failure_reasons: string[];
+};
+
+export type NarrativeEvalReport = {
+  run_id: string;
+  created_at: string;
+  total_cases: number;
+  passed: number;
+  failed: number;
+  skipped: number;
+  failure_reasons: Record<string, string[]>;
+  categories: Record<string, Record<string, number>>;
+  case_results: NarrativeEvalCaseResult[];
+};
+
+export type NarrativeEvalRecentResponse = {
+  local_only: boolean;
+  reports: NarrativeEvalReport[];
+};
+
+export type DebugPerformanceSample = {
+  sample_id: string;
+  name: string;
+  duration_ms: number;
+  started_at: string;
+  stage_durations_ms: Record<string, number>;
+  tags: Record<string, string>;
+};
+
+export type DebugPerformanceRecentResponse = {
+  local_only: boolean;
+  enabled: boolean;
+  samples: DebugPerformanceSample[];
+};
+
+export type DebugPerformanceSummaryEntry = {
+  name: string;
+  count: number;
+  total_duration_ms: number;
+  average_duration_ms: number;
+  max_duration_ms: number;
+};
+
+export type DebugPerformanceSummaryResponse = {
+  local_only: boolean;
+  enabled: boolean;
+  sample_count: number;
+  entries: DebugPerformanceSummaryEntry[];
+};
+
+export type PlaytestActionRecord = {
+  step: number;
+  turn_before: number;
+  turn_after: number;
+  input_text: string;
+  action_type: string;
+  result: string;
+  event_id?: string | null;
+};
+
+export type PlaytestFinalStateSummary = {
+  world_id: string;
+  turn: number;
+  location_id: string;
+  event_count: number;
+};
+
+export type PlaytestReport = {
+  local_only: boolean;
+  run_id: string;
+  created_at: string;
+  agent_type: string;
+  world_id: string;
+  seed: number;
+  steps_requested: number;
+  turns_run: number;
+  actions_taken: PlaytestActionRecord[];
+  errors: string[];
+  invariant_violations: string[];
+  visibility_leaks: string[];
+  save_load_failures: string[];
+  final_state_summary: PlaytestFinalStateSummary;
+};
+
+export type PlaytestRecentResponse = {
+  local_only: boolean;
+  reports: PlaytestReport[];
+};
+
+export type PlaytestRunRequest = {
+  world_id: string;
+  agent_type: string;
+  steps: number;
+  seed: number;
+  save_load_check: boolean;
+};
+
 export type AuthoringWorldDetailResponse = {
   local_only: boolean;
   world: AuthoringWorldSummary;
@@ -253,6 +422,96 @@ export type AuthoringFilePreviewResponse = {
   impact: AuthoringImpactAnalysis;
 };
 
+export type ScenarioTemplateOutputFile = {
+  file_name: string;
+  content: string;
+};
+
+export type ScenarioTemplate = {
+  id: string;
+  name: string;
+  description: string;
+  template_type: string;
+  required_variables: string[];
+  optional_variables: Record<string, string>;
+  output_files: ScenarioTemplateOutputFile[];
+  validation_rules: string[];
+  tags: string[];
+};
+
+export type ScenarioTemplateListResponse = {
+  local_only: boolean;
+  templates: ScenarioTemplate[];
+};
+
+export type RenderedScenarioTemplate = {
+  template_id: string;
+  template_type: string;
+  files: ScenarioTemplateOutputFile[];
+};
+
+export type ScenarioTemplatePreviewResponse = {
+  local_only: boolean;
+  template: ScenarioTemplate;
+  rendered: RenderedScenarioTemplate;
+  validation_report?: AuthoringValidation | null;
+  writes_to_disk: boolean;
+};
+
+export type QuestObjectiveNode = {
+  id: string;
+  text: string;
+};
+
+export type QuestStageNode = {
+  id: string;
+  title: string;
+  description: string;
+  objectives: QuestObjectiveNode[];
+  next_stages: string[];
+};
+
+export type QuestTriggerNode = {
+  type: string;
+  id: string;
+  action: string;
+  objective_id?: string | null;
+  next_stage?: string | null;
+};
+
+export type QuestGraphNode = {
+  id: string;
+  title: string;
+  description: string;
+  initial_stage: string;
+  visibility: string;
+  stages: QuestStageNode[];
+  triggers: QuestTriggerNode[];
+};
+
+export type QuestGraphEdge = {
+  source: string;
+  target: string;
+  type: string;
+  quest_id: string;
+  label?: string | null;
+};
+
+export type QuestGraphResponse = {
+  local_only: boolean;
+  world_id: string;
+  quests: QuestGraphNode[];
+  edges: QuestGraphEdge[];
+};
+
+export type QuestGraphPreviewResponse = {
+  local_only: boolean;
+  world_id: string;
+  graph: QuestGraphResponse;
+  yaml_content: string;
+  validation: AuthoringValidation;
+};
+
 export type VisibleState = {
   world_id: string;
   turn: number;
@@ -302,10 +561,56 @@ export type SaveSummary = {
   created_at: string;
   updated_at: string;
   player_summary?: string | null;
+  enabled_mods?: Record<string, string>;
 };
 
 export type SaveListResponse = {
   saves: SaveSummary[];
+};
+
+export type StudioValidationSummary = {
+  world_id: string;
+  ok: boolean;
+  error_count: number;
+  warning_count: number;
+};
+
+export type StudioPlaytestSummary = {
+  available: boolean;
+  recent_runs: number;
+  latest_status?: string | null;
+};
+
+export type StudioStatus = {
+  local_only: boolean;
+  engine_version: string;
+  schema_version: string;
+  backend_status: string;
+  worlds_count: number;
+  recent_saves: SaveSummary[];
+  authoring_api_enabled: boolean;
+  debug_api_enabled: boolean;
+  performance_logging_enabled: boolean;
+  llm_provider: string;
+  local_model_provider_status?: string | null;
+  validation_summaries: StudioValidationSummary[];
+  playtest_summary: StudioPlaytestSummary;
+};
+
+export type StudioConfigSummary = {
+  local_only: boolean;
+  llm_provider: string;
+  provider_status: string;
+  provider_sends_prompts_off_machine: boolean;
+  authoring_api_enabled: boolean;
+  debug_api_enabled: boolean;
+  performance_logging_enabled: boolean;
+  playtest_api_enabled: boolean;
+  eval_api_enabled: boolean;
+  database_configured: boolean;
+  database_path_hint: string;
+  api_key_configured: boolean;
+  privacy_notes: string[];
 };
 
 export type SaveGameResponse = {
@@ -327,6 +632,38 @@ export type LoadGameResponse = {
   turn: number;
 };
 
+export type MigrationHistoryEntry = {
+  migration_id: string;
+  source_version: string;
+  target_version: string;
+  description: string;
+  applied_at: string;
+};
+
+export type SaveMigrationStatus = {
+  save_id: string;
+  engine_version: string;
+  schema_version: string;
+  world_id: string;
+  world_version: string;
+  content_pack_version: string;
+  needs_migration: boolean;
+  target_schema_version: string;
+  migration_path: string[];
+  warnings: string[];
+};
+
+export type SaveMigrationResponse = {
+  save_id: string;
+  source_version: string;
+  target_version: string;
+  dry_run: boolean;
+  backup_save_id?: string | null;
+  success: boolean;
+  warnings: string[];
+  applied_migrations: MigrationHistoryEntry[];
+};
+
 export async function startGame(worldId?: string): Promise<StartGameResponse> {
   return requestJson<StartGameResponse>("/game/start", {
     method: "POST",
@@ -337,6 +674,14 @@ export async function startGame(worldId?: string): Promise<StartGameResponse> {
       world_id: worldId
     })
   });
+}
+
+export async function fetchStudioStatus(): Promise<StudioStatus> {
+  return requestJson<StudioStatus>("/studio/status");
+}
+
+export async function fetchStudioConfigSummary(): Promise<StudioConfigSummary> {
+  return requestJson<StudioConfigSummary>("/studio/config-summary");
 }
 
 export async function submitPlayerInput(
@@ -382,6 +727,22 @@ export async function deleteSave(saveId: string): Promise<DeleteSaveResponse> {
   });
 }
 
+export async function fetchSaveMigrationStatus(saveId: string): Promise<SaveMigrationStatus> {
+  return requestJson<SaveMigrationStatus>(`/saves/${encodeURIComponent(saveId)}/migration-status`);
+}
+
+export async function dryRunSaveMigration(saveId: string): Promise<SaveMigrationResponse> {
+  return requestJson<SaveMigrationResponse>(`/saves/${encodeURIComponent(saveId)}/migrate-dry-run`, {
+    method: "POST"
+  });
+}
+
+export async function applySaveMigration(saveId: string): Promise<SaveMigrationResponse> {
+  return requestJson<SaveMigrationResponse>(`/saves/${encodeURIComponent(saveId)}/migrate`, {
+    method: "POST"
+  });
+}
+
 export async function fetchSessionDebugEvents(sessionId: string): Promise<DebugEventListResponse> {
   return requestJson<DebugEventListResponse>(
     `/debug/sessions/${encodeURIComponent(sessionId)}/events`
@@ -416,6 +777,100 @@ export async function fetchDebugFactionGraph(sessionId: string): Promise<GraphRe
 
 export async function fetchAuthoringWorlds(): Promise<AuthoringWorldListResponse> {
   return requestJson<AuthoringWorldListResponse>("/authoring/worlds");
+}
+
+export async function fetchAuthoringMods(): Promise<AuthoringModListResponse> {
+  return requestJson<AuthoringModListResponse>("/authoring/mods");
+}
+
+export async function fetchAuthoringMod(modId: string): Promise<AuthoringModDetailResponse> {
+  return requestJson<AuthoringModDetailResponse>(`/authoring/mods/${encodeURIComponent(modId)}`);
+}
+
+export async function validateAuthoringMod(modId: string): Promise<AuthoringModValidation> {
+  return requestJson<AuthoringModValidation>(`/authoring/mods/${encodeURIComponent(modId)}/validate`, {
+    method: "POST"
+  });
+}
+
+export async function fetchAuthoringModLoadOrder(): Promise<AuthoringModLoadOrderResponse> {
+  return requestJson<AuthoringModLoadOrderResponse>("/authoring/mods/load-order");
+}
+
+export async function exportWorldArchive(worldId: string): Promise<ArchiveExportResponse> {
+  return requestJson<ArchiveExportResponse>(`/authoring/export/worlds/${encodeURIComponent(worldId)}`);
+}
+
+export async function importWorldArchive(archiveBase64: string, overwrite = false): Promise<ArchiveImportResponse> {
+  return requestJson<ArchiveImportResponse>("/authoring/import/worlds", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ archive_base64: archiveBase64, overwrite })
+  });
+}
+
+export async function exportModArchive(modId: string): Promise<ArchiveExportResponse> {
+  return requestJson<ArchiveExportResponse>(`/authoring/export/mods/${encodeURIComponent(modId)}`);
+}
+
+export async function importModArchive(archiveBase64: string, overwrite = false): Promise<ArchiveImportResponse> {
+  return requestJson<ArchiveImportResponse>("/authoring/import/mods", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ archive_base64: archiveBase64, overwrite })
+  });
+}
+
+export async function exportSaveArchive(saveId: string): Promise<ArchiveExportResponse> {
+  return requestJson<ArchiveExportResponse>(`/authoring/export/saves/${encodeURIComponent(saveId)}`);
+}
+
+export async function importSaveArchive(archiveBase64: string, overwrite = false): Promise<ArchiveImportResponse> {
+  return requestJson<ArchiveImportResponse>("/authoring/import/saves", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ archive_base64: archiveBase64, overwrite })
+  });
+}
+
+export async function fetchNarrativeEvalRecent(): Promise<NarrativeEvalRecentResponse> {
+  return requestJson<NarrativeEvalRecentResponse>("/evals/narrative/recent");
+}
+
+export async function runNarrativeEval(): Promise<NarrativeEvalReport> {
+  return requestJson<NarrativeEvalReport>("/evals/narrative/run", {
+    method: "POST"
+  });
+}
+
+export async function fetchNarrativeEval(runId: string): Promise<NarrativeEvalReport> {
+  return requestJson<NarrativeEvalReport>(`/evals/narrative/${encodeURIComponent(runId)}`);
+}
+
+export async function fetchDebugPerformanceRecent(): Promise<DebugPerformanceRecentResponse> {
+  return requestJson<DebugPerformanceRecentResponse>("/debug/performance/recent");
+}
+
+export async function fetchDebugPerformanceSummary(): Promise<DebugPerformanceSummaryResponse> {
+  return requestJson<DebugPerformanceSummaryResponse>("/debug/performance/summary");
+}
+
+export async function fetchPlaytestRecent(): Promise<PlaytestRecentResponse> {
+  return requestJson<PlaytestRecentResponse>("/playtests/recent");
+}
+
+export async function runPlaytest(request: PlaytestRunRequest): Promise<PlaytestReport> {
+  return requestJson<PlaytestReport>("/playtests/run", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(request)
+  });
+}
+
+export async function fetchPlaytest(runId: string): Promise<PlaytestReport> {
+  return requestJson<PlaytestReport>(`/playtests/${encodeURIComponent(runId)}`);
 }
 
 export async function fetchAuthoringWorld(worldId: string): Promise<AuthoringWorldDetailResponse> {
@@ -481,6 +936,52 @@ export async function previewAuthoringFileChange(
         file_name: fileName,
         proposed_content: proposedContent
       })
+    }
+  );
+}
+
+export async function fetchScenarioTemplates(): Promise<ScenarioTemplateListResponse> {
+  return requestJson<ScenarioTemplateListResponse>("/authoring/templates");
+}
+
+export async function previewScenarioTemplate(
+  templateId: string,
+  variables: Record<string, string>,
+  targetWorldId?: string
+): Promise<ScenarioTemplatePreviewResponse> {
+  return requestJson<ScenarioTemplatePreviewResponse>(
+    `/authoring/templates/${encodeURIComponent(templateId)}/preview`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        variables,
+        target_world_id: targetWorldId || null
+      })
+    }
+  );
+}
+
+export async function fetchQuestGraph(worldId: string): Promise<QuestGraphResponse> {
+  return requestJson<QuestGraphResponse>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/quests/graph`
+  );
+}
+
+export async function previewQuestGraph(
+  worldId: string,
+  graph: QuestGraphResponse
+): Promise<QuestGraphPreviewResponse> {
+  return requestJson<QuestGraphPreviewResponse>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/quests/graph/preview`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ graph })
     }
   );
 }

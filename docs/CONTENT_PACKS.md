@@ -33,7 +33,7 @@ Required fields:
 ```yaml
 world_id: mist_valley
 name: Mist Valley
-version: 0.6.0
+version: 0.7.0
 start_location_id: village_square
 description: A small valley world used for local testing.
 ```
@@ -397,7 +397,7 @@ Content-only mods use `mod.yaml`:
 id: sample_mod
 name: Sample Mod
 version: 0.1.0
-engine_version_min: 0.6.0
+engine_version_min: 0.7.0
 engine_version_max:
 content_schema_version: "6"
 dependencies: []
@@ -423,13 +423,13 @@ Rules:
 - Entry worlds are validated through the normal world validation pipeline.
 - Dependency, optional dependency, conflict, engine-version,
   content-schema-version, and load-order checks are simple and deterministic in
-  v0.6.
+  v0.7.
 - There is no online registry, automatic download, arbitrary script execution,
   hot reload of active saves, or complex SAT-style version solver.
 
 ## Save Migration Notes
 
-v0.6 saves include migration metadata:
+v0.6+ saves include migration metadata:
 
 - `engine_version`
 - `schema_version`
@@ -463,14 +463,111 @@ APIs may include more complete graph information, but only when
 `ENABLE_DEBUG_API=true`, and must not return API keys, environment variables,
 raw `GameState`, or raw `state_deltas`.
 
-Known v0.6 hardening note: player graph filtering is currently stricter than
-the `visible_state.relationships` summary. Before v0.6 acceptance, the player
-visible-state relationship summary should also filter relationship endpoints by
-actor visibility.
+Known v0.7 hardening note: authoring and debug graph views can expose full
+local content for the creator/developer. Player graph APIs must remain filtered
+to player-known relationships and factions.
+
+## ScenarioTemplate Schema
+
+v0.7 scenario templates live under `templates/` and are YAML data, not
+executable scripts. They can generate world, quest, location cluster, NPC set,
+faction set, mystery, or combat encounter drafts.
+
+```yaml
+id: mist_valley_mystery_seed
+name: Mist Valley Mystery Seed
+description: Adds a small mystery-oriented starter draft.
+template_type: mystery
+required_variables:
+  - world_id
+  - mystery_name
+optional_variables:
+  tone: quiet
+output_files:
+  - file_name: facts.yaml
+    content: |
+      facts:
+        - id: fact_{{mystery_name}}
+          text: A safe author-facing draft fact.
+          visibility: discoverable
+          known_by: []
+          tags: [mystery]
+validation_rules:
+  - validate_world_pack
+tags:
+  - starter
+```
+
+Template variable names must be safe ids, variable values cannot contain path
+traversal patterns, and output files must be whitelisted content YAML files.
+Preview/render does not write active saves or active `GameState`; applying
+rendered output must go through authoring save and validation.
+
+## Quest Graph Format
+
+The v0.7 quest graph editor converts `quests.yaml` into a graph-shaped
+authoring DTO:
+
+- quest nodes with `id`, `title`, `description`, `initial_stage`, and
+  `visibility`
+- stage nodes with `id`, `title`, `description`, objectives, and
+  `next_stages`
+- trigger nodes with `type`, `id`, `action`, optional `objective_id`, and
+  optional `next_stage`
+- edges for stage transitions and trigger-to-stage transitions
+
+The graph preview endpoint converts the graph back to `quests.yaml` and runs
+draft validation. It does not write files and does not modify active
+`GameState`.
+
+## Import / Export Package Format
+
+v0.7 local archives are zip files with `export_manifest.json`:
+
+```json
+{
+  "export_type": "world",
+  "id": "mist_valley",
+  "schema_version": "0.7",
+  "content_pack_version": "0.7.0",
+  "mod_version": null,
+  "files": ["worlds/mist_valley/manifest.yaml"]
+}
+```
+
+Supported export types are `world`, `mod`, and `save`. Import rejects zip
+slip/path traversal, executable files, `.env`, secret files, database files,
+and logs. World imports run world validation, mod imports run mod validation,
+and save imports check migration status. Save archives can contain full hidden
+runtime state and must be treated as private local backup data.
+
+## Mod Manager Fields
+
+The Mod Manager UI displays content-only mod metadata from `mod.yaml`:
+
+- id, name, version, author, description
+- engine version min/max
+- content schema version
+- dependencies and optional dependencies
+- conflicts
+- load order hint and resolved load order
+- compatible worlds
+- migration notes
+- validation status
+
+The manager does not execute code, download online mods, hot-reload active
+saves, or bypass validation.
+
+## Local Provider Notes
+
+Content packs do not configure model providers. Provider selection remains a
+runtime environment concern through `LLM_PROVIDER`. `local_stub` and
+`local_http` are language-layer providers only. Their output cannot directly
+write content pack files, active saves, or `GameState`.
 
 ## Combat and Life Fields
 
-Combat/life state fields used by v0.6 include:
+Combat/life state fields used by v0.6+ include:
 
 - `alive`
 - `hp`
@@ -536,8 +633,8 @@ The CLI returns a non-zero exit code when errors are present.
 
 ## Current Limits
 
-- The v0.6 authoring UI is richer than a textarea editor, but it is still not a
-  full IDE or graphical quest graph editor.
+- The v0.7 authoring UI has structured panels and a quest graph preview, but it
+  is still not a full IDE or complex drag/drop graph editor.
 - No automatic YAML repair.
 - No online mod registry or download support.
 - No hot reload of running saves after authoring edits.
@@ -545,3 +642,5 @@ The CLI returns a non-zero exit code when errors are present.
 - No dynamic economy simulation.
 - No LLM-powered automatic content rewriting.
 - No formal desktop installer or auto-update path.
+- No online import/export or cloud sync.
+- No template script execution.

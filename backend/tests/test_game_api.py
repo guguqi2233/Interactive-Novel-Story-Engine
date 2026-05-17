@@ -1,17 +1,32 @@
 from pathlib import Path
 import json
 
+import pytest
 from fastapi.testclient import TestClient
 
+from app.config import Settings
 from app.db.repository import SQLiteSaveRepository
+from app.evals.narrative_quality import NarrativeQualityCaseResult, NarrativeQualityReport
 from app.main import app
 from app.session_store import InMemorySessionStore
+
+
+@pytest.fixture(autouse=True)
+def reset_app_overrides() -> None:
+    yield
+    for name in ("settings", "worlds_root", "mods_root"):
+        if hasattr(app.state, name):
+            delattr(app.state, name)
 
 
 def make_client(tmp_path: Path | None = None) -> TestClient:
     app.state.session_store = InMemorySessionStore()
     if tmp_path is not None:
         app.state.save_repository = SQLiteSaveRepository(tmp_path / "api_save.db")
+    if hasattr(app.state, "settings"):
+        delattr(app.state, "settings")
+    if hasattr(app.state, "worlds_root"):
+        delattr(app.state, "worlds_root")
     return TestClient(app)
 
 
@@ -38,6 +53,130 @@ def assert_visible_state_schema(visible_state: dict) -> None:
     assert isinstance(visible_state["quests"], list)
     assert isinstance(visible_state["factions"], list)
     assert isinstance(visible_state["known_rumors"], list)
+
+
+def test_studio_status_returns_safe_summary(tmp_path: Path) -> None:
+    app.state.settings = Settings(
+        enable_authoring_api=False,
+        enable_debug_api=False,
+        enable_perf_logging=False,
+        llm_provider="local_stub",
+        llm_api_key="super-secret-test-key",
+    )
+    client = make_client(tmp_path)
+    app.state.settings = Settings(
+        enable_authoring_api=False,
+        enable_debug_api=False,
+        enable_perf_logging=False,
+        llm_provider="local_stub",
+        llm_api_key="super-secret-test-key",
+    )
+
+    response = client.get("/studio/status")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["backend_status"] == "ok"
+    assert payload["engine_version"]
+    assert payload["schema_version"]
+    assert payload["authoring_api_enabled"] is False
+    assert payload["debug_api_enabled"] is False
+    assert payload["performance_logging_enabled"] is False
+    assert payload["llm_provider"] == "local_stub"
+    assert "super-secret-test-key" not in response.text
+    assert "llm_api_key" not in response.text
+    assert "state_deltas" not in response.text
+    assert "sealed_letter" not in response.text
+
+
+def test_studio_status_handles_empty_worlds_and_saves(tmp_path: Path) -> None:
+    app.state.save_repository = SQLiteSaveRepository(tmp_path / "empty_studio.db")
+    app.state.session_store = InMemorySessionStore()
+    app.state.worlds_root = str(tmp_path / "worlds")
+    app.state.settings = Settings(enable_authoring_api=False, enable_debug_api=False)
+    client = TestClient(app)
+
+    response = client.get("/studio/status")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["worlds_count"] == 0
+    assert payload["recent_saves"] == []
+    assert payload["validation_summaries"] == []
+
+
+def test_narrative_eval_api_runs_and_returns_safe_report(tmp_path: Path) -> None:
+    app.state.save_repository = SQLiteSaveRepository(tmp_path / "eval_api.db")
+    app.state.session_store = InMemorySessionStore()
+    app.state.narrative_eval_reports = []
+    app.state.settings = Settings(enable_debug_api=True, llm_api_key="super-secret-test-key")
+    client = TestClient(app)
+
+    run_response = client.post("/evals/narrative/run")
+    recent_response = client.get("/evals/narrative/recent")
+
+    assert run_response.status_code == 200
+    payload = run_response.json()
+    assert set(payload) >= {
+        "run_id",
+        "created_at",
+        "total_cases",
+        "passed",
+        "failed",
+        "skipped",
+        "failure_reasons",
+        "categories",
+        "case_results",
+    }
+    assert "super-secret-test-key" not in run_response.text
+    assert "sealed_letter" not in run_response.text
+    assert recent_response.status_code == 200
+    assert recent_response.json()["reports"][0]["run_id"] == payload["run_id"]
+
+    detail_response = client.get(f"/evals/narrative/{payload['run_id']}")
+    assert detail_response.status_code == 200
+    assert detail_response.json()["run_id"] == payload["run_id"]
+
+
+def test_narrative_eval_api_obeys_debug_toggle(tmp_path: Path) -> None:
+    app.state.save_repository = SQLiteSaveRepository(tmp_path / "eval_disabled.db")
+    app.state.session_store = InMemorySessionStore()
+    app.state.narrative_eval_reports = []
+    app.state.settings = Settings(enable_debug_api=False)
+    client = TestClient(app)
+
+    assert client.get("/evals/narrative/recent").status_code == 403
+    assert client.post("/evals/narrative/run").status_code == 403
+
+
+def test_narrative_eval_api_redacts_legacy_hidden_failure_reasons(tmp_path: Path) -> None:
+    hidden_text = "hidden launch code"
+    report = NarrativeQualityReport(
+        run_id="legacy-eval-report",
+        total_cases=1,
+        passed=0,
+        failed=1,
+        failure_reasons={"case": [f"no_hidden_fact_leakage:forbidden:{hidden_text}"]},
+        case_results=[
+            NarrativeQualityCaseResult(
+                case_id="case",
+                category="visibility",
+                passed=False,
+                failure_reasons=[f"no_hidden_fact_leakage:forbidden:{hidden_text}"],
+            )
+        ],
+    )
+    app.state.save_repository = SQLiteSaveRepository(tmp_path / "eval_redaction.db")
+    app.state.session_store = InMemorySessionStore()
+    app.state.narrative_eval_reports = [report]
+    app.state.settings = Settings(enable_debug_api=True)
+    client = TestClient(app)
+
+    response = client.get("/evals/narrative/legacy-eval-report")
+
+    assert response.status_code == 200
+    assert hidden_text not in response.text
+    assert ":forbidden:[redacted]" in response.text
 
 
 def test_start_game_returns_initial_visible_state() -> None:

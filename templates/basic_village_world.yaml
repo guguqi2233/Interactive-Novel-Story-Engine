@@ -1,0 +1,110 @@
+id: basic_village_world
+name: Basic Village World
+description: A minimal reusable world pack with one village square, one NPC, one public fact, and one starter quest.
+template_type: world
+required_variables:
+  - world_id
+  - world_name
+  - start_location_id
+  - npc_id
+  - npc_name
+optional_variables:
+  world_description: A new local story world.
+  start_location_name: Village Square
+  start_location_description: A modest square where the first threads of the story gather.
+  faction_id: villagers
+  faction_name: Villagers
+  item_id: brass_key
+  item_name: Brass Key
+  quest_id: first_thread
+  fact_id: village_exists
+output_files:
+  - file_name: manifest.yaml
+    content: |
+      world_id: {{world_id}}
+      name: {{world_name}}
+      version: 0.1.0
+      description: {{world_description}}
+      start_location_id: {{start_location_id}}
+  - file_name: locations.yaml
+    content: |
+      locations:
+        - id: {{start_location_id}}
+          name: {{start_location_name}}
+          description: {{start_location_description}}
+          exits: {}
+          visible_objects:
+            - {{item_id}}
+  - file_name: npcs.yaml
+    content: |
+      npcs:
+        - id: {{npc_id}}
+          name: {{npc_name}}
+          location_id: {{start_location_id}}
+          personality: Watchful and practical.
+          faction_id: {{faction_id}}
+          knowledge:
+            - {{fact_id}}
+  - file_name: items.yaml
+    content: |
+      items:
+        - id: {{item_id}}
+          name: {{item_name}}
+          description: A small key ready to become important later.
+          location_id: {{start_location_id}}
+          portable: true
+          tags:
+            - starter
+  - file_name: quests.yaml
+    content: |
+      quests:
+        - id: {{quest_id}}
+          title: First Thread
+          description: Learn what matters in {{world_name}}.
+          initial_stage: begin
+          visibility: public
+          stages:
+            - id: begin
+              title: Begin
+              description: Speak with {{npc_name}} and look around.
+              objectives:
+                - talk_to_{{npc_id}}
+              next_stages: []
+          triggers:
+            - type: npc_talked
+              id: {{npc_id}}
+              action: complete_objective
+              objective_id: talk_to_{{npc_id}}
+  - file_name: facts.yaml
+    content: |
+      facts:
+        - id: {{fact_id}}
+          text: {{world_name}} is ready for its first story.
+          visibility: public
+          known_by:
+            - player
+            - {{npc_id}}
+          tags:
+            - template
+  - file_name: factions.yaml
+    content: |
+      factions:
+        - id: {{faction_id}}
+          name: {{faction_name}}
+          description: Ordinary people with local stakes.
+          default_reputation: 0
+          known_by_player: true
+          tags:
+            - template
+  - file_name: rumors.yaml
+    content: |
+      rumors: []
+  - file_name: relationships.yaml
+    content: |
+      relationships: []
+validation_rules:
+  - Rendered world must pass validate_world_pack.
+  - Output files must be authoring YAML files only.
+tags:
+  - starter
+  - world

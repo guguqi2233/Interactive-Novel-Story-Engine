@@ -98,6 +98,26 @@ def test_hidden_fact_leak_fails() -> None:
     assert any(NarrativeQualityRule.NO_HIDDEN_FACT_LEAKAGE in reason for reason in result.failure_reasons)
 
 
+def test_hidden_fact_failure_reason_redacts_hidden_text() -> None:
+    hidden_text = "hidden launch code"
+    result = evaluate_narrative_quality(
+        _case(
+            NarrativeResult(
+                text=f"The narrator leaked {hidden_text}.",
+                suggested_actions=["observe"],
+                short_summary="Hidden leak.",
+            ),
+            hidden_fact_texts=[hidden_text],
+        )
+    )
+
+    joined_reasons = " ".join(result.failure_reasons)
+    assert not result.passed
+    assert NarrativeQualityRule.NO_HIDDEN_FACT_LEAKAGE in joined_reasons
+    assert hidden_text not in joined_reasons
+    assert "[redacted:" in joined_reasons
+
+
 def test_contradiction_with_action_result_fails() -> None:
     result = evaluate_narrative_quality(
         _case(
@@ -175,6 +195,11 @@ def test_report_shape() -> None:
     assert report.total_cases == 2
     assert report.passed == 1
     assert report.failed == 1
+    assert report.skipped == 0
+    assert report.run_id
+    assert report.created_at
+    assert report.case_results == report.results
+    assert report.categories
     assert "case" in report.failure_reasons
 
 
@@ -215,4 +240,14 @@ def test_eval_narrative_quality_cli_outputs_report() -> None:
     assert completed.returncode == 0, completed.stderr
     payload = json.loads(completed.stdout)
     assert payload["total_cases"] >= 1
-    assert set(payload) >= {"total_cases", "passed", "failed", "failure_reasons"}
+    assert set(payload) >= {
+        "run_id",
+        "created_at",
+        "total_cases",
+        "passed",
+        "failed",
+        "skipped",
+        "failure_reasons",
+        "categories",
+        "case_results",
+    }

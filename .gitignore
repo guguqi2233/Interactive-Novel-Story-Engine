@@ -7,3 +7,11 @@ node_modules/
 dist/
 frontend/.env
 *.tsbuildinfo
+frontend/dist/
+desktop-dist/
+release/
+src-tauri/target/
+*.msi
+*.dmg
+*.AppImage
+*.exe

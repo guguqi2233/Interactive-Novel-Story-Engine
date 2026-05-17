@@ -170,6 +170,76 @@ class SaveListResponse(BaseModel):
     saves: list[SaveSummaryResponse] = Field(default_factory=list)
 
 
+class StudioValidationSummaryResponse(BaseModel):
+    world_id: str
+    ok: bool
+    error_count: int = 0
+    warning_count: int = 0
+
+
+class StudioPlaytestSummaryResponse(BaseModel):
+    available: bool = False
+    recent_runs: int = 0
+    latest_status: str | None = None
+
+
+class StudioStatusResponse(BaseModel):
+    local_only: bool = True
+    engine_version: str
+    schema_version: str
+    backend_status: str
+    worlds_count: int
+    recent_saves: list[SaveSummaryResponse] = Field(default_factory=list)
+    authoring_api_enabled: bool
+    debug_api_enabled: bool
+    performance_logging_enabled: bool
+    llm_provider: str
+    local_model_provider_status: str | None = None
+    validation_summaries: list[StudioValidationSummaryResponse] = Field(default_factory=list)
+    playtest_summary: StudioPlaytestSummaryResponse = Field(default_factory=StudioPlaytestSummaryResponse)
+
+
+class StudioConfigSummaryResponse(BaseModel):
+    local_only: bool = True
+    llm_provider: str
+    provider_status: str
+    provider_sends_prompts_off_machine: bool
+    authoring_api_enabled: bool
+    debug_api_enabled: bool
+    performance_logging_enabled: bool
+    playtest_api_enabled: bool
+    eval_api_enabled: bool
+    database_configured: bool
+    database_path_hint: str
+    api_key_configured: bool
+    privacy_notes: list[str] = Field(default_factory=list)
+
+
+class NarrativeEvalCaseResultResponse(BaseModel):
+    case_id: str
+    category: str
+    passed: bool
+    skipped: bool = False
+    failure_reasons: list[str] = Field(default_factory=list)
+
+
+class NarrativeEvalReportResponse(BaseModel):
+    run_id: str
+    created_at: str
+    total_cases: int
+    passed: int
+    failed: int
+    skipped: int = 0
+    failure_reasons: dict[str, list[str]] = Field(default_factory=dict)
+    categories: dict[str, dict[str, int]] = Field(default_factory=dict)
+    case_results: list[NarrativeEvalCaseResultResponse] = Field(default_factory=list)
+
+
+class NarrativeEvalRecentResponse(BaseModel):
+    local_only: bool = True
+    reports: list[NarrativeEvalReportResponse] = Field(default_factory=list)
+
+
 class SaveGameResponse(BaseModel):
     save_id: str
     session_id: str
@@ -278,6 +348,53 @@ class DebugPerformanceSummaryResponse(BaseModel):
     entries: list[DebugPerformanceSummaryEntryResponse] = Field(default_factory=list)
 
 
+class PlaytestRunRequest(BaseModel):
+    world_id: str = "mist_valley"
+    agent_type: str = "random_valid_action_agent"
+    steps: int = Field(default=25, ge=0, le=250)
+    seed: int = 123
+    save_load_check: bool = False
+
+
+class PlaytestActionRecordResponse(BaseModel):
+    step: int
+    turn_before: int
+    turn_after: int
+    input_text: str
+    action_type: str
+    result: str
+    event_id: str | None = None
+
+
+class PlaytestFinalStateSummaryResponse(BaseModel):
+    world_id: str
+    turn: int
+    location_id: str
+    event_count: int
+
+
+class PlaytestReportResponse(BaseModel):
+    local_only: bool = True
+    run_id: str
+    created_at: str
+    agent_type: str
+    world_id: str
+    seed: int
+    steps_requested: int
+    turns_run: int
+    actions_taken: list[PlaytestActionRecordResponse] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
+    invariant_violations: list[str] = Field(default_factory=list)
+    visibility_leaks: list[str] = Field(default_factory=list)
+    save_load_failures: list[str] = Field(default_factory=list)
+    final_state_summary: PlaytestFinalStateSummaryResponse
+
+
+class PlaytestRecentResponse(BaseModel):
+    local_only: bool = True
+    reports: list[PlaytestReportResponse] = Field(default_factory=list)
+
+
 class AuthoringValidationIssueResponse(BaseModel):
     severity: str
     file: str
@@ -380,6 +497,110 @@ class AuthoringFileWriteResponse(BaseModel):
     validation: AuthoringValidationResponse
 
 
+class ScenarioTemplateOutputFileResponse(BaseModel):
+    file_name: str
+    content: str
+
+
+class ScenarioTemplateResponse(BaseModel):
+    id: str
+    name: str
+    description: str = ""
+    template_type: str
+    required_variables: list[str] = Field(default_factory=list)
+    optional_variables: dict[str, str] = Field(default_factory=dict)
+    output_files: list[ScenarioTemplateOutputFileResponse] = Field(default_factory=list)
+    validation_rules: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+
+
+class ScenarioTemplateListResponse(BaseModel):
+    local_only: bool = True
+    templates: list[ScenarioTemplateResponse] = Field(default_factory=list)
+
+
+class ScenarioTemplateRenderRequest(BaseModel):
+    variables: dict[str, str] = Field(default_factory=dict)
+    target_world_id: str | None = None
+
+
+class RenderedScenarioTemplateFileResponse(BaseModel):
+    file_name: str
+    content: str
+
+
+class RenderedScenarioTemplateResponse(BaseModel):
+    template_id: str
+    template_type: str
+    files: list[RenderedScenarioTemplateFileResponse] = Field(default_factory=list)
+
+
+class ScenarioTemplatePreviewResponse(BaseModel):
+    local_only: bool = True
+    template: ScenarioTemplateResponse
+    rendered: RenderedScenarioTemplateResponse
+    validation_report: AuthoringValidationResponse | None = None
+    writes_to_disk: bool = False
+
+
+class QuestObjectiveNodeResponse(BaseModel):
+    id: str
+    text: str
+
+
+class QuestStageNodeResponse(BaseModel):
+    id: str
+    title: str
+    description: str = ""
+    objectives: list[QuestObjectiveNodeResponse] = Field(default_factory=list)
+    next_stages: list[str] = Field(default_factory=list)
+
+
+class QuestTriggerNodeResponse(BaseModel):
+    type: str
+    id: str
+    action: str
+    objective_id: str | None = None
+    next_stage: str | None = None
+
+
+class QuestGraphNodeResponse(BaseModel):
+    id: str
+    title: str
+    description: str = ""
+    initial_stage: str
+    visibility: str
+    stages: list[QuestStageNodeResponse] = Field(default_factory=list)
+    triggers: list[QuestTriggerNodeResponse] = Field(default_factory=list)
+
+
+class QuestGraphEdgeResponse(BaseModel):
+    source: str
+    target: str
+    type: str
+    quest_id: str
+    label: str | None = None
+
+
+class QuestGraphResponse(BaseModel):
+    local_only: bool = True
+    world_id: str
+    quests: list[QuestGraphNodeResponse] = Field(default_factory=list)
+    edges: list[QuestGraphEdgeResponse] = Field(default_factory=list)
+
+
+class QuestGraphPreviewRequest(BaseModel):
+    graph: QuestGraphResponse
+
+
+class QuestGraphPreviewResponse(BaseModel):
+    local_only: bool = True
+    world_id: str
+    graph: QuestGraphResponse
+    yaml_content: str
+    validation: AuthoringValidationResponse
+
+
 class AuthoringCreateWorldRequest(BaseModel):
     world_id: str = Field(pattern=r"^[A-Za-z0-9_-]+$")
     name: str
@@ -415,6 +636,44 @@ class AuthoringModSummaryResponse(BaseModel):
 class AuthoringModListResponse(BaseModel):
     local_only: bool = True
     mods: list[AuthoringModSummaryResponse] = Field(default_factory=list)
+
+
+class AuthoringModDetailResponse(BaseModel):
+    local_only: bool = True
+    mod: AuthoringModSummaryResponse
+    validation: "AuthoringModValidationResponse | None" = None
+
+
+class AuthoringModLoadOrderResponse(BaseModel):
+    local_only: bool = True
+    ok: bool
+    load_order: list[str] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
+
+
+class ArchiveExportResponse(BaseModel):
+    local_only: bool = True
+    export_type: str
+    id: str
+    file_name: str
+    archive_base64: str
+
+
+class ArchiveImportRequest(BaseModel):
+    archive_base64: str
+    overwrite: bool = False
+
+
+class ArchiveImportResponse(BaseModel):
+    local_only: bool = True
+    imported: bool
+    import_type: str
+    id: str
+    validation_ok: bool = True
+    errors: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    migration_needed: bool = False
+    migration_warnings: list[str] = Field(default_factory=list)
 
 
 class AuthoringModValidationResponse(BaseModel):

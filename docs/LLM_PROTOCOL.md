@@ -20,9 +20,10 @@ Supported values:
 - `mock`: default for local development and tests.
 - `local_stub`: deterministic local-provider placeholder for tests and offline
   development. It does not call a model service.
-- `local_http`: v0.6 interface stub for a future local HTTP model service. It
-  validates `LOCAL_LLM_BASE_URL`, `LOCAL_LLM_MODEL`, and timeout configuration,
-  but does not bind to a specific local model product yet.
+- `local_http`: configurable local HTTP provider for local model services that
+  expose an OpenAI-compatible `/chat/completions` style endpoint. It validates
+  `LOCAL_LLM_BASE_URL`, `LOCAL_LLM_MODEL`, timeout, and JSON-mode configuration
+  without binding the engine to one specific local model product.
 - `openai`: OpenAI API provider.
 
 Business modules depend on `LLMProvider`, not `OpenAIProvider` or a vendor SDK. Tests may use `FakeLLMProvider` as a controlled test double.
@@ -42,6 +43,7 @@ Local provider settings:
 - `LOCAL_LLM_BASE_URL`
 - `LOCAL_LLM_MODEL`
 - `LOCAL_LLM_TIMEOUT_SECONDS`
+- `LOCAL_LLM_JSON_MODE`
 
 These settings must not expand LLM authority. Local models remain parser,
 narrator, summarizer, or draft assistant providers behind `LLMProvider`; they
@@ -155,7 +157,7 @@ It does not:
 
 Any future API/UI exposure for LLM-assisted drafts must remain authoring-only and require explicit user review/export.
 
-## v0.5/v0.6 Rule Modules Do Not Call LLM
+## v0.5/v0.6/v0.7 Rule And Studio Modules Do Not Call LLM
 
 The following v0.5 modules are deterministic rule/code paths and do not call `LLMProvider`:
 
@@ -187,6 +189,26 @@ The following v0.6 modules are also deterministic code paths and do not call
 - advanced combat slice: stance, status effects, non-lethal attack, flee risk,
   and combat visible summary
 
+The following v0.7 local studio modules are also deterministic code paths and
+do not call `LLMProvider`:
+
+- Studio Home Dashboard and `GET /studio/status`
+- Save Migration UI and migration API use
+- Mod Manager UI and mod validation display
+- Narrative Quality Dashboard report storage and display
+- Performance Dashboard display of sanitized local samples
+- Desktop launcher scripts and packaging documentation
+- Scenario Template System list/preview/render/validation
+- Visual Quest Graph Editor parse/preview/YAML conversion
+- Automated Playtesting Dashboard and playtest report display
+- Import/export service and archive validation
+- Settings / Local Privacy summary endpoint and UI
+
+These modules may display safe provider configuration status, but they do not
+ask a model to decide validation, migration, mod compatibility, graph
+visibility, import safety, playtest results, performance status, quest graph
+correctness, or scenario template output validity.
+
 Existing deterministic v0.3/v0.4 rule paths also do not call the LLM:
 
 - search
@@ -207,9 +229,10 @@ Existing deterministic v0.3/v0.4 rule paths also do not call the LLM:
 
 They may receive a schema-validated `PlayerIntent`, but action results and state changes are decided by Python rules and emitted as `StateDelta`.
 
-## v0.6 Local Provider Slice
+## v0.7 Local Provider Integration
 
-v0.6 adds provider-factory entries for local model research:
+v0.7 upgrades the local provider slice into a configurable local HTTP
+integration while keeping the same authority boundary:
 
 - `local_stub`
 - `local_http`
@@ -217,16 +240,28 @@ v0.6 adds provider-factory entries for local model research:
 `local_stub` is safe for tests and offline development. It returns
 schema-validated deterministic `PlayerIntent` and `NarrativeResult` payloads.
 
-`local_http` is only a configuration-checked placeholder. Missing
-`LOCAL_LLM_BASE_URL` fails clearly. Runtime generation currently raises a clear
-provider error instead of calling an unspecified local service.
+`local_http` posts chat requests to
+`{LOCAL_LLM_BASE_URL}/chat/completions` with `model`, `messages`, and
+`temperature`. When `LOCAL_LLM_JSON_MODE=true`, JSON calls include
+`response_format: {"type": "json_object"}`. Responses are accepted from common
+OpenAI-compatible shapes such as `choices[0].message.content`, or from simple
+`content`/`text`/`response` fields for lightweight local test harnesses.
+
+Missing `LOCAL_LLM_BASE_URL` fails clearly. HTTP failures, non-JSON HTTP
+responses, unparseable JSON model content, and Pydantic schema failures are
+reported as `LLMProviderError`.
+
+`generate_text` returns provider text only to language-layer callers.
+`generate_json` parses model text as JSON and validates it against the caller's
+Pydantic schema before returning it. A local model service is therefore not a
+trusted state writer; it has the same bounded authority as any other provider.
 
 Business code must continue to depend only on `LLMProvider`. No rule module may
 directly instantiate local provider classes or treat local model output as
 canonical world state.
 
 The local provider slice does not grant a local model any additional authority.
-`local_stub` and future `local_http` responses are still schema-validated and
+`local_stub` and `local_http` responses are still schema-validated and
 may only feed parser, narrator, summarizer, or author-facing draft workflows.
 World outcomes, combat results, migration output, graph visibility, authoring
 validation, mod compatibility, and playtesting reports remain rule-engine
@@ -234,7 +269,7 @@ decisions.
 
 ## Narrative Quality Evals
 
-v0.6 adds deterministic narrative quality evals. They do not use an external
+v0.6/v0.7 uses deterministic narrative quality evals. They do not use an external
 LLM judge and do not call real model APIs in automated tests. The evals inspect
 mock/fake narrative outputs for:
 
@@ -247,6 +282,10 @@ mock/fake narrative outputs for:
 
 Eval reports are testing artifacts only. They do not modify `GameState` and do
 not become canonical story facts.
+
+The v0.7 dashboard is only a report viewer/runner for these deterministic
+checks. It must not send hidden fixtures to an external judge, and failed eval
+case summaries shown in the UI must be safe/redacted.
 
 ## Output Validation
 
@@ -292,7 +331,7 @@ Prompt inputs must obey world visibility:
 
 The LLM can render prose or draft authoring candidates, but it cannot create canonical items, NPCs, locations, quest progress, crimes, rumors, combat outcomes, faction changes, memories, relationships, trade results, or facts.
 
-## Known v0.6 Hardening Items
+## Known v0.7 Hardening Items
 
 - Split `ActionResult.reason` into `player_reason` and `debug_reason`.
 - Classify memory summaries from raw non-player-visible events as `debug_only` or `hidden` by default.
@@ -304,3 +343,7 @@ The LLM can render prose or draft authoring candidates, but it cannot create can
 - Keep performance instrumentation tags free of prompt text, content text,
   hidden fact text, raw `GameState`, raw `state_deltas`, API keys, or local
   absolute paths.
+- Keep save export UX explicit that save archives can contain hidden runtime
+  state and event history.
+- Consider a dedicated `require_eval_api()` so eval routes can be enabled
+  separately from broad debug access.
