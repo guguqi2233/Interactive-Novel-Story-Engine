@@ -33,6 +33,7 @@ import {
   fetchScenarioTemplates,
   fetchScenarioRegression,
   fetchScenarioRegressionCases,
+  fetchAuthoringScenarios,
   fetchGameState,
   fetchDebugFactionGraph,
   fetchDebugRelationshipGraph,
@@ -52,28 +53,35 @@ import {
   fetchSessionTimelineReplay,
   fetchStudioConfigSummary,
   fetchStudioStatus,
+  fetchContentCoverage,
   GameInputResponse,
   GraphResponse,
   listSaves,
   loadGame,
   NarrativeEvalReport,
   PlaytestReport,
+  PlaytestBatchRun,
   previewAuthoringFileChange,
   previewAuthoringMap,
+  previewAuthoringScenario,
   previewQuestGraph,
   previewScenarioTemplate,
   runNarrativeEval,
+  runContentCoverage,
   runPlaytest,
+  runPlaytestBatch,
   runScenarioRegression,
   saveGame,
   saveAuthoringFile,
   saveAuthoringMap,
+  saveAuthoringScenario,
   saveQuestGraph,
   SaveSummary,
   SaveMigrationResponse,
   SaveMigrationStatus,
   ScenarioTemplate,
   ScenarioTemplatePreviewResponse,
+  ScenarioAuthoringPreviewResponse,
   ScenarioRegressionCase,
   ScenarioRegressionRun,
   QuestGraphResponse,
@@ -85,6 +93,7 @@ import {
   TimelineReplayResponse,
   TimelineEventView,
   validateAuthoringMap,
+  validateAuthoringScenario,
   validateQuestGraph,
   validateAuthoringWorld,
   validateAuthoringMod,
@@ -116,7 +125,11 @@ import {
   validateItemEconomyAuthoring,
   validateNPCGoalGraph,
   validateRumorCrimeAuthoring,
-  validateSocialAuthoringGraph
+  validateSocialAuthoringGraph,
+  fetchWorldHealth,
+  runWorldHealth,
+  WorldHealthScore,
+  ContentCoverageReport
 } from "./api";
 
 type StoryEntry = {
@@ -182,6 +195,7 @@ type AuthoringToolId =
   | "social"
   | "economy"
   | "rumor_crime"
+  | "scenarios"
   | "templates"
   | "validation";
 
@@ -192,6 +206,7 @@ const AUTHORING_TOOL_NAV: { id: AuthoringToolId; label: string; description: str
   { id: "social", label: "Factions / Relationships", description: "factions, trust, conflict, visibility", preferredFile: "factions.yaml" },
   { id: "economy", label: "Items / Economy", description: "items, prices, merchants, shops", preferredFile: "items.yaml" },
   { id: "rumor_crime", label: "Rumors / Crime", description: "rumors and social consequence chains", preferredFile: "rumors.yaml" },
+  { id: "scenarios", label: "Scenarios", description: "regression case authoring" },
   { id: "templates", label: "Templates", description: "local scenario templates" },
   { id: "validation", label: "Validation", description: "validation graph and issue routing" }
 ];
@@ -293,11 +308,16 @@ export function App() {
   const [performanceError, setPerformanceError] = useState<string>("");
   const [playtestReports, setPlaytestReports] = useState<PlaytestReport[]>([]);
   const [selectedPlaytest, setSelectedPlaytest] = useState<PlaytestReport | null>(null);
+  const [playtestBatchReport, setPlaytestBatchReport] = useState<PlaytestBatchRun | null>(null);
   const [playtestError, setPlaytestError] = useState<string>("");
   const [scenarioRegressionCases, setScenarioRegressionCases] = useState<ScenarioRegressionCase[]>([]);
   const [scenarioRegressionRuns, setScenarioRegressionRuns] = useState<ScenarioRegressionRun[]>([]);
   const [selectedScenarioRegressionRun, setSelectedScenarioRegressionRun] = useState<ScenarioRegressionRun | null>(null);
   const [scenarioRegressionError, setScenarioRegressionError] = useState<string>("");
+  const [worldHealth, setWorldHealth] = useState<WorldHealthScore | null>(null);
+  const [worldHealthError, setWorldHealthError] = useState<string>("");
+  const [contentCoverage, setContentCoverage] = useState<ContentCoverageReport | null>(null);
+  const [contentCoverageError, setContentCoverageError] = useState<string>("");
 
   useEffect(() => {
     void handleStart();
@@ -308,6 +328,8 @@ export function App() {
     void refreshPerformance();
     void refreshPlaytests();
     void refreshScenarioRegressions();
+    void refreshWorldHealth();
+    void refreshContentCoverage();
   }, []);
 
   const knownFacts = useMemo(
@@ -477,6 +499,33 @@ export function App() {
     }
   }
 
+  async function handleRunPlaytestBatch(options: {
+    worldId: string;
+    agentTypes: string[];
+    seeds: number[];
+    steps: number;
+    stopOnBlocker: boolean;
+    saveLoadCheck: boolean;
+  }) {
+    setPlaytestError("");
+    try {
+      const report = await runPlaytestBatch({
+        world_id: options.worldId,
+        scenario_ids: [],
+        agent_types: options.agentTypes,
+        seeds: options.seeds,
+        steps: options.steps,
+        max_parallelism: 1,
+        stop_on_blocker: options.stopOnBlocker,
+        save_load_check: options.saveLoadCheck,
+      });
+      setPlaytestBatchReport(report);
+      void refreshStudioStatus();
+    } catch (err) {
+      setPlaytestError(toErrorMessage(err));
+    }
+  }
+
   async function handleSelectPlaytest(runId: string) {
     setPlaytestError("");
     try {
@@ -525,6 +574,48 @@ export function App() {
       setScenarioRegressionRuns((previous) => [...previous, run]);
     } catch (err) {
       setScenarioRegressionError(toErrorMessage(err));
+    }
+  }
+
+  async function refreshWorldHealth() {
+    setWorldHealthError("");
+    try {
+      const response = await fetchWorldHealth(selectedWorldId);
+      setWorldHealth(response);
+    } catch (err) {
+      setWorldHealth(null);
+      setWorldHealthError(toErrorMessage(err));
+    }
+  }
+
+  async function handleRunWorldHealth() {
+    setWorldHealthError("");
+    try {
+      const response = await runWorldHealth(selectedWorldId);
+      setWorldHealth(response);
+    } catch (err) {
+      setWorldHealthError(toErrorMessage(err));
+    }
+  }
+
+  async function refreshContentCoverage() {
+    setContentCoverageError("");
+    try {
+      const response = await fetchContentCoverage(selectedWorldId);
+      setContentCoverage(response);
+    } catch (err) {
+      setContentCoverage(null);
+      setContentCoverageError(toErrorMessage(err));
+    }
+  }
+
+  async function handleRunContentCoverage() {
+    setContentCoverageError("");
+    try {
+      const response = await runContentCoverage(selectedWorldId);
+      setContentCoverage(response);
+    } catch (err) {
+      setContentCoverageError(toErrorMessage(err));
     }
   }
 
@@ -993,15 +1084,20 @@ export function App() {
             performanceSummary={performanceSummary}
             playtestReports={playtestReports}
             selectedPlaytest={selectedPlaytest}
+            playtestBatchReport={playtestBatchReport}
             scenarioRegressionCases={scenarioRegressionCases}
             scenarioRegressionRuns={scenarioRegressionRuns}
             selectedScenarioRegressionRun={selectedScenarioRegressionRun}
+            worldHealth={worldHealth}
+            contentCoverage={contentCoverage}
             error={studioStatusError}
             configError={studioConfigError}
             narrativeEvalError={narrativeEvalError}
             performanceError={performanceError}
             playtestError={playtestError}
             scenarioRegressionError={scenarioRegressionError}
+            worldHealthError={worldHealthError}
+            contentCoverageError={contentCoverageError}
             onRefresh={() => {
               void refreshStudioStatus();
               void refreshStudioConfigSummary();
@@ -1009,17 +1105,24 @@ export function App() {
               void refreshNarrativeEvals();
               void refreshPerformance();
               void refreshPlaytests();
+              void refreshWorldHealth();
+              void refreshContentCoverage();
             }}
             onSelectPromptProfile={(profileId) => void handleSelectPromptProfile(profileId)}
             onRunNarrativeEval={() => void handleRunNarrativeEval()}
             onSelectNarrativeEval={(runId) => void handleSelectNarrativeEval(runId)}
             onRefreshPerformance={() => void refreshPerformance()}
             onRunPlaytest={(options) => void handleRunPlaytest(options)}
+            onRunPlaytestBatch={(options) => void handleRunPlaytestBatch(options)}
             onSelectPlaytest={(runId) => void handleSelectPlaytest(runId)}
             onRefreshPlaytests={() => void refreshPlaytests()}
             onRunScenarioRegression={(options) => void handleRunScenarioRegression(options)}
             onSelectScenarioRegression={(runId) => void handleSelectScenarioRegression(runId)}
             onRefreshScenarioRegressions={() => void refreshScenarioRegressions()}
+            onRunWorldHealth={() => void handleRunWorldHealth()}
+            onRefreshWorldHealth={() => void refreshWorldHealth()}
+            onRunContentCoverage={() => void handleRunContentCoverage()}
+            onRefreshContentCoverage={() => void refreshContentCoverage()}
             onNavigate={setMode}
           />
         ) : (
@@ -1216,25 +1319,35 @@ function StudioHome({
   performanceSummary,
   playtestReports,
   selectedPlaytest,
+  playtestBatchReport,
   scenarioRegressionCases,
   scenarioRegressionRuns,
   selectedScenarioRegressionRun,
+  worldHealth,
+  contentCoverage,
   error,
   configError,
   narrativeEvalError,
   performanceError,
   playtestError,
   scenarioRegressionError,
+  worldHealthError,
+  contentCoverageError,
   onRefresh,
   onRunNarrativeEval,
   onSelectNarrativeEval,
   onRefreshPerformance,
   onRunPlaytest,
+  onRunPlaytestBatch,
   onSelectPlaytest,
   onRefreshPlaytests,
   onRunScenarioRegression,
   onSelectScenarioRegression,
   onRefreshScenarioRegressions,
+  onRunWorldHealth,
+  onRefreshWorldHealth,
+  onRunContentCoverage,
+  onRefreshContentCoverage,
   onSelectPromptProfile,
   onNavigate
 }: {
@@ -1247,15 +1360,20 @@ function StudioHome({
   performanceSummary: DebugPerformanceSummaryResponse | null;
   playtestReports: PlaytestReport[];
   selectedPlaytest: PlaytestReport | null;
+  playtestBatchReport: PlaytestBatchRun | null;
   scenarioRegressionCases: ScenarioRegressionCase[];
   scenarioRegressionRuns: ScenarioRegressionRun[];
   selectedScenarioRegressionRun: ScenarioRegressionRun | null;
+  worldHealth: WorldHealthScore | null;
+  contentCoverage: ContentCoverageReport | null;
   error: string;
   configError: string;
   narrativeEvalError: string;
   performanceError: string;
   playtestError: string;
   scenarioRegressionError: string;
+  worldHealthError: string;
+  contentCoverageError: string;
   onRefresh: () => void;
   onRunNarrativeEval: () => void;
   onSelectNarrativeEval: (runId: string) => void;
@@ -1267,11 +1385,23 @@ function StudioHome({
     seed: number;
     saveLoadCheck: boolean;
   }) => void;
+  onRunPlaytestBatch: (options: {
+    worldId: string;
+    agentTypes: string[];
+    seeds: number[];
+    steps: number;
+    stopOnBlocker: boolean;
+    saveLoadCheck: boolean;
+  }) => void;
   onSelectPlaytest: (runId: string) => void;
   onRefreshPlaytests: () => void;
   onRunScenarioRegression: (options: { worldId: string; scenarioIds: string[] }) => void;
   onSelectScenarioRegression: (runId: string) => void;
   onRefreshScenarioRegressions: () => void;
+  onRunWorldHealth: () => void;
+  onRefreshWorldHealth: () => void;
+  onRunContentCoverage: () => void;
+  onRefreshContentCoverage: () => void;
   onSelectPromptProfile: (profileId: string) => void;
   onNavigate: (mode: "studio" | "play" | "authoring") => void;
 }) {
@@ -1390,6 +1520,21 @@ function StudioHome({
         </div>
       </section>
 
+      <WorldHealthDashboard
+        health={worldHealth}
+        error={worldHealthError}
+        onRun={onRunWorldHealth}
+        onRefresh={onRefreshWorldHealth}
+      />
+
+      <ContentCoverageDashboard
+        report={contentCoverage}
+        error={contentCoverageError}
+        onRun={onRunContentCoverage}
+        onRefresh={onRefreshContentCoverage}
+        onOpenAuthoring={() => onNavigate("authoring")}
+      />
+
       <NarrativeQualityDashboard
         reports={narrativeEvalReports}
         selectedReport={selectedNarrativeEval}
@@ -1408,8 +1553,10 @@ function StudioHome({
       <PlaytestingDashboard
         reports={playtestReports}
         selectedReport={selectedPlaytest}
+        batchReport={playtestBatchReport}
         error={playtestError}
         onRun={onRunPlaytest}
+        onRunBatch={onRunPlaytestBatch}
         onSelect={onSelectPlaytest}
         onRefresh={onRefreshPlaytests}
       />
@@ -1432,6 +1579,202 @@ function StudioHome({
       </LocalOnlyNotice>
     </section>
   );
+}
+
+function WorldHealthDashboard({
+  health,
+  error,
+  onRun,
+  onRefresh
+}: {
+  health: WorldHealthScore | null;
+  error: string;
+  onRun: () => void;
+  onRefresh: () => void;
+}) {
+  const blockers = health?.blockers ?? [];
+  const warnings = health?.warnings ?? [];
+  return (
+    <section className="studio-section world-health-dashboard">
+      <div className="mod-detail-header">
+        <div>
+          <h3>World Health</h3>
+          <p className="muted">Local heuristic score from validation, quality reports, coverage, and benchmarks.</p>
+        </div>
+        <div className="quick-actions">
+          <button type="button" onClick={onRefresh}>
+            Refresh
+          </button>
+          <button type="button" onClick={onRun}>
+            Run Health
+          </button>
+        </div>
+      </div>
+      <ErrorPanel message={error} compact />
+      <div className="studio-grid compact-dashboard-grid">
+        <DashboardCard title="Overall" value={health ? String(health.overall_score) : "none"}>
+          <p>{health?.created_at ?? "Run health analysis to create a local report"}</p>
+        </DashboardCard>
+        <DashboardCard title="Blockers" value={String(blockers.length)}>
+          <p>Release-impacting issues</p>
+        </DashboardCard>
+        <DashboardCard title="Warnings" value={String(warnings.length)}>
+          <p>Non-blocking review items</p>
+        </DashboardCard>
+        <DashboardCard title="Sources" value={String(health?.source_report_ids.length ?? 0)}>
+          <p>Quality and benchmark reports</p>
+        </DashboardCard>
+      </div>
+
+      {health ? (
+        <>
+          <section>
+            <h3>Category Scores</h3>
+            <div className="perf-table">
+              {health.category_scores.map((category) => (
+                <div className="perf-row" key={category.dimension}>
+                  <span>{category.dimension}</span>
+                  <span>{category.score}/100</span>
+                  <span>{category.status}</span>
+                  <span>{category.explanation}</span>
+                  <span className="perf-bar" style={{ "--bar-width": `${category.score}%` } as React.CSSProperties} />
+                </div>
+              ))}
+            </div>
+          </section>
+          <div className="studio-columns">
+            <section>
+              <h3>Blockers</h3>
+              <ItemList
+                emptyText="No blocker issues reported."
+                items={blockers.map((item) => <span key={item}>{redactReportText(item)}</span>)}
+              />
+            </section>
+            <section>
+              <h3>Recommended Actions</h3>
+              <ItemList
+                emptyText="No recommendations yet."
+                items={health.recommended_actions.map((item) => <span key={item}>{redactReportText(item)}</span>)}
+              />
+            </section>
+          </div>
+        </>
+      ) : (
+        <EmptyState title="No world health report." detail="Run local health analysis to aggregate quality signals." />
+      )}
+    </section>
+  );
+}
+
+function ContentCoverageDashboard({
+  report,
+  error,
+  onRun,
+  onRefresh,
+  onOpenAuthoring
+}: {
+  report: ContentCoverageReport | null;
+  error: string;
+  onRun: () => void;
+  onRefresh: () => void;
+  onOpenAuthoring: () => void;
+}) {
+  const [showUncoveredOnly, setShowUncoveredOnly] = useState<boolean>(false);
+  const rows = report ? contentCoverageRows(report) : [];
+  const average = rows.length
+    ? Math.round(rows.reduce((total, row) => total + row.summary.coverage_percent, 0) / rows.length)
+    : 0;
+  return (
+    <section className="studio-section content-coverage-dashboard">
+      <div className="mod-detail-header">
+        <div>
+          <h3>Content Coverage</h3>
+          <p className="muted">Safe local coverage summary from events, playtests, and scenario regression runs.</p>
+        </div>
+        <div className="quick-actions">
+          <button type="button" onClick={onRefresh}>Refresh</button>
+          <button type="button" onClick={onRun}>Run Coverage</button>
+          <button type="button" onClick={onOpenAuthoring}>Authoring</button>
+        </div>
+      </div>
+      <ErrorPanel message={error} compact />
+      <div className="studio-grid compact-dashboard-grid">
+        <DashboardCard title="Average" value={report ? `${average}%` : "none"}>
+          <p>{report ? report.world_id : "Run coverage to create a local report"}</p>
+        </DashboardCard>
+        <DashboardCard title="Locations" value={formatCoverage(report?.locations)}>
+          <p>visited locations</p>
+        </DashboardCard>
+        <DashboardCard title="NPCs" value={formatCoverage(report?.npcs)}>
+          <p>seen or talked to</p>
+        </DashboardCard>
+        <DashboardCard title="Quests" value={formatCoverage(report?.quests)}>
+          <p>triggered stages</p>
+        </DashboardCard>
+      </div>
+      <label className="checkbox-row">
+        <input
+          type="checkbox"
+          checked={showUncoveredOnly}
+          onChange={(event) => setShowUncoveredOnly(event.target.checked)}
+        />
+        Show uncovered only
+      </label>
+      {report ? (
+        <div className="perf-table">
+          {rows.map((row) => (
+            <div className="perf-row" key={row.label}>
+              <span>{row.label}</span>
+              <span>{row.summary.coverage_percent}%</span>
+              <span>{row.summary.covered}/{row.summary.total}</span>
+              <span>
+                {showUncoveredOnly
+                  ? safeIdList(row.summary.uncovered_ids)
+                  : row.summary.safe_summary}
+              </span>
+              <span className="perf-bar" style={{ "--bar-width": `${row.summary.coverage_percent}%` } as React.CSSProperties} />
+            </div>
+          ))}
+        </div>
+      ) : (
+        <EmptyState title="No content coverage report." detail="Run coverage after playtests or scenario regression." />
+      )}
+      {report && (
+        <p className="muted">
+          Hidden content is redacted from normal coverage details. Redacted counts:{" "}
+          {Object.entries(report.hidden_entities_redacted)
+            .map(([key, value]) => `${key} ${value}`)
+            .join(", ")}
+        </p>
+      )}
+    </section>
+  );
+}
+
+function contentCoverageRows(report: ContentCoverageReport) {
+  return [
+    { label: "Locations", summary: report.locations },
+    { label: "NPCs", summary: report.npcs },
+    { label: "Items", summary: report.items },
+    { label: "Quests", summary: report.quests },
+    { label: "Facts", summary: report.facts },
+    { label: "Factions", summary: report.factions },
+    { label: "Rumors", summary: report.rumors },
+    { label: "Crimes", summary: report.crimes },
+    { label: "Combat", summary: report.combat_encounters },
+    { label: "Shops / Trade", summary: report.shops_trade }
+  ];
+}
+
+function formatCoverage(summary?: { covered: number; total: number } | null): string {
+  if (!summary) {
+    return "none";
+  }
+  return `${summary.covered}/${summary.total}`;
+}
+
+function safeIdList(ids: string[]): string {
+  return ids.length ? ids.slice(0, 8).join(", ") : "none";
 }
 
 function NarrativeQualityDashboard({
@@ -1555,6 +1898,17 @@ function redactReportText(value: string): string {
   return value.replace(/hidden_fact_text_visible:[^\s,;]+/g, "hidden_fact_text_visible:[redacted]");
 }
 
+function parseCsvList(value: string): string[] {
+  return value.split(",").map((item) => item.trim()).filter(Boolean);
+}
+
+function parseSeedList(value: string): number[] {
+  const seeds = parseCsvList(value)
+    .map((item) => Number(item))
+    .filter((item) => Number.isFinite(item));
+  return seeds.length ? seeds : [123];
+}
+
 function PerformanceDashboard({
   recent,
   summary,
@@ -1662,19 +2016,30 @@ function findPerfEntry(entries: DebugPerformanceSummaryResponse["entries"], name
 function PlaytestingDashboard({
   reports,
   selectedReport,
+  batchReport,
   error,
   onRun,
+  onRunBatch,
   onSelect,
   onRefresh
 }: {
   reports: PlaytestReport[];
   selectedReport: PlaytestReport | null;
+  batchReport: PlaytestBatchRun | null;
   error: string;
   onRun: (options: {
     worldId: string;
     agentType: string;
     steps: number;
     seed: number;
+    saveLoadCheck: boolean;
+  }) => void;
+  onRunBatch: (options: {
+    worldId: string;
+    agentTypes: string[];
+    seeds: number[];
+    steps: number;
+    stopOnBlocker: boolean;
     saveLoadCheck: boolean;
   }) => void;
   onSelect: (runId: string) => void;
@@ -1684,6 +2049,9 @@ function PlaytestingDashboard({
   const [agentType, setAgentType] = useState<string>("random_valid_action_agent");
   const [steps, setSteps] = useState<number>(12);
   const [seed, setSeed] = useState<number>(123);
+  const [batchSeeds, setBatchSeeds] = useState<string>("1,2,3");
+  const [batchAgents, setBatchAgents] = useState<string>("random_valid_action_agent,explore_agent");
+  const [stopOnBlocker, setStopOnBlocker] = useState<boolean>(true);
   const [saveLoadCheck, setSaveLoadCheck] = useState<boolean>(true);
   const issueCount = selectedReport
     ? selectedReport.errors.length +
@@ -1743,6 +2111,82 @@ function PlaytestingDashboard({
           Run Playtest
         </button>
       </div>
+
+      <section className="studio-section">
+        <h3>Batch Run</h3>
+        <p className="muted">Runs multiple deterministic seeds and agents in serial with temporary saves only.</p>
+        <div className="playtest-controls">
+          <label>
+            Agents
+            <input value={batchAgents} onChange={(event) => setBatchAgents(event.target.value)} />
+          </label>
+          <label>
+            Seeds
+            <input value={batchSeeds} onChange={(event) => setBatchSeeds(event.target.value)} />
+          </label>
+          <label className="checkbox-field">
+            <input type="checkbox" checked={stopOnBlocker} onChange={(event) => setStopOnBlocker(event.target.checked)} />
+            Stop on blocker
+          </label>
+          <button
+            type="button"
+            onClick={() =>
+              onRunBatch({
+                worldId,
+                agentTypes: parseCsvList(batchAgents),
+                seeds: parseSeedList(batchSeeds),
+                steps,
+                stopOnBlocker,
+                saveLoadCheck,
+              })
+            }
+          >
+            Run Batch
+          </button>
+        </div>
+        {batchReport ? (
+          <div className="studio-grid compact-dashboard-grid">
+            <DashboardCard title="Batch Runs" value={String(batchReport.total_runs)}>
+              <p>{shortRunId(batchReport.run_id)}</p>
+            </DashboardCard>
+            <DashboardCard title="Passed" value={String(batchReport.passed)}>
+              <p>{batchReport.failed} failed</p>
+            </DashboardCard>
+            <DashboardCard title="Blockers" value={String(batchReport.blockers)}>
+              <p>{batchReport.aggregate_issues.length} aggregate issues</p>
+            </DashboardCard>
+            <DashboardCard title="Avg Duration" value={`${Math.round(batchReport.performance_summary.average_duration_ms)}ms`}>
+              <p>{batchReport.coverage_summary.seeds_run.join(", ") || "no seeds"}</p>
+            </DashboardCard>
+          </div>
+        ) : (
+          <EmptyState title="No batch report." detail="Run a batch to compare seeds and agents." />
+        )}
+        {batchReport && (
+          <div className="studio-columns">
+            <SectionCard title="Failed Items" description="Safe summaries only. Hidden content is redacted by the backend.">
+              <ItemList
+                emptyText="No failed batch items."
+                items={batchReport.run_items
+                  .filter((item) => !item.passed)
+                  .map((item) => (
+                    <span key={item.run_index}>
+                      #{item.run_index} {item.agent_type} seed {item.seed}: {item.safe_failure_reasons.map(redactReportText).join("; ")}
+                    </span>
+                  ))}
+              />
+            </SectionCard>
+            <SectionCard title="Coverage Summary" description="Aggregate action and location counts.">
+              <ItemList
+                emptyText="No coverage."
+                items={Object.entries(batchReport.coverage_summary.action_types).map(([name, count]) => (
+                  <span key={name}>{name}: {count}</span>
+                ))}
+              />
+            </SectionCard>
+          </div>
+        )}
+      </section>
 
       <div className="studio-grid compact-dashboard-grid">
         <DashboardCard title="Runs" value={String(reports.length)}>
@@ -3364,6 +3808,15 @@ function AuthoringPanel() {
           </AuthoringSection>
 
           <AuthoringSection
+            toolId="scenarios"
+            activeTool={activeAuthoringTool}
+            title="Scenario Regression Authoring"
+            description="Create and validate local regression cases. Preview never writes disk."
+          >
+            <ScenarioRegressionAuthoringPanel selectedWorldId={selectedWorldId} />
+          </AuthoringSection>
+
+          <AuthoringSection
             toolId="templates"
             activeTool={activeAuthoringTool}
             title="Templates"
@@ -3908,6 +4361,273 @@ function splitCsv(value: string): string[] {
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function ScenarioRegressionAuthoringPanel({ selectedWorldId }: { selectedWorldId: string }) {
+  const [scenarios, setScenarios] = useState<ScenarioRegressionCase[]>([]);
+  const [scenario, setScenario] = useState<ScenarioRegressionCase>(() => defaultScenarioDraft(selectedWorldId));
+  const [expectedQuestText, setExpectedQuestText] = useState<string>("{}");
+  const [validation, setValidation] = useState<AuthoringValidation | null>(null);
+  const [preview, setPreview] = useState<ScenarioAuthoringPreviewResponse | null>(null);
+  const [error, setError] = useState<string>("");
+  const [message, setMessage] = useState<string>("");
+  const [isBusy, setIsBusy] = useState<boolean>(false);
+
+  useEffect(() => {
+    void loadScenarios();
+  }, []);
+
+  useEffect(() => {
+    setScenario((current) => ({ ...current, world_id: current.world_id || selectedWorldId }));
+  }, [selectedWorldId]);
+
+  async function loadScenarios() {
+    setIsBusy(true);
+    setError("");
+    try {
+      const response = await fetchAuthoringScenarios();
+      setScenarios(response.scenarios);
+      if (response.scenarios.length > 0) {
+        setScenario(response.scenarios[0]);
+        setExpectedQuestText(JSON.stringify(response.scenarios[0].expected_quest_states, null, 2));
+      }
+    } catch (err) {
+      setScenarios([]);
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  function updateScenario(updater: (current: ScenarioRegressionCase) => ScenarioRegressionCase) {
+    setScenario((current) => updater(current));
+    setPreview(null);
+    setValidation(null);
+  }
+
+  function scenarioWithQuestStates(): ScenarioRegressionCase | null {
+    try {
+      const parsed = JSON.parse(expectedQuestText || "{}") as Record<string, string>;
+      return { ...scenario, expected_quest_states: parsed };
+    } catch {
+      setError("Expected quest states must be valid JSON, for example {\"quest_id\":\"active\"}.");
+      return null;
+    }
+  }
+
+  async function handlePreviewScenario() {
+    const next = scenarioWithQuestStates();
+    if (!next) {
+      return;
+    }
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await previewAuthoringScenario(next);
+      setPreview(response);
+      setValidation(response.validation);
+      setMessage(response.validation.ok ? "Scenario preview passed. No file was written." : "Scenario preview has validation issues.");
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleValidateScenario() {
+    const next = scenarioWithQuestStates();
+    if (!next) {
+      return;
+    }
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await validateAuthoringScenario(next);
+      setPreview(response);
+      setValidation(response.validation);
+      setMessage(response.validation.ok ? "Scenario validation passed." : "Scenario validation found errors.");
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleSaveScenario() {
+    const next = scenarioWithQuestStates();
+    if (!next) {
+      return;
+    }
+    if (!window.confirm(`Save local scenario '${next.id}'? This writes a scenario file after validation.`)) {
+      return;
+    }
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await saveAuthoringScenario(next);
+      setPreview(response);
+      setValidation(response.validation);
+      if (response.writes_to_disk) {
+        setMessage("Scenario saved after validation.");
+        await loadScenarios();
+      } else {
+        setMessage("Scenario was not saved because validation failed.");
+      }
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  return (
+    <section className="mod-manager-panel authoring-zone">
+      <div className="authoring-pane-header">
+        <div>
+          <h2>Scenario Regression Authoring</h2>
+          <p className="muted">Create local scenario cases for quest paths, hidden leak probes, and save/load checks.</p>
+        </div>
+        <button type="button" onClick={() => void loadScenarios()} disabled={isBusy}>
+          Refresh Scenarios
+        </button>
+      </div>
+
+      {error.toLowerCase().includes("authoring api is disabled") && (
+        <div className="notice api-disabled-notice">Scenario authoring requires the local authoring API.</div>
+      )}
+
+      <div className="template-grid">
+        <label>
+          Existing scenario
+          <select
+            value={scenarios.find((item) => item.id === scenario.id)?.id ?? ""}
+            onChange={(event) => {
+              const selected = scenarios.find((item) => item.id === event.target.value);
+              if (selected) {
+                setScenario(selected);
+                setExpectedQuestText(JSON.stringify(selected.expected_quest_states, null, 2));
+                setPreview(null);
+                setValidation(null);
+              }
+            }}
+            disabled={isBusy || scenarios.length === 0}
+          >
+            <option value="">New scenario</option>
+            {scenarios.map((item) => (
+              <option key={item.id} value={item.id}>{item.name}</option>
+            ))}
+          </select>
+        </label>
+        <button
+          type="button"
+          onClick={() => {
+            const draft = defaultScenarioDraft(selectedWorldId);
+            setScenario(draft);
+            setExpectedQuestText("{}");
+            setPreview(null);
+            setValidation(null);
+          }}
+          disabled={isBusy}
+        >
+          New Draft
+        </button>
+        <span className="badge">{preview?.writes_to_disk ? "saved" : "preview only"}</span>
+      </div>
+
+      <div className="template-variable-grid">
+        <label>
+          Scenario id
+          <input value={scenario.id} onChange={(event) => updateScenario((current) => ({ ...current, id: event.target.value }))} disabled={isBusy} />
+        </label>
+        <label>
+          Name
+          <input value={scenario.name} onChange={(event) => updateScenario((current) => ({ ...current, name: event.target.value }))} disabled={isBusy} />
+        </label>
+        <label>
+          World
+          <input value={scenario.world_id} onChange={(event) => updateScenario((current) => ({ ...current, world_id: event.target.value }))} disabled={isBusy} />
+        </label>
+        <label>
+          Max turns
+          <input
+            type="number"
+            min={0}
+            value={scenario.max_turns}
+            onChange={(event) => updateScenario((current) => ({ ...current, max_turns: Number(event.target.value) }))}
+            disabled={isBusy}
+          />
+        </label>
+        <label>
+          Tags
+          <input value={scenario.tags.join(", ")} onChange={(event) => updateScenario((current) => ({ ...current, tags: splitCsv(event.target.value) }))} disabled={isBusy} />
+        </label>
+        <label>
+          Expected visible facts
+          <input value={scenario.expected_visible_facts.join(", ")} onChange={(event) => updateScenario((current) => ({ ...current, expected_visible_facts: splitCsv(event.target.value) }))} disabled={isBusy} />
+        </label>
+        <label>
+          Forbidden visible facts
+          <input value={scenario.forbidden_visible_facts.join(", ")} onChange={(event) => updateScenario((current) => ({ ...current, forbidden_visible_facts: splitCsv(event.target.value) }))} disabled={isBusy} />
+        </label>
+        <label>
+          Expected inventory
+          <input value={scenario.expected_inventory.join(", ")} onChange={(event) => updateScenario((current) => ({ ...current, expected_inventory: splitCsv(event.target.value) }))} disabled={isBusy} />
+        </label>
+      </div>
+
+      <label className="full-width-field">
+        Description
+        <textarea value={scenario.description} onChange={(event) => updateScenario((current) => ({ ...current, description: event.target.value }))} disabled={isBusy} />
+      </label>
+      <label className="full-width-field">
+        Input sequence
+        <textarea
+          value={scenario.input_sequence.join("\n")}
+          onChange={(event) => updateScenario((current) => ({ ...current, input_sequence: event.target.value.split("\n").map((line) => line.trim()).filter(Boolean) }))}
+          disabled={isBusy}
+        />
+      </label>
+      <label className="full-width-field">
+        Expected quest states JSON
+        <textarea value={expectedQuestText} onChange={(event) => setExpectedQuestText(event.target.value)} disabled={isBusy} />
+      </label>
+
+      <div className="authoring-header-actions">
+        <button type="button" onClick={() => void handlePreviewScenario()} disabled={isBusy}>Preview Scenario</button>
+        <button type="button" onClick={() => void handleValidateScenario()} disabled={isBusy}>Validate Scenario</button>
+        <button type="button" onClick={() => void handleSaveScenario()} disabled={isBusy}>Save Scenario</button>
+      </div>
+
+      {validation && (
+        <ValidationPanel
+          validation={validation}
+          onSelectIssue={() => undefined}
+        />
+      )}
+      {message && <p className="muted">{message}</p>}
+      <ErrorPanel message={error} />
+    </section>
+  );
+}
+
+function defaultScenarioDraft(worldId: string): ScenarioRegressionCase {
+  return {
+    id: "new_scenario",
+    world_id: worldId || "mist_valley",
+    name: "New Scenario",
+    description: "",
+    initial_save: null,
+    input_sequence: ["observe"],
+    expected_visible_facts: [],
+    forbidden_visible_facts: [],
+    expected_quest_states: {},
+    expected_inventory: [],
+    max_turns: 5,
+    tags: []
+  };
 }
 
 function ScenarioTemplatePanel() {

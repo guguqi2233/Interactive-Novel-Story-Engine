@@ -12,7 +12,7 @@ from app.db.repository import SQLiteSaveRepository
 from app.main import app
 from app.playtesting.agents import RandomValidActionAgent
 from app.playtesting.invariants import check_playtest_invariants
-from app.playtesting.runner import PlaytestOptions, run_playtest
+from app.playtesting.runner import PlaytestOptions, PlaytestScenario, PlaytestScenarioType, run_playtest, run_playtest_scenario
 from app.session_store import InMemorySessionStore
 from app.session_store import build_visible_state, create_initial_state
 
@@ -138,6 +138,125 @@ def test_playtest_cli_runs() -> None:
     payload = json.loads(completed.stdout)
     assert payload["turns_run"] == 2
     assert payload["world_id"] == "mist_valley"
+
+
+def test_exploration_playtest_scenario_runs() -> None:
+    scenario = PlaytestScenario(
+        id="opening_exploration",
+        world_id="mist_valley",
+        name="Opening exploration",
+        scenario_type=PlaytestScenarioType.EXPLORATION,
+        agent_type="explore_agent",
+        max_steps=3,
+        seed=17,
+        invariants=["hidden_facts_not_visible", "agent_actions_have_events"],
+        tags=["exploration"],
+    )
+
+    report = run_playtest_scenario(scenario)
+
+    assert report.passed
+    assert report.playtest_report.turns_run == 3
+    assert report.quality_report.world_id == "mist_valley"
+    assert "playtesting" in report.quality_report.categories
+
+
+def test_quest_path_playtest_scenario_runs() -> None:
+    scenario = PlaytestScenario(
+        id="quest_path_smoke",
+        world_id="mist_valley",
+        name="Quest path smoke",
+        scenario_type=PlaytestScenarioType.QUEST_PATH,
+        agent_type="quest_following_agent",
+        max_steps=2,
+        seed=4,
+        expected_outcomes={"min_turns": 2},
+        tags=["quest"],
+    )
+
+    report = run_playtest_scenario(scenario)
+
+    assert report.playtest_report.turns_run == 2
+    assert report.playtest_report.errors == []
+    assert all(action.event_id for action in report.playtest_report.actions_taken)
+
+
+def test_hidden_leak_probe_detects_forbidden_visible_fact_without_text() -> None:
+    scenario = PlaytestScenario(
+        id="hidden_probe_visible_fact",
+        world_id="mist_valley",
+        name="Hidden probe detects forbidden visible fact",
+        scenario_type=PlaytestScenarioType.HIDDEN_LEAK_PROBE,
+        agent_type="random_valid_action_agent",
+        max_steps=0,
+        seed=1,
+        forbidden_outcomes={"visible_facts": ["village_square_is_misty"]},
+        tags=["hidden-leak"],
+    )
+
+    report = run_playtest_scenario(scenario)
+    normal_payload = json.dumps(report.model_dump_normal(), ensure_ascii=False)
+
+    assert not report.passed
+    assert "hidden_leak_probe_forbidden_visible_fact:village_square_is_misty" in report.hidden_leak_summary
+    assert "A sealed letter is hidden beneath a loose paving stone." not in normal_payload
+    assert "hidden_details_debug_only" not in normal_payload
+
+
+def test_save_load_path_scenario_round_trips(tmp_path: Path) -> None:
+    scenario = PlaytestScenario(
+        id="save_load_smoke",
+        world_id="mist_valley",
+        name="Save load path smoke",
+        scenario_type=PlaytestScenarioType.SAVE_LOAD_PATH,
+        agent_type="random_valid_action_agent",
+        max_steps=4,
+        seed=21,
+        tags=["save-load"],
+    )
+
+    report = run_playtest_scenario(scenario, database_path=str(tmp_path / "scenario-playtest.db"))
+
+    assert report.playtest_report.save_load_failures == []
+    assert report.failure_reasons == []
+
+
+def test_playtest_scenario_fixed_seed_is_deterministic() -> None:
+    scenario = PlaytestScenario(
+        id="deterministic_scenario",
+        world_id="mist_valley",
+        name="Deterministic scenario",
+        scenario_type=PlaytestScenarioType.EXPLORATION,
+        agent_type="random_valid_action_agent",
+        max_steps=5,
+        seed=99,
+    )
+
+    first = run_playtest_scenario(scenario)
+    second = run_playtest_scenario(scenario)
+
+    assert [action.input_text for action in first.playtest_report.actions_taken] == [
+        action.input_text for action in second.playtest_report.actions_taken
+    ]
+    assert first.visible_summary == second.visible_summary
+
+
+def test_playtest_scenario_does_not_mutate_external_game_state() -> None:
+    state = create_initial_state(world_id="mist_valley")
+    before = state.model_dump(mode="json")
+    scenario = PlaytestScenario(
+        id="external_state_boundary",
+        world_id="mist_valley",
+        name="External state boundary",
+        scenario_type=PlaytestScenarioType.EXPLORATION,
+        agent_type="explore_agent",
+        max_steps=1,
+        seed=2,
+    )
+
+    _ = run_playtest_scenario(scenario)
+
+    assert state.model_dump(mode="json") == before
 
 
 def make_playtest_client(tmp_path: Path, *, enabled: bool = True) -> TestClient:

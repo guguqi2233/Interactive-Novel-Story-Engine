@@ -9,8 +9,8 @@ This project is for local personal use. It is not designed as a hosted service.
 
 ## Current Version Scope
 
-v0.8 turns the polished local studio into a more visual world-authoring
-environment on top of the v0.7 studio layer:
+v0.9 turns the visual local studio into a quality and automated playtesting
+toolchain on top of the v0.8 authoring layer:
 
 - Multi-world content packs.
 - Structured `GameState`, `StateDelta`, `EventLog`, and SQLite save/load.
@@ -60,6 +60,19 @@ environment on top of the v0.7 studio layer:
 - Prompt Profile Manager.
 - Advanced import/export packages for world, mod, save, template, and scenario
   bundles.
+- World quality report schemas and local report aggregation.
+- Expanded deterministic playtest scenarios and batch runner.
+- Scenario regression authoring.
+- Hidden information leak regression suite.
+- Quest completion analysis and dead-end/unreachable objective detection.
+- NPC behavior coverage and schedule conflict detection.
+- Economy, combat, and social consequence balance/coverage sanity checks.
+- Save/load/migration stress tests.
+- Performance benchmark suite.
+- Narrative consistency evals.
+- World Health Score Dashboard and Content Coverage Dashboard.
+- Branch diff regression and mod compatibility stress testing.
+- Quality Gate CLI/API.
 
 The LLM is still not the world judge. Rule outcomes are decided by local code.
 
@@ -124,6 +137,11 @@ must never be committed, logged, or placed in frontend code.
 `AUTHORING_ROOT`, `MODS_ROOT`, `TEMPLATE_ROOT`, `PACKAGE_IMPORT_ROOT`, and
 `MEMORY_BACKEND` document the intended local configuration surface. Some
 runtime paths still use the current repository defaults.
+
+There is currently no separate `ENABLE_QUALITY_API` setting. v0.9 quality
+tools reuse local-only debug/eval/playtest/performance gates where implemented;
+some analyzer endpoints are local-only and should not be exposed outside a
+trusted localhost setup.
 
 ## Start the Backend
 
@@ -691,6 +709,18 @@ Dashboard can run deterministic playtests through:
 The dashboard is a local testing tool, not a player AI. Agents act through the
 game loop/test harness and do not directly modify `GameState`.
 
+v0.9 expands playtesting with scenario types for exploration, quest paths,
+combat, stealth, economy, crime/social behavior, save/load, migration, and
+hidden-leak probes. Batch playtests run multiple scenarios and seeds
+deterministically:
+
+```powershell
+python -m app.tools.playtest_batch --world mist_valley --seeds 1,2,3
+```
+
+Reports are local quality artifacts. They should not contain hidden fact text
+in normal views and must not be treated as player AI or canonical story events.
+
 ## Scenario Regression Suite
 
 v0.8 adds scenario regression APIs for repeatable local story/path checks:
@@ -703,6 +733,109 @@ Cases run scripted input through the game loop or test harness with mock/local
 providers. Reports include pass/fail status, failed steps, safe expected-vs-
 actual summaries, hidden leak summaries, and save/load failures. Reports must
 not show hidden fact text.
+
+Scenario regression cases can also be authored locally through the authoring
+API/UI when authoring is enabled. Preview does not write disk, save requires
+validation, and scenario output does not modify active saves.
+
+## v0.9 Quality Gate
+
+Run the local quality gate from the repository root after setting
+`PYTHONPATH=backend` or installing the backend package:
+
+```powershell
+python -m app.tools.quality_gate --world mist_valley
+python -m app.tools.quality_gate --world mist_valley --json
+```
+
+The gate combines validation, hidden-leak checks, quest analysis, dead-end
+detection, NPC coverage, economy/combat/social sanity checks, save/load stress,
+benchmarks, scenario regression, and mod compatibility smoke checks. It is a
+deterministic threshold/severity gate; the LLM does not decide pass/fail.
+
+The API entry point is local-only and gated through the eval/playtest/debug
+gate path:
+
+```text
+POST /quality/worlds/{world_id}/gate/run
+```
+
+## v0.9 Quality Analysis APIs
+
+The quality analyzers provide safe local reports for authoring and regression:
+
+```text
+GET  /quality/worlds/{world_id}/quests
+POST /quality/worlds/{world_id}/quests/analyze
+POST /quality/worlds/{world_id}/dead-ends/analyze
+GET  /quality/worlds/{world_id}/npc-coverage
+POST /quality/worlds/{world_id}/npc-coverage/analyze
+POST /quality/worlds/{world_id}/schedules/analyze
+POST /quality/worlds/{world_id}/economy/analyze
+POST /quality/worlds/{world_id}/combat/analyze
+POST /quality/worlds/{world_id}/social-consequences/analyze
+GET  /quality/worlds/{world_id}/health
+POST /quality/worlds/{world_id}/health/run
+GET  /quality/worlds/{world_id}/coverage
+POST /quality/worlds/{world_id}/coverage/run
+POST /quality/worlds/{world_id}/branch-regression/run
+POST /quality/mods/compatibility-stress/run
+```
+
+These APIs do not call the LLM and do not modify active `GameState`. Normal
+report views must not include hidden fact text, raw state, raw deltas, API
+keys, or raw environment values. Current v0.9 has no independent
+`ENABLE_QUALITY_API`; keep these endpoints local.
+
+## Hidden Leak And Narrative Consistency Evals
+
+Run the v0.9 hidden information leak suite:
+
+```powershell
+python -m pytest backend/tests/evals/hidden_info_leaks
+```
+
+Run narrative consistency evals:
+
+```powershell
+python -m pytest backend/tests/evals/narrative_consistency
+```
+
+These evals use deterministic fixtures and mock/fake narrator outputs. They do
+not call external LLM judges and should not print hidden text in normal failure
+output.
+
+## Quest, Dead-End, And Balance Analysis
+
+Quest completion analysis checks missing next stages, missing trigger refs,
+unreachable stages, completion-path gaps, circular paths, and hidden quest
+visibility risks. Dead-end detection looks for blocked required items, NPCs,
+facts, locked paths, merchant availability, undiscoverable clues, and schedule
+availability issues. Economy, combat, and social consequence analyzers provide
+sanity checks and coverage, not automatic fixes.
+
+These reports are authoring aids. They do not prove a world is creatively
+perfect, and they do not modify world files or active saves.
+
+## Save / Load / Migration Stress Tests
+
+v0.9 includes deterministic stress coverage for many turns, repeated
+save/load cycles, migration dry-run/apply, save-bundle import/export, replay
+dry-run, and hidden-safe report output. These tests use temporary SQLite
+databases and mock/local providers; they do not use real user saves.
+
+## Performance Benchmarks
+
+Run local benchmarks:
+
+```powershell
+python -m app.tools.benchmark --world mist_valley
+```
+
+Benchmark reports cover game loop turns, world tick, save/load, migration
+dry-run, validation, map graph build, quest graph roundtrip, memory search,
+and scenario regression. They record timings and safe environment summaries
+only. They do not upload telemetry, record prompt text, or store API keys.
 
 ## Prompt Profiles
 
@@ -775,6 +908,8 @@ World packs live under `worlds/{world_id}`. The current schema supports:
 - `relationships.yaml`
 
 See `docs/CONTENT_PACKS.md` for file-level details.
+See `docs/QUALITY_SYSTEM.md` for v0.9 quality report, quality gate,
+playtest scenario, benchmark, health score, and coverage schemas.
 
 ## Known Limits
 
@@ -807,3 +942,9 @@ See `docs/CONTENT_PACKS.md` for file-level details.
   dedicated `ENABLE_EVAL_API` route gate separate from broad debug access.
 - World branch/diff is a lightweight local authoring helper, not a Git
   replacement and not a merge system.
+- v0.9 quality reports and health scores are heuristic local authoring aids,
+  not absolute quality judgments.
+- Quality, playtest, eval, benchmark, and stress APIs are local-only tools and
+  should not be exposed as hosted endpoints.
+- There is no dedicated `ENABLE_QUALITY_API` yet; some quality analyzer routes
+  rely on the local-only deployment boundary rather than a separate flag.

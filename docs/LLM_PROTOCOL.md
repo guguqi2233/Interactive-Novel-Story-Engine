@@ -179,7 +179,7 @@ It does not:
 
 Any future API/UI exposure for LLM-assisted drafts must remain authoring-only and require explicit user review/export.
 
-## v0.5/v0.6/v0.7/v0.8 Rule And Studio Modules Do Not Call LLM
+## v0.5/v0.6/v0.7/v0.8/v0.9 Rule, Studio, And Quality Modules Do Not Call LLM
 
 The following v0.5 modules are deterministic rule/code paths and do not call `LLMProvider`:
 
@@ -230,6 +230,75 @@ These modules may display safe provider configuration status, but they do not
 ask a model to decide validation, migration, mod compatibility, graph
 visibility, import safety, playtest results, performance status, quest graph
 correctness, or scenario template output validity.
+
+The following v0.8 visual authoring modules are deterministic code paths and
+do not call `LLMProvider`:
+
+- visual map data model and map editor
+- visual quest graph editor
+- NPC goal editor
+- faction/relationship visual editor
+- item/economy editor
+- rumor/crime consequence editor
+- visual validation graph
+- timeline replay visualizer
+- world branch/diff
+- scenario regression UI
+- local template browser
+- prompt profile manager
+- advanced import/export packages
+- desktop shell launcher scripts
+
+The following v0.9 quality modules are deterministic code paths and do not call
+`LLMProvider`:
+
+- `WorldQualityReport`, `QualityIssue`, `QualityMetric`, and quality report
+  aggregation
+- expanded automated playtesting scenarios and batch runner
+- scenario regression authoring and execution
+- hidden information leak regression suite
+- quest completion analysis
+- dead-end and unreachable objective detection
+- NPC behavior coverage and schedule conflict detection
+- economy, combat, and social consequence balance/coverage checks
+- save/load/migration stress tests
+- performance benchmark suite
+- narrative consistency evals
+- world health score and content coverage dashboards
+- branch diff regression testing
+- mod compatibility stress testing
+- quality gate CLI/API
+
+These modules may use previously recorded events, playtest output, safe
+visible-state snapshots, validation reports, and temporary sessions. They must
+not use a model to decide whether a rule outcome is correct, whether content is
+valid, or whether a quality gate passes.
+
+### v0.9 Quality And Eval Boundary
+
+v0.9 evals and playtests use deterministic fixtures, mock providers,
+`local_stub`, or test harnesses. They do not call real OpenAI APIs, local HTTP
+model services, or external LLM judges in automated tests.
+
+The quality gate is not an LLM decision. It combines deterministic validation,
+analysis reports, thresholds, and severities into pass/fail output. It must not
+write results into active saves, mutate `GameState`, or promote report text
+into canonical facts.
+
+Narrative consistency evals inspect mock/fake narrator outputs for
+contradictions with `ActionResult`, visible state, timeline, NPC knowledge,
+quest state, item/location existence, hidden witness boundaries, and the rule
+that memory is not authoritative fact. Failure summaries must be safe and must
+not print hidden fact text.
+
+Performance benchmarks and instrumentation may record stage names, durations,
+counts, thresholds, and safe environment summaries. They must not record prompt
+text, API keys, hidden fact text, raw `GameState`, or raw `state_deltas`.
+
+Quality reports may contain debug-only diagnostic fields, but normal report
+views must use safe summaries only. Hidden/debug memory remains filtered by
+`MemoryContextBuilder`; quality tooling does not widen narrator or player
+visibility.
 
 The following v0.8 visual authoring and studio modules are also deterministic
 code paths and do not call `LLMProvider`:
@@ -322,11 +391,12 @@ World outcomes, combat results, migration output, graph visibility, authoring
 validation, mod compatibility, and playtesting reports remain rule-engine
 decisions.
 
-## Narrative Quality Evals
+## Narrative Quality And Consistency Evals
 
-v0.6/v0.7 uses deterministic narrative quality evals. They do not use an external
-LLM judge and do not call real model APIs in automated tests. The evals inspect
-mock/fake narrative outputs for:
+v0.6+ uses deterministic narrative quality evals, and v0.9 adds narrative
+consistency evals. They do not use an external LLM judge and do not call real
+model APIs in automated tests. The evals inspect mock/fake narrative outputs
+for:
 
 - contradiction with `ActionResult`
 - invented key items, NPCs, or locations
@@ -334,6 +404,10 @@ mock/fake narrative outputs for:
 - unsafe suggested actions
 - missing visible consequences where relevant
 - excessive verbosity in simple cases
+- contradiction with visible state or timeline
+- dead NPCs speaking
+- NPCs knowing unknown facts
+- memory being treated as authoritative fact
 
 Eval reports are testing artifacts only. They do not modify `GameState` and do
 not become canonical story facts.
@@ -386,7 +460,7 @@ Prompt inputs must obey world visibility:
 
 The LLM can render prose or draft authoring candidates, but it cannot create canonical items, NPCs, locations, quest progress, crimes, rumors, combat outcomes, faction changes, memories, relationships, trade results, or facts.
 
-## Known v0.8 Hardening Items
+## Known v0.9 Hardening Items
 
 - Split `ActionResult.reason` into `player_reason` and `debug_reason`.
 - Classify memory summaries from raw non-player-visible events as `debug_only` or `hidden` by default.
@@ -398,10 +472,16 @@ The LLM can render prose or draft authoring candidates, but it cannot create can
 - Keep performance instrumentation tags free of prompt text, content text,
   hidden fact text, raw `GameState`, raw `state_deltas`, API keys, or local
   absolute paths.
+- Keep benchmark reports and quality gate results free of prompt text, hidden
+  fact text, raw save JSON, and raw event deltas in normal views.
 - Keep save export UX explicit that save archives can contain hidden runtime
   state and event history.
 - Consider a dedicated `require_eval_api()` so eval routes can be enabled
   separately from broad debug access.
+- Consider a dedicated `ENABLE_QUALITY_API` / `require_quality_api()` gate for
+  all v0.9 analyzer endpoints. Current implementation gates the main
+  playtest/eval/benchmark/quality-gate flows through existing local flags, but
+  some analyzer endpoints are local-only without an independent quality flag.
 - Keep v0.8 authoring graph response types out of player/narrator API routes.
 - Add regression prompt snapshots for any future runtime memory-to-narrator
   integration.

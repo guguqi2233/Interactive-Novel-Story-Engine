@@ -3,6 +3,7 @@ import re
 from datetime import UTC, datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import Any
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException
@@ -198,12 +199,84 @@ from app.llm.prompt_profiles import (
     set_default_prompt_profile_store,
 )
 from app.playtesting.runner import PlaytestOptions, PlaytestReport, run_playtest
+from app.playtesting.batch import PlaytestBatchRun, PlaytestBatchRunRequest, run_playtest_batch
+from app.quality.dead_end_detector import (
+    DeadEndAnalysis,
+    DeadEndAnalysisRequest,
+    analyze_dead_ends,
+)
+from app.quality.economy_balance import (
+    EconomyBalanceAnalysisRequest,
+    EconomyBalanceReport,
+    analyze_economy_balance,
+)
+from app.quality.combat_balance import (
+    CombatBalanceAnalysisRequest,
+    CombatBalanceReport,
+    analyze_combat_balance,
+)
+from app.quality.content_coverage import (
+    ContentCoverageReport,
+    ContentCoverageRequest,
+    analyze_content_coverage,
+)
+from app.quality.benchmarks import (
+    BenchmarkReport,
+    BenchmarkRunRequest,
+    run_benchmark_suite,
+)
+from app.quality.branch_diff_regression import (
+    BranchRegressionReport,
+    BranchRegressionRequest,
+    run_branch_diff_regression,
+)
+from app.quality.health_score import (
+    WorldHealthScore,
+    build_world_health_score,
+    empty_world_health_score,
+)
+from app.quality.gate import QualityGateConfig, QualityGateResult, run_quality_gate
+from app.quality.mod_compat_stress import (
+    ModCompatibilityStressReport,
+    ModCompatibilityStressRequest,
+    run_mod_compatibility_stress,
+)
+from app.quality.npc_behavior_coverage import (
+    NPCBehaviorCoverageReport,
+    NPCBehaviorCoverageRequest,
+    analyze_npc_behavior_coverage,
+)
+from app.quality.quest_analysis import (
+    QuestCompletionAnalysis,
+    QuestCompletionAnalysisRequest,
+    analyze_quest_completion,
+)
+from app.quality.schedule_conflict_detector import (
+    ScheduleConflictAnalysisRequest,
+    ScheduleConflictReport,
+    analyze_schedule_conflicts,
+)
+from app.quality.social_consequence_coverage import (
+    SocialConsequenceCoverageReport,
+    SocialConsequenceCoverageRequest,
+    analyze_social_consequence_coverage,
+)
+from app.quality.reports import WorldQualityReport, world_quality_report_from_validation_report
 from app.scenarios.regression import (
     ScenarioRegressionListResponse,
     ScenarioRegressionRun,
     ScenarioRegressionRunRequest,
     sample_scenario_regression_cases,
     run_scenario_regression_suite,
+)
+from app.scenarios.authoring import (
+    ScenarioAuthoringError,
+    ScenarioAuthoringListResponse,
+    ScenarioAuthoringPreviewRequest,
+    ScenarioAuthoringPreviewResponse,
+    ScenarioAuthoringSaveResponse,
+    ScenarioAuthoringService,
+    _scenario_validation_response,
 )
 from app.session_store import InMemorySessionStore, build_visible_state
 
@@ -224,6 +297,13 @@ app.state.session_store = InMemorySessionStore()
 app.state.save_repository = SQLiteSaveRepository(_sqlite_path_from_url(settings.database_url))
 app.state.narrative_eval_reports = []
 app.state.playtest_reports = []
+app.state.playtest_batch_reports = []
+app.state.benchmark_reports = []
+app.state.world_health_scores = []
+app.state.content_coverage_reports = []
+app.state.branch_regression_reports = []
+app.state.mod_compat_stress_reports = []
+app.state.quality_gate_results = []
 app.state.scenario_template_renderer = ScenarioTemplateRenderer()
 app.state.prompt_profile_store = get_default_prompt_profile_store()
 
@@ -470,16 +550,67 @@ def scenario_regression_api_enabled() -> bool:
     )
 
 
+def benchmark_api_enabled() -> bool:
+    active_settings = getattr(app.state, "settings", settings)
+    return bool(active_settings.enable_debug_api or active_settings.enable_perf_logging)
+
+
+def quality_api_enabled() -> bool:
+    active_settings = getattr(app.state, "settings", settings)
+    return bool(
+        getattr(active_settings, "enable_eval_api", False)
+        or getattr(active_settings, "enable_playtest_api", False)
+        or active_settings.enable_perf_logging
+        or active_settings.enable_debug_api
+    )
+
+
 def require_playtest_api() -> None:
     sync_runtime_settings()
     if not playtest_api_enabled():
         raise HTTPException(status_code=403, detail="Playtest API is disabled")
 
 
+def require_benchmark_api() -> None:
+    sync_runtime_settings()
+    if not benchmark_api_enabled():
+        raise HTTPException(status_code=403, detail="Benchmark API is disabled")
+
+
 def require_scenario_regression_api() -> None:
     sync_runtime_settings()
     if not scenario_regression_api_enabled():
         raise HTTPException(status_code=403, detail="Scenario regression API is disabled")
+
+
+def require_quality_api() -> None:
+    sync_runtime_settings()
+    if not quality_api_enabled():
+        raise HTTPException(status_code=403, detail="Quality API is disabled")
+
+
+def _quality_api_payload(value: object) -> dict[str, Any]:
+    """Serialize quality responses for normal local UI without debug-only payloads."""
+    if hasattr(value, "model_dump_normal"):
+        payload = value.model_dump_normal()  # type: ignore[attr-defined]
+    elif hasattr(value, "model_dump"):
+        payload = value.model_dump(mode="json", exclude_none=True)  # type: ignore[attr-defined]
+    else:
+        payload = value
+    safe_payload = _strip_quality_debug_only(payload)
+    return safe_payload if isinstance(safe_payload, dict) else {"value": safe_payload}
+
+
+def _strip_quality_debug_only(value: object) -> object:
+    if isinstance(value, dict):
+        return {
+            str(key): _strip_quality_debug_only(item)
+            for key, item in value.items()
+            if str(key) != "hidden_details_debug_only" and not str(key).endswith("_debug_only")
+        }
+    if isinstance(value, list):
+        return [_strip_quality_debug_only(item) for item in value]
+    return value
 
 
 def get_narrative_eval_reports() -> list[NarrativeQualityReport]:
@@ -495,6 +626,62 @@ def get_playtest_reports() -> list[PlaytestReportResponse]:
     if not isinstance(reports, list):
         reports = []
         app.state.playtest_reports = reports
+    return reports
+
+
+def get_playtest_batch_reports() -> list[PlaytestBatchRun]:
+    reports = getattr(app.state, "playtest_batch_reports", None)
+    if not isinstance(reports, list):
+        reports = []
+        app.state.playtest_batch_reports = reports
+    return reports
+
+
+def get_benchmark_reports() -> list[BenchmarkReport]:
+    reports = getattr(app.state, "benchmark_reports", None)
+    if not isinstance(reports, list):
+        reports = []
+        app.state.benchmark_reports = reports
+    return reports
+
+
+def get_world_health_scores() -> list[WorldHealthScore]:
+    reports = getattr(app.state, "world_health_scores", None)
+    if not isinstance(reports, list):
+        reports = []
+        app.state.world_health_scores = reports
+    return reports
+
+
+def get_content_coverage_reports() -> list[ContentCoverageReport]:
+    reports = getattr(app.state, "content_coverage_reports", None)
+    if not isinstance(reports, list):
+        reports = []
+        app.state.content_coverage_reports = reports
+    return reports
+
+
+def get_branch_regression_reports() -> list[BranchRegressionReport]:
+    reports = getattr(app.state, "branch_regression_reports", None)
+    if not isinstance(reports, list):
+        reports = []
+        app.state.branch_regression_reports = reports
+    return reports
+
+
+def get_mod_compat_stress_reports() -> list[ModCompatibilityStressReport]:
+    reports = getattr(app.state, "mod_compat_stress_reports", None)
+    if not isinstance(reports, list):
+        reports = []
+        app.state.mod_compat_stress_reports = reports
+    return reports
+
+
+def get_quality_gate_results() -> list[QualityGateResult]:
+    reports = getattr(app.state, "quality_gate_results", None)
+    if not isinstance(reports, list):
+        reports = []
+        app.state.quality_gate_results = reports
     return reports
 
 
@@ -534,6 +721,11 @@ def get_scenario_template_renderer() -> ScenarioTemplateRenderer:
     renderer = ScenarioTemplateRenderer(worlds_root=get_worlds_root())
     app.state.scenario_template_renderer = renderer
     return renderer
+
+
+def get_scenario_authoring_service() -> ScenarioAuthoringService:
+    scenarios_root = getattr(app.state, "scenarios_root", "scenarios")
+    return ScenarioAuthoringService(scenarios_root, get_worlds_root())
 
 
 def get_prompt_profile_store() -> PromptProfileStore:
@@ -1007,6 +1199,28 @@ def run_playtest_api(request: PlaytestRunRequest) -> PlaytestReportResponse:
     return response
 
 
+@app.post("/playtests/batch/run", response_model=PlaytestBatchRun)
+def run_playtest_batch_api(request: PlaytestBatchRunRequest) -> PlaytestBatchRun:
+    require_playtest_api()
+    try:
+        report = run_playtest_batch(request, worlds_root=get_worlds_root())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except WorldLoaderError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    get_playtest_batch_reports().append(report)
+    return report
+
+
+@app.get("/playtests/batch/{run_id}", response_model=PlaytestBatchRun)
+def get_playtest_batch(run_id: str) -> PlaytestBatchRun:
+    require_playtest_api()
+    for report in get_playtest_batch_reports():
+        if report.run_id == run_id:
+            return report
+    raise HTTPException(status_code=404, detail=f"Playtest batch run not found: {run_id}")
+
+
 @app.get("/playtests/{run_id}", response_model=PlaytestReportResponse)
 def get_playtest(run_id: str) -> PlaytestReportResponse:
     require_playtest_api()
@@ -1014,6 +1228,284 @@ def get_playtest(run_id: str) -> PlaytestReportResponse:
         if report.run_id == run_id:
             return report
     raise HTTPException(status_code=404, detail=f"Playtest run not found: {run_id}")
+
+
+@app.post("/quality/benchmarks/run", response_model=BenchmarkReport)
+def run_benchmarks_api(request: BenchmarkRunRequest) -> BenchmarkReport:
+    require_benchmark_api()
+    benchmark_request = request.model_copy(update={"worlds_root": get_worlds_root()})
+    try:
+        report = run_benchmark_suite(benchmark_request)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    get_benchmark_reports().append(report)
+    return report
+
+
+@app.get("/quality/benchmarks/recent", response_model=list[BenchmarkReport])
+def get_recent_benchmarks() -> list[BenchmarkReport]:
+    require_benchmark_api()
+    return get_benchmark_reports()[-10:]
+
+
+@app.get("/quality/worlds/{world_id}/health", response_model=dict[str, Any])
+def get_world_health(world_id: str) -> dict[str, Any]:
+    require_quality_api()
+    for report in reversed(get_world_health_scores()):
+        if report.world_id == world_id:
+            return _quality_api_payload(report)
+    return _quality_api_payload(empty_world_health_score(world_id))
+
+
+@app.post("/quality/worlds/{world_id}/health/run", response_model=dict[str, Any])
+def run_world_health(world_id: str) -> dict[str, Any]:
+    require_quality_api()
+    try:
+        reports = _build_world_health_source_reports(world_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=f"World pack not found: {world_id}") from exc
+    benchmark_reports = [report for report in get_benchmark_reports() if report.world_id == world_id][-3:]
+    health = build_world_health_score(world_id, reports, benchmark_reports=benchmark_reports)
+    get_world_health_scores().append(health)
+    return _quality_api_payload(health)
+
+
+@app.get("/quality/worlds/{world_id}/coverage", response_model=dict[str, Any])
+def get_content_coverage(world_id: str) -> dict[str, Any]:
+    require_quality_api()
+    for report in reversed(get_content_coverage_reports()):
+        if report.world_id == world_id:
+            return _quality_api_payload(report)
+    try:
+        return _quality_api_payload(analyze_content_coverage(world_id, worlds_root=get_worlds_root()))
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=f"World pack not found: {world_id}") from exc
+
+
+@app.post("/quality/worlds/{world_id}/coverage/run", response_model=dict[str, Any])
+def run_content_coverage(
+    world_id: str,
+    request: ContentCoverageRequest | None = None,
+) -> dict[str, Any]:
+    require_quality_api()
+    request = request or ContentCoverageRequest()
+    try:
+        report = analyze_content_coverage(
+            world_id,
+            worlds_root=get_worlds_root(),
+            events=request.events,
+            playtest_reports=[*request.playtest_reports, *get_playtest_reports()],
+            scenario_reports=[*request.scenario_reports, *get_scenario_regression_runs()],
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=f"World pack not found: {world_id}") from exc
+    get_content_coverage_reports().append(report)
+    return _quality_api_payload(report)
+
+
+@app.post("/quality/worlds/{world_id}/branch-regression/run", response_model=dict[str, Any])
+def run_branch_regression(
+    world_id: str,
+    request: BranchRegressionRequest,
+) -> dict[str, Any]:
+    require_quality_api()
+    try:
+        diff = request.diff or get_world_branch_service().diff_world(world_id, request.target_branch)
+        cases = request.scenario_cases or [
+            case for case in sample_scenario_regression_cases() if case.world_id == world_id
+        ]
+        report = run_branch_diff_regression(
+            world_id=world_id,
+            diff=diff,
+            scenario_cases=cases,
+            base_branch=request.base_branch,
+            target_branch=request.target_branch,
+            worlds_root=get_worlds_root(),
+        )
+    except (AuthoringError, FileNotFoundError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    get_branch_regression_reports().append(report)
+    return _quality_api_payload(report)
+
+
+@app.post("/quality/mods/compatibility-stress/run", response_model=dict[str, Any])
+def run_mod_compatibility_stress_api(
+    request: ModCompatibilityStressRequest,
+) -> dict[str, Any]:
+    require_quality_api()
+    try:
+        report = run_mod_compatibility_stress(request, mods_root=get_mods_root())
+    except ModLoaderError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    get_mod_compat_stress_reports().append(report)
+    return _quality_api_payload(report)
+
+
+@app.post("/quality/worlds/{world_id}/gate/run", response_model=QualityGateResult)
+def run_quality_gate_api(
+    world_id: str,
+    config: QualityGateConfig | None = None,
+) -> QualityGateResult:
+    require_quality_api()
+    try:
+        result = run_quality_gate(
+            world_id,
+            config or QualityGateConfig(),
+            worlds_root=get_worlds_root(),
+            mods_root=get_mods_root(),
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    get_quality_gate_results().append(result)
+    return result
+
+
+def _build_world_health_source_reports(world_id: str) -> list[WorldQualityReport]:
+    worlds_root = get_worlds_root()
+    validation_report = get_authoring_service().validate_world(world_id)
+    source_reports: list[WorldQualityReport] = [
+        world_quality_report_from_validation_report(validation_report),
+        analyze_quest_completion(world_id, worlds_root=worlds_root).quality_report,
+        analyze_dead_ends(world_id, worlds_root=worlds_root).quality_report,
+        analyze_npc_behavior_coverage(world_id, worlds_root=worlds_root).quality_report,
+        analyze_economy_balance(world_id, worlds_root=worlds_root).quality_report,
+        analyze_combat_balance(world_id, worlds_root=worlds_root).quality_report,
+        analyze_social_consequence_coverage(world_id, worlds_root=worlds_root).quality_report,
+    ]
+    return [report.normal_copy() for report in source_reports]
+
+
+@app.get("/quality/worlds/{world_id}/quests", response_model=dict[str, Any])
+def get_quest_completion_analysis(world_id: str) -> dict[str, Any]:
+    require_quality_api()
+    try:
+        return _quality_api_payload(analyze_quest_completion(world_id, worlds_root=get_worlds_root()))
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=f"World quest file not found: {world_id}") from exc
+
+
+@app.post("/quality/worlds/{world_id}/quests/analyze", response_model=dict[str, Any])
+def post_quest_completion_analysis(
+    world_id: str,
+    request: QuestCompletionAnalysisRequest,
+) -> dict[str, Any]:
+    require_quality_api()
+    try:
+        return _quality_api_payload(
+            analyze_quest_completion(world_id, worlds_root=get_worlds_root(), coverage=request.coverage)
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=f"World quest file not found: {world_id}") from exc
+
+
+@app.post("/quality/worlds/{world_id}/dead-ends/analyze", response_model=dict[str, Any])
+def post_dead_end_analysis(
+    world_id: str,
+    request: DeadEndAnalysisRequest,
+) -> dict[str, Any]:
+    require_quality_api()
+    try:
+        return _quality_api_payload(analyze_dead_ends(world_id, worlds_root=get_worlds_root(), coverage=request.coverage))
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=f"World pack not found: {world_id}") from exc
+
+
+@app.get("/quality/worlds/{world_id}/npc-coverage", response_model=dict[str, Any])
+def get_npc_behavior_coverage(world_id: str) -> dict[str, Any]:
+    require_quality_api()
+    try:
+        return _quality_api_payload(analyze_npc_behavior_coverage(world_id, worlds_root=get_worlds_root()))
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=f"World pack not found: {world_id}") from exc
+
+
+@app.post("/quality/worlds/{world_id}/npc-coverage/analyze", response_model=dict[str, Any])
+def post_npc_behavior_coverage(
+    world_id: str,
+    request: NPCBehaviorCoverageRequest,
+) -> dict[str, Any]:
+    require_quality_api()
+    try:
+        return _quality_api_payload(
+            analyze_npc_behavior_coverage(
+                world_id,
+                worlds_root=get_worlds_root(),
+                events=request.events,
+                playtest_reports=request.playtest_reports,
+                scenario_reports=request.scenario_reports,
+            )
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=f"World pack not found: {world_id}") from exc
+
+
+@app.post("/quality/worlds/{world_id}/schedules/analyze", response_model=dict[str, Any])
+def post_schedule_conflict_analysis(
+    world_id: str,
+    request: ScheduleConflictAnalysisRequest,
+) -> dict[str, Any]:
+    require_quality_api()
+    _ = request
+    try:
+        return _quality_api_payload(analyze_schedule_conflicts(world_id, worlds_root=get_worlds_root()))
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=f"World pack not found: {world_id}") from exc
+
+
+@app.post("/quality/worlds/{world_id}/economy/analyze", response_model=dict[str, Any])
+def post_economy_balance_analysis(
+    world_id: str,
+    request: EconomyBalanceAnalysisRequest,
+) -> dict[str, Any]:
+    require_quality_api()
+    try:
+        return _quality_api_payload(
+            analyze_economy_balance(
+                world_id,
+                worlds_root=get_worlds_root(),
+                playtest_reports=request.playtest_reports,
+            )
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=f"World pack not found: {world_id}") from exc
+
+
+@app.post("/quality/worlds/{world_id}/combat/analyze", response_model=dict[str, Any])
+def post_combat_balance_analysis(
+    world_id: str,
+    request: CombatBalanceAnalysisRequest,
+) -> dict[str, Any]:
+    require_quality_api()
+    try:
+        return _quality_api_payload(
+            analyze_combat_balance(
+                world_id,
+                worlds_root=get_worlds_root(),
+                playtest_reports=request.playtest_reports,
+            )
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=f"World pack not found: {world_id}") from exc
+
+
+@app.post("/quality/worlds/{world_id}/social-consequences/analyze", response_model=dict[str, Any])
+def post_social_consequence_coverage_analysis(
+    world_id: str,
+    request: SocialConsequenceCoverageRequest,
+) -> dict[str, Any]:
+    require_quality_api()
+    try:
+        return _quality_api_payload(
+            analyze_social_consequence_coverage(
+                world_id,
+                worlds_root=get_worlds_root(),
+                events=request.events,
+                playtest_reports=request.playtest_reports,
+                scenario_reports=request.scenario_reports,
+            )
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=f"World pack not found: {world_id}") from exc
 
 
 @app.get("/scenarios/regression", response_model=ScenarioRegressionListResponse)
@@ -1048,6 +1540,55 @@ def get_scenario_regression(run_id: str) -> ScenarioRegressionRun:
         if run.run_id == run_id:
             return run
     raise HTTPException(status_code=404, detail=f"Scenario regression run not found: {run_id}")
+
+
+@app.get("/authoring/scenarios", response_model=ScenarioAuthoringListResponse)
+def list_authoring_scenarios() -> ScenarioAuthoringListResponse:
+    require_authoring_api()
+    return ScenarioAuthoringListResponse(scenarios=get_scenario_authoring_service().list_scenarios())
+
+
+@app.get("/authoring/scenarios/{scenario_id}", response_model=ScenarioAuthoringPreviewResponse)
+def get_authoring_scenario(scenario_id: str) -> ScenarioAuthoringPreviewResponse:
+    require_authoring_api()
+    try:
+        scenario = get_scenario_authoring_service().get_scenario(scenario_id)
+        return ScenarioAuthoringPreviewResponse(
+            scenario=scenario,
+            validation=_scenario_validation_response(get_scenario_authoring_service().validate_scenario(scenario)),
+            writes_to_disk=False,
+        )
+    except ScenarioAuthoringError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/authoring/scenarios/preview", response_model=ScenarioAuthoringPreviewResponse)
+def preview_authoring_scenario(request: ScenarioAuthoringPreviewRequest) -> ScenarioAuthoringPreviewResponse:
+    require_authoring_api()
+    return get_scenario_authoring_service().preview_scenario(request.scenario)
+
+
+@app.post("/authoring/scenarios/{scenario_id}/validate", response_model=ScenarioAuthoringPreviewResponse)
+def validate_authoring_scenario(
+    scenario_id: str,
+    request: ScenarioAuthoringPreviewRequest,
+) -> ScenarioAuthoringPreviewResponse:
+    require_authoring_api()
+    if scenario_id != request.scenario.id:
+        raise HTTPException(status_code=400, detail="Path scenario_id must match scenario.id")
+    return get_scenario_authoring_service().preview_scenario(request.scenario)
+
+
+@app.put("/authoring/scenarios/{scenario_id}", response_model=ScenarioAuthoringSaveResponse)
+def save_authoring_scenario(
+    scenario_id: str,
+    request: ScenarioAuthoringPreviewRequest,
+) -> ScenarioAuthoringSaveResponse:
+    require_authoring_api()
+    try:
+        return get_scenario_authoring_service().save_scenario(scenario_id, request.scenario)
+    except ScenarioAuthoringError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 def _playtest_report_response(report: PlaytestReport, steps_requested: int) -> PlaytestReportResponse:

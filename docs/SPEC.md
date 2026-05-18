@@ -41,7 +41,7 @@ All handled player actions, system ticks, NPC planning ticks, and system consequ
 
 Authoring APIs edit content-pack YAML, not active `GameState`. Procedural quest generation produces drafts only.
 
-## Current v0.8 Gameplay Loop
+## Current v0.9 Gameplay Loop
 
 1. Player submits text through API or frontend.
 2. `IntentParser` returns schema-validated `PlayerIntent`.
@@ -56,7 +56,7 @@ Authoring APIs edit content-pack YAML, not active `GameState`. Procedural quest 
 11. Narrator receives visible action facts and returns `NarrativeResult`.
 12. API returns narration plus filtered `visible_state`.
 
-## v0.8 Included Scope
+## v0.9 Included Scope
 
 Backend:
 
@@ -77,6 +77,20 @@ Backend:
 - Visual map, quest graph, NPC goal, social graph, economy, rumor/crime,
   validation graph, timeline replay, world branch/diff, template browser,
   prompt profile, scenario regression, and advanced package endpoints.
+- World quality report schemas, quality issue/metric/run metadata, and safe
+  normal/debug report separation.
+- Expanded automated playtesting scenarios and deterministic batch runner.
+- Scenario regression authoring APIs.
+- Hidden information leak regression suite.
+- Quest completion analysis, dead-end detector, NPC behavior coverage, NPC
+  schedule conflict detector, economy balance checks, combat balance checks,
+  and faction/rumor/crime consequence coverage.
+- Save/load/migration stress tests and import/export save-bundle stress paths.
+- Performance benchmark suite.
+- Narrative consistency evals.
+- World health score and content coverage APIs/dashboards.
+- Branch diff regression and mod compatibility stress testing.
+- Quality gate CLI/API.
 - Multi-world save browser summaries.
 - LLM provider factory using `LLM_PROVIDER`.
 
@@ -142,6 +156,11 @@ Frontend:
 - Import/export controls for local world, mod, save, template, and scenario
   packages.
 - Settings / Local Privacy panel.
+- World Health Score Dashboard.
+- Content Coverage Dashboard.
+- Scenario Regression Authoring panel.
+- Quality, playtest batch, benchmark, and regression report surfaces where
+  implemented by the local studio UI.
 
 Testing:
 
@@ -149,10 +168,40 @@ Testing:
 - FastAPI tests.
 - SQLite save/load tests with temporary databases.
 - Boundary eval tests for narrative visibility leaks.
-- v0.3, v0.4, v0.5, v0.6, v0.7, and v0.8 integration regression tests.
+- v0.3, v0.4, v0.5, v0.6, v0.7, v0.8, and v0.9 integration regression tests.
 - Migration compatibility fixtures.
 - Deterministic playtesting agents and narrative quality evals.
+- Hidden information leak evals and narrative consistency evals.
+- Deterministic quality gate, benchmark, stress, coverage, and analyzer tests.
 - Fake/mock LLM providers in automated tests.
+
+## v0.9 Quality Verification Model
+
+v0.9 introduces local quality verification as an authoring and regression
+toolchain. Quality reports can aggregate validation issues, playtest results,
+scenario regression output, hidden-leak checks, quest reachability analysis,
+dead-end detection, NPC/schedule coverage, economy/combat/social sanity
+checks, save/load/migration stress tests, benchmarks, and mod compatibility
+smoke tests.
+
+Quality output is advisory. `WorldHealthScore` and dashboard scores are
+explainable heuristics, not absolute quality judgments and not canonical game
+facts. Quality reports do not mutate `GameState`, write active saves, or
+change content packs. The quality gate is a deterministic threshold/severity
+gate; LLM output cannot decide pass/fail.
+
+Normal quality, playtest, benchmark, and scenario reports must not contain
+hidden fact text, NPC secrets, hidden witnesses, raw `GameState`, raw
+`state_deltas`, API keys, raw environment variables, or sensitive local paths.
+Debug-only diagnostic details must be explicitly marked and kept on
+debug/local-only surfaces.
+
+Current implementation note: the main playtest, eval, benchmark, and quality
+gate routes use existing local feature flags such as `ENABLE_PLAYTEST_API`,
+`ENABLE_EVAL_API`, `ENABLE_DEBUG_API`, and `ENABLE_PERF_LOGGING`. There is no
+separate `ENABLE_QUALITY_API` setting yet, and some analyzer endpoints remain
+local-only without an independent quality flag. The backend should remain
+bound to localhost for v0.9 local studio use.
 
 ## Persistence Model
 
@@ -315,7 +364,7 @@ event logging, provider abstraction, or content-only mod restrictions.
 - Do not expose provider secrets, raw env, raw `GameState`, or raw
   `state_deltas` through Studio Home, Settings, dashboards, or player APIs.
 
-## Not In v0.8
+## Not In v0.9
 
 - Hosted service security, auth, accounts, cloud sync, or multiplayer.
 - Tactical grid combat or multi-round combat AI.
@@ -341,8 +390,13 @@ event logging, provider abstraction, or content-only mod restrictions.
 - Automatic publishing or automatic overwrite of user world packs.
 - LLM-generated map/quest/NPC/social/economy/consequence content that bypasses
   explicit preview, validation, and save.
+- Automatic world repair from quality reports.
+- Treating health scores as definitive creative judgments.
+- Writing eval/playtest/quality results into active `GameState` or active
+  saves.
+- Hosted quality service, telemetry upload, or cloud report storage.
 
-## v0.8 Known Hardening Items
+## v0.9 Known Hardening Items
 
 - Split `ActionResult.reason` into player-safe and debug-only reason fields.
 - Move raw faction reputation out of player API.
@@ -367,3 +421,8 @@ event logging, provider abstraction, or content-only mod restrictions.
 - Keep debug timeline/replay data out of player/narrator routes.
 - Consider stricter allowlists for prompt profile free-text fields if profiles
   expand beyond the current local style controls.
+- Add a dedicated `ENABLE_QUALITY_API` / `require_quality_api()` if quality
+  analyzer APIs need to be exposed separately from local debug/eval/playtest
+  flags.
+- Keep quality report `safe_details` concise and audited so hidden text cannot
+  migrate from debug-only fields into normal dashboards.

@@ -765,6 +765,27 @@ Validation reports contain:
 
 The CLI returns a non-zero exit code when errors are present.
 
+## v0.9 Quality Authoring Notes
+
+v0.9 quality tools analyze content packs without changing them. They can report
+quest reachability problems, dead ends, NPC schedule conflicts, hidden
+information leak risks, economy/combat/social sanity issues, scenario
+regression failures, benchmark regressions, and content coverage gaps.
+
+Quality reports are advisory. They do not auto-repair YAML, do not write active
+saves, do not call LLMs, and do not make `GameState` changes. Hidden fact text,
+NPC secrets, hidden witnesses, and hidden relationship details must stay out of
+normal report fields. Debug-only diagnostics must be explicitly marked.
+
+Scenario regression files and template packs are local authoring/test data.
+They must not contain API keys, `.env` contents, database paths, or executable
+scripts. Imports and advanced packages must pass manifest, checksum, path, file
+type, and validation checks before apply.
+
+See `docs/QUALITY_SYSTEM.md` for the v0.9 report schemas, quality gate config,
+playtest scenario schema, benchmark report schema, health score categories, and
+coverage report categories.
+
 ## Security and Visibility Rules
 
 - Content packs cannot access local secrets.
@@ -778,7 +799,8 @@ The CLI returns a non-zero exit code when errors are present.
 
 ## Current Limits
 
-- The v0.8 authoring UI has multiple visual editors, but it is still not a
+- The v0.9 authoring UI has multiple visual editors and quality dashboards, but
+  it is still not a
   full IDE, multiplayer editor, or complex drag/drop graph system.
 - No automatic YAML repair.
 - No online mod registry or download support.
@@ -790,3 +812,5 @@ The CLI returns a non-zero exit code when errors are present.
 - No online import/export or cloud sync.
 - No template script execution.
 - No LLM automatic world/map/quest/social/economy rewriting.
+- No automatic quality-report repair of content packs.
+- No claim that quality scores are absolute judgments.

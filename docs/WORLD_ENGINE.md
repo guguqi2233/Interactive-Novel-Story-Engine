@@ -1,6 +1,6 @@
 # World Engine
 
-This document describes the local world engine as of v0.8. The engine is the
+This document describes the local world engine as of v0.9. The engine is the
 only source of truth for world state, rules, consequences, persistence, and
 visibility. The LLM layer may parse intent, render narration, and summarize
 memory, but it does not decide rule outcomes or mutate `GameState`.
@@ -963,6 +963,97 @@ Debug timeline APIs are controlled by `ENABLE_DEBUG_API` and are for local
 development only. They expose event timelines and `state_deltas` for debugging.
 This data must remain separated from player APIs and narrator prompts.
 
+## v0.9 Quality And Automated Playtesting Layer
+
+v0.9 adds a local quality-analysis layer on top of the v0.8 visual authoring
+studio. These tools inspect content packs, event timelines, playtest reports,
+scenario regression output, save/migration behavior, and performance samples.
+They produce safe reports for authors; they do not modify active `GameState`,
+active saves, or world-pack YAML unless a separate authoring save flow is used.
+
+The common report format is `WorldQualityReport`:
+
+- `run_id`, `world_id`, `created_at`
+- engine, schema, and content-pack version metadata
+- `categories`
+- `metrics` as structured `QualityMetric` records
+- `issues` as structured `QualityIssue` records
+- `summary`
+- `recommended_actions`
+
+`QualityIssue` supports `info`, `warning`, `error`, and `blocker` severities.
+Normal reports use `safe_details`; hidden or sensitive diagnostic material must
+stay in `hidden_details_debug_only` and must only be exposed through explicitly
+debug/local-only surfaces. Normal quality reports must not include hidden fact
+text, NPC secrets, hidden witnesses, raw `GameState`, raw `state_deltas`, API
+keys, raw environment variables, or local sensitive paths.
+
+Current v0.9 quality modules include:
+
+- Automated Playtesting Scenario Expansion: deterministic scenarios for
+  exploration, quest paths, combat, stealth, economy, crime/social behavior,
+  save/load, migration, and hidden-leak probes.
+- Scenario Regression Authoring UI: local authoring of regression cases stored
+  in controlled scenario files, with preview/validate/save flows.
+- Hidden Information Leak Regression Suite: pytest evals for player API,
+  narrator context, memory context, graphs, maps, shops, quest state, reports,
+  and quality output.
+- Quest Completion Analysis: static and scenario/playtest-assisted analysis of
+  missing stage refs, missing trigger refs, unreachable stages, completion
+  paths, circular paths, and hidden quest visibility risks.
+- Dead-End / Unreachable Objective Detector: pragmatic checks for unreachable
+  required items/NPCs/facts, locked paths without access, undiscoverable clues,
+  and quest blockers.
+- NPC Behavior Coverage Report and NPC Schedule Conflict Detector: coverage and
+  conflict analysis for NPC goals, schedules, planning actions, reactions,
+  rumor/crime participation, and quest-required availability.
+- Economy Balance Sanity Checks: non-authoritative checks for negative prices,
+  arbitrage risk, shop references, hidden shop inventory, reward outliers, and
+  extreme price modifiers.
+- Combat Balance Sanity Checks: non-authoritative checks for lethal dead ends,
+  missing non-lethal paths, critical NPC death without fallback, public combat
+  consequence gaps, and unresolved status effects.
+- Faction / Rumor / Crime Consequence Coverage: checks for missing references,
+  untriggerable consequences, dedupe risks, faction effects, and hidden fact
+  leakage in social systems.
+- Save / Load / Migration Stress Tests: deterministic temporary-DB scenarios
+  for many turns, save/load cycles, migration dry-run/apply, save-bundle
+  import/export, replay dry-run, and hidden-safe reporting.
+- Performance Benchmark Suite: local benchmarks for game loop, world tick,
+  save/load, migration dry-run, validation, map/quest graph conversion, memory
+  search, and scenario regression.
+- Narrative Consistency Evals: deterministic evals for contradictions with
+  `ActionResult`, `visible_state`, timeline, NPC knowledge, quest state, and
+  memory authority.
+- World Health Score Dashboard: a heuristic dashboard that aggregates quality
+  reports into structure, reachability, secrecy, continuity, balance, coverage,
+  performance, and migration-safety dimensions. It is not an absolute quality
+  judgment.
+- Content Coverage Dashboard: safe coverage summaries for locations, NPCs,
+  items, quests, facts, factions, rumors, crimes, combat, and trade.
+- Branch Diff Regression Testing: selects relevant regression cases from a
+  `WorldDiff` and runs them in temporary sessions.
+- Mod Compatibility Stress Testing: checks mod combinations without executing
+  code or modifying original world/mod files.
+- Automated Playtest Batch Runner: deterministic batch execution across
+  scenarios, agents, and seeds, with aggregate safe reports.
+- Quality Gate CLI / API: runs a configured local gate over validation,
+  hidden-leak checks, quest/dead-end/NPC/economy/combat/social analyses,
+  stress tests, benchmarks, scenario regression, and mod compatibility smoke
+  checks.
+
+Quality tools are local development tools. They must not call real LLM APIs by
+default, must use mock/local-stub providers in tests, and must not make the LLM
+the pass/fail judge. The quality gate uses deterministic code, thresholds, and
+report severities.
+
+Known v0.9 implementation note: `ENABLE_PLAYTEST_API`, `ENABLE_EVAL_API`,
+`ENABLE_DEBUG_API`, and `ENABLE_PERF_LOGGING` gate the main playtest, eval,
+debug, benchmark, and quality-gate flows. There is currently no separate
+`ENABLE_QUALITY_API` setting. Some analyzer endpoints are local-only but not
+all have an independent feature flag yet; keep the backend bound to localhost
+and do not expose quality APIs as a hosted service.
+
 ## Current Limits
 
 - No account system, cloud sync, or remote publishing.
@@ -975,6 +1066,10 @@ This data must remain separated from player APIs and narrator prompts.
 - No external vector database requirement.
 - No external LLM judge in evals.
 - No production APM/telemetry; performance samples remain local.
+- Quality reports and health scores are heuristic authoring aids, not absolute
+  design judgments and not canonical world facts.
+- Quality, eval, benchmark, and playtest APIs are local-only tools, not
+  production or hosted-service endpoints.
 - NPC planning is limited to deterministic candidate actions.
 - Procedural side quests are drafts only.
 - Memory retrieval is context support, not canonical truth.

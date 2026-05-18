@@ -367,6 +367,55 @@ export type DebugPerformanceSummaryResponse = {
   entries: DebugPerformanceSummaryEntry[];
 };
 
+export type WorldHealthCategoryScore = {
+  dimension: string;
+  score: number;
+  status: string;
+  explanation: string;
+  blocker_count: number;
+  error_count: number;
+  warning_count: number;
+};
+
+export type WorldHealthScore = {
+  health_id: string;
+  world_id: string;
+  created_at: string;
+  overall_score: number;
+  category_scores: WorldHealthCategoryScore[];
+  blockers: string[];
+  warnings: string[];
+  recommended_actions: string[];
+  source_report_ids: string[];
+  summary: Record<string, unknown>;
+};
+
+export type ContentCoverageSummary = {
+  total: number;
+  covered: number;
+  uncovered: number;
+  coverage_percent: number;
+  covered_ids: string[];
+  uncovered_ids: string[];
+  safe_summary: string;
+};
+
+export type ContentCoverageReport = {
+  world_id: string;
+  locations: ContentCoverageSummary;
+  npcs: ContentCoverageSummary;
+  items: ContentCoverageSummary;
+  quests: ContentCoverageSummary;
+  facts: ContentCoverageSummary;
+  factions: ContentCoverageSummary;
+  rumors: ContentCoverageSummary;
+  crimes: ContentCoverageSummary;
+  combat_encounters: ContentCoverageSummary;
+  shops_trade: ContentCoverageSummary;
+  hidden_entities_redacted: Record<string, number>;
+  quality_report: Record<string, unknown>;
+};
+
 export type PlaytestActionRecord = {
   step: number;
   turn_before: number;
@@ -412,6 +461,57 @@ export type PlaytestRunRequest = {
   steps: number;
   seed: number;
   save_load_check: boolean;
+};
+
+export type PlaytestBatchRunRequest = {
+  world_id: string;
+  scenario_ids: string[];
+  agent_types: string[];
+  seeds: number[];
+  steps: number;
+  max_parallelism: number;
+  stop_on_blocker: boolean;
+  save_load_check: boolean;
+};
+
+export type PlaytestBatchRunItem = {
+  run_index: number;
+  scenario_id?: string | null;
+  agent_type: string;
+  seed: number;
+  passed: boolean;
+  blocker: boolean;
+  duration_ms: number;
+  turns_run: number;
+  issue_count: number;
+  safe_failure_reasons: string[];
+  report: PlaytestReport;
+};
+
+export type PlaytestBatchRun = {
+  local_only: boolean;
+  run_id: string;
+  created_at: string;
+  world_id: string;
+  total_runs: number;
+  passed: number;
+  failed: number;
+  blockers: number;
+  aggregate_issues: string[];
+  coverage_summary: {
+    action_types: Record<string, number>;
+    final_locations: Record<string, number>;
+    scenarios_run: string[];
+    agents_run: string[];
+    seeds_run: number[];
+  };
+  performance_summary: {
+    total_duration_ms: number;
+    average_duration_ms: number;
+    max_duration_ms: number;
+  };
+  run_items: PlaytestBatchRunItem[];
+  quality_report: Record<string, unknown>;
 };
 
 export type ScenarioRegressionCase = {
@@ -460,6 +560,18 @@ export type ScenarioRegressionListResponse = {
 export type ScenarioRegressionRunRequest = {
   world_id?: string | null;
   scenario_ids: string[];
+};
+
+export type ScenarioAuthoringListResponse = {
+  local_only: boolean;
+  scenarios: ScenarioRegressionCase[];
+};
+
+export type ScenarioAuthoringPreviewResponse = {
+  local_only: boolean;
+  scenario: ScenarioRegressionCase;
+  validation: AuthoringValidation;
+  writes_to_disk: boolean;
 };
 
 export type AuthoringWorldDetailResponse = {
@@ -1407,6 +1519,26 @@ export async function fetchDebugPerformanceSummary(): Promise<DebugPerformanceSu
   return requestJson<DebugPerformanceSummaryResponse>("/debug/performance/summary");
 }
 
+export async function fetchWorldHealth(worldId: string): Promise<WorldHealthScore> {
+  return requestJson<WorldHealthScore>(`/quality/worlds/${encodeURIComponent(worldId)}/health`);
+}
+
+export async function runWorldHealth(worldId: string): Promise<WorldHealthScore> {
+  return requestJson<WorldHealthScore>(`/quality/worlds/${encodeURIComponent(worldId)}/health/run`, {
+    method: "POST"
+  });
+}
+
+export async function fetchContentCoverage(worldId: string): Promise<ContentCoverageReport> {
+  return requestJson<ContentCoverageReport>(`/quality/worlds/${encodeURIComponent(worldId)}/coverage`);
+}
+
+export async function runContentCoverage(worldId: string): Promise<ContentCoverageReport> {
+  return requestJson<ContentCoverageReport>(`/quality/worlds/${encodeURIComponent(worldId)}/coverage/run`, {
+    method: "POST"
+  });
+}
+
 export async function fetchPlaytestRecent(): Promise<PlaytestRecentResponse> {
   return requestJson<PlaytestRecentResponse>("/playtests/recent");
 }
@@ -1423,6 +1555,20 @@ export async function runPlaytest(request: PlaytestRunRequest): Promise<Playtest
 
 export async function fetchPlaytest(runId: string): Promise<PlaytestReport> {
   return requestJson<PlaytestReport>(`/playtests/${encodeURIComponent(runId)}`);
+}
+
+export async function runPlaytestBatch(request: PlaytestBatchRunRequest): Promise<PlaytestBatchRun> {
+  return requestJson<PlaytestBatchRun>("/playtests/batch/run", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(request)
+  });
+}
+
+export async function fetchPlaytestBatch(runId: string): Promise<PlaytestBatchRun> {
+  return requestJson<PlaytestBatchRun>(`/playtests/batch/${encodeURIComponent(runId)}`);
 }
 
 export async function fetchScenarioRegressionCases(): Promise<ScenarioRegressionListResponse> {
@@ -1443,6 +1589,58 @@ export async function runScenarioRegression(
 
 export async function fetchScenarioRegression(runId: string): Promise<ScenarioRegressionRun> {
   return requestJson<ScenarioRegressionRun>(`/scenarios/regression/${encodeURIComponent(runId)}`);
+}
+
+export async function fetchAuthoringScenarios(): Promise<ScenarioAuthoringListResponse> {
+  return requestJson<ScenarioAuthoringListResponse>("/authoring/scenarios");
+}
+
+export async function fetchAuthoringScenario(scenarioId: string): Promise<ScenarioAuthoringPreviewResponse> {
+  return requestJson<ScenarioAuthoringPreviewResponse>(
+    `/authoring/scenarios/${encodeURIComponent(scenarioId)}`
+  );
+}
+
+export async function previewAuthoringScenario(
+  scenario: ScenarioRegressionCase
+): Promise<ScenarioAuthoringPreviewResponse> {
+  return requestJson<ScenarioAuthoringPreviewResponse>("/authoring/scenarios/preview", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ scenario })
+  });
+}
+
+export async function validateAuthoringScenario(
+  scenario: ScenarioRegressionCase
+): Promise<ScenarioAuthoringPreviewResponse> {
+  return requestJson<ScenarioAuthoringPreviewResponse>(
+    `/authoring/scenarios/${encodeURIComponent(scenario.id)}/validate`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ scenario })
+    }
+  );
+}
+
+export async function saveAuthoringScenario(
+  scenario: ScenarioRegressionCase
+): Promise<ScenarioAuthoringPreviewResponse> {
+  return requestJson<ScenarioAuthoringPreviewResponse>(
+    `/authoring/scenarios/${encodeURIComponent(scenario.id)}`,
+    {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ scenario })
+    }
+  );
 }
 
 export async function fetchAuthoringWorld(worldId: string): Promise<AuthoringWorldDetailResponse> {
