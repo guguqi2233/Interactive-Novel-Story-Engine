@@ -5,7 +5,8 @@ param(
     [switch]$UseBuiltFrontend,
     [switch]$NoBrowser,
     [switch]$SkipDependencyCheck,
-    [switch]$PreflightOnly
+    [switch]$PreflightOnly,
+    [int]$HealthTimeoutSeconds = 30
 )
 
 $ErrorActionPreference = "Stop"
@@ -40,6 +41,31 @@ function Assert-PathExists {
     }
 }
 
+function Test-HttpOk {
+    param([string]$Url)
+    try {
+        $response = Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 3
+        return ($response.StatusCode -ge 200 -and $response.StatusCode -lt 500)
+    } catch {
+        return $false
+    }
+}
+
+function Wait-HttpOk {
+    param(
+        [string]$Url,
+        [int]$TimeoutSeconds
+    )
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        if (Test-HttpOk $Url) {
+            return $true
+        }
+        Start-Sleep -Milliseconds 750
+    }
+    return $false
+}
+
 if (-not $env:DATABASE_URL) {
     $env:DATABASE_URL = "sqlite:///./world_engine.db"
 }
@@ -65,9 +91,20 @@ if (-not $SkipDependencyCheck) {
     Assert-PathExists (Join-Path $RepoRoot "pyproject.toml") "pyproject.toml was not found. Run the launcher from this repository."
     Assert-PathExists (Join-Path $FrontendRoot "package.json") "frontend/package.json was not found."
     Assert-PathExists (Join-Path $FrontendRoot "node_modules") "frontend/node_modules was not found. Run: cd frontend; npm install"
+    Push-Location $RepoRoot
+    try {
+        $env:PYTHONPATH = "backend"
+        python -c "import fastapi, uvicorn, pydantic; import app.main" | Out-Null
+    } finally {
+        Pop-Location
+    }
     if ($UseBuiltFrontend) {
         Assert-PathExists (Join-Path $FrontendRoot "dist/index.html") "frontend/dist was not found. Run: cd frontend; npm run build"
     }
+}
+
+if (-not (Test-Path (Join-Path $RepoRoot ".env"))) {
+    Write-Host "No .env file found. Continuing with safe local defaults. To customize, copy .env.example to .env and keep it untracked."
 }
 
 $BackendOut = Join-Path $LogsRoot "desktop-backend.out.log"
@@ -115,6 +152,7 @@ Write-Host "Perf logging:  $($env:ENABLE_PERF_LOGGING)"
 Write-Host "VITE_API_BASE_URL: $($env:VITE_API_BASE_URL)"
 Write-Host "LLM_API_KEY is not read by this script and is never written to logs by the launcher."
 Write-Host "Use -UseBuiltFrontend after running 'cd frontend; npm run build' to serve the built frontend."
+Write-Host "Safety: do not expose these local-only authoring/debug/perf APIs outside trusted localhost."
 
 if ($PreflightOnly) {
     Write-Host "Preflight complete. No processes were started because -PreflightOnly was set."
@@ -130,6 +168,29 @@ Start-Process powershell -WindowStyle Hidden -WorkingDirectory $FrontendRoot `
     -RedirectStandardOutput $FrontendOut `
     -RedirectStandardError $FrontendErr `
     -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", $FrontendCommand
+
+$BackendHealthUrl = "http://${BackendHost}:${BackendPort}/health"
+$StudioStatusUrl = "http://${BackendHost}:${BackendPort}/studio/status"
+Write-Host "Waiting for backend health: $BackendHealthUrl"
+if (Wait-HttpOk $BackendHealthUrl $HealthTimeoutSeconds) {
+    Write-Host "Backend /health: ok"
+} else {
+    Write-Host "Backend /health: not ready within ${HealthTimeoutSeconds}s. Check $BackendErr"
+}
+
+Write-Host "Checking studio status: $StudioStatusUrl"
+if (Wait-HttpOk $StudioStatusUrl 5) {
+    Write-Host "Studio status: reachable"
+} else {
+    Write-Host "Studio status: unavailable. Backend may still be starting."
+}
+
+Write-Host "Waiting for frontend: $FrontendUrl"
+if (Wait-HttpOk $FrontendUrl $HealthTimeoutSeconds) {
+    Write-Host "Frontend: reachable"
+} else {
+    Write-Host "Frontend: not ready within ${HealthTimeoutSeconds}s. Check $FrontendErr"
+}
 
 if (-not $NoBrowser) {
     Start-Process $FrontendUrl

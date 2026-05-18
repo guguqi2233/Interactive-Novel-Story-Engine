@@ -8,13 +8,14 @@ import yaml
 from pydantic import BaseModel
 
 from app.core.instrumentation import record_performance_sample
+from app.engine.content.map_visual import build_authoring_map_visual_graph
 from app.engine.content.validator import (
     ValidationIssue,
     ValidationReport,
     ValidationSeverity,
     validate_world_pack,
 )
-from app.engine.content.world_loader import WorldManifest
+from app.engine.content.world_loader import MapVisualGraph, WorldLoader, WorldLoaderError, WorldManifest
 
 
 ALLOWED_AUTHORING_FILES: tuple[str, ...] = (
@@ -94,7 +95,7 @@ class ContentAuthoringService:
             return []
         worlds: list[AuthoringWorldSummary] = []
         for world_path in sorted(self.worlds_root.iterdir(), key=lambda path: path.name):
-            if world_path.is_dir():
+            if world_path.is_dir() and not world_path.name.startswith("."):
                 worlds.append(self.get_world_summary(world_path.name))
         return worlds
 
@@ -212,6 +213,68 @@ class ContentAuthoringService:
             return report
         return self._validate_with_draft_file(world_id, file_name, proposed_content)
 
+    def validate_drafts(
+        self,
+        world_id: str,
+        proposed_files: dict[str, str],
+    ) -> ValidationReport:
+        if not proposed_files:
+            return self.validate_world(world_id)
+        for file_name, content in proposed_files.items():
+            self._safe_file_path(world_id, file_name)
+            try:
+                self._parse_yaml(content, file_name)
+            except AuthoringError as exc:
+                report = ValidationReport(world_id=world_id)
+                report.add(
+                    ValidationSeverity.ERROR,
+                    file_name,
+                    str(exc),
+                    code="draft_yaml_parse_error",
+                    suggestion="Fix YAML syntax before saving.",
+                )
+                return report
+        with TemporaryDirectory() as temp_dir:
+            temp_worlds_root = Path(temp_dir) / "worlds"
+            source_world = self._safe_world_path(world_id)
+            draft_world = temp_worlds_root / world_id
+            copytree(source_world, draft_world)
+            for file_name, content in proposed_files.items():
+                (draft_world / file_name).write_text(content, encoding="utf-8")
+            return validate_world_pack(world_id, worlds_root=temp_worlds_root)
+
+    def write_files(self, world_id: str, proposed_files: dict[str, str]) -> ValidationReport:
+        report = self.validate_drafts(world_id, proposed_files)
+        if not report.ok:
+            return report
+        backups: dict[Path, str | None] = {}
+        paths: dict[Path, str] = {}
+        for file_name, content in proposed_files.items():
+            path = self._safe_file_path(world_id, file_name)
+            backups[path] = path.read_text(encoding="utf-8") if path.exists() else None
+            paths[path] = content
+        try:
+            for path, content in paths.items():
+                path.write_text(content, encoding="utf-8")
+            persisted_report = self.validate_world(world_id)
+            if persisted_report.ok:
+                return persisted_report
+            report = persisted_report
+        except Exception as exc:
+            report = ValidationReport(world_id=world_id)
+            report.add(
+                ValidationSeverity.ERROR,
+                "authoring",
+                f"Failed to save content files: {exc}",
+                code="authoring_multi_file_write_failed",
+            )
+        for path, backup in backups.items():
+            if backup is None:
+                path.unlink(missing_ok=True)
+            else:
+                path.write_text(backup, encoding="utf-8")
+        return report
+
     def analyze_file_impact(
         self,
         world_id: str,
@@ -272,6 +335,63 @@ class ContentAuthoringService:
             )
         report = self.validate_world(world_id)
         return self.get_world_summary(world_id), report
+
+    def get_map_graph(self, world_id: str) -> MapVisualGraph:
+        self._safe_world_path(world_id)
+        try:
+            pack = WorldLoader(self.worlds_root).load(world_id)
+        except WorldLoaderError as exc:
+            raise AuthoringError(str(exc)) from exc
+        return build_authoring_map_visual_graph(pack)
+
+    def map_graph_to_locations_yaml(self, world_id: str, graph: MapVisualGraph) -> str:
+        self._safe_world_path(world_id)
+        current_content = self.read_file(world_id, "locations.yaml")
+        current_data = _safe_parse_mapping(current_content)
+        current_locations = _items_by_id("locations.yaml", current_data)
+        exits_by_source: dict[str, dict[str, str]] = {node.location_id: {} for node in graph.nodes}
+        for edge in graph.edges:
+            exits_by_source.setdefault(edge.source_location_id, {})[edge.label] = edge.target_location_id
+
+        locations: list[dict[str, Any]] = []
+        for node in graph.nodes:
+            existing = dict(current_locations.get(node.location_id, {}))
+            existing["id"] = node.location_id
+            existing["name"] = node.name
+            existing.setdefault("description", "")
+            existing["exits"] = dict(sorted(exits_by_source.get(node.location_id, {}).items()))
+            visual = dict(existing.get("visual") or {})
+            visual.update(
+                {
+                    "x": node.x,
+                    "y": node.y,
+                    "region_id": node.region_id,
+                    "icon": node.icon,
+                    "color_tag": node.color_tag,
+                    "display_group": node.display_group,
+                    "tags": node.tags,
+                    "visibility": node.visibility.value,
+                }
+            )
+            existing["visual"] = {
+                key: value
+                for key, value in visual.items()
+                if value is not None and value != []
+            }
+            locations.append(existing)
+        return yaml.safe_dump({"locations": locations}, sort_keys=False, allow_unicode=True)
+
+    def preview_map_graph(self, world_id: str, graph: MapVisualGraph) -> AuthoringPreviewReport:
+        content = self.map_graph_to_locations_yaml(world_id, graph)
+        return self.preview_file_change(world_id, "locations.yaml", content)
+
+    def validate_map_graph(self, world_id: str, graph: MapVisualGraph) -> ValidationReport:
+        content = self.map_graph_to_locations_yaml(world_id, graph)
+        return self.validate_draft(world_id, "locations.yaml", content)
+
+    def write_map_graph(self, world_id: str, graph: MapVisualGraph) -> ValidationReport:
+        content = self.map_graph_to_locations_yaml(world_id, graph)
+        return self.write_file(world_id, "locations.yaml", content)
 
     def _safe_world_path(self, world_id: str) -> Path:
         if not _is_safe_id(world_id):

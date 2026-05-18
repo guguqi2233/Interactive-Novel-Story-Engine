@@ -1,6 +1,6 @@
 # World Engine
 
-This document describes the local world engine as of v0.7. The engine is the
+This document describes the local world engine as of v0.8. The engine is the
 only source of truth for world state, rules, consequences, persistence, and
 visibility. The LLM layer may parse intent, render narration, and summarize
 memory, but it does not decide rule outcomes or mutate `GameState`.
@@ -148,6 +148,10 @@ tags for secret-only content until a stricter public-label field is added.
 Known v0.7 hardening note: authoring/debug views may intentionally show full
 local content, raw debug events, or raw deltas. They must stay visually and API
 separated from player views and narrator payloads.
+
+Known v0.8 authoring note: visual editors are authoring tools over content-pack
+YAML. They do not change active session `GameState`, and saved edits must pass
+preview/validation/explicit save flows.
 
 ## Time, Schedule, and World Tick
 
@@ -429,10 +433,48 @@ v0.6+ adds local authoring dry-run support:
 These APIs do not modify active `GameState`, active sessions, or saves. They
 are local authoring tools only and must stay behind `ENABLE_AUTHORING_API`.
 
-## Scenario Template System
+## Visual Map Data Model and Editor
 
-v0.7 adds local `ScenarioTemplate` support for reusable authoring drafts.
+v0.8 adds a map visualization layer for `locations.yaml`. Location definitions
+may include an optional `visual` field:
+
+- `x`
+- `y`
+- `region_id`
+- `icon`
+- `color_tag`
+- `display_group`
+- `tags`
+- `visibility`
+- `notes` for authoring/debug use only
+
+The backend exposes authoring map graph data as `MapVisualGraph` with
+`MapVisualNode` and `MapVisualEdge`. Edges are derived from location exits.
+When visual fields are missing, the graph builder supplies deterministic
+authoring defaults without writing files.
+
+Authoring map APIs are behind `ENABLE_AUTHORING_API`:
+
+- `GET /authoring/worlds/{world_id}/map`
+- `POST /authoring/worlds/{world_id}/map/preview`
+- `POST /authoring/worlds/{world_id}/map/validate`
+- `PUT /authoring/worlds/{world_id}/map`
+
+`PUT` converts graph edits back to `locations.yaml` and runs world validation
+before saving. Validation errors reject the save. Player-visible map graphs
+filter hidden nodes and hidden edges; authoring maps may show complete local
+content in authoring-only panels.
+
+The frontend Map Editor provides a simple SVG/form editor for node positions,
+labels, regions, tags, and exit edges. It does not implement automatic layout,
+does not call the LLM, and does not change player movement rules.
+
+## Scenario Template System and Local Template Browser
+
+v0.7 added local `ScenarioTemplate` support for reusable authoring drafts.
 Templates live under `templates/` and are YAML data, not executable scripts.
+v0.8 adds a Local Template Browser that can list, inspect, preview, validate,
+and apply templates through authoring-gated APIs.
 
 `ScenarioTemplate` fields:
 
@@ -465,10 +507,22 @@ copy of a target world. Applying rendered content is intentionally separate:
 creators must use the authoring API or another explicit save step, and the
 validator remains the gate.
 
-## Import / Export Workflow
+Template APIs:
 
-v0.7 adds local authoring-gated archive import/export for worlds, mods, and
-saves. Archives are zip files represented by the API as base64 payloads.
+- `GET /authoring/templates`
+- `GET /authoring/templates/{template_id}`
+- `POST /authoring/templates/{template_id}/preview`
+- `POST /authoring/templates/{template_id}/apply`
+
+Templates cannot execute scripts, cannot write active saves, and cannot bypass
+validation.
+
+## Import / Export Workflow and Advanced Packages
+
+v0.7 added local authoring-gated archive import/export for worlds, mods, and
+saves. v0.8 extends this into local packages with manifests, checksums,
+compatibility checks, dry-run, and explicit apply. Archives are zip files
+represented by the API as base64 payloads.
 
 Import/export endpoints:
 
@@ -478,8 +532,12 @@ Import/export endpoints:
 - `POST /authoring/import/mods`
 - `GET /authoring/export/saves/{save_id}`
 - `POST /authoring/import/saves`
+- `GET /authoring/export/templates`
+- `GET /authoring/export/scenarios`
+- `POST /authoring/import/packages/dry-run`
+- `POST /authoring/import/packages/apply`
 
-Archive manifests are stored in `export_manifest.json` and include:
+Legacy archive manifests are stored in `export_manifest.json` and include:
 
 - `export_type`: `world`, `mod`, or `save`
 - `id`
@@ -493,35 +551,229 @@ validation, mod imports run mod validation, and save imports check migration
 status. Import/export does not call the LLM and does not modify active session
 `GameState`.
 
+v0.8 package archives also include `local_package_manifest.json` with:
+
+- `package_id`
+- `package_type`: `world`, `mod`, `save_bundle`, `template_pack`, or
+  `scenario_suite`
+- `version`
+- `engine_version_min`
+- `schema_version`
+- `content_pack_version`
+- `included_files`
+- `checksums`
+- `dependencies`
+- `conflicts`
+- `created_at`
+- `notes`
+
+Dry-run validates manifests, file paths, disallowed file types, checksums,
+compatibility, overwrite conflicts, world/mod validation, and save migration
+status. Apply requires explicit confirmation and a passing dry-run.
+
 Save export can include full hidden save state by design. It is therefore a
 local authoring/backup workflow only and must stay behind
 `ENABLE_AUTHORING_API`.
 
-## Visual Quest Graph Authoring
+## Visual Quest Graph Editor
 
-v0.7 adds an authoring-only quest graph layer for `quests.yaml`. It parses
-quests into:
+v0.7 added an initial authoring-only quest graph layer for `quests.yaml`. v0.8
+expands it into a fuller visual quest editor. It parses quests into:
 
 - quest nodes
 - stage nodes
 - objective nodes
 - trigger nodes
+- reward nodes
 - `next_stages` edges
 - trigger-to-stage edges
+- failure/alternate path edges where content provides them
 
-The first UI slice supports viewing the graph and editing stage title, stage
-description, objective text, and `next_stages`. The frontend sends the edited
-graph to the backend preview endpoint, which converts it back to `quests.yaml`
-and runs draft validation. Saving still uses the normal authoring file save
-path, so validation remains the gate and active `GameState` is not modified.
+The UI supports viewing and editing quest title/description, stage
+title/description, objectives, triggers, `next_stages`, rewards, and visibility
+fields. The frontend sends the edited graph to backend preview/validate/save
+endpoints, which convert it back to `quests.yaml` and run draft validation.
+Saving still uses the normal authoring validation path, so validation remains
+the gate and active `GameState` is not modified.
 
 Quest graph APIs are local authoring endpoints behind `ENABLE_AUTHORING_API`:
 
 - `GET /authoring/worlds/{world_id}/quests/graph`
 - `POST /authoring/worlds/{world_id}/quests/graph/preview`
+- `POST /authoring/worlds/{world_id}/quests/graph/validate`
+- `PUT /authoring/worlds/{world_id}/quests/graph`
 
 Hidden quests can appear in the authoring UI because authoring is a local
 creator tool, but they must not enter player `visible_state`.
+
+Validation catches invalid `next_stage` references and missing trigger
+references. Unreachable stages and missing terminal stages are warnings.
+
+## NPC Goal Editor
+
+v0.8 adds authoring support for NPC goals in `npcs.yaml`. The editor reads,
+previews, validates, and saves structured goal data. The backend represents
+the graph as NPC goal authoring DTOs and validates:
+
+- unique goal ids per NPC
+- valid priority values
+- valid goal status
+- condition references to facts/items/NPCs/locations/quests
+- supported planning actions in `allowed_actions`
+- legal `forbidden_actions`
+- safe `desired_state` references
+
+APIs:
+
+- `GET /authoring/worlds/{world_id}/npcs/goals`
+- `POST /authoring/worlds/{world_id}/npcs/goals/preview`
+- `POST /authoring/worlds/{world_id}/npcs/goals/validate`
+- `PUT /authoring/worlds/{world_id}/npcs/goals`
+
+NPC goals remain deterministic planning inputs. The editor does not call the
+LLM, does not grant NPCs unknown facts, and does not modify active runtime
+state.
+
+## Faction / Relationship Visual Editor
+
+v0.8 adds authoring graph support for factions and NPC relationships. It reads
+`factions.yaml`, `relationships.yaml`, and related NPC metadata, then exposes
+authoring-only graph nodes and edges for:
+
+- faction nodes
+- NPC nodes
+- relationship edges
+- conflict/relation edges
+- trust, fear, affinity, obligation, visibility, and conflict values
+
+APIs:
+
+- `GET /authoring/worlds/{world_id}/social/graph`
+- `POST /authoring/worlds/{world_id}/social/graph/preview`
+- `POST /authoring/worlds/{world_id}/social/graph/validate`
+- `PUT /authoring/worlds/{world_id}/social/graph`
+
+Player graph endpoints remain filtered separately. Hidden relationships and
+hidden faction conflicts may appear in authoring views but must not enter
+player graph or player visible state.
+
+## Item / Economy Editor
+
+v0.8 adds an Item / Economy authoring editor over `items.yaml` and merchant
+fields in `npcs.yaml`. It supports item ids, names, descriptions, ownership,
+visibility, tags, base prices, rarity, trade flags, portability, and merchant
+shop inventory.
+
+APIs:
+
+- `GET /authoring/worlds/{world_id}/economy`
+- `POST /authoring/worlds/{world_id}/economy/preview`
+- `POST /authoring/worlds/{world_id}/economy/validate`
+- `PUT /authoring/worlds/{world_id}/economy`
+
+Validation checks item id uniqueness, ownership conflicts, non-negative
+prices, valid trade flags, valid shop inventory item ids, and hidden shop item
+warnings. Trade authority remains in backend economy rules; the frontend does
+not calculate authoritative prices.
+
+## Rumor / Crime Consequence Editor
+
+v0.8 adds authoring support for social consequence graphs around rumors,
+crimes, witnesses, reputation effects, and quest triggers. The editor reads
+`rumors.yaml`, facts, factions, quests, and related consequence content where
+available.
+
+APIs:
+
+- `GET /authoring/worlds/{world_id}/rumor-crime`
+- `POST /authoring/worlds/{world_id}/rumor-crime/preview`
+- `POST /authoring/worlds/{world_id}/rumor-crime/validate`
+- `PUT /authoring/worlds/{world_id}/rumor-crime`
+
+Validation checks rumor fact references, hidden fact text leakage in
+player-facing rumor text, valid crime types, faction ids, quest trigger
+references, duplicate consequence ids, and simple consequence-loop risks.
+Runtime crime and social consequences remain rule-engine decisions.
+
+## Visual Validation Graph
+
+v0.8 can turn a structured validation report into a local authoring
+`ValidationGraph`. It includes file, entity, reference, schema, and issue
+nodes, with edges such as contains, references, missing_reference,
+invalid_value, visibility_risk, and cycle.
+
+APIs:
+
+- `GET /authoring/worlds/{world_id}/validation-graph`
+- `POST /authoring/worlds/{world_id}/validation-graph`
+
+The graph is an authoring diagnostic. It does not auto-fix YAML, does not call
+the LLM, and should avoid local absolute paths or sensitive configuration.
+
+## Timeline Replay Visualizer
+
+v0.8 adds debug-only timeline replay data for sessions and saves:
+
+- `GET /debug/sessions/{session_id}/timeline`
+- `GET /debug/saves/{save_id}/timeline`
+- `POST /debug/saves/{save_id}/replay-dry-run`
+
+Timeline replay groups events by turn and can include event kind, actor,
+action type, result, visible-to-player flag, raw `state_deltas`, visible
+changes, and replay dry-run summaries. Replay dry-run applies event deltas to
+a fresh loaded initial state and reports checksums and invariant violations
+without writing the database.
+
+This is debug data only, gated by `ENABLE_DEBUG_API`. It must never enter
+player APIs or narrator prompts.
+
+## World Branch / Diff System
+
+v0.8 adds lightweight local world branching and structured diff. Branches are
+copies of whitelisted world YAML under `worlds/.branches/{world_id}/{branch}`.
+They do not copy `.env`, databases, logs, caches, or arbitrary files.
+
+APIs:
+
+- `GET /authoring/worlds/{world_id}/branches`
+- `POST /authoring/worlds/{world_id}/branches`
+- `GET /authoring/worlds/{world_id}/diff?other=...`
+- `POST /authoring/worlds/{world_id}/diff-draft`
+
+`WorldDiff` reports added, removed, changed, and potential renamed entities,
+broken references, migration impacts, and visibility risks. Diff is
+authoring-only and deterministic; it does not modify active `GameState`, does
+not migrate active saves, and does not call the LLM.
+
+## Scenario Regression Suite
+
+v0.8 adds scenario regression cases and run reports for local regression
+testing. A case contains a world id, input sequence, expected visible facts,
+forbidden visible facts, expected quest states, expected inventory, max turns,
+and tags.
+
+APIs:
+
+- `GET /scenarios/regression`
+- `POST /scenarios/regression/run`
+- `GET /scenarios/regression/{run_id}`
+
+The API is gated by playtest/eval/debug configuration. Runs use mock/local
+providers through the normal game loop or test harness, do not modify real
+user saves, and redact hidden fact text from reports.
+
+## Prompt Profile Manager
+
+v0.8 documents and exposes prompt profile management for local provider/model
+preferences. `PromptProfile` can configure provider/model filters, narrator
+style, prompt variants, temperature overrides, and optional output token
+limits.
+
+Prompt profiles cannot widen LLM authority. Validation rejects profiles that
+try to request hidden facts, NPC secrets, raw `GameState`, raw `state_deltas`,
+or direct `GameState` writes. Profiles may adjust style and variants only;
+they do not change visible facts, narrator-safe memory filtering, provider
+factory boundaries, or rule outcomes.
 
 ## Save Migration System
 
@@ -669,12 +921,12 @@ tightened further.
 
 ## Desktop Packaging Prototype
 
-v0.7 keeps desktop packaging as a local launcher prototype and enhances the
+v0.8 keeps desktop packaging as a local launcher prototype and enhances the
 launcher scripts. The Windows and shell scripts check basic dependencies,
 start the FastAPI backend and Vite frontend or built preview, print safe local
-status, and open the browser. This is not a formal installer, does not sign
-code, does not auto-update, does not sync to cloud, and does not embed `.env`
-or API keys into frontend assets.
+status, run `/health` and `/studio/status` checks, and open the browser. This
+is not a formal installer, does not sign code, does not auto-update, does not
+sync to cloud, and does not embed `.env` or API keys into frontend assets.
 
 ## Local Model Provider Full Integration
 
@@ -715,7 +967,7 @@ This data must remain separated from player APIs and narrator prompts.
 
 - No account system, cloud sync, or remote publishing.
 - No formal desktop installer.
-- No graphical world editor beyond the current local authoring panels.
+- No complex drag/drop IDE or multiplayer authoring workflow.
 - No automatic YAML repair.
 - No arbitrary mod code execution.
 - No online mod download or complex mod version solver.

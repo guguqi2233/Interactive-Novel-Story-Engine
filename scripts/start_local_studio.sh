@@ -8,6 +8,7 @@ NO_BROWSER="false"
 USE_BUILT_FRONTEND="false"
 SKIP_DEPENDENCY_CHECK="false"
 PREFLIGHT_ONLY="false"
+HEALTH_TIMEOUT_SECONDS="30"
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -38,6 +39,10 @@ while [ "$#" -gt 0 ]; do
     --preflight-only)
       PREFLIGHT_ONLY="true"
       shift
+      ;;
+    --health-timeout-seconds)
+      HEALTH_TIMEOUT_SECONDS="${2:?missing health timeout seconds}"
+      shift 2
       ;;
     *)
       echo "Unknown option: $1" >&2
@@ -70,6 +75,24 @@ require_path() {
   fi
 }
 
+http_ok() {
+  local url="$1"
+  python -c "import sys, urllib.request; url=sys.argv[1]; req=urllib.request.Request(url); resp=urllib.request.urlopen(req, timeout=3); sys.exit(0 if 200 <= resp.status < 500 else 1)" "${url}" >/dev/null 2>&1
+}
+
+wait_http_ok() {
+  local url="$1"
+  local timeout_seconds="$2"
+  local deadline=$(( $(date +%s) + timeout_seconds ))
+  while [ "$(date +%s)" -lt "${deadline}" ]; do
+    if http_ok "${url}"; then
+      return 0
+    fi
+    sleep 0.75
+  done
+  return 1
+}
+
 export DATABASE_URL="${DATABASE_URL:-sqlite:///./world_engine.db}"
 export LLM_PROVIDER="${LLM_PROVIDER:-mock}"
 export ENABLE_DEBUG_API="${ENABLE_DEBUG_API:-true}"
@@ -84,9 +107,17 @@ if [ "${SKIP_DEPENDENCY_CHECK}" != "true" ]; then
   require_path "${REPO_ROOT}/pyproject.toml" "pyproject.toml was not found. Run the launcher from this repository."
   require_path "${FRONTEND_ROOT}/package.json" "frontend/package.json was not found."
   require_path "${FRONTEND_ROOT}/node_modules" "frontend/node_modules was not found. Run: cd frontend && npm install"
+  (
+    cd "${REPO_ROOT}"
+    PYTHONPATH="backend${PYTHONPATH:+:${PYTHONPATH}}" python -c "import fastapi, uvicorn, pydantic; import app.main"
+  )
   if [ "${USE_BUILT_FRONTEND}" = "true" ]; then
     require_path "${FRONTEND_ROOT}/dist/index.html" "frontend/dist was not found. Run: cd frontend && npm run build"
   fi
+fi
+
+if [ ! -f "${REPO_ROOT}/.env" ]; then
+  echo "No .env file found. Continuing with safe local defaults. To customize, copy .env.example to .env and keep it untracked."
 fi
 
 BACKEND_OUT="${LOGS_ROOT}/desktop-backend.out.log"
@@ -114,6 +145,7 @@ echo "Debug API:     ${ENABLE_DEBUG_API}"
 echo "Perf logging:  ${ENABLE_PERF_LOGGING}"
 echo "VITE_API_BASE_URL: ${VITE_API_BASE_URL}"
 echo "LLM_API_KEY is not read by this script and is never written to logs by the launcher."
+echo "Safety: do not expose these local-only authoring/debug/perf APIs outside trusted localhost."
 
 if [ "${PREFLIGHT_ONLY}" = "true" ]; then
   echo "Preflight complete. No processes were started because --preflight-only was set."
@@ -129,6 +161,29 @@ fi
   cd "${FRONTEND_ROOT}"
   "${FRONTEND_CMD[@]}"
 ) >"${FRONTEND_OUT}" 2>"${FRONTEND_ERR}" &
+
+BACKEND_HEALTH_URL="http://${BACKEND_HOST}:${BACKEND_PORT}/health"
+STUDIO_STATUS_URL="http://${BACKEND_HOST}:${BACKEND_PORT}/studio/status"
+echo "Waiting for backend health: ${BACKEND_HEALTH_URL}"
+if wait_http_ok "${BACKEND_HEALTH_URL}" "${HEALTH_TIMEOUT_SECONDS}"; then
+  echo "Backend /health: ok"
+else
+  echo "Backend /health: not ready within ${HEALTH_TIMEOUT_SECONDS}s. Check ${BACKEND_ERR}"
+fi
+
+echo "Checking studio status: ${STUDIO_STATUS_URL}"
+if wait_http_ok "${STUDIO_STATUS_URL}" "5"; then
+  echo "Studio status: reachable"
+else
+  echo "Studio status: unavailable. Backend may still be starting."
+fi
+
+echo "Waiting for frontend: ${FRONTEND_URL}"
+if wait_http_ok "${FRONTEND_URL}" "${HEALTH_TIMEOUT_SECONDS}"; then
+  echo "Frontend: reachable"
+else
+  echo "Frontend: not ready within ${HEALTH_TIMEOUT_SECONDS}s. Check ${FRONTEND_ERR}"
+fi
 
 if [ "${NO_BROWSER}" != "true" ]; then
   if command -v xdg-open >/dev/null 2>&1; then

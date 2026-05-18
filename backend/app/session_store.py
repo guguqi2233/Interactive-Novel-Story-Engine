@@ -35,6 +35,7 @@ from app.llm.intent_parser import IntentParser
 from app.llm.narrator import Narrator
 from app.llm.provider_factory import create_llm_provider
 from app.llm.provider_base import LLMProvider
+from app.llm.prompt_profiles import get_default_prompt_profile_store
 
 ProviderFactory = Callable[[], LLMProvider]
 
@@ -71,12 +72,13 @@ class InMemorySessionStore:
 
     def _build_game_loop(self, state: GameState, event_log: EventLog) -> GameLoop:
         provider = self._provider_factory()
+        prompt_profile = get_default_prompt_profile_store().get_selected_profile()
         return GameLoop(
             state=state,
             event_log=event_log,
-            intent_parser=IntentParser(provider),
+            intent_parser=IntentParser(provider, prompt_profile=prompt_profile),
             action_dispatcher=ActionDispatcher(),
-            narrator=Narrator(provider),
+            narrator=Narrator(provider, prompt_profile=prompt_profile),
             rng=Random(),
         )
 

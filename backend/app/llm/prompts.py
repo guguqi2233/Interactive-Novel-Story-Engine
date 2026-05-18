@@ -23,10 +23,14 @@ clarification_question. If the action is unsupported or unclear, use unknown.
 """.strip()
 
 
-def build_intent_parser_messages(player_text: str) -> list[dict[str, str]]:
+def build_intent_parser_messages(
+    player_text: str,
+    *,
+    prompt_variant: str = "default",
+) -> list[dict[str, str]]:
     return [
         {"role": "system", "content": INTENT_PARSER_SYSTEM_PROMPT},
-        {"role": "user", "content": player_text},
+        {"role": "user", "content": str({"player_text": player_text, "prompt_variant": prompt_variant})},
     ]
 
 
@@ -49,6 +53,9 @@ def build_narrator_messages(
     visible_facts: list[str],
     current_location: str,
     tone: str,
+    *,
+    narrator_style: str = "",
+    prompt_variant: str = "default",
 ) -> list[dict[str, str]]:
     user_payload = {
         "player_input": player_input,
@@ -56,6 +63,8 @@ def build_narrator_messages(
         "visible_facts": visible_facts,
         "current_location": current_location,
         "tone": tone,
+        "narrator_style": narrator_style,
+        "prompt_variant": prompt_variant,
     }
     return [
         {"role": "system", "content": NARRATOR_SYSTEM_PROMPT},
@@ -78,8 +87,12 @@ Return only data matching the requested schema.
 """.strip()
 
 
-def build_memory_summarizer_messages(events_payload: list[dict[str, object]]) -> list[dict[str, str]]:
+def build_memory_summarizer_messages(
+    events_payload: list[dict[str, object]],
+    *,
+    prompt_variant: str = "default",
+) -> list[dict[str, str]]:
     return [
         {"role": "system", "content": MEMORY_SUMMARIZER_SYSTEM_PROMPT},
-        {"role": "user", "content": str({"events": events_payload})},
+        {"role": "user", "content": str({"events": events_payload, "prompt_variant": prompt_variant})},
     ]

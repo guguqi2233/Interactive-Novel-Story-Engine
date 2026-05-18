@@ -167,6 +167,8 @@ def _trigger_matches(
             before_state.player.location_id != trigger.id
             and after_state.player.location_id == trigger.id
         )
+    if trigger.type == QuestTriggerType.FACTION_REPUTATION:
+        return False
     raise QuestRuleError(f"Unsupported quest trigger type: {trigger.type}")
 
 

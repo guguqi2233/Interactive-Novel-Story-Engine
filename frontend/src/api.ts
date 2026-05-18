@@ -133,6 +133,60 @@ export type DebugEventListResponse = {
   events: DebugEvent[];
 };
 
+export type TimelineStateDiff = {
+  path: string;
+  operation: string;
+  reason?: string | null;
+  visible_to_player: boolean;
+};
+
+export type TimelineEventView = {
+  turn: number;
+  event_id: string;
+  actor_id: string;
+  action_type: string;
+  result: string;
+  target_id?: string | null;
+  visible_to_player: boolean;
+  event_kind: string;
+  state_deltas: StateDelta[];
+  visible_changes: TimelineStateDiff[];
+  delta_count: number;
+  created_at: string;
+};
+
+export type TimelineTurnGroup = {
+  turn: number;
+  events: TimelineEventView[];
+  event_count: number;
+  delta_count: number;
+};
+
+export type ReplayCheckpoint = {
+  turn: number;
+  event_id: string;
+  checksum: string;
+  delta_count: number;
+};
+
+export type ReplaySummary = {
+  event_count: number;
+  final_state_checksum: string;
+  invariant_violations: string[];
+  failed_event_id?: string | null;
+  checkpoints: ReplayCheckpoint[];
+};
+
+export type TimelineReplayResponse = {
+  local_only: boolean;
+  source_type: string;
+  source_id: string;
+  turns: TimelineTurnGroup[];
+  event_count: number;
+  delta_count: number;
+  replay_summary?: ReplaySummary | null;
+};
+
 export type GraphVisibility = "player_visible" | "debug_only";
 
 export type GraphNode = {
@@ -360,6 +414,54 @@ export type PlaytestRunRequest = {
   save_load_check: boolean;
 };
 
+export type ScenarioRegressionCase = {
+  id: string;
+  world_id: string;
+  name: string;
+  description: string;
+  initial_save?: string | null;
+  input_sequence: string[];
+  expected_visible_facts: string[];
+  forbidden_visible_facts: string[];
+  expected_quest_states: Record<string, string>;
+  expected_inventory: string[];
+  max_turns: number;
+  tags: string[];
+};
+
+export type ScenarioRegressionCaseResult = {
+  case_id: string;
+  world_id: string;
+  name: string;
+  passed: boolean;
+  failed_step?: number | null;
+  failure_reasons: string[];
+  expected_summary: Record<string, unknown>;
+  actual_summary: Record<string, unknown>;
+  hidden_leak_summary: string[];
+  save_load_failure?: string | null;
+};
+
+export type ScenarioRegressionRun = {
+  run_id: string;
+  created_at: string;
+  world_id?: string | null;
+  total_cases: number;
+  passed: number;
+  failed: number;
+  case_results: ScenarioRegressionCaseResult[];
+};
+
+export type ScenarioRegressionListResponse = {
+  local_only: boolean;
+  cases: ScenarioRegressionCase[];
+};
+
+export type ScenarioRegressionRunRequest = {
+  world_id?: string | null;
+  scenario_ids: string[];
+};
+
 export type AuthoringWorldDetailResponse = {
   local_only: boolean;
   world: AuthoringWorldSummary;
@@ -422,6 +524,95 @@ export type AuthoringFilePreviewResponse = {
   impact: AuthoringImpactAnalysis;
 };
 
+export type ValidationGraphNode = {
+  id: string;
+  label: string;
+  type: "file" | "entity" | "reference" | "issue" | "schema" | string;
+  severity?: string | null;
+  file?: string | null;
+  path?: string | null;
+  code?: string | null;
+};
+
+export type ValidationGraphEdge = {
+  source: string;
+  target: string;
+  type: "contains" | "references" | "missing_reference" | "invalid_value" | "visibility_risk" | "cycle" | string;
+  label?: string | null;
+};
+
+export type ValidationGraphIssue = {
+  id: string;
+  severity: string;
+  file: string;
+  path: string;
+  code: string;
+  message: string;
+  ref_id?: string | null;
+  suggestion?: string | null;
+};
+
+export type ValidationGraph = {
+  local_only: boolean;
+  world_id: string;
+  nodes: ValidationGraphNode[];
+  edges: ValidationGraphEdge[];
+  issues: ValidationGraphIssue[];
+};
+
+export type MapVisibility = "public" | "hidden" | "discoverable";
+export type MapVisualEdgeType = "exit" | "one_way" | "locked" | "hidden" | "conditional";
+
+export type MapVisualNode = {
+  id: string;
+  name: string;
+  location_id: string;
+  x: number;
+  y: number;
+  region_id?: string | null;
+  tags: string[];
+  visibility: MapVisibility;
+  icon?: string | null;
+  color_tag?: string | null;
+  display_group?: string | null;
+};
+
+export type MapVisualEdge = {
+  source_location_id: string;
+  target_location_id: string;
+  edge_type: MapVisualEdgeType;
+  label: string;
+  visibility: MapVisibility;
+};
+
+export type MapVisualGraph = {
+  nodes: MapVisualNode[];
+  edges: MapVisualEdge[];
+};
+
+export type AuthoringMapGraphResponse = {
+  local_only: boolean;
+  world_id: string;
+  graph: MapVisualGraph;
+};
+
+export type AuthoringMapPreviewResponse = {
+  local_only: boolean;
+  world_id: string;
+  graph: MapVisualGraph;
+  yaml_content: string;
+  validation: AuthoringValidation;
+  confirmation_required: boolean;
+};
+
+export type AuthoringMapWriteResponse = {
+  local_only: boolean;
+  world_id: string;
+  graph: MapVisualGraph;
+  validation: AuthoringValidation;
+  confirmation_required: boolean;
+};
+
 export type ScenarioTemplateOutputFile = {
   file_name: string;
   content: string;
@@ -456,6 +647,11 @@ export type ScenarioTemplatePreviewResponse = {
   rendered: RenderedScenarioTemplate;
   validation_report?: AuthoringValidation | null;
   writes_to_disk: boolean;
+  target_world_id?: string | null;
+};
+
+export type ScenarioTemplateApplyResponse = ScenarioTemplatePreviewResponse & {
+  applied: boolean;
 };
 
 export type QuestObjectiveNode = {
@@ -469,6 +665,8 @@ export type QuestStageNode = {
   description: string;
   objectives: QuestObjectiveNode[];
   next_stages: string[];
+  failure_stages: string[];
+  alternate_stages: string[];
 };
 
 export type QuestTriggerNode = {
@@ -479,6 +677,12 @@ export type QuestTriggerNode = {
   next_stage?: string | null;
 };
 
+export type QuestRewardNode = {
+  id: string;
+  text: string;
+  reward_type: string;
+};
+
 export type QuestGraphNode = {
   id: string;
   title: string;
@@ -487,6 +691,7 @@ export type QuestGraphNode = {
   visibility: string;
   stages: QuestStageNode[];
   triggers: QuestTriggerNode[];
+  rewards: QuestRewardNode[];
 };
 
 export type QuestGraphEdge = {
@@ -495,6 +700,9 @@ export type QuestGraphEdge = {
   type: string;
   quest_id: string;
   label?: string | null;
+  source_stage_id?: string | null;
+  target_stage_id?: string | null;
+  condition?: Record<string, string> | null;
 };
 
 export type QuestGraphResponse = {
@@ -510,6 +718,262 @@ export type QuestGraphPreviewResponse = {
   graph: QuestGraphResponse;
   yaml_content: string;
   validation: AuthoringValidation;
+  confirmation_required: boolean;
+};
+
+export type QuestGraphSaveResponse = {
+  local_only: boolean;
+  world_id: string;
+  graph: QuestGraphResponse;
+  yaml_content: string;
+  validation: AuthoringValidation;
+  saved: boolean;
+  confirmation_required: boolean;
+};
+
+export type NPCGoalNode = {
+  id: string;
+  description: string;
+  priority: number;
+  status: string;
+  conditions: string[];
+  desired_state: Record<string, unknown>;
+  allowed_actions: string[];
+  forbidden_actions: string[];
+};
+
+export type NPCGoalAuthoringNode = {
+  npc_id: string;
+  name: string;
+  hidden: boolean;
+  goals: NPCGoalNode[];
+  priorities: Record<string, number>;
+  constraints: string[];
+  current_goal_id?: string | null;
+  plan_state: Record<string, unknown>;
+};
+
+export type NPCGoalAuthoringGraph = {
+  local_only: boolean;
+  world_id: string;
+  npcs: NPCGoalAuthoringNode[];
+};
+
+export type NPCGoalAuthoringPreviewResponse = {
+  local_only: boolean;
+  world_id: string;
+  graph: NPCGoalAuthoringGraph;
+  yaml_content: string;
+  validation: AuthoringValidation;
+  confirmation_required: boolean;
+};
+
+export type NPCGoalAuthoringSaveResponse = NPCGoalAuthoringPreviewResponse & {
+  saved: boolean;
+};
+
+export type FactionAuthoringNode = {
+  id: string;
+  name: string;
+  description: string;
+  known_by_player: boolean;
+  default_reputation: number;
+  default_alert_level: number;
+  default_conflict_level: number;
+  tags: string[];
+  conflict_tags: string[];
+};
+
+export type FactionAuthoringEdge = {
+  source_faction_id: string;
+  target_faction_id: string;
+  relation: number;
+  conflict_level: number;
+  visibility: string;
+};
+
+export type FactionAuthoringGraph = {
+  world_id: string;
+  factions: FactionAuthoringNode[];
+  conflict_edges: FactionAuthoringEdge[];
+};
+
+export type RelationshipAuthoringNode = {
+  id: string;
+  label: string;
+  node_type: string;
+  hidden: boolean;
+};
+
+export type RelationshipAuthoringEdge = {
+  id: string;
+  source_id: string;
+  target_id: string;
+  relation_type: string;
+  trust: number;
+  fear: number;
+  affinity: number;
+  obligation: number;
+  tags: string[];
+  known_by_player: boolean;
+};
+
+export type SocialAuthoringGraph = {
+  local_only: boolean;
+  world_id: string;
+  faction_graph: FactionAuthoringGraph;
+  relationship_graph: RelationshipAuthoringGraph;
+};
+
+export type RelationshipAuthoringGraph = {
+  world_id: string;
+  nodes: RelationshipAuthoringNode[];
+  relationships: RelationshipAuthoringEdge[];
+};
+
+export type SocialAuthoringPreviewResponse = {
+  local_only: boolean;
+  world_id: string;
+  graph: SocialAuthoringGraph;
+  yaml_contents: Record<string, string>;
+  validation: AuthoringValidation;
+  confirmation_required: boolean;
+};
+
+export type SocialAuthoringSaveResponse = SocialAuthoringPreviewResponse & {
+  saved: boolean;
+};
+
+export type ItemEconomyItem = {
+  id: string;
+  name: string;
+  description: string;
+  location_id?: string | null;
+  owner_id?: string | null;
+  container_id?: string | null;
+  portable: boolean;
+  visible: boolean;
+  hidden: boolean;
+  discoverable: boolean;
+  discovered_by: string[];
+  tags: string[];
+  base_price: number;
+  tradeable: boolean;
+  rarity: string;
+  locked: boolean;
+  lock_difficulty: number;
+  lock_state: string;
+};
+
+export type MerchantEconomyNode = {
+  npc_id: string;
+  name: string;
+  hidden: boolean;
+  merchant: boolean;
+  shop_inventory: string[];
+  buy_price_modifier: number;
+  sell_price_modifier: number;
+};
+
+export type ItemEconomyAuthoring = {
+  local_only: boolean;
+  world_id: string;
+  items: ItemEconomyItem[];
+  merchants: MerchantEconomyNode[];
+};
+
+export type ItemEconomyAuthoringPreviewResponse = {
+  local_only: boolean;
+  world_id: string;
+  graph: ItemEconomyAuthoring;
+  yaml_contents: Record<string, string>;
+  validation: AuthoringValidation;
+  confirmation_required: boolean;
+};
+
+export type ItemEconomyAuthoringSaveResponse = ItemEconomyAuthoringPreviewResponse & {
+  saved: boolean;
+};
+
+export type FactReferenceNode = {
+  id: string;
+  visibility: string;
+  tags: string[];
+};
+
+export type FactionReferenceNode = {
+  id: string;
+  name: string;
+  known_by_player: boolean;
+};
+
+export type RumorAuthoringNode = {
+  id: string;
+  fact_id?: string | null;
+  source_event_id?: string | null;
+  text_for_player?: string | null;
+  truth_status: string;
+  known_by_npcs: string[];
+  known_by_factions: string[];
+  known_by_player: boolean;
+  spread_level: number;
+  created_turn: number;
+  tags: string[];
+};
+
+export type CrimeConsequenceNode = {
+  id: string;
+  crime_type: string;
+  trigger_condition: string;
+  severity: number;
+  visibility: string;
+  tags: string[];
+};
+
+export type ReputationEffectNode = {
+  id: string;
+  faction_id: string;
+  amount: number;
+  reason: string;
+};
+
+export type QuestTriggerConsequenceNode = {
+  id: string;
+  quest_id: string;
+  trigger_id: string;
+  action: string;
+};
+
+export type ConsequenceGraphEdge = {
+  source: string;
+  target: string;
+  type: string;
+  label?: string | null;
+};
+
+export type RumorCrimeConsequenceAuthoring = {
+  local_only: boolean;
+  world_id: string;
+  facts: FactReferenceNode[];
+  factions: FactionReferenceNode[];
+  rumors: RumorAuthoringNode[];
+  crimes: CrimeConsequenceNode[];
+  reputation_effects: ReputationEffectNode[];
+  quest_triggers: QuestTriggerConsequenceNode[];
+  edges: ConsequenceGraphEdge[];
+};
+
+export type RumorCrimeConsequencePreviewResponse = {
+  local_only: boolean;
+  world_id: string;
+  graph: RumorCrimeConsequenceAuthoring;
+  yaml_contents: Record<string, string>;
+  validation: AuthoringValidation;
+  confirmation_required: boolean;
+};
+
+export type RumorCrimeConsequenceSaveResponse = RumorCrimeConsequencePreviewResponse & {
+  saved: boolean;
 };
 
 export type VisibleState = {
@@ -610,7 +1074,37 @@ export type StudioConfigSummary = {
   database_configured: boolean;
   database_path_hint: string;
   api_key_configured: boolean;
+  selected_prompt_profile_id: string;
+  prompt_profiles: PromptProfile[];
   privacy_notes: string[];
+};
+
+export type PromptProfileTemperatureOverrides = {
+  narrator?: number | null;
+  intent_parser?: number | null;
+  memory?: number | null;
+};
+
+export type PromptProfile = {
+  id: string;
+  name: string;
+  description: string;
+  provider_filter: string[];
+  model_filter: string[];
+  narrator_style: string;
+  intent_parser_prompt_variant: string;
+  narrator_prompt_variant: string;
+  memory_prompt_variant: string;
+  temperature_overrides: PromptProfileTemperatureOverrides;
+  max_output_tokens?: number | null;
+  enabled: boolean;
+  matches_current_provider: boolean;
+};
+
+export type PromptProfileListResponse = {
+  local_only: boolean;
+  selected_profile_id: string;
+  profiles: PromptProfile[];
 };
 
 export type SaveGameResponse = {
@@ -684,6 +1178,20 @@ export async function fetchStudioConfigSummary(): Promise<StudioConfigSummary> {
   return requestJson<StudioConfigSummary>("/studio/config-summary");
 }
 
+export async function fetchPromptProfiles(): Promise<PromptProfileListResponse> {
+  return requestJson<PromptProfileListResponse>("/studio/prompt-profiles");
+}
+
+export async function selectPromptProfile(profileId: string): Promise<PromptProfileListResponse> {
+  return requestJson<PromptProfileListResponse>("/studio/prompt-profiles/select", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ profile_id: profileId })
+  });
+}
+
 export async function submitPlayerInput(
   sessionId: string,
   playerInput: string
@@ -751,6 +1259,50 @@ export async function fetchSessionDebugEvents(sessionId: string): Promise<DebugE
 
 export async function fetchSaveDebugEvents(saveId: string): Promise<DebugEventListResponse> {
   return requestJson<DebugEventListResponse>(`/debug/saves/${encodeURIComponent(saveId)}/events`);
+}
+
+function timelineQuery(params?: {
+  turnFrom?: number | null;
+  turnTo?: number | null;
+  eventFilter?: string;
+}): string {
+  const query = new URLSearchParams();
+  if (params?.turnFrom !== undefined && params.turnFrom !== null) {
+    query.set("turn_from", String(params.turnFrom));
+  }
+  if (params?.turnTo !== undefined && params.turnTo !== null) {
+    query.set("turn_to", String(params.turnTo));
+  }
+  if (params?.eventFilter && params.eventFilter !== "all") {
+    query.set("event_filter", params.eventFilter);
+  }
+  const encoded = query.toString();
+  return encoded ? `?${encoded}` : "";
+}
+
+export async function fetchSessionTimelineReplay(
+  sessionId: string,
+  params?: { turnFrom?: number | null; turnTo?: number | null; eventFilter?: string }
+): Promise<TimelineReplayResponse> {
+  return requestJson<TimelineReplayResponse>(
+    `/debug/sessions/${encodeURIComponent(sessionId)}/timeline${timelineQuery(params)}`
+  );
+}
+
+export async function fetchSaveTimelineReplay(
+  saveId: string,
+  params?: { turnFrom?: number | null; turnTo?: number | null; eventFilter?: string }
+): Promise<TimelineReplayResponse> {
+  return requestJson<TimelineReplayResponse>(
+    `/debug/saves/${encodeURIComponent(saveId)}/timeline${timelineQuery(params)}`
+  );
+}
+
+export async function dryRunSaveTimelineReplay(saveId: string): Promise<TimelineReplayResponse> {
+  return requestJson<TimelineReplayResponse>(
+    `/debug/saves/${encodeURIComponent(saveId)}/replay-dry-run`,
+    { method: "POST" }
+  );
 }
 
 export async function fetchPlayerRelationshipGraph(sessionId: string): Promise<GraphResponse> {
@@ -873,6 +1425,26 @@ export async function fetchPlaytest(runId: string): Promise<PlaytestReport> {
   return requestJson<PlaytestReport>(`/playtests/${encodeURIComponent(runId)}`);
 }
 
+export async function fetchScenarioRegressionCases(): Promise<ScenarioRegressionListResponse> {
+  return requestJson<ScenarioRegressionListResponse>("/scenarios/regression");
+}
+
+export async function runScenarioRegression(
+  request: ScenarioRegressionRunRequest
+): Promise<ScenarioRegressionRun> {
+  return requestJson<ScenarioRegressionRun>("/scenarios/regression/run", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(request)
+  });
+}
+
+export async function fetchScenarioRegression(runId: string): Promise<ScenarioRegressionRun> {
+  return requestJson<ScenarioRegressionRun>(`/scenarios/regression/${encodeURIComponent(runId)}`);
+}
+
 export async function fetchAuthoringWorld(worldId: string): Promise<AuthoringWorldDetailResponse> {
   return requestJson<AuthoringWorldDetailResponse>(
     `/authoring/worlds/${encodeURIComponent(worldId)}`
@@ -920,6 +1492,12 @@ export async function validateAuthoringWorld(worldId: string): Promise<Authoring
   );
 }
 
+export async function fetchValidationGraph(worldId: string): Promise<ValidationGraph> {
+  return requestJson<ValidationGraph>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/validation-graph`
+  );
+}
+
 export async function previewAuthoringFileChange(
   worldId: string,
   fileName: string,
@@ -940,8 +1518,66 @@ export async function previewAuthoringFileChange(
   );
 }
 
+export async function fetchAuthoringMap(worldId: string): Promise<AuthoringMapGraphResponse> {
+  return requestJson<AuthoringMapGraphResponse>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/map`
+  );
+}
+
+export async function previewAuthoringMap(
+  worldId: string,
+  graph: MapVisualGraph
+): Promise<AuthoringMapPreviewResponse> {
+  return requestJson<AuthoringMapPreviewResponse>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/map/preview`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ graph })
+    }
+  );
+}
+
+export async function validateAuthoringMap(
+  worldId: string,
+  graph: MapVisualGraph
+): Promise<AuthoringValidation> {
+  return requestJson<AuthoringValidation>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/map/validate`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ graph })
+    }
+  );
+}
+
+export async function saveAuthoringMap(
+  worldId: string,
+  graph: MapVisualGraph
+): Promise<AuthoringMapWriteResponse> {
+  return requestJson<AuthoringMapWriteResponse>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/map`,
+    {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ graph })
+    }
+  );
+}
+
 export async function fetchScenarioTemplates(): Promise<ScenarioTemplateListResponse> {
   return requestJson<ScenarioTemplateListResponse>("/authoring/templates");
+}
+
+export async function fetchScenarioTemplate(templateId: string): Promise<ScenarioTemplate> {
+  return requestJson<ScenarioTemplate>(`/authoring/templates/${encodeURIComponent(templateId)}`);
 }
 
 export async function previewScenarioTemplate(
@@ -964,6 +1600,27 @@ export async function previewScenarioTemplate(
   );
 }
 
+export async function applyScenarioTemplate(
+  templateId: string,
+  variables: Record<string, string>,
+  targetWorldId?: string
+): Promise<ScenarioTemplateApplyResponse> {
+  return requestJson<ScenarioTemplateApplyResponse>(
+    `/authoring/templates/${encodeURIComponent(templateId)}/apply`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        variables,
+        target_world_id: targetWorldId || null,
+        confirm_apply: true
+      })
+    }
+  );
+}
+
 export async function fetchQuestGraph(worldId: string): Promise<QuestGraphResponse> {
   return requestJson<QuestGraphResponse>(
     `/authoring/worlds/${encodeURIComponent(worldId)}/quests/graph`
@@ -978,6 +1635,254 @@ export async function previewQuestGraph(
     `/authoring/worlds/${encodeURIComponent(worldId)}/quests/graph/preview`,
     {
       method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ graph })
+    }
+  );
+}
+
+export async function validateQuestGraph(
+  worldId: string,
+  graph: QuestGraphResponse
+): Promise<QuestGraphPreviewResponse> {
+  return requestJson<QuestGraphPreviewResponse>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/quests/graph/validate`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ graph })
+    }
+  );
+}
+
+export async function saveQuestGraph(
+  worldId: string,
+  graph: QuestGraphResponse
+): Promise<QuestGraphSaveResponse> {
+  return requestJson<QuestGraphSaveResponse>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/quests/graph`,
+    {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ graph })
+    }
+  );
+}
+
+export async function fetchNPCGoalGraph(worldId: string): Promise<NPCGoalAuthoringGraph> {
+  return requestJson<NPCGoalAuthoringGraph>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/npcs/goals`
+  );
+}
+
+export async function previewNPCGoalGraph(
+  worldId: string,
+  graph: NPCGoalAuthoringGraph
+): Promise<NPCGoalAuthoringPreviewResponse> {
+  return requestJson<NPCGoalAuthoringPreviewResponse>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/npcs/goals/preview`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ graph })
+    }
+  );
+}
+
+export async function validateNPCGoalGraph(
+  worldId: string,
+  graph: NPCGoalAuthoringGraph
+): Promise<NPCGoalAuthoringPreviewResponse> {
+  return requestJson<NPCGoalAuthoringPreviewResponse>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/npcs/goals/validate`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ graph })
+    }
+  );
+}
+
+export async function saveNPCGoalGraph(
+  worldId: string,
+  graph: NPCGoalAuthoringGraph
+): Promise<NPCGoalAuthoringSaveResponse> {
+  return requestJson<NPCGoalAuthoringSaveResponse>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/npcs/goals`,
+    {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ graph })
+    }
+  );
+}
+
+export async function fetchSocialAuthoringGraph(worldId: string): Promise<SocialAuthoringGraph> {
+  return requestJson<SocialAuthoringGraph>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/social/graph`
+  );
+}
+
+export async function previewSocialAuthoringGraph(
+  worldId: string,
+  graph: SocialAuthoringGraph
+): Promise<SocialAuthoringPreviewResponse> {
+  return requestJson<SocialAuthoringPreviewResponse>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/social/graph/preview`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ graph })
+    }
+  );
+}
+
+export async function validateSocialAuthoringGraph(
+  worldId: string,
+  graph: SocialAuthoringGraph
+): Promise<SocialAuthoringPreviewResponse> {
+  return requestJson<SocialAuthoringPreviewResponse>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/social/graph/validate`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ graph })
+    }
+  );
+}
+
+export async function saveSocialAuthoringGraph(
+  worldId: string,
+  graph: SocialAuthoringGraph
+): Promise<SocialAuthoringSaveResponse> {
+  return requestJson<SocialAuthoringSaveResponse>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/social/graph`,
+    {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ graph })
+    }
+  );
+}
+
+export async function fetchItemEconomyAuthoring(worldId: string): Promise<ItemEconomyAuthoring> {
+  return requestJson<ItemEconomyAuthoring>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/economy`
+  );
+}
+
+export async function previewItemEconomyAuthoring(
+  worldId: string,
+  graph: ItemEconomyAuthoring
+): Promise<ItemEconomyAuthoringPreviewResponse> {
+  return requestJson<ItemEconomyAuthoringPreviewResponse>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/economy/preview`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ graph })
+    }
+  );
+}
+
+export async function validateItemEconomyAuthoring(
+  worldId: string,
+  graph: ItemEconomyAuthoring
+): Promise<ItemEconomyAuthoringPreviewResponse> {
+  return requestJson<ItemEconomyAuthoringPreviewResponse>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/economy/validate`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ graph })
+    }
+  );
+}
+
+export async function saveItemEconomyAuthoring(
+  worldId: string,
+  graph: ItemEconomyAuthoring
+): Promise<ItemEconomyAuthoringSaveResponse> {
+  return requestJson<ItemEconomyAuthoringSaveResponse>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/economy`,
+    {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ graph })
+    }
+  );
+}
+
+export async function fetchRumorCrimeAuthoring(worldId: string): Promise<RumorCrimeConsequenceAuthoring> {
+  return requestJson<RumorCrimeConsequenceAuthoring>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/rumor-crime`
+  );
+}
+
+export async function previewRumorCrimeAuthoring(
+  worldId: string,
+  graph: RumorCrimeConsequenceAuthoring
+): Promise<RumorCrimeConsequencePreviewResponse> {
+  return requestJson<RumorCrimeConsequencePreviewResponse>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/rumor-crime/preview`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ graph })
+    }
+  );
+}
+
+export async function validateRumorCrimeAuthoring(
+  worldId: string,
+  graph: RumorCrimeConsequenceAuthoring
+): Promise<RumorCrimeConsequencePreviewResponse> {
+  return requestJson<RumorCrimeConsequencePreviewResponse>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/rumor-crime/validate`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ graph })
+    }
+  );
+}
+
+export async function saveRumorCrimeAuthoring(
+  worldId: string,
+  graph: RumorCrimeConsequenceAuthoring
+): Promise<RumorCrimeConsequenceSaveResponse> {
+  return requestJson<RumorCrimeConsequenceSaveResponse>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/rumor-crime`,
+    {
+      method: "PUT",
       headers: {
         "Content-Type": "application/json"
       },

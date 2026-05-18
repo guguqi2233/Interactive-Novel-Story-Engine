@@ -1,6 +1,8 @@
 from pydantic import BaseModel, Field
 
 from app.core.state_delta import StateDelta
+from app.engine.content.world_branching import WorldBranch, WorldBranchCreateRequest, WorldDiff, WorldDiffDraftRequest
+from app.engine.content.world_loader import MapVisualGraph
 
 
 class VisibleTimeResponse(BaseModel):
@@ -212,7 +214,41 @@ class StudioConfigSummaryResponse(BaseModel):
     database_configured: bool
     database_path_hint: str
     api_key_configured: bool
+    selected_prompt_profile_id: str = "default_safe"
+    prompt_profiles: list["PromptProfileResponse"] = Field(default_factory=list)
     privacy_notes: list[str] = Field(default_factory=list)
+
+
+class PromptProfileTemperatureOverridesResponse(BaseModel):
+    narrator: float | None = None
+    intent_parser: float | None = None
+    memory: float | None = None
+
+
+class PromptProfileResponse(BaseModel):
+    id: str
+    name: str
+    description: str = ""
+    provider_filter: list[str] = Field(default_factory=list)
+    model_filter: list[str] = Field(default_factory=list)
+    narrator_style: str
+    intent_parser_prompt_variant: str
+    narrator_prompt_variant: str
+    memory_prompt_variant: str
+    temperature_overrides: PromptProfileTemperatureOverridesResponse
+    max_output_tokens: int | None = None
+    enabled: bool
+    matches_current_provider: bool = False
+
+
+class PromptProfileListResponse(BaseModel):
+    local_only: bool = True
+    selected_profile_id: str
+    profiles: list[PromptProfileResponse] = Field(default_factory=list)
+
+
+class PromptProfileSelectRequest(BaseModel):
+    profile_id: str
 
 
 class NarrativeEvalCaseResultResponse(BaseModel):
@@ -316,6 +352,60 @@ class DebugEventResponse(BaseModel):
 class DebugEventListResponse(BaseModel):
     local_only: bool = True
     events: list[DebugEventResponse] = Field(default_factory=list)
+
+
+class TimelineStateDiffResponse(BaseModel):
+    path: str
+    operation: str
+    reason: str | None = None
+    visible_to_player: bool = False
+
+
+class TimelineEventViewResponse(BaseModel):
+    turn: int
+    event_id: str
+    actor_id: str
+    action_type: str
+    result: str
+    target_id: str | None = None
+    visible_to_player: bool
+    event_kind: str
+    state_deltas: list[StateDelta] = Field(default_factory=list)
+    visible_changes: list[TimelineStateDiffResponse] = Field(default_factory=list)
+    delta_count: int = 0
+    created_at: str
+
+
+class TimelineTurnGroupResponse(BaseModel):
+    turn: int
+    events: list[TimelineEventViewResponse] = Field(default_factory=list)
+    event_count: int = 0
+    delta_count: int = 0
+
+
+class ReplayCheckpointResponse(BaseModel):
+    turn: int
+    event_id: str
+    checksum: str
+    delta_count: int
+
+
+class ReplaySummaryResponse(BaseModel):
+    event_count: int
+    final_state_checksum: str
+    invariant_violations: list[str] = Field(default_factory=list)
+    failed_event_id: str | None = None
+    checkpoints: list[ReplayCheckpointResponse] = Field(default_factory=list)
+
+
+class TimelineReplayResponse(BaseModel):
+    local_only: bool = True
+    source_type: str
+    source_id: str
+    turns: list[TimelineTurnGroupResponse] = Field(default_factory=list)
+    event_count: int = 0
+    delta_count: int = 0
+    replay_summary: ReplaySummaryResponse | None = None
 
 
 class DebugPerformanceSampleResponse(BaseModel):
@@ -497,6 +587,51 @@ class AuthoringFileWriteResponse(BaseModel):
     validation: AuthoringValidationResponse
 
 
+class WorldBranchListResponse(BaseModel):
+    local_only: bool = True
+    world_id: str
+    branches: list[WorldBranch] = Field(default_factory=list)
+
+
+class WorldBranchCreateResponse(BaseModel):
+    local_only: bool = True
+    branch: WorldBranch
+    active_session_note: str = "Branch operations do not modify active sessions. Restart or reload to use branch content."
+
+
+class WorldDiffResponse(BaseModel):
+    local_only: bool = True
+    diff: WorldDiff
+    active_session_note: str = "Diff operations do not modify active GameState."
+
+
+class AuthoringMapGraphResponse(BaseModel):
+    local_only: bool = True
+    world_id: str
+    graph: MapVisualGraph
+
+
+class AuthoringMapGraphRequest(BaseModel):
+    graph: MapVisualGraph
+
+
+class AuthoringMapPreviewResponse(BaseModel):
+    local_only: bool = True
+    world_id: str
+    graph: MapVisualGraph
+    yaml_content: str
+    validation: AuthoringValidationResponse
+    confirmation_required: bool = False
+
+
+class AuthoringMapWriteResponse(BaseModel):
+    local_only: bool = True
+    world_id: str
+    graph: MapVisualGraph
+    validation: AuthoringValidationResponse
+    confirmation_required: bool = False
+
+
 class ScenarioTemplateOutputFileResponse(BaseModel):
     file_name: str
     content: str
@@ -522,6 +657,7 @@ class ScenarioTemplateListResponse(BaseModel):
 class ScenarioTemplateRenderRequest(BaseModel):
     variables: dict[str, str] = Field(default_factory=dict)
     target_world_id: str | None = None
+    confirm_apply: bool = False
 
 
 class RenderedScenarioTemplateFileResponse(BaseModel):
@@ -541,6 +677,11 @@ class ScenarioTemplatePreviewResponse(BaseModel):
     rendered: RenderedScenarioTemplateResponse
     validation_report: AuthoringValidationResponse | None = None
     writes_to_disk: bool = False
+    target_world_id: str | None = None
+
+
+class ScenarioTemplateApplyResponse(ScenarioTemplatePreviewResponse):
+    applied: bool = True
 
 
 class QuestObjectiveNodeResponse(BaseModel):
@@ -554,6 +695,8 @@ class QuestStageNodeResponse(BaseModel):
     description: str = ""
     objectives: list[QuestObjectiveNodeResponse] = Field(default_factory=list)
     next_stages: list[str] = Field(default_factory=list)
+    failure_stages: list[str] = Field(default_factory=list)
+    alternate_stages: list[str] = Field(default_factory=list)
 
 
 class QuestTriggerNodeResponse(BaseModel):
@@ -564,6 +707,12 @@ class QuestTriggerNodeResponse(BaseModel):
     next_stage: str | None = None
 
 
+class QuestRewardNodeResponse(BaseModel):
+    id: str
+    text: str
+    reward_type: str = "generic"
+
+
 class QuestGraphNodeResponse(BaseModel):
     id: str
     title: str
@@ -572,6 +721,7 @@ class QuestGraphNodeResponse(BaseModel):
     visibility: str
     stages: list[QuestStageNodeResponse] = Field(default_factory=list)
     triggers: list[QuestTriggerNodeResponse] = Field(default_factory=list)
+    rewards: list[QuestRewardNodeResponse] = Field(default_factory=list)
 
 
 class QuestGraphEdgeResponse(BaseModel):
@@ -580,6 +730,9 @@ class QuestGraphEdgeResponse(BaseModel):
     type: str
     quest_id: str
     label: str | None = None
+    source_stage_id: str | None = None
+    target_stage_id: str | None = None
+    condition: dict[str, str] | None = None
 
 
 class QuestGraphResponse(BaseModel):
@@ -599,6 +752,314 @@ class QuestGraphPreviewResponse(BaseModel):
     graph: QuestGraphResponse
     yaml_content: str
     validation: AuthoringValidationResponse
+    confirmation_required: bool = False
+
+
+class QuestGraphSaveResponse(BaseModel):
+    local_only: bool = True
+    world_id: str
+    graph: QuestGraphResponse
+    yaml_content: str
+    validation: AuthoringValidationResponse
+    saved: bool
+    confirmation_required: bool = False
+
+
+class NPCGoalNodeResponse(BaseModel):
+    id: str
+    description: str = ""
+    priority: int = 0
+    status: str = "inactive"
+    conditions: list[str] = Field(default_factory=list)
+    desired_state: dict[str, object] = Field(default_factory=dict)
+    allowed_actions: list[str] = Field(default_factory=list)
+    forbidden_actions: list[str] = Field(default_factory=list)
+
+
+class NPCGoalAuthoringNodeResponse(BaseModel):
+    npc_id: str
+    name: str
+    hidden: bool = False
+    goals: list[NPCGoalNodeResponse] = Field(default_factory=list)
+    priorities: dict[str, int] = Field(default_factory=dict)
+    constraints: list[str] = Field(default_factory=list)
+    current_goal_id: str | None = None
+    plan_state: dict[str, object] = Field(default_factory=dict)
+
+
+class NPCGoalAuthoringGraphResponse(BaseModel):
+    local_only: bool = True
+    world_id: str
+    npcs: list[NPCGoalAuthoringNodeResponse] = Field(default_factory=list)
+
+
+class NPCGoalAuthoringGraphRequest(BaseModel):
+    graph: NPCGoalAuthoringGraphResponse
+
+
+class NPCGoalAuthoringPreviewResponse(BaseModel):
+    local_only: bool = True
+    world_id: str
+    graph: NPCGoalAuthoringGraphResponse
+    yaml_content: str
+    validation: AuthoringValidationResponse
+    confirmation_required: bool = False
+
+
+class NPCGoalAuthoringSaveResponse(NPCGoalAuthoringPreviewResponse):
+    saved: bool = False
+
+
+class FactionAuthoringNodeResponse(BaseModel):
+    id: str
+    name: str
+    description: str = ""
+    known_by_player: bool = False
+    default_reputation: int = 0
+    default_alert_level: int = 0
+    default_conflict_level: int = 0
+    tags: list[str] = Field(default_factory=list)
+    conflict_tags: list[str] = Field(default_factory=list)
+
+
+class FactionAuthoringEdgeResponse(BaseModel):
+    source_faction_id: str
+    target_faction_id: str
+    relation: int = 0
+    conflict_level: int = 0
+    visibility: str = "hidden"
+
+
+class FactionAuthoringGraphResponse(BaseModel):
+    world_id: str
+    factions: list[FactionAuthoringNodeResponse] = Field(default_factory=list)
+    conflict_edges: list[FactionAuthoringEdgeResponse] = Field(default_factory=list)
+
+
+class RelationshipAuthoringNodeResponse(BaseModel):
+    id: str
+    label: str
+    node_type: str
+    hidden: bool = False
+
+
+class RelationshipAuthoringEdgeResponse(BaseModel):
+    id: str
+    source_id: str
+    target_id: str
+    relation_type: str
+    trust: int = 0
+    fear: int = 0
+    affinity: int = 0
+    obligation: int = 0
+    tags: list[str] = Field(default_factory=list)
+    known_by_player: bool = False
+
+
+class RelationshipAuthoringGraphResponse(BaseModel):
+    world_id: str
+    nodes: list[RelationshipAuthoringNodeResponse] = Field(default_factory=list)
+    relationships: list[RelationshipAuthoringEdgeResponse] = Field(default_factory=list)
+
+
+class SocialAuthoringGraphResponse(BaseModel):
+    local_only: bool = True
+    world_id: str
+    faction_graph: FactionAuthoringGraphResponse
+    relationship_graph: RelationshipAuthoringGraphResponse
+
+
+class SocialAuthoringGraphRequest(BaseModel):
+    graph: SocialAuthoringGraphResponse
+
+
+class SocialAuthoringPreviewResponse(BaseModel):
+    local_only: bool = True
+    world_id: str
+    graph: SocialAuthoringGraphResponse
+    yaml_contents: dict[str, str]
+    validation: AuthoringValidationResponse
+    confirmation_required: bool = False
+
+
+class SocialAuthoringSaveResponse(SocialAuthoringPreviewResponse):
+    saved: bool = False
+
+
+class ItemEconomyItemResponse(BaseModel):
+    id: str
+    name: str
+    description: str = ""
+    location_id: str | None = None
+    owner_id: str | None = None
+    container_id: str | None = None
+    portable: bool = False
+    visible: bool = True
+    hidden: bool = False
+    discoverable: bool = False
+    discovered_by: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+    base_price: int = 0
+    tradeable: bool = True
+    rarity: str = "common"
+    locked: bool = False
+    lock_difficulty: int = 0
+    lock_state: str = "intact"
+
+
+class MerchantEconomyNodeResponse(BaseModel):
+    npc_id: str
+    name: str
+    hidden: bool = False
+    merchant: bool = False
+    shop_inventory: list[str] = Field(default_factory=list)
+    buy_price_modifier: float = 1.0
+    sell_price_modifier: float = 0.5
+
+
+class ItemEconomyAuthoringResponse(BaseModel):
+    local_only: bool = True
+    world_id: str
+    items: list[ItemEconomyItemResponse] = Field(default_factory=list)
+    merchants: list[MerchantEconomyNodeResponse] = Field(default_factory=list)
+
+
+class ItemEconomyAuthoringRequest(BaseModel):
+    graph: ItemEconomyAuthoringResponse
+
+
+class ItemEconomyAuthoringPreviewResponse(BaseModel):
+    local_only: bool = True
+    world_id: str
+    graph: ItemEconomyAuthoringResponse
+    yaml_contents: dict[str, str]
+    validation: AuthoringValidationResponse
+    confirmation_required: bool = False
+
+
+class ItemEconomyAuthoringSaveResponse(ItemEconomyAuthoringPreviewResponse):
+    saved: bool = False
+
+
+class FactReferenceNodeResponse(BaseModel):
+    id: str
+    visibility: str
+    tags: list[str] = Field(default_factory=list)
+
+
+class FactionReferenceNodeResponse(BaseModel):
+    id: str
+    name: str
+    known_by_player: bool = False
+
+
+class RumorAuthoringNodeResponse(BaseModel):
+    id: str
+    fact_id: str | None = None
+    source_event_id: str | None = None
+    text_for_player: str | None = None
+    truth_status: str = "unknown"
+    known_by_npcs: list[str] = Field(default_factory=list)
+    known_by_factions: list[str] = Field(default_factory=list)
+    known_by_player: bool = False
+    spread_level: int = 0
+    created_turn: int = 0
+    tags: list[str] = Field(default_factory=list)
+
+
+class CrimeConsequenceNodeResponse(BaseModel):
+    id: str
+    crime_type: str = "theft"
+    trigger_condition: str = ""
+    severity: int = 1
+    visibility: str = "hidden"
+    tags: list[str] = Field(default_factory=list)
+
+
+class ReputationEffectNodeResponse(BaseModel):
+    id: str
+    faction_id: str
+    amount: int = 0
+    reason: str = ""
+
+
+class QuestTriggerConsequenceNodeResponse(BaseModel):
+    id: str
+    quest_id: str
+    trigger_id: str
+    action: str = "activate"
+
+
+class ConsequenceGraphEdgeResponse(BaseModel):
+    source: str
+    target: str
+    type: str
+    label: str | None = None
+
+
+class RumorCrimeConsequenceAuthoringResponse(BaseModel):
+    local_only: bool = True
+    world_id: str
+    facts: list[FactReferenceNodeResponse] = Field(default_factory=list)
+    factions: list[FactionReferenceNodeResponse] = Field(default_factory=list)
+    rumors: list[RumorAuthoringNodeResponse] = Field(default_factory=list)
+    crimes: list[CrimeConsequenceNodeResponse] = Field(default_factory=list)
+    reputation_effects: list[ReputationEffectNodeResponse] = Field(default_factory=list)
+    quest_triggers: list[QuestTriggerConsequenceNodeResponse] = Field(default_factory=list)
+    edges: list[ConsequenceGraphEdgeResponse] = Field(default_factory=list)
+
+
+class RumorCrimeConsequenceAuthoringRequest(BaseModel):
+    graph: RumorCrimeConsequenceAuthoringResponse
+
+
+class RumorCrimeConsequencePreviewResponse(BaseModel):
+    local_only: bool = True
+    world_id: str
+    graph: RumorCrimeConsequenceAuthoringResponse
+    yaml_contents: dict[str, str]
+    validation: AuthoringValidationResponse
+    confirmation_required: bool = False
+
+
+class RumorCrimeConsequenceSaveResponse(RumorCrimeConsequencePreviewResponse):
+    saved: bool = False
+
+
+class ValidationGraphNodeResponse(BaseModel):
+    id: str
+    label: str
+    type: str
+    severity: str | None = None
+    file: str | None = None
+    path: str | None = None
+    code: str | None = None
+
+
+class ValidationGraphEdgeResponse(BaseModel):
+    source: str
+    target: str
+    type: str
+    label: str | None = None
+
+
+class ValidationGraphIssueResponse(BaseModel):
+    id: str
+    severity: str
+    file: str
+    path: str
+    code: str
+    message: str
+    ref_id: str | None = None
+    suggestion: str | None = None
+
+
+class ValidationGraphResponse(BaseModel):
+    local_only: bool = True
+    world_id: str
+    nodes: list[ValidationGraphNodeResponse] = Field(default_factory=list)
+    edges: list[ValidationGraphEdgeResponse] = Field(default_factory=list)
+    issues: list[ValidationGraphIssueResponse] = Field(default_factory=list)
 
 
 class AuthoringCreateWorldRequest(BaseModel):
@@ -662,6 +1123,7 @@ class ArchiveExportResponse(BaseModel):
 class ArchiveImportRequest(BaseModel):
     archive_base64: str
     overwrite: bool = False
+    confirm_apply: bool = False
 
 
 class ArchiveImportResponse(BaseModel):
@@ -672,6 +1134,35 @@ class ArchiveImportResponse(BaseModel):
     validation_ok: bool = True
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+    migration_needed: bool = False
+    migration_warnings: list[str] = Field(default_factory=list)
+
+
+class LocalPackageManifestResponse(BaseModel):
+    package_id: str
+    package_type: str
+    version: str
+    engine_version_min: str
+    schema_version: str
+    content_pack_version: str | None = None
+    included_files: list[str] = Field(default_factory=list)
+    checksums: dict[str, str] = Field(default_factory=dict)
+    dependencies: list[str] = Field(default_factory=list)
+    conflicts: list[str] = Field(default_factory=list)
+    created_at: str
+    notes: str = ""
+
+
+class PackageDryRunResponse(BaseModel):
+    local_only: bool = True
+    ok: bool
+    package_id: str
+    package_type: str
+    manifest: LocalPackageManifestResponse | None = None
+    errors: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    conflicts: list[str] = Field(default_factory=list)
+    compatibility_warnings: list[str] = Field(default_factory=list)
     migration_needed: bool = False
     migration_warnings: list[str] = Field(default_factory=list)
 

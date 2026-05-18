@@ -41,7 +41,7 @@ All handled player actions, system ticks, NPC planning ticks, and system consequ
 
 Authoring APIs edit content-pack YAML, not active `GameState`. Procedural quest generation produces drafts only.
 
-## Current v0.7 Gameplay Loop
+## Current v0.8 Gameplay Loop
 
 1. Player submits text through API or frontend.
 2. `IntentParser` returns schema-validated `PlayerIntent`.
@@ -56,7 +56,7 @@ Authoring APIs edit content-pack YAML, not active `GameState`. Procedural quest 
 11. Narrator receives visible action facts and returns `NarrativeResult`.
 12. API returns narration plus filtered `visible_state`.
 
-## v0.7 Included Scope
+## v0.8 Included Scope
 
 Backend:
 
@@ -74,6 +74,9 @@ Backend:
 - Studio Home and Settings / Local Privacy safe summary endpoints.
 - Narrative eval, playtest, import/export, scenario template, quest graph, and
   mod manager local studio endpoints.
+- Visual map, quest graph, NPC goal, social graph, economy, rumor/crime,
+  validation graph, timeline replay, world branch/diff, template browser,
+  prompt profile, scenario regression, and advanced package endpoints.
 - Multi-world save browser summaries.
 - LLM provider factory using `LLM_PROVIDER`.
 
@@ -124,8 +127,20 @@ Frontend:
 - Performance Dashboard.
 - Automated Playtesting Dashboard.
 - Scenario Template preview UI.
-- Visual Quest Graph Editor initial slice.
-- Import/export controls for local world, mod, and save archives.
+- Visual Map Editor.
+- Visual Quest Graph Editor full authoring slice.
+- NPC Goal Editor.
+- Faction / Relationship Visual Editor.
+- Item / Economy Editor.
+- Rumor / Crime Consequence Editor.
+- Visual Validation Graph.
+- Timeline Replay Visualizer.
+- World Branch / Diff panels.
+- Scenario Regression Suite UI.
+- Local Template Browser.
+- Prompt Profile Manager.
+- Import/export controls for local world, mod, save, template, and scenario
+  packages.
 - Settings / Local Privacy panel.
 
 Testing:
@@ -134,7 +149,7 @@ Testing:
 - FastAPI tests.
 - SQLite save/load tests with temporary databases.
 - Boundary eval tests for narrative visibility leaks.
-- v0.3, v0.4, v0.5, v0.6, and v0.7 integration regression tests.
+- v0.3, v0.4, v0.5, v0.6, v0.7, and v0.8 integration regression tests.
 - Migration compatibility fixtures.
 - Deterministic playtesting agents and narrative quality evals.
 - Fake/mock LLM providers in automated tests.
@@ -217,18 +232,22 @@ v0.6 authoring preview/dry-run endpoints parse proposed YAML, validate it in a
 temporary draft, calculate diff/impact summaries, and report possible save
 migration risk without writing disk or active saves.
 
-v0.7 extends authoring with scenario templates, quest graph preview, mod
-manager views, and import/export. These tools are still local-only, gated by
+v0.7 extended authoring with scenario templates, quest graph preview, mod
+manager views, and import/export. v0.8 extends authoring with visual map,
+fuller quest graph, NPC goal, faction/relationship, item/economy,
+rumor/crime, validation graph, branch/diff, template browser, and advanced
+package workflows. These tools are still local-only, gated by
 `ENABLE_AUTHORING_API`, and must not write active session `GameState`.
 Authoring UI may show hidden world content to the local creator, but that data
 must remain isolated from player UI and narrator inputs.
 
 ## Local Studio Model
 
-The v0.7 local studio is a collection of trusted-local tools around the world
+The v0.8 local studio is a collection of trusted-local tools around the world
 engine. It includes Studio Home, Save Migration UI, Mod Manager UI, narrative
 eval and performance dashboards, playtesting dashboard, settings/privacy
-panel, import/export, scenario templates, quest graph authoring, and desktop
+panel, import/export, scenario templates, visual authoring editors, validation
+graph, timeline replay, world branch/diff, prompt profiles, and desktop
 launcher scripts.
 
 These tools improve convenience but do not change authority:
@@ -249,6 +268,11 @@ imports check migration status.
 Save archives can contain full save state and event history, including hidden
 state by design. They are authoring/backup data, not player-facing output.
 
+v0.8 advanced packages add `local_package_manifest.json`, checksums,
+compatibility checks, dry-run, and explicit apply. Supported package types are
+world, mod, save bundle, template pack, and scenario suite. Package import
+must not execute code, auto-overwrite content, or bypass validation/migration.
+
 ## Save Migration Model
 
 Saves carry engine/schema/world/content metadata and migration history. The
@@ -263,10 +287,10 @@ Performance instrumentation and future optimizations must not bypass
 visibility filtering, provider abstraction, or migration validation. A faster
 path that weakens rule correctness or privacy is invalid.
 
-The same principle applies to local studio convenience. A nicer UI, faster
-import path, easier template flow, or desktop launcher must not bypass
-validation, visibility, migration dry-run, event logging, provider abstraction,
-or content-only mod restrictions.
+The same principle applies to local studio convenience. A nicer visual editor,
+faster import path, easier template flow, branch/diff workflow, prompt profile,
+or desktop launcher must not bypass validation, visibility, migration dry-run,
+event logging, provider abstraction, or content-only mod restrictions.
 
 ## Forbidden Practices
 
@@ -283,18 +307,21 @@ or content-only mod restrictions.
 - Do not let procedural side quest generation write active saves or content files without explicit authoring review/export.
 - Do not let scenario templates execute scripts or write active saves.
 - Do not let quest graph editing bypass `quests.yaml` validation.
+- Do not let visual map, NPC goal, social graph, item/economy, rumor/crime, or
+  validation graph tools bypass content validation.
 - Do not let import/export install archives without path, type, manifest, and
   validation checks.
+- Do not let advanced packages skip checksum validation before apply.
 - Do not expose provider secrets, raw env, raw `GameState`, or raw
   `state_deltas` through Studio Home, Settings, dashboards, or player APIs.
 
-## Not In v0.7
+## Not In v0.8
 
 - Hosted service security, auth, accounts, cloud sync, or multiplayer.
 - Tactical grid combat or multi-round combat AI.
 - Guard pursuit, arrest, trial, or full legal system.
 - Dynamic supply/demand economy, crafting, equipment progression, durability, or weight systems.
-- Full graphical world editor or complex drag/drop quest graph IDE.
+- Complex drag/drop IDE, multiplayer authoring, or automatic content repair.
 - LLM-driven autonomous NPC agents.
 - Pathfinding and large-scale world simulation.
 - Arbitrary plugin code execution or online mod download.
@@ -311,8 +338,11 @@ or content-only mod restrictions.
 - Authoring UI direct edits to active runtime sessions.
 - Arbitrary template or mod script execution.
 - A local model provider that can directly write `GameState`.
+- Automatic publishing or automatic overwrite of user world packs.
+- LLM-generated map/quest/NPC/social/economy/consequence content that bypasses
+  explicit preview, validation, and save.
 
-## v0.7 Known Hardening Items
+## v0.8 Known Hardening Items
 
 - Split `ActionResult.reason` into player-safe and debug-only reason fields.
 - Move raw faction reputation out of player API.
@@ -333,3 +363,7 @@ or content-only mod restrictions.
   archives can include hidden state and full event history by design.
 - Keep desktop packaging as a prototype until bundle scanning, app data
   directory policy, process lifecycle, and secret handling are formalized.
+- Continue adding component-level frontend tests for visual authoring panels.
+- Keep debug timeline/replay data out of player/narrator routes.
+- Consider stricter allowlists for prompt profile free-text fields if profiles
+  expand beyond the current local style controls.

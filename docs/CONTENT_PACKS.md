@@ -33,7 +33,7 @@ Required fields:
 ```yaml
 world_id: mist_valley
 name: Mist Valley
-version: 0.7.0
+version: 0.8.0
 start_location_id: village_square
 description: A small valley world used for local testing.
 ```
@@ -61,9 +61,29 @@ Each location must define:
     - player
   cover_level: 1
   light_level: 2
+  visual:
+    x: 120
+    y: 80
+    region_id: village
+    icon: square
+    color_tag: safe
+    display_group: village
+    tags:
+      - hub
+    visibility: public
+    notes: Authoring-only note; not player-visible.
 ```
 
 Validation checks that exits point to existing locations.
+
+v0.8 visual map fields are optional. If omitted, authoring map graph builders
+provide deterministic default positions without writing the file. `visual`
+fields are for authoring and map display only; they do not change movement,
+visibility, or rule outcomes.
+
+`visual.visibility` can mark nodes or edges as public, discoverable, or hidden.
+Player-visible map graphs must show only known non-hidden locations and exits.
+Authoring maps can show full local content in authoring-only panels.
 
 ## npcs.yaml
 
@@ -505,7 +525,7 @@ rendered output must go through authoring save and validation.
 
 ## Quest Graph Format
 
-The v0.7 quest graph editor converts `quests.yaml` into a graph-shaped
+The v0.8 quest graph editor converts `quests.yaml` into a graph-shaped
 authoring DTO:
 
 - quest nodes with `id`, `title`, `description`, `initial_stage`, and
@@ -514,11 +534,87 @@ authoring DTO:
   `next_stages`
 - trigger nodes with `type`, `id`, `action`, optional `objective_id`, and
   optional `next_stage`
+- reward nodes where rewards are present
 - edges for stage transitions and trigger-to-stage transitions
+- failure/alternate-path edges where authored
 
 The graph preview endpoint converts the graph back to `quests.yaml` and runs
-draft validation. It does not write files and does not modify active
-`GameState`.
+draft validation. The full editor can preview, validate, and explicitly save
+through authoring APIs. It does not modify active `GameState`.
+
+Validation checks invalid `next_stage`, missing trigger references,
+unreachable stage warnings, missing terminal stage warnings, and hidden quest
+visibility boundaries.
+
+## NPC Goal Authoring Fields
+
+NPC goal authoring reads and writes the same `goals` objects embedded in
+`npcs.yaml`:
+
+- `id`
+- `description`
+- `priority`
+- `status`
+- `conditions`
+- `desired_state`
+- `allowed_actions`
+- `forbidden_actions`
+
+The v0.8 editor validates goal id uniqueness, known condition references,
+supported planning actions, and legal desired-state references. It does not
+grant NPCs unknown facts and does not call the LLM.
+
+## Relationship / Faction Visual Fields
+
+Faction and relationship visual authoring works over `factions.yaml`,
+`relationships.yaml`, and NPC metadata. It can edit:
+
+- faction relations and conflict values
+- relationship source/target ids
+- `relation_type`
+- `trust`
+- `fear`
+- `affinity`
+- `obligation`
+- `known_by_player` / visibility
+
+Hidden relationships and hidden faction conflicts may appear in authoring
+graphs but must not enter player graph APIs.
+
+## Item / Economy Editor Fields
+
+The v0.8 Item / Economy editor covers item fields and merchant inventory:
+
+- item `id`, `name`, `description`
+- `base_price`
+- `rarity`
+- `tradeable`
+- `portable`
+- `hidden`
+- `tags`
+- `location_id`, `owner_id`, `container_id`
+- NPC `merchant`, `shop_inventory`, `buy_price_modifier`,
+  `sell_price_modifier`
+
+Validation catches ownership conflicts, negative prices, invalid shop item ids,
+and hidden shop inventory warnings. The frontend does not calculate
+authoritative trade prices.
+
+## Rumor / Crime Consequence Graph Fields
+
+The v0.8 Rumor / Crime editor can represent consequence nodes for:
+
+- triggers
+- crimes
+- witnesses
+- rumors
+- reputation effects
+- quest triggers
+
+Validation checks rumor `fact_id`, hidden fact text leakage in
+`text_for_player`, crime type values, faction ids, quest trigger references,
+duplicate consequence ids, and simple loop risks. Runtime consequences remain
+rule-engine decisions.
 
 ## Import / Export Package Format
 
@@ -540,6 +636,55 @@ slip/path traversal, executable files, `.env`, secret files, database files,
 and logs. World imports run world validation, mod imports run mod validation,
 and save imports check migration status. Save archives can contain full hidden
 runtime state and must be treated as private local backup data.
+
+v0.8 advanced packages also include `local_package_manifest.json`:
+
+```json
+{
+  "package_id": "mist_valley",
+  "package_type": "world",
+  "version": "0.8.16",
+  "engine_version_min": "0.8.0",
+  "schema_version": "7",
+  "content_pack_version": "0.8.0",
+  "included_files": ["worlds/mist_valley/manifest.yaml"],
+  "checksums": {
+    "worlds/mist_valley/manifest.yaml": "sha256..."
+  },
+  "dependencies": [],
+  "conflicts": [],
+  "created_at": "2026-05-18T00:00:00Z",
+  "notes": "Local package."
+}
+```
+
+Supported package types are `world`, `mod`, `save_bundle`, `template_pack`,
+and `scenario_suite`. Dry-run validates manifest, checksums, compatibility,
+path traversal, disallowed file types, overwrite conflicts, validation, and
+save migration status. Apply requires explicit confirmation and a passing
+dry-run.
+
+## Prompt Profile Fields
+
+Prompt profiles are local LLM prompt configuration, not content-pack facts:
+
+- `id`
+- `name`
+- `description`
+- `provider_filter`
+- `model_filter`
+- `narrator_style`
+- `intent_parser_prompt_variant`
+- `narrator_prompt_variant`
+- `memory_prompt_variant`
+- `temperature_overrides`
+- `max_output_tokens`
+- `enabled`
+
+Profiles cannot include API keys, hidden fact text, raw `GameState`, raw
+`state_deltas`, NPC secrets, or instructions that let the LLM write state.
+Provider selection remains controlled by runtime configuration and
+`LLMProvider`.
 
 ## Mod Manager Fields
 
@@ -633,8 +778,8 @@ The CLI returns a non-zero exit code when errors are present.
 
 ## Current Limits
 
-- The v0.7 authoring UI has structured panels and a quest graph preview, but it
-  is still not a full IDE or complex drag/drop graph editor.
+- The v0.8 authoring UI has multiple visual editors, but it is still not a
+  full IDE, multiplayer editor, or complex drag/drop graph system.
 - No automatic YAML repair.
 - No online mod registry or download support.
 - No hot reload of running saves after authoring edits.
@@ -644,3 +789,4 @@ The CLI returns a non-zero exit code when errors are present.
 - No formal desktop installer or auto-update path.
 - No online import/export or cloud sync.
 - No template script execution.
+- No LLM automatic world/map/quest/social/economy rewriting.

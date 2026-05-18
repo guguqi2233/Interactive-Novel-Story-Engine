@@ -15,6 +15,7 @@ class Settings(BaseModel):
     local_llm_model: str = "local-model"
     local_llm_timeout_seconds: float = 30.0
     local_llm_json_mode: bool = True
+    prompt_profile_id: str = "default_safe"
     enable_debug_api: bool = True
     enable_authoring_api: bool = False
     enable_perf_logging: bool = False
@@ -35,6 +36,7 @@ def get_settings() -> Settings:
         local_llm_model=os.getenv("LOCAL_LLM_MODEL", "local-model"),
         local_llm_timeout_seconds=float(os.getenv("LOCAL_LLM_TIMEOUT_SECONDS", "30")),
         local_llm_json_mode=_read_bool_env("LOCAL_LLM_JSON_MODE", default=True),
+        prompt_profile_id=os.getenv("PROMPT_PROFILE_ID", "default_safe"),
         enable_debug_api=_read_bool_env("ENABLE_DEBUG_API", default=True),
         enable_authoring_api=_read_bool_env("ENABLE_AUTHORING_API", default=False),
         enable_perf_logging=_read_bool_env("ENABLE_PERF_LOGGING", default=False),

@@ -9,7 +9,8 @@ This project is for local personal use. It is not designed as a hosted service.
 
 ## Current Version Scope
 
-v0.7 polishes the local studio layer on top of the v0.6 hardening work:
+v0.8 turns the polished local studio into a more visual world-authoring
+environment on top of the v0.7 studio layer:
 
 - Multi-world content packs.
 - Structured `GameState`, `StateDelta`, `EventLog`, and SQLite save/load.
@@ -45,8 +46,20 @@ v0.7 polishes the local studio layer on top of the v0.6 hardening work:
 - Performance Dashboard.
 - Automated Playtesting Dashboard.
 - Scenario Template System.
-- Visual Quest Graph Editor initial slice.
-- Import/export workflow for local world, mod, and save archives.
+- Visual Map Editor.
+- Visual Quest Graph Editor full authoring slice.
+- NPC Goal Editor.
+- Faction / Relationship Visual Editor.
+- Item / Economy Editor.
+- Rumor / Crime Consequence Editor.
+- Visual Validation Graph.
+- Timeline Replay Visualizer.
+- World Branch / Diff System.
+- Scenario Regression Suite.
+- Local Template Browser.
+- Prompt Profile Manager.
+- Advanced import/export packages for world, mod, save, template, and scenario
+  bundles.
 
 The LLM is still not the world judge. Rule outcomes are decided by local code.
 
@@ -95,6 +108,8 @@ VITE_API_BASE_URL=http://127.0.0.1:8000
 MEMORY_BACKEND=sqlite
 AUTHORING_ROOT=worlds
 MODS_ROOT=mods
+TEMPLATE_ROOT=templates
+PACKAGE_IMPORT_ROOT=imports
 ```
 
 `LLM_PROVIDER=mock` is the local development default. `local_stub` is a
@@ -106,9 +121,9 @@ does not make the model a world judge. Use `openai` only when you explicitly
 want real API calls and have set the API key through the environment. API keys
 must never be committed, logged, or placed in frontend code.
 
-`AUTHORING_ROOT`, `MODS_ROOT`, and `MEMORY_BACKEND` document the intended
-local configuration surface. Some runtime paths still use the current
-repository defaults.
+`AUTHORING_ROOT`, `MODS_ROOT`, `TEMPLATE_ROOT`, `PACKAGE_IMPORT_ROOT`, and
+`MEMORY_BACKEND` document the intended local configuration surface. Some
+runtime paths still use the current repository defaults.
 
 ## Start the Backend
 
@@ -164,9 +179,11 @@ not edit `.env`.
 
 ## Local Studio Launcher Prototype
 
-v0.7 includes local studio launcher scripts. They check basic dependencies,
-start the backend, start the frontend in dev mode or built-preview mode, print
-safe local status, and open the local frontend URL:
+v0.8.17 keeps the desktop app shell as a local launcher prototype. The scripts
+check Python and Node/npm dependencies, verify backend imports, warn if `.env`
+is missing, start the backend, start the frontend in dev mode or built-preview
+mode, run local health checks, print safe status, and open the local frontend
+URL:
 
 ```powershell
 .\scripts\start_local_studio.ps1
@@ -179,7 +196,8 @@ bash scripts/start_local_studio.sh
 The launcher reads local environment variables and applies safe defaults for
 `DATABASE_URL`, `LLM_PROVIDER`, `ENABLE_DEBUG_API`, `ENABLE_AUTHORING_API`,
 `ENABLE_PERF_LOGGING`, and `VITE_API_BASE_URL`. It does not set, print, or
-embed `LLM_API_KEY`.
+embed `LLM_API_KEY`. If `.env` is missing, it continues with safe defaults and
+suggests copying `.env.example` for local customization.
 
 Built frontend preview:
 
@@ -191,14 +209,23 @@ cd ..
 ```
 
 Use `.\scripts\start_local_studio.ps1 -PreflightOnly` to check configuration
-without starting backend/frontend processes.
+without starting backend/frontend processes. After launch, the scripts check:
+
+- `GET /health`
+- `GET /studio/status`
+- frontend URL availability
+
+Windows PowerShell is the primary launcher path. The shell launcher is a
+convenience prototype for macOS/Linux-style shells and depends on `open` or
+`xdg-open` to launch a browser automatically. Neither script creates a formal
+installer, signs code, enables auto-update, or packages secrets.
 
 See `docs/DESKTOP_PACKAGING.md` for the Tauri/Electron/local-launcher review
 and packaging safety notes.
 
 ## Scenario Templates
 
-v0.7 includes local authoring templates under `templates/`. They are YAML data
+v0.8 includes local authoring templates under `templates/`. They are YAML data
 files used to preview reusable world, quest, location, NPC, faction, mystery,
 or combat encounter drafts. Templates do simple variable substitution, validate
 rendered output through the existing world validator, and never modify active
@@ -210,23 +237,119 @@ Template preview endpoints are behind `ENABLE_AUTHORING_API`:
 Invoke-RestMethod -Method Get http://127.0.0.1:8000/authoring/templates
 ```
 
-The frontend Authoring panel includes a Scenario Templates section for preview
-only. Rendered files must still be explicitly saved through normal authoring
-file flows.
+The v0.8 Local Template Browser can list templates, show variables/tags,
+preview rendered YAML, display validation output, and apply templates through
+authoring-gated explicit save flows. Rendered files must still pass validation
+and must not modify active sessions or saves.
 
-## Quest Graph Authoring
+## Visual Map Editor
+
+When `ENABLE_AUTHORING_API=true`, the Authoring workspace includes a Map Editor
+for `locations.yaml`. It reads and writes map graphs through:
+
+- `GET /authoring/worlds/{world_id}/map`
+- `POST /authoring/worlds/{world_id}/map/preview`
+- `POST /authoring/worlds/{world_id}/map/validate`
+- `PUT /authoring/worlds/{world_id}/map`
+
+The editor can show location nodes, exits, positions, regions, labels, and
+visual tags. Preview and validate do not write files. Save converts the graph
+back to `locations.yaml` and runs validation. Hidden map data is authoring-only
+and does not enter the player map.
+
+## Quest Graph Editor
 
 When editing `quests.yaml`, the Authoring panel includes a Quest Graph section.
-It shows quests, stages, objectives, triggers, and `next_stages` edges. The
-initial editor supports small stage-level edits and converts the graph back to
-YAML through the backend preview endpoint:
+It shows quests, stages, objectives, triggers, rewards, failure/alternate
+paths, and `next_stages` edges. The v0.8 editor supports structured edits and
+converts the graph back to YAML through backend preview/validate/save
+endpoints:
 
 ```powershell
 Invoke-RestMethod -Method Get http://127.0.0.1:8000/authoring/worlds/mist_valley/quests/graph
 ```
 
-The graph preview does not write files or modify active `GameState`. Saving
-still goes through normal authoring validation.
+Graph preview does not write files or modify active `GameState`. Saving still
+goes through normal authoring validation. Hidden quests remain authoring-only
+until rules make them player-visible.
+
+## NPC Goal Editor
+
+The Authoring workspace includes an NPC Goal Editor for `npcs.yaml` goals:
+
+- `GET /authoring/worlds/{world_id}/npcs/goals`
+- `POST /authoring/worlds/{world_id}/npcs/goals/preview`
+- `POST /authoring/worlds/{world_id}/npcs/goals/validate`
+- `PUT /authoring/worlds/{world_id}/npcs/goals`
+
+It can edit goal id, description, priority, conditions, desired state,
+allowed actions, and forbidden actions. Validation checks references and
+supported planning actions. It does not create LLM NPC planners or modify
+active runtime state.
+
+## Faction / Relationship Editor
+
+The Faction / Relationship Visual Editor reads `factions.yaml`,
+`relationships.yaml`, and related NPC metadata:
+
+- `GET /authoring/worlds/{world_id}/social/graph`
+- `POST /authoring/worlds/{world_id}/social/graph/preview`
+- `POST /authoring/worlds/{world_id}/social/graph/validate`
+- `PUT /authoring/worlds/{world_id}/social/graph`
+
+It can edit relation type, trust, fear, affinity, obligation, faction conflict
+values, and visibility. Player relationship/faction graphs remain separate and
+filtered.
+
+## Item / Economy Editor
+
+The Item / Economy Editor reads `items.yaml` and NPC merchant fields:
+
+- `GET /authoring/worlds/{world_id}/economy`
+- `POST /authoring/worlds/{world_id}/economy/preview`
+- `POST /authoring/worlds/{world_id}/economy/validate`
+- `PUT /authoring/worlds/{world_id}/economy`
+
+It can edit item ownership, hidden state, tags, base price, rarity,
+tradeability, portability, and merchant shop inventory. Backend rules remain
+the authority for actual buy/sell prices.
+
+## Rumor / Crime Editor
+
+The Rumor / Crime Consequence Editor reads rumor, fact, faction, quest, and
+consequence-like content:
+
+- `GET /authoring/worlds/{world_id}/rumor-crime`
+- `POST /authoring/worlds/{world_id}/rumor-crime/preview`
+- `POST /authoring/worlds/{world_id}/rumor-crime/validate`
+- `PUT /authoring/worlds/{world_id}/rumor-crime`
+
+Validation catches invalid fact ids, hidden fact text in player-facing rumor
+text, duplicate consequence ids, and simple loop risks. Runtime social
+consequences are still rule-engine decisions.
+
+## Validation Graph
+
+The Visual Validation Graph turns validation reports into a file/entity/issue
+graph:
+
+- `GET /authoring/worlds/{world_id}/validation-graph`
+- `POST /authoring/worlds/{world_id}/validation-graph`
+
+It is an authoring diagnostic only. It does not auto-fix YAML or call the LLM.
+
+## World Branch / Diff
+
+v0.8 adds lightweight local world branches and structured diff:
+
+- `GET /authoring/worlds/{world_id}/branches`
+- `POST /authoring/worlds/{world_id}/branches`
+- `GET /authoring/worlds/{world_id}/diff?other=BRANCH_OR_WORLD`
+- `POST /authoring/worlds/{world_id}/diff-draft`
+
+Branches copy only whitelisted world YAML under `worlds/.branches/...`.
+Diff reports added/removed/changed entities, broken references, migration
+impacts, and visibility risks. It does not modify active sessions or saves.
 
 ## Choose a World
 
@@ -313,7 +436,7 @@ When running from the repository root without installing the backend package,
 set `PYTHONPATH=backend` first. The CLI uses `DATABASE_URL` by default and also
 accepts `--database-url`.
 
-The v0.7 Save Browser includes a migration UI for status, dry-run, apply, and
+The Save Browser includes a migration UI for status, dry-run, apply, and
 history. Dry-run is non-writing. Apply requires confirmation. The UI displays
 safe summaries only and does not show raw hidden save payloads.
 
@@ -333,6 +456,9 @@ Endpoints:
 - `GET /debug/sessions/{session_id}/graphs/factions`
 - `GET /debug/performance/recent`
 - `GET /debug/performance/summary`
+- `GET /debug/sessions/{session_id}/timeline`
+- `GET /debug/saves/{save_id}/timeline`
+- `POST /debug/saves/{save_id}/replay-dry-run`
 
 Debug events may include raw `state_deltas`. They are intentionally separated
 from player APIs and narrator input.
@@ -353,6 +479,14 @@ It displays recent local samples and summaries for game loop phases, narrator,
 world tick, save/load, memory search, and authoring validation when available.
 It does not record or show prompt text, hidden facts, API keys, raw
 `GameState`, or raw `state_deltas`.
+
+## Timeline Replay
+
+When debug API is enabled, Timeline Replay shows turn groups, events,
+state-delta summaries, system tick events, migration events, and replay dry-run
+checksums/invariant violations. It is a debug panel only. Replay dry-run does
+not write the database and the timeline must not be used as narrator/player
+content.
 
 ## Relationship and Faction Graphs
 
@@ -429,6 +563,8 @@ The frontend includes a local authoring view. It can:
 - save YAML through the authoring API
 - run validation
 - show structured errors, warnings, and suggestions grouped by file
+- use v0.8 visual editors for map, quests, NPC goals, social graph, economy,
+  rumor/crime consequences, templates, and validation graph
 
 Before saving, the UI can run a dry-run preview. Validation errors block save;
 warnings and possible save-impact risks require local confirmation.
@@ -487,7 +623,7 @@ there is no online registry, code execution, or complex SAT-style resolver.
 
 ## Mod Manager
 
-The v0.7 frontend includes a Mod Manager panel when the authoring API is
+The frontend includes a Mod Manager panel when the authoring API is
 enabled. It can list discovered local content-only mods, show manifest fields,
 validate selected mods, display dependency/conflict/version status, show load
 order, and display migration notes.
@@ -521,7 +657,7 @@ When running from the repository root without installing the backend package,
 set `PYTHONPATH=backend` first. These evals use deterministic cases and do not
 call an external LLM judge.
 
-When `ENABLE_DEBUG_API=true`, the v0.7 Narrative Quality Dashboard can run and
+When `ENABLE_DEBUG_API=true`, the Narrative Quality Dashboard can run and
 display eval reports through:
 
 - `GET /evals/narrative/recent`
@@ -545,7 +681,7 @@ providers. They must not directly mutate `GameState`. Reports include actions,
 errors, invariant violations, visibility leaks, save/load failures, and final
 state summaries.
 
-With `ENABLE_PLAYTEST_API=true` or debug enabled, the v0.7 Playtesting
+With `ENABLE_PLAYTEST_API=true` or debug enabled, the Playtesting
 Dashboard can run deterministic playtests through:
 
 - `GET /playtests/recent`
@@ -555,10 +691,37 @@ Dashboard can run deterministic playtests through:
 The dashboard is a local testing tool, not a player AI. Agents act through the
 game loop/test harness and do not directly modify `GameState`.
 
+## Scenario Regression Suite
+
+v0.8 adds scenario regression APIs for repeatable local story/path checks:
+
+- `GET /scenarios/regression`
+- `POST /scenarios/regression/run`
+- `GET /scenarios/regression/{run_id}`
+
+Cases run scripted input through the game loop or test harness with mock/local
+providers. Reports include pass/fail status, failed steps, safe expected-vs-
+actual summaries, hidden leak summaries, and save/load failures. Reports must
+not show hidden fact text.
+
+## Prompt Profiles
+
+Prompt profiles are local style/configuration records for provider/model
+preferences:
+
+- `GET /studio/prompt-profiles`
+- `POST /studio/prompt-profiles/select`
+
+Profiles can adjust narrator style, prompt variant, temperature overrides, and
+optional token preferences. They cannot add hidden facts, raw `GameState`, raw
+`state_deltas`, NPC secrets, or direct state-write authority. Provider
+selection still goes through `LLMProvider`.
+
 ## Import / Export
 
-v0.7 adds local archive import/export for worlds, mods, and saves. These
-endpoints are gated by `ENABLE_AUTHORING_API`:
+v0.7 added local archive import/export for worlds, mods, and saves. v0.8 adds
+advanced package dry-run/apply with manifests and checksums. These endpoints
+are gated by `ENABLE_AUTHORING_API`:
 
 - `GET /authoring/export/worlds/{world_id}`
 - `POST /authoring/import/worlds`
@@ -566,12 +729,21 @@ endpoints are gated by `ENABLE_AUTHORING_API`:
 - `POST /authoring/import/mods`
 - `GET /authoring/export/saves/{save_id}`
 - `POST /authoring/import/saves`
+- `GET /authoring/export/templates`
+- `GET /authoring/export/scenarios`
+- `POST /authoring/import/packages/dry-run`
+- `POST /authoring/import/packages/apply`
 
 Archives are zip bundles returned as base64 in the API response. Imports reject
 zip slip/path traversal, executable files, `.env`, database files, logs, and
 secret files. World and mod imports run validation. Save imports check
 migration status. Save export can contain hidden state and event history by
 design, so treat save bundles as local private backup data.
+
+Advanced packages include `local_package_manifest.json` with package id, type,
+version, schema/content version, included files, checksums, dependencies,
+conflicts, created time, and notes. Apply requires explicit confirmation and a
+passing dry-run.
 
 ## Full Verification
 
@@ -616,6 +788,10 @@ See `docs/CONTENT_PACKS.md` for file-level details.
   no external vector database is required.
 - `local_http` is an OpenAI-compatible local HTTP integration slice; individual
   local model servers may still need adapter work if their API shape differs.
+- v0.8 visual editors are useful structured editors, not a full visual IDE or
+  collaborative authoring system.
+- Visual editor saves always go through backend validation; they do not modify
+  active sessions or active saves.
 - Memory is not authoritative and cannot overwrite `GameState` or `EventLog`.
 - Procedural side quest generation produces drafts only.
 - NPC planning is deterministic and limited to predefined action types.
@@ -629,3 +805,5 @@ See `docs/CONTENT_PACKS.md` for file-level details.
   contain hidden state by design and should be handled as private local data.
 - Narrative eval APIs are currently debug-gated; a future cleanup may add a
   dedicated `ENABLE_EVAL_API` route gate separate from broad debug access.
+- World branch/diff is a lightweight local authoring helper, not a Git
+  replacement and not a merge system.

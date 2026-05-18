@@ -197,6 +197,7 @@ class QuestTriggerType(StrEnum):
     ITEM_ACQUIRED = "item_acquired"
     NPC_TALKED = "npc_talked"
     LOCATION_VISITED = "location_visited"
+    FACTION_REPUTATION = "faction_reputation"
 
 
 class QuestTriggerAction(StrEnum):

@@ -51,6 +51,28 @@ do not judge world outcomes or directly mutate `GameState`.
 
 ## Current LLM Uses
 
+### Prompt Profiles
+
+`PromptProfile` is a local configuration layer for provider/model-specific prompt
+preferences. Profiles can select safe prompt variants, narrator style text,
+temperature overrides, and optional output-token preferences. Profiles are
+loaded through `PromptProfileStore` and can be selected with
+`PROMPT_PROFILE_ID` or the local Settings / Privacy UI.
+
+Prompt profiles are explicitly not authority grants:
+
+- they cannot add hidden facts, NPC secrets, raw `GameState`, or raw
+  `state_deltas` to prompts
+- they cannot let model output modify `GameState`
+- they cannot bypass `LLMProvider`, schema validation, visibility filtering,
+  `MemoryContextBuilder`, StateDelta, or EventLog
+- invalid profiles that attempt to weaken these boundaries are rejected by
+  schema validation
+
+The current runtime passes the selected profile into `IntentParser`,
+`Narrator`, and `MemorySummarizer`. This may change style, variants, or
+temperature, but it does not change which facts those components receive.
+
 ### IntentParser
 
 `IntentParser` receives player text and asks the provider for a schema-validated `PlayerIntent`.
@@ -157,7 +179,7 @@ It does not:
 
 Any future API/UI exposure for LLM-assisted drafts must remain authoring-only and require explicit user review/export.
 
-## v0.5/v0.6/v0.7 Rule And Studio Modules Do Not Call LLM
+## v0.5/v0.6/v0.7/v0.8 Rule And Studio Modules Do Not Call LLM
 
 The following v0.5 modules are deterministic rule/code paths and do not call `LLMProvider`:
 
@@ -209,6 +231,38 @@ ask a model to decide validation, migration, mod compatibility, graph
 visibility, import safety, playtest results, performance status, quest graph
 correctness, or scenario template output validity.
 
+The following v0.8 visual authoring and studio modules are also deterministic
+code paths and do not call `LLMProvider`:
+
+- Visual Map Data Model and Visual Map Editor.
+- Visual Quest Graph Editor full authoring flow.
+- NPC Goal Editor.
+- Faction / Relationship Visual Editor.
+- Item / Economy Editor.
+- Rumor / Crime Consequence Editor.
+- Visual Validation Graph.
+- Timeline Replay Visualizer and replay dry-run.
+- World Branch / Diff System.
+- Scenario Regression Suite.
+- Local Template Browser.
+- Prompt Profile Manager validation and selection.
+- Advanced Import / Export Packages.
+- Desktop App Shell Polish.
+- Authoring UX Integration Pass.
+
+Visual editors may convert graph DTOs to YAML, validate drafts, and save
+content after explicit user action. They do not ask an LLM to generate maps,
+rewrite quests, create NPC goals, decide relationships, set prices, judge
+crime/rumor consequences, explain validation errors, summarize hidden replay
+events, or interpret diffs. Authoring outputs are content-pack edits, not
+runtime `GameState` mutations, and must pass validation.
+
+Prompt profiles are a style/configuration layer only. They can change prompt
+variants, narrator style, temperature, and optional token preferences, but
+they cannot add hidden facts, hidden/debug memory, NPC secrets, raw
+`GameState`, raw `state_deltas`, or direct state-write instructions to any
+prompt. Invalid profiles that attempt to widen authority are rejected.
+
 Existing deterministic v0.3/v0.4 rule paths also do not call the LLM:
 
 - search
@@ -229,9 +283,10 @@ Existing deterministic v0.3/v0.4 rule paths also do not call the LLM:
 
 They may receive a schema-validated `PlayerIntent`, but action results and state changes are decided by Python rules and emitted as `StateDelta`.
 
-## v0.7 Local Provider Integration
+## v0.8 Local Provider Integration
 
-v0.7 upgrades the local provider slice into a configurable local HTTP
+v0.7 introduced the configurable local HTTP provider, and v0.8 keeps it as the
+current local model integration boundary:
 integration while keeping the same authority boundary:
 
 - `local_stub`
@@ -331,7 +386,7 @@ Prompt inputs must obey world visibility:
 
 The LLM can render prose or draft authoring candidates, but it cannot create canonical items, NPCs, locations, quest progress, crimes, rumors, combat outcomes, faction changes, memories, relationships, trade results, or facts.
 
-## Known v0.7 Hardening Items
+## Known v0.8 Hardening Items
 
 - Split `ActionResult.reason` into `player_reason` and `debug_reason`.
 - Classify memory summaries from raw non-player-visible events as `debug_only` or `hidden` by default.
@@ -347,3 +402,8 @@ The LLM can render prose or draft authoring candidates, but it cannot create can
   state and event history.
 - Consider a dedicated `require_eval_api()` so eval routes can be enabled
   separately from broad debug access.
+- Keep v0.8 authoring graph response types out of player/narrator API routes.
+- Add regression prompt snapshots for any future runtime memory-to-narrator
+  integration.
+- Keep package import/export reports summarized and avoid rendering raw save
+  JSON, raw EventLog, or raw `state_deltas` outside debug/local-only panels.

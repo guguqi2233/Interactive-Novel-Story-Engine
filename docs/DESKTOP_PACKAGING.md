@@ -2,12 +2,13 @@
 
 ## Status
 
-v0.7.7 keeps desktop packaging as a local studio launcher prototype. It improves
-the v0.6 script path with dependency checks, clearer status output, an optional
+v0.8.17 keeps desktop packaging as a local studio launcher prototype. It
+polishes the script path with dependency checks, `.env` guidance, backend and
+frontend health checks, studio status checks, clearer safety output, optional
 built-frontend preview mode, and a Unix-like shell launcher. It is not a formal
 installer, signed application, auto-updater, or public distribution package.
 
-No Tauri or Electron dependency is introduced in v0.7.7. The current safest
+No Tauri or Electron dependency is introduced in v0.8.17. The current safest
 path is still a transparent local launcher that starts the existing FastAPI
 backend and Vite frontend without changing backend API semantics.
 
@@ -59,7 +60,19 @@ The Windows script checks for:
 - repository `pyproject.toml`
 - `frontend/package.json`
 - `frontend/node_modules`
+- importable backend dependencies: `fastapi`, `uvicorn`, `pydantic`, and
+  `app.main`
+- `.env` presence, with a safe prompt to copy `.env.example` if missing
 - `frontend/dist/index.html` when `-UseBuiltFrontend` is used
+
+After launch it checks:
+
+- backend `/health`
+- backend `/studio/status`
+- frontend URL availability
+
+The checks are readiness hints, not formal process supervision. If a check times
+out, inspect `logs/desktop-backend.err.log` or `logs/desktop-frontend.err.log`.
 
 ## Shell Launcher
 
@@ -77,10 +90,13 @@ bash scripts/start_local_studio.sh --backend-port 8000 --frontend-port 5173
 bash scripts/start_local_studio.sh --use-built-frontend
 bash scripts/start_local_studio.sh --skip-dependency-check
 bash scripts/start_local_studio.sh --preflight-only
+bash scripts/start_local_studio.sh --health-timeout-seconds 45
 ```
 
 The shell script is a convenience prototype. Windows PowerShell remains the
-primary supported local desktop launcher for this repository.
+primary supported local desktop launcher for this repository. On macOS and
+Linux, browser opening depends on `open` or `xdg-open`; if neither is present,
+the script prints the URL for manual opening.
 
 ## Runtime Status Output
 
@@ -95,6 +111,9 @@ The launchers print safe local status:
 - `ENABLE_DEBUG_API`
 - `ENABLE_PERF_LOGGING`
 - `VITE_API_BASE_URL`
+- backend `/health` status
+- backend `/studio/status` reachability
+- frontend availability
 
 They do not print `LLM_API_KEY`, environment dumps, database contents, prompts,
 raw `GameState`, or raw `state_deltas`.
@@ -154,9 +173,16 @@ The repository ignores local and desktop build artifacts:
 - `desktop-dist/`
 - `release/`
 - `src-tauri/target/`
+- `src-tauri/gen/`
+- `desktop-build/`
+- `desktop-release/`
+- `electron-dist/`
+- `tauri-dist/`
+- `installers/`
 - Python and pytest caches
 - TypeScript build info
-- common installer artifacts such as `*.msi`, `*.dmg`, `*.AppImage`
+- common installer artifacts such as `*.msi`, `*.dmg`, `*.AppImage`, `*.deb`,
+  `*.rpm`, and `*.pkg`
 
 Before any future formal installer milestone, run a bundle scan to confirm no
 secret files or API keys are included.
@@ -174,7 +200,7 @@ rules, and an explicit secret handling design.
 Electron remains viable if Node-based process management becomes more valuable
 than bundle size. It would still need the same local data and secret policies.
 
-### Current v0.7.7 Decision
+### Current v0.8.17 Decision
 
 Do not add Tauri or Electron yet. The local authoring, migration, graph,
 evaluation, performance, and provider flows are still changing, so a script
@@ -182,7 +208,7 @@ launcher remains easier to audit and safer for local-only development.
 
 ## Not In This Prototype
 
-v0.7.7 does not include:
+v0.8.17 does not include:
 
 - formal installer generation;
 - code signing;

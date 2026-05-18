@@ -1,5 +1,6 @@
 from enum import StrEnum
 from pathlib import Path
+from shutil import rmtree
 from shutil import copytree
 from tempfile import TemporaryDirectory
 from typing import Any
@@ -72,9 +73,23 @@ class ScenarioTemplatePreview(BaseModel):
     rendered: RenderedTemplate
     validation_report: ValidationReport | None = None
     writes_to_disk: bool = False
+    target_world_id: str | None = None
 
 
 class ScenarioTemplateRenderer:
+    DISALLOWED_TEMPLATE_SUFFIXES = {
+        ".bat",
+        ".cmd",
+        ".com",
+        ".dll",
+        ".exe",
+        ".js",
+        ".mjs",
+        ".ps1",
+        ".py",
+        ".sh",
+    }
+
     def __init__(
         self,
         templates_root: str | Path = "templates",
@@ -86,12 +101,14 @@ class ScenarioTemplateRenderer:
     def list_templates(self) -> list[ScenarioTemplate]:
         if not self.templates_root.exists():
             return []
+        self._assert_templates_root_safe()
         templates: list[ScenarioTemplate] = []
         for path in sorted(self.templates_root.glob("*.yaml"), key=lambda item: item.name):
             templates.append(self._load_template(path))
         return templates
 
     def get_template(self, template_id: str) -> ScenarioTemplate:
+        self._assert_templates_root_safe()
         if not _is_safe_id(template_id):
             raise ScenarioTemplateError(f"Invalid template id: {template_id}")
         path = (self.templates_root / f"{template_id}.yaml").resolve()
@@ -117,7 +134,62 @@ class ScenarioTemplateRenderer:
             rendered=rendered,
             validation_report=validation_report,
             writes_to_disk=False,
+            target_world_id=target_world_id,
         )
+
+    def apply_template(
+        self,
+        template_id: str,
+        variables: dict[str, str],
+        *,
+        target_world_id: str | None = None,
+        confirm_apply: bool = False,
+    ) -> ScenarioTemplatePreview:
+        if not confirm_apply:
+            raise ScenarioTemplateError("Template apply requires explicit confirmation")
+        preview = self.preview_template(template_id, variables, target_world_id=target_world_id)
+        if preview.validation_report is None:
+            raise ScenarioTemplateError("Template apply requires a validation target")
+        if not preview.validation_report.ok:
+            raise ScenarioTemplateError("Template validation failed; apply was not written")
+
+        apply_world_id = self._rendered_target_world_id(preview.rendered, target_world_id)
+        world_path = self._safe_apply_world_path(apply_world_id, create_for_world_template=preview.rendered.template_type == ScenarioTemplateType.WORLD)
+        backup_path: Path | None = None
+        if world_path.exists():
+            with TemporaryDirectory() as tmpdir:
+                backup_path = Path(tmpdir) / "world_backup"
+                copytree(world_path, backup_path)
+                try:
+                    self._write_rendered_files(world_path, preview.rendered)
+                    validation = validate_world_pack(apply_world_id, worlds_root=self.worlds_root)
+                    if not validation.ok:
+                        rmtree(world_path)
+                        copytree(backup_path, world_path)
+                        raise ScenarioTemplateError("Template apply failed final validation")
+                    preview.validation_report = validation
+                except Exception:
+                    if world_path.exists():
+                        rmtree(world_path)
+                    copytree(backup_path, world_path)
+                    raise
+        else:
+            world_path.mkdir(parents=True)
+            try:
+                self._write_rendered_files(world_path, preview.rendered)
+                validation = validate_world_pack(apply_world_id, worlds_root=self.worlds_root)
+                if not validation.ok:
+                    rmtree(world_path)
+                    raise ScenarioTemplateError("Template apply failed final validation")
+                preview.validation_report = validation
+            except Exception:
+                if world_path.exists():
+                    rmtree(world_path)
+                raise
+
+        preview.writes_to_disk = True
+        preview.target_world_id = apply_world_id
+        return preview
 
     def render_template(
         self,
@@ -173,6 +245,8 @@ class ScenarioTemplateRenderer:
         resolved = path.resolve()
         if root != resolved.parent:
             raise ScenarioTemplateError("Template path escapes templates root")
+        if resolved.suffix.lower() != ".yaml":
+            raise ScenarioTemplateError(f"Template files must be YAML: {resolved.name}")
         try:
             data = yaml.safe_load(resolved.read_text(encoding="utf-8")) or {}
         except yaml.YAMLError as exc:
@@ -211,6 +285,50 @@ class ScenarioTemplateRenderer:
         if not path.exists() or not path.is_dir():
             raise ScenarioTemplateError(f"World pack not found: {world_id}")
         return path
+
+    def _safe_apply_world_path(self, world_id: str, *, create_for_world_template: bool) -> Path:
+        if not _is_safe_id(world_id):
+            raise ScenarioTemplateError(f"Invalid target world id: {world_id}")
+        root = self.worlds_root.resolve()
+        path = (root / world_id).resolve()
+        if root != path and root not in path.parents:
+            raise ScenarioTemplateError("World path escapes worlds root")
+        if path.exists() and not path.is_dir():
+            raise ScenarioTemplateError(f"World target is not a directory: {world_id}")
+        if create_for_world_template and path.exists():
+            raise ScenarioTemplateError(f"World pack already exists: {world_id}")
+        if not create_for_world_template and not path.exists():
+            raise ScenarioTemplateError(f"World pack not found: {world_id}")
+        return path
+
+    def _rendered_target_world_id(self, rendered: RenderedTemplate, target_world_id: str | None) -> str:
+        if rendered.template_type != ScenarioTemplateType.WORLD:
+            if target_world_id is None:
+                raise ScenarioTemplateError("Applying a non-world template requires target_world_id")
+            return target_world_id
+        manifest = _safe_load_mapping(_file_content(rendered, "manifest.yaml"))
+        raw_world_id = manifest.get("world_id")
+        if not isinstance(raw_world_id, str) or not _is_safe_id(raw_world_id):
+            raise ScenarioTemplateError("Rendered world template must include a safe manifest world_id")
+        return raw_world_id
+
+    def _write_rendered_files(self, world_path: Path, rendered: RenderedTemplate) -> None:
+        for rendered_file in rendered.files:
+            if rendered_file.file_name not in ALLOWED_AUTHORING_FILES or Path(rendered_file.file_name).name != rendered_file.file_name:
+                raise ScenarioTemplateError(f"Rendered file is not authoring-allowed: {rendered_file.file_name}")
+            _safe_load_mapping(rendered_file.content)
+            (world_path / rendered_file.file_name).write_text(rendered_file.content, encoding="utf-8")
+
+    def _assert_templates_root_safe(self) -> None:
+        if not self.templates_root.exists():
+            return
+        root = self.templates_root.resolve()
+        for path in self.templates_root.rglob("*"):
+            resolved = path.resolve()
+            if root != resolved and root not in resolved.parents:
+                raise ScenarioTemplateError("Template path escapes templates root")
+            if path.is_file() and path.suffix.lower() in self.DISALLOWED_TEMPLATE_SUFFIXES:
+                raise ScenarioTemplateError(f"Executable files are not allowed in templates directory: {path.name}")
 
 
 def _render_text(template: str, variables: dict[str, str]) -> str:

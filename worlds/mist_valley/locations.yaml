@@ -7,11 +7,27 @@ locations:
       east: blacksmith
     visible_objects:
       - notice_board
+    visual:
+      x: 0
+      y: 0
+      region_id: village
+      icon: plaza
+      color_tag: civic
+      display_group: village_center
+      tags:
+        - hub
   - id: old_bridge
     name: Old Bridge
     description: A narrow bridge crosses a pale stream into the fog.
     exits:
       south: village_square
+    visual:
+      x: 0
+      y: -140
+      region_id: outskirts
+      icon: bridge
+      color_tag: travel
+      display_group: north_road
   - id: blacksmith
     name: Blacksmith
     description: The forge is cold, but iron filings still glitter near the anvil.
@@ -19,4 +35,11 @@ locations:
       west: village_square
     visible_objects:
       - anvil
+    visual:
+      x: 160
+      y: 0
+      region_id: village
+      icon: hammer
+      color_tag: craft
+      display_group: village_center
 

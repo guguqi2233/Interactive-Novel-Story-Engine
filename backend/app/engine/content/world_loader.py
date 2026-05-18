@@ -1,3 +1,4 @@
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -41,6 +42,59 @@ class WorldManifest(BaseModel):
     description: str = ""
 
 
+class MapVisibility(StrEnum):
+    PUBLIC = "public"
+    HIDDEN = "hidden"
+    DISCOVERABLE = "discoverable"
+
+
+class MapVisualEdgeType(StrEnum):
+    EXIT = "exit"
+    ONE_WAY = "one_way"
+    LOCKED = "locked"
+    HIDDEN = "hidden"
+    CONDITIONAL = "conditional"
+
+
+class LocationVisualDef(BaseModel):
+    x: float = Field(default=0.0, allow_inf_nan=False)
+    y: float = Field(default=0.0, allow_inf_nan=False)
+    region_id: str | None = None
+    icon: str | None = None
+    color_tag: str | None = None
+    display_group: str | None = None
+    notes: str | None = None
+    visibility: MapVisibility = MapVisibility.PUBLIC
+    tags: list[str] = Field(default_factory=list)
+
+
+class MapVisualNode(BaseModel):
+    id: str
+    name: str
+    location_id: str
+    x: float = Field(default=0.0, allow_inf_nan=False)
+    y: float = Field(default=0.0, allow_inf_nan=False)
+    region_id: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    visibility: MapVisibility = MapVisibility.PUBLIC
+    icon: str | None = None
+    color_tag: str | None = None
+    display_group: str | None = None
+
+
+class MapVisualEdge(BaseModel):
+    source_location_id: str
+    target_location_id: str
+    edge_type: MapVisualEdgeType = MapVisualEdgeType.EXIT
+    label: str
+    visibility: MapVisibility = MapVisibility.PUBLIC
+
+
+class MapVisualGraph(BaseModel):
+    nodes: list[MapVisualNode] = Field(default_factory=list)
+    edges: list[MapVisualEdge] = Field(default_factory=list)
+
+
 class LocationDef(BaseModel):
     id: str
     name: str
@@ -49,6 +103,7 @@ class LocationDef(BaseModel):
     visible_objects: list[str] = Field(default_factory=list)
     cover_level: int = Field(default=0, ge=0)
     light_level: int = Field(default=5, ge=0)
+    visual: LocationVisualDef | None = None
 
 
 class NPCDef(BaseModel):
@@ -113,6 +168,8 @@ class QuestStageDef(BaseModel):
     description: str = ""
     objectives: list[str] = Field(default_factory=list)
     next_stages: list[str] = Field(default_factory=list)
+    failure_stages: list[str] = Field(default_factory=list)
+    alternate_stages: list[str] = Field(default_factory=list)
 
 
 class QuestTriggerDef(BaseModel):
@@ -131,6 +188,7 @@ class QuestDef(BaseModel):
     stages: list[QuestStageDef]
     visibility: QuestVisibility = QuestVisibility.HIDDEN
     triggers: list[QuestTriggerDef] = Field(default_factory=list)
+    rewards: list[str | dict[str, Any]] = Field(default_factory=list)
 
 
 class FactDef(BaseModel):
@@ -149,6 +207,7 @@ class FactionDef(BaseModel):
     known_by_player: bool = False
     relations: dict[str, int] = Field(default_factory=dict)
     conflict_tags: list[str] = Field(default_factory=list)
+    default_conflict_level: int = Field(default=0, ge=0)
     default_alert_level: int = Field(default=0, ge=0)
     resources: dict[str, int | float | str] = Field(default_factory=dict)
     tags: list[str] = Field(default_factory=list)
@@ -234,7 +293,7 @@ class WorldPack(BaseModel):
                     known_to_player=faction.known_by_player,
                 ),
                 relationships_to_other_factions=faction.relations,
-                conflict_level=0,
+                conflict_level=faction.default_conflict_level,
                 alert_level=faction.default_alert_level,
                 resources=faction.resources,
                 known_by_player=faction.known_by_player,
@@ -556,6 +615,18 @@ class WorldLoader:
                             f"Quest {quest.id} stage {stage.id} references missing next_stage: "
                             f"{next_stage}"
                         )
+                for failure_stage in stage.failure_stages:
+                    if failure_stage not in stage_ids:
+                        raise WorldLoaderError(
+                            f"Quest {quest.id} stage {stage.id} references missing failure_stage: "
+                            f"{failure_stage}"
+                        )
+                for alternate_stage in stage.alternate_stages:
+                    if alternate_stage not in stage_ids:
+                        raise WorldLoaderError(
+                            f"Quest {quest.id} stage {stage.id} references missing alternate_stage: "
+                            f"{alternate_stage}"
+                        )
             objective_ids = {
                 objective_id
                 for stage in quest.stages
@@ -577,6 +648,10 @@ class WorldLoader:
                 if trigger.type == QuestTriggerType.LOCATION_VISITED and trigger.id not in location_ids:
                     raise WorldLoaderError(
                         f"Quest {quest.id} trigger references missing location id: {trigger.id}"
+                    )
+                if trigger.type == QuestTriggerType.FACTION_REPUTATION and trigger.id not in faction_ids:
+                    raise WorldLoaderError(
+                        f"Quest {quest.id} trigger references missing faction id: {trigger.id}"
                     )
                 if trigger.objective_id and trigger.objective_id not in objective_ids:
                     raise WorldLoaderError(

@@ -102,6 +102,45 @@ def test_template_rejects_path_traversal_variable(tmp_path: Path) -> None:
         raise AssertionError("Expected ScenarioTemplateError")
 
 
+def test_apply_template_requires_confirmation_and_writes_valid_world(tmp_path: Path) -> None:
+    worlds_root = tmp_path / "worlds"
+    renderer = ScenarioTemplateRenderer(
+        templates_root=_copy_templates(tmp_path),
+        worlds_root=worlds_root,
+    )
+
+    try:
+        renderer.apply_template("basic_village_world", REQUIRED_VARIABLES)
+    except ScenarioTemplateError as exc:
+        assert "explicit confirmation" in str(exc)
+    else:
+        raise AssertionError("Expected ScenarioTemplateError")
+
+    preview = renderer.apply_template("basic_village_world", REQUIRED_VARIABLES, confirm_apply=True)
+
+    assert preview.writes_to_disk is True
+    assert preview.target_world_id == "test_world"
+    assert preview.validation_report is not None
+    assert preview.validation_report.ok
+    assert (worlds_root / "test_world" / "manifest.yaml").exists()
+
+
+def test_template_directory_rejects_executable_files(tmp_path: Path) -> None:
+    templates_root = _copy_templates(tmp_path)
+    (templates_root / "evil.py").write_text("print('nope')", encoding="utf-8")
+    renderer = ScenarioTemplateRenderer(
+        templates_root=templates_root,
+        worlds_root=tmp_path / "worlds",
+    )
+
+    try:
+        renderer.list_templates()
+    except ScenarioTemplateError as exc:
+        assert "Executable files are not allowed" in str(exc)
+    else:
+        raise AssertionError("Expected ScenarioTemplateError")
+
+
 def test_template_preview_does_not_modify_active_game_state(tmp_path: Path) -> None:
     templates_root = _copy_templates(tmp_path)
     worlds_root = tmp_path / "worlds"
@@ -148,3 +187,28 @@ def test_authoring_template_api_rejects_path_traversal(tmp_path: Path) -> None:
 
     assert response.status_code == 400
     assert "Unsafe template variable value" in response.json()["detail"]
+
+
+def test_authoring_template_api_get_and_apply(tmp_path: Path) -> None:
+    worlds_root = tmp_path / "worlds"
+    app.state.session_store = InMemorySessionStore()
+    app.state.save_repository = SQLiteSaveRepository(tmp_path / "templates_api.db")
+    app.state.scenario_template_renderer = ScenarioTemplateRenderer(
+        templates_root=_copy_templates(tmp_path),
+        worlds_root=worlds_root,
+    )
+    app.state.settings = Settings(enable_authoring_api=True, llm_provider="mock")
+    client = TestClient(app)
+
+    detail_response = client.get("/authoring/templates/basic_village_world")
+    apply_response = client.post(
+        "/authoring/templates/basic_village_world/apply",
+        json={"variables": REQUIRED_VARIABLES, "confirm_apply": True},
+    )
+
+    assert detail_response.status_code == 200
+    assert detail_response.json()["id"] == "basic_village_world"
+    assert apply_response.status_code == 200
+    assert apply_response.json()["writes_to_disk"] is True
+    assert apply_response.json()["target_world_id"] == "test_world"
+    assert (worlds_root / "test_world" / "manifest.yaml").exists()

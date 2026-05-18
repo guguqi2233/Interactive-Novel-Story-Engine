@@ -7,11 +7,13 @@ import yaml
 from pydantic import BaseModel, Field, ValidationError
 
 from app.core.world_state import FactVisibility, QuestTriggerType, QuestVisibility
+from app.engine.rules.npc_planning import PLANNING_ACTIONS
 from app.engine.content.world_loader import (
     FactDef,
     FactionDef,
     ItemDef,
     LocationDef,
+    MapVisibility,
     NPCDef,
     QuestDef,
     RelationshipDef,
@@ -108,6 +110,7 @@ def validate_world_pack(world_id: str, worlds_root: str | Path = "worlds") -> Va
     pack = _load_raw_pack(world_path, report)
     _validate_unique_ids(pack, report)
     _validate_references(pack, report)
+    _validate_map_visual(pack, report)
     _validate_visibility_boundaries(pack, report)
     _validate_optional_future_files(world_path, report)
     _add_authoring_suggestions(pack, report)
@@ -225,10 +228,23 @@ def _load_model_list(
             parsed_items.append(model_type.model_validate(item))
         except ValidationError as exc:
             item_id = item.get("id", index)
+            code = "schema_validation_failed"
+            suggestion = None
+            if model_type is ItemDef:
+                message = str(exc)
+                if "multiple placements" in message:
+                    code = "item_conflicting_ownership"
+                    suggestion = "Keep only one of location_id, owner_id, or container_id."
+                elif "base_price" in message:
+                    code = "item_negative_base_price"
+                    suggestion = "Set base_price to 0 or a positive integer."
             report.add(
                 ValidationSeverity.ERROR,
                 f"{path.name}.{key}[{item_id}]",
                 f"Schema validation failed: {exc}",
+                code=code,
+                ref_id=str(item_id),
+                suggestion=suggestion,
             )
     return parsed_items
 
@@ -335,6 +351,26 @@ def _validate_references(pack: RawWorldPack, report: ValidationReport) -> None:
                     ref_id=item_id,
                     suggestion="Use an item id from items.yaml.",
                 )
+            else:
+                item = next((content_item for content_item in pack.items if content_item.id == item_id), None)
+                if item and item.hidden:
+                    report.add(
+                        ValidationSeverity.SUGGESTION,
+                        f"npcs.yaml.{npc.id}.shop_inventory",
+                        "Hidden shop item will be filtered from player-visible shop inventory until discovered.",
+                        code="merchant_hidden_shop_item_player_filtered",
+                        ref_id=item_id,
+                        suggestion="Keep this only for authoring/debug inventory or make the item visible when it should appear in shops.",
+                    )
+        _validate_npc_goals(
+            npc,
+            report,
+            fact_ids=fact_ids,
+            item_ids=item_ids,
+            npc_ids=npc_ids,
+            location_ids=location_ids,
+            quest_ids={quest.id for quest in pack.quests},
+        )
 
     for faction in pack.factions:
         for target_faction_id in faction.relations:
@@ -347,6 +383,14 @@ def _validate_references(pack: RawWorldPack, report: ValidationReport) -> None:
                     ref_id=target_faction_id,
                     suggestion="Use a faction id from factions.yaml.",
                 )
+        if faction.default_conflict_level < 0:
+            report.add(
+                ValidationSeverity.ERROR,
+                f"factions.yaml.{faction.id}.default_conflict_level",
+                f"Faction conflict level must be non-negative: {faction.default_conflict_level}",
+                code="faction_invalid_conflict_level",
+                ref_id=faction.id,
+            )
 
     for item in pack.items:
         placements = [
@@ -465,9 +509,84 @@ def _validate_references(pack: RawWorldPack, report: ValidationReport) -> None:
                 ref_id=relationship.target_id,
                 suggestion="Use player or an NPC id from npcs.yaml.",
             )
+        if not relationship.relation_type.strip():
+            report.add(
+                ValidationSeverity.ERROR,
+                f"relationships.yaml.{relationship_id}.relation_type",
+                "Relationship relation_type cannot be blank.",
+                code="relationship_blank_relation_type",
+                ref_id=relationship_id,
+            )
+        for field_name in ("trust", "fear", "affinity", "obligation"):
+            value = getattr(relationship, field_name)
+            if value < -100 or value > 100:
+                report.add(
+                    ValidationSeverity.ERROR,
+                    f"relationships.yaml.{relationship_id}.{field_name}",
+                    f"Relationship {field_name} must be between -100 and 100: {value}",
+                    code=f"relationship_invalid_{field_name}",
+                    ref_id=relationship_id,
+                )
 
+    faction_ids = {faction.id for faction in pack.factions}
     for quest in pack.quests:
-        _validate_quest(quest, report, fact_ids, item_ids, npc_ids, location_ids)
+        _validate_quest(quest, report, fact_ids, item_ids, npc_ids, location_ids, faction_ids)
+
+
+def _validate_map_visual(pack: RawWorldPack, report: ValidationReport) -> None:
+    display_group_regions: dict[str, set[str]] = defaultdict(set)
+    for location in pack.locations:
+        if location.visual is None:
+            continue
+        visual = location.visual
+        if abs(visual.x) > 1_000_000 or abs(visual.y) > 1_000_000:
+            report.add(
+                ValidationSeverity.WARNING,
+                f"locations.yaml.{location.id}.visual",
+                "Visual coordinates are unusually large for the local map editor.",
+                code="map_visual_coordinate_outlier",
+                ref_id=location.id,
+                suggestion="Use finite coordinates near the active map layout area.",
+            )
+        if visual.region_id is not None and not visual.region_id.strip():
+            report.add(
+                ValidationSeverity.ERROR,
+                f"locations.yaml.{location.id}.visual.region_id",
+                "Visual region_id cannot be blank when provided.",
+                code="map_visual_blank_region_id",
+                ref_id=location.id,
+                suggestion="Remove region_id or provide a non-empty region id.",
+            )
+        if visual.display_group and visual.region_id:
+            display_group_regions[visual.display_group].add(visual.region_id)
+
+    for display_group, region_ids in display_group_regions.items():
+        if len(region_ids) > 1:
+            report.add(
+                ValidationSeverity.WARNING,
+                f"locations.yaml.visual.display_group.{display_group}",
+                f"Display group spans multiple region_id values: {', '.join(sorted(region_ids))}",
+                code="map_visual_inconsistent_region_group",
+                ref_id=display_group,
+                suggestion="Use one region_id per display_group unless the split is intentional.",
+            )
+
+    hidden_locations = {
+        location.id
+        for location in pack.locations
+        if location.visual and location.visual.visibility == MapVisibility.HIDDEN
+    }
+    for location in pack.locations:
+        for direction, target_location_id in location.exits.items():
+            if location.id in hidden_locations or target_location_id in hidden_locations:
+                report.add(
+                    ValidationSeverity.SUGGESTION,
+                    f"locations.yaml.{location.id}.exits.{direction}",
+                    "Exit touches a hidden visual location and will be omitted from player-visible map graphs.",
+                    code="map_visual_hidden_edge_player_filtered",
+                    ref_id=target_location_id,
+                    suggestion="This is safe for authoring/debug maps; keep player map builders filtered.",
+                )
 
 
 def _validate_quest(
@@ -477,6 +596,7 @@ def _validate_quest(
     item_ids: set[str],
     npc_ids: set[str],
     location_ids: set[str],
+    faction_ids: set[str],
 ) -> None:
     stage_ids = {stage.id for stage in quest.stages}
     objective_ids = {
@@ -497,6 +617,26 @@ def _validate_quest(
                     ValidationSeverity.ERROR,
                     f"quests.yaml.{quest.id}.stages.{stage.id}.next_stages",
                     f"Next stage does not exist: {next_stage}",
+                )
+        for failure_stage in stage.failure_stages:
+            if failure_stage not in stage_ids:
+                report.add(
+                    ValidationSeverity.ERROR,
+                    f"quests.yaml.{quest.id}.stages.{stage.id}.failure_stages",
+                    f"Failure stage does not exist: {failure_stage}",
+                    code="quest_missing_failure_stage",
+                    ref_id=failure_stage,
+                    suggestion="Use an existing stage id in this quest.",
+                )
+        for alternate_stage in stage.alternate_stages:
+            if alternate_stage not in stage_ids:
+                report.add(
+                    ValidationSeverity.ERROR,
+                    f"quests.yaml.{quest.id}.stages.{stage.id}.alternate_stages",
+                    f"Alternate stage does not exist: {alternate_stage}",
+                    code="quest_missing_alternate_stage",
+                    ref_id=alternate_stage,
+                    suggestion="Use an existing stage id in this quest.",
                 )
     for trigger in quest.triggers:
         if trigger.type == QuestTriggerType.FACT_DISCOVERED and trigger.id not in fact_ids:
@@ -535,6 +675,15 @@ def _validate_quest(
                 ref_id=trigger.id,
                 suggestion="Use a location id from locations.yaml.",
             )
+        if trigger.type == QuestTriggerType.FACTION_REPUTATION and trigger.id not in faction_ids:
+            report.add(
+                ValidationSeverity.ERROR,
+                f"quests.yaml.{quest.id}.triggers.{trigger.id}",
+                f"Trigger references missing faction: {trigger.id}",
+                code="quest_trigger_missing_faction",
+                ref_id=trigger.id,
+                suggestion="Use a faction id from factions.yaml.",
+            )
         if trigger.objective_id and trigger.objective_id not in objective_ids:
             report.add(
                 ValidationSeverity.ERROR,
@@ -547,6 +696,149 @@ def _validate_quest(
                 f"quests.yaml.{quest.id}.triggers.{trigger.id}.next_stage",
                 f"Trigger references missing stage: {trigger.next_stage}",
             )
+
+
+def _validate_npc_goals(
+    npc: NPCDef,
+    report: ValidationReport,
+    *,
+    fact_ids: set[str],
+    item_ids: set[str],
+    npc_ids: set[str],
+    location_ids: set[str],
+    quest_ids: set[str],
+) -> None:
+    supported_actions = PLANNING_ACTIONS | {"move", "investigate", "attack", "flee"}
+    seen_goal_ids: set[str] = set()
+    for index, goal in enumerate(npc.goals):
+        if isinstance(goal, str):
+            continue
+        path = f"npcs.yaml.{npc.id}.goals.{goal.id or index}"
+        if goal.id in seen_goal_ids:
+            report.add(
+                ValidationSeverity.ERROR,
+                path,
+                f"Duplicate NPC goal id: {goal.id}",
+                code="npc_goal_duplicate_id",
+                ref_id=goal.id,
+                suggestion="Goal ids must be unique within one NPC.",
+            )
+        seen_goal_ids.add(goal.id)
+        if goal.priority < 0:
+            report.add(
+                ValidationSeverity.ERROR,
+                f"{path}.priority",
+                f"NPC goal priority must be non-negative: {goal.priority}",
+                code="npc_goal_invalid_priority",
+            )
+        for action in goal.allowed_actions:
+            if action not in supported_actions:
+                report.add(
+                    ValidationSeverity.ERROR,
+                    f"{path}.allowed_actions",
+                    f"Unsupported NPC planning action: {action}",
+                    code="npc_goal_invalid_allowed_action",
+                    ref_id=action,
+                    suggestion="Use a supported deterministic planning action.",
+                )
+        for action in goal.forbidden_actions:
+            if action not in supported_actions:
+                report.add(
+                    ValidationSeverity.ERROR,
+                    f"{path}.forbidden_actions",
+                    f"Unsupported forbidden action: {action}",
+                    code="npc_goal_invalid_forbidden_action",
+                    ref_id=action,
+                    suggestion="Use a known action id.",
+                )
+        for condition in goal.conditions:
+            _validate_goal_reference(
+                condition,
+                report,
+                f"{path}.conditions",
+                fact_ids=fact_ids,
+                item_ids=item_ids,
+                npc_ids=npc_ids,
+                location_ids=location_ids,
+                quest_ids=quest_ids,
+            )
+        for key, value in goal.desired_state.items():
+            if isinstance(value, str):
+                _validate_desired_state_reference(
+                    key,
+                    value,
+                    report,
+                    f"{path}.desired_state.{key}",
+                    fact_ids=fact_ids,
+                    item_ids=item_ids,
+                    npc_ids=npc_ids,
+                    location_ids=location_ids,
+                    quest_ids=quest_ids,
+                )
+
+
+def _validate_goal_reference(
+    reference: str,
+    report: ValidationReport,
+    path: str,
+    *,
+    fact_ids: set[str],
+    item_ids: set[str],
+    npc_ids: set[str],
+    location_ids: set[str],
+    quest_ids: set[str],
+) -> None:
+    prefix, _, ref_id = reference.partition(":")
+    if not ref_id:
+        return
+    known: dict[str, set[str]] = {
+        "fact": fact_ids,
+        "item": item_ids,
+        "npc": npc_ids,
+        "location": location_ids,
+        "quest": quest_ids,
+    }
+    if prefix in known and ref_id not in known[prefix]:
+        report.add(
+            ValidationSeverity.ERROR,
+            path,
+            f"NPC goal condition references missing {prefix}: {ref_id}",
+            code=f"npc_goal_missing_{prefix}",
+            ref_id=ref_id,
+            suggestion=f"Use an existing {prefix} id.",
+        )
+
+
+def _validate_desired_state_reference(
+    key: str,
+    value: str,
+    report: ValidationReport,
+    path: str,
+    *,
+    fact_ids: set[str],
+    item_ids: set[str],
+    npc_ids: set[str],
+    location_ids: set[str],
+    quest_ids: set[str],
+) -> None:
+    known: dict[str, set[str]] = {
+        "item": item_ids,
+        "npc": npc_ids,
+        "npc_id": npc_ids,
+        "location": location_ids,
+        "location_id": location_ids,
+        "quest": quest_ids,
+        "quest_id": quest_ids,
+    }
+    if key in known and value not in known[key]:
+        report.add(
+            ValidationSeverity.ERROR,
+            path,
+            f"NPC goal desired_state references missing {key}: {value}",
+            code=f"npc_goal_desired_state_missing_{key}",
+            ref_id=value,
+            suggestion=f"Use an existing {key} id.",
+        )
 
 
 def _validate_visibility_boundaries(pack: RawWorldPack, report: ValidationReport) -> None:

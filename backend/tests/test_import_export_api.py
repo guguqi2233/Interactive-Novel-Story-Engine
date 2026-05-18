@@ -53,6 +53,72 @@ def test_export_and_import_world_pack(tmp_path: Path) -> None:
     assert (tmp_path / "imported_worlds" / "mist_valley" / "manifest.yaml").exists()
 
 
+def test_export_world_package_has_manifest_and_checksum(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+
+    export_response = client.get("/authoring/export/worlds/mist_valley")
+
+    assert export_response.status_code == 200
+    archive = _zip_entries(export_response.json()["archive_base64"])
+    package_manifest = json.loads(archive["local_package_manifest.json"])
+    assert package_manifest["package_type"] == "world"
+    assert "worlds/mist_valley/manifest.yaml" in package_manifest["included_files"]
+    assert package_manifest["checksums"]["worlds/mist_valley/manifest.yaml"]
+
+
+def test_import_package_dry_run_valid_world_succeeds(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    export_response = client.get("/authoring/export/worlds/mist_valley")
+    app.state.worlds_root = tmp_path / "imported_worlds"
+
+    dry_run_response = client.post(
+        "/authoring/import/packages/dry-run",
+        json={"archive_base64": export_response.json()["archive_base64"]},
+    )
+
+    assert dry_run_response.status_code == 200
+    assert dry_run_response.json()["ok"] is True
+    assert dry_run_response.json()["manifest"]["package_type"] == "world"
+    assert not (tmp_path / "imported_worlds" / "mist_valley").exists()
+
+
+def test_import_package_apply_requires_confirmation(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    export_response = client.get("/authoring/export/worlds/mist_valley")
+    app.state.worlds_root = tmp_path / "imported_worlds"
+
+    rejected = client.post(
+        "/authoring/import/packages/apply",
+        json={"archive_base64": export_response.json()["archive_base64"]},
+    )
+    accepted = client.post(
+        "/authoring/import/packages/apply",
+        json={"archive_base64": export_response.json()["archive_base64"], "confirm_apply": True},
+    )
+
+    assert rejected.status_code == 400
+    assert "explicit confirmation" in rejected.json()["detail"]
+    assert accepted.status_code == 200
+    assert accepted.json()["imported"] is True
+    assert (tmp_path / "imported_worlds" / "mist_valley" / "manifest.yaml").exists()
+
+
+def test_import_package_rejects_checksum_mismatch(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    export_response = client.get("/authoring/export/worlds/mist_valley")
+    tampered = _tamper_archive_file(
+        export_response.json()["archive_base64"],
+        "worlds/mist_valley/manifest.yaml",
+        "world_id: mist_valley\nname: Tampered\n",
+    )
+
+    response = client.post("/authoring/import/packages/dry-run", json={"archive_base64": tampered})
+
+    assert response.status_code == 200
+    assert response.json()["ok"] is False
+    assert "Checksum mismatch" in response.json()["errors"][0]
+
+
 def test_export_and_import_mod_package(tmp_path: Path) -> None:
     client = make_client(tmp_path)
 
@@ -88,6 +154,35 @@ def test_import_world_rejects_path_traversal(tmp_path: Path) -> None:
     assert "Unsafe archive path" in response.json()["detail"]
 
 
+def test_import_package_dry_run_rejects_zip_slip(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    archive = _archive_b64(
+        {
+            "export_manifest.json": {"export_type": "world", "id": "bad_world"},
+            "local_package_manifest.json": {
+                "package_id": "bad_world",
+                "package_type": "world",
+                "version": "0.8.16",
+                "engine_version_min": "0.8.0",
+                "schema_version": "0.8",
+                "included_files": ["../evil.txt"],
+                "checksums": {"../evil.txt": "x"},
+                "dependencies": [],
+                "conflicts": [],
+                "created_at": "2026-05-18T00:00:00Z",
+                "notes": "",
+            },
+            "../evil.txt": "nope",
+        }
+    )
+
+    response = client.post("/authoring/import/packages/dry-run", json={"archive_base64": archive})
+
+    assert response.status_code == 200
+    assert response.json()["ok"] is False
+    assert "Unsafe archive path" in response.json()["errors"][0]
+
+
 def test_import_archive_containing_executable_is_rejected(tmp_path: Path) -> None:
     client = make_client(tmp_path)
     archive = _archive_b64(
@@ -102,6 +197,49 @@ def test_import_archive_containing_executable_is_rejected(tmp_path: Path) -> Non
 
     assert response.status_code == 400
     assert "executable code" in response.json()["detail"]
+
+
+def test_import_package_dry_run_rejects_executable(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    archive = _archive_b64(
+        {
+            "export_manifest.json": {"export_type": "world", "id": "bad_world"},
+            "local_package_manifest.json": {
+                "package_id": "bad_world",
+                "package_type": "world",
+                "version": "0.8.16",
+                "engine_version_min": "0.8.0",
+                "schema_version": "0.8",
+                "included_files": ["worlds/bad_world/evil.py"],
+                "checksums": {"worlds/bad_world/evil.py": "x"},
+                "dependencies": [],
+                "conflicts": [],
+                "created_at": "2026-05-18T00:00:00Z",
+                "notes": "",
+            },
+            "worlds/bad_world/evil.py": "print('no')\n",
+        }
+    )
+
+    response = client.post("/authoring/import/packages/dry-run", json={"archive_base64": archive})
+
+    assert response.status_code == 200
+    assert response.json()["ok"] is False
+    assert "executable code" in response.json()["errors"][0]
+
+
+def test_import_package_reports_conflict(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    export_response = client.get("/authoring/export/worlds/mist_valley")
+
+    response = client.post(
+        "/authoring/import/packages/dry-run",
+        json={"archive_base64": export_response.json()["archive_base64"]},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["ok"] is False
+    assert "World already exists" in response.json()["conflicts"][0]
 
 
 def test_import_invalid_manifest_is_rejected(tmp_path: Path) -> None:
@@ -158,6 +296,27 @@ def test_save_bundle_import_reports_migration_status(tmp_path: Path) -> None:
     assert "state_deltas" not in import_response.text
 
 
+def test_save_package_dry_run_reports_migration_status_and_no_secret(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    start_response = client.post("/game/start", json={"world_id": "mist_valley"})
+    session_id = start_response.json()["session_id"]
+    save_response = client.post(f"/game/{session_id}/save")
+    save_id = save_response.json()["save_id"]
+    export_response = client.get(f"/authoring/export/saves/{save_id}")
+    app.state.save_repository = SQLiteSaveRepository(tmp_path / "imported_saves.db")
+
+    response = client.post(
+        "/authoring/import/packages/dry-run",
+        json={"archive_base64": export_response.json()["archive_base64"]},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["ok"] is True
+    assert response.json()["package_type"] == "save_bundle"
+    assert response.json()["migration_needed"] is False
+    assert "test-api-key-placeholder" not in response.text
+
+
 def test_authoring_import_export_api_obeys_toggle(tmp_path: Path) -> None:
     client = make_client(tmp_path, authoring_enabled=False)
 
@@ -210,3 +369,15 @@ def _raw_archive_b64(files: dict[str, str]) -> str:
         for name, content in files.items():
             archive.writestr(name, content)
     return base64.b64encode(buffer.getvalue()).decode("ascii")
+
+
+def _zip_entries(archive_base64: str) -> dict[str, str]:
+    archive_bytes = base64.b64decode(archive_base64.encode("ascii"))
+    with ZipFile(BytesIO(archive_bytes), "r") as archive:
+        return {name: archive.read(name).decode("utf-8") for name in archive.namelist()}
+
+
+def _tamper_archive_file(archive_base64: str, file_name: str, content: str) -> str:
+    entries = _zip_entries(archive_base64)
+    entries[file_name] = content
+    return _raw_archive_b64(entries)
