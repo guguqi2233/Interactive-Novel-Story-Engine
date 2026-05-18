@@ -1,0 +1,58 @@
+id: faction_conflict_seed
+name: Faction Conflict Seed
+description: Adds a small visible faction tension and one hidden faction for local authoring experiments.
+template_type: faction_set
+required_variables: []
+optional_variables:
+  visible_faction_id: river_watch
+  hidden_faction_id: ash_ring
+output_files:
+  - file_name: factions.yaml
+    content: |
+      factions:
+        - id: village_council
+          name: Village Council
+          description: The informal council that keeps Mist Valley's daily peace.
+          default_reputation: 0
+          known_by_player: true
+          relations:
+            old_road_smugglers: -10
+            {{visible_faction_id}}: 5
+          conflict_tags: [law_vs_smuggling]
+          default_alert_level: 0
+          tags: [local, civic]
+        - id: old_road_smugglers
+          name: Old Road Smugglers
+          description: A hidden network moving goods through abandoned valley paths.
+          default_reputation: 0
+          known_by_player: false
+          relations:
+            village_council: -10
+            {{hidden_faction_id}}: -5
+          conflict_tags: [law_vs_smuggling]
+          default_alert_level: 0
+          tags: [hidden, criminal]
+        - id: {{visible_faction_id}}
+          name: River Watch
+          description: Locals who keep an eye on the old water road.
+          default_reputation: 0
+          known_by_player: true
+          relations:
+            village_council: 5
+            old_road_smugglers: -5
+          conflict_tags: [river_patrol]
+          default_alert_level: 0
+          tags: [starter, local]
+        - id: {{hidden_faction_id}}
+          name: Ash Ring
+          description: A hidden faction used for authoring-only conflict hooks.
+          default_reputation: 0
+          known_by_player: false
+          relations:
+            old_road_smugglers: -5
+          conflict_tags: [hidden_rivalry]
+          default_alert_level: 0
+          tags: [starter, hidden]
+validation_rules:
+  - Hidden factions must not become player-visible unless explicitly discovered.
+tags: [starter, faction, conflict]

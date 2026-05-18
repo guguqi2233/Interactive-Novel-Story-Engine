@@ -6,6 +6,7 @@ import {
   AuthoringModSummary,
   AuthoringModValidation,
   AuthoringWorldSummary,
+  ArchiveImportResponse,
   DebugEvent,
   DebugPerformanceRecentResponse,
   DebugPerformanceSummaryResponse,
@@ -15,6 +16,9 @@ import {
   exportModArchive,
   exportSaveArchive,
   exportWorldArchive,
+  importModArchive,
+  importSaveArchive,
+  importWorldArchive,
   applySaveMigration,
   dryRunSaveMigration,
   fetchAuthoringFile,
@@ -210,6 +214,14 @@ const AUTHORING_TOOL_NAV: { id: AuthoringToolId; label: string; description: str
   { id: "templates", label: "Templates", description: "local scenario templates" },
   { id: "validation", label: "Validation", description: "validation graph and issue routing" }
 ];
+
+const DANGEROUS_ACTION_COPY = {
+  overwriteWorldFile: "Overwrite a local world-pack file after preview and validation? Active sessions are not changed.",
+  saveGraphChanges: "Save graph changes to local YAML after validation? Active GameState is not changed.",
+  applyMigration: "Apply migration to this save? Dry-run first is recommended. The backend keeps migration history/backup metadata.",
+  importPackageApply: "Apply this local package import after backend validation? Existing content is not overwritten unless overwrite is enabled.",
+  deleteSave: "Delete this local save? This cannot be undone from the Studio UI."
+};
 
 const FORM_FIELDS: Record<string, AuthoringFormField[]> = {
   "locations.yaml": [
@@ -712,7 +724,7 @@ export function App() {
     if (!saveId || isLoading) {
       return;
     }
-    const confirmed = window.confirm(`Delete local save ${saveId}?`);
+    const confirmed = confirmDangerousAction(`${DANGEROUS_ACTION_COPY.deleteSave} Save id: ${saveId}`);
     if (!confirmed) {
       return;
     }
@@ -781,9 +793,7 @@ export function App() {
     if (!saveId || isLoading) {
       return;
     }
-    const confirmed = window.confirm(
-      "Apply migration to this save? The backend will migrate through the registered migration service."
-    );
+    const confirmed = confirmDangerousAction(DANGEROUS_ACTION_COPY.applyMigration);
     if (!confirmed) {
       return;
     }
@@ -2654,6 +2664,18 @@ function LocalOnlyNotice({ children }: { children: ReactNode }) {
   );
 }
 
+function SuccessPanel({ message, compact = false }: { message: string; compact?: boolean }) {
+  if (!message) {
+    return null;
+  }
+  return (
+    <div className={`success-panel ${compact ? "compact" : ""}`} role="status">
+      <strong>Done</strong>
+      <p>{message}</p>
+    </div>
+  );
+}
+
 function StatusBadge({ label, enabled }: { label: string; enabled: boolean | undefined }) {
   const state = enabled ? "enabled" : "disabled";
   return <span className={`status-badge ${state}`}>{label}: {state}</span>;
@@ -3274,6 +3296,131 @@ function confirmDangerousAction(message: string): boolean {
   return window.confirm(message);
 }
 
+type ImportPackageKind = "world" | "mod" | "save";
+
+function ImportPackagePanel() {
+  const [kind, setKind] = useState<ImportPackageKind>("world");
+  const [archiveBase64, setArchiveBase64] = useState<string>("");
+  const [overwrite, setOverwrite] = useState<boolean>(false);
+  const [result, setResult] = useState<ArchiveImportResponse | null>(null);
+  const [message, setMessage] = useState<string>("");
+  const [error, setError] = useState<string>("");
+  const [isBusy, setIsBusy] = useState<boolean>(false);
+
+  async function handleImportApply() {
+    const archive = archiveBase64.trim();
+    if (!archive) {
+      setError("Paste a local archive_base64 payload from an export response before importing.");
+      return;
+    }
+    const confirmed = confirmDangerousAction(
+      `${DANGEROUS_ACTION_COPY.importPackageApply}${overwrite ? " Overwrite is enabled." : ""}`
+    );
+    if (!confirmed) {
+      return;
+    }
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response =
+        kind === "world"
+          ? await importWorldArchive(archive, overwrite)
+          : kind === "mod"
+            ? await importModArchive(archive, overwrite)
+            : await importSaveArchive(archive, overwrite);
+      setResult(response);
+      setMessage(
+        response.imported
+          ? `${response.import_type} package imported after validation.`
+          : `${response.import_type} package was not imported.`
+      );
+    } catch (err) {
+      setResult(null);
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  return (
+    <SectionCard
+      title="Import Package"
+      description="Paste a local archive payload and apply it through the backend import validator."
+      tone="authoring"
+    >
+      <div className="template-grid">
+        <label>
+          Package type
+          <select value={kind} onChange={(event) => setKind(event.target.value as ImportPackageKind)} disabled={isBusy}>
+            <option value="world">world</option>
+            <option value="mod">mod</option>
+            <option value="save">save bundle</option>
+          </select>
+        </label>
+        <label>
+          <input type="checkbox" checked={overwrite} onChange={(event) => setOverwrite(event.target.checked)} disabled={isBusy} />
+          Allow overwrite
+        </label>
+      </div>
+      <label className="full-width-field">
+        archive_base64
+        <textarea
+          value={archiveBase64}
+          onChange={(event) => {
+            setArchiveBase64(event.target.value);
+            setResult(null);
+            setMessage("");
+          }}
+          placeholder="Paste archive_base64 from an export response. Do not paste API keys or .env contents."
+          disabled={isBusy}
+        />
+      </label>
+      <div className="authoring-action-bar">
+        <button type="button" onClick={() => void handleImportApply()} disabled={isBusy || !archiveBase64.trim()}>
+          Apply Import
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setArchiveBase64("");
+            setResult(null);
+            setMessage("Cleared import draft.");
+          }}
+          disabled={isBusy || !archiveBase64}
+        >
+          Clear
+        </button>
+      </div>
+      {result && (
+        <div className="authoring-preview-box">
+          <p>
+            <StatusBadge label={result.imported ? "Imported" : "Import blocked"} enabled={result.imported} />
+          </p>
+          <dl className="metadata-list">
+            <dt>Type</dt>
+            <dd>{result.import_type}</dd>
+            <dt>Id</dt>
+            <dd>{result.id}</dd>
+            <dt>Validation</dt>
+            <dd>{result.validation_ok ? "passed" : "failed"}</dd>
+            <dt>Migration needed</dt>
+            <dd>{result.migration_needed ? "yes" : "no"}</dd>
+          </dl>
+          <ItemList
+            emptyText="No import warnings."
+            items={[...result.errors, ...result.warnings, ...result.migration_warnings].map((item) => (
+              <span key={item}>{sanitizeDisplayError(item)}</span>
+            ))}
+          />
+        </div>
+      )}
+      <SuccessPanel message={message} compact />
+      <ErrorPanel message={error} compact />
+    </SectionCard>
+  );
+}
+
 function AuthoringPanel() {
   const [worlds, setWorlds] = useState<AuthoringWorldSummary[]>([]);
   const [selectedWorldId, setSelectedWorldId] = useState<string>("");
@@ -3424,9 +3571,7 @@ function AuthoringPanel() {
     ) {
       return;
     }
-    const confirmed = confirmDangerousAction(
-      "This saves a local content pack file on this machine. Continue?"
-    );
+    const confirmed = confirmDangerousAction(DANGEROUS_ACTION_COPY.overwriteWorldFile);
     if (!confirmed) {
       return;
     }
@@ -3516,6 +3661,7 @@ function AuthoringPanel() {
         mutate an active game session. Import/export archives are zip bundles checked for path
         traversal, disallowed files, and validator errors before use.
       </LocalOnlyNotice>
+      <ImportPackagePanel />
 
       <AuthoringToolNav activeTool={activeAuthoringTool} onSelectTool={handleSelectAuthoringTool} />
 
@@ -3827,7 +3973,7 @@ function AuthoringPanel() {
         </>
       )}
 
-      {message && <p className="muted">{message}</p>}
+      <SuccessPanel message={message} />
       <ErrorPanel message={error} />
       {selectedIssuePath && (
         <p className="muted">
@@ -3950,7 +4096,7 @@ function MapEditorPanel({
           return;
         }
       }
-      const confirmed = confirmDangerousAction("Save map changes to local locations.yaml?");
+      const confirmed = confirmDangerousAction(DANGEROUS_ACTION_COPY.saveGraphChanges);
       if (!confirmed) {
         return;
       }
@@ -4460,7 +4606,7 @@ function ScenarioRegressionAuthoringPanel({ selectedWorldId }: { selectedWorldId
     if (!next) {
       return;
     }
-    if (!window.confirm(`Save local scenario '${next.id}'? This writes a scenario file after validation.`)) {
+    if (!confirmDangerousAction(`Save local scenario '${next.id}' after validation? This writes a local scenario file.`)) {
       return;
     }
     setIsBusy(true);
@@ -4721,7 +4867,7 @@ function ScenarioTemplatePanel() {
       selectedTemplate.template_type === "world"
         ? "a new world pack from the rendered manifest"
         : `world pack '${targetWorldId}'`;
-    if (!window.confirm(`Apply '${selectedTemplate.name}' to ${targetDescription}? This writes local YAML files after validation.`)) {
+    if (!confirmDangerousAction(`Apply '${selectedTemplate.name}' to ${targetDescription}? This writes local YAML files after validation.`)) {
       return;
     }
     setIsBusy(true);
@@ -5012,7 +5158,7 @@ function QuestGraphEditor({
     if (!selectedQuest || !selectedStage || selectedQuest.stages.length <= 1) {
       return;
     }
-    const confirmed = window.confirm(`Delete stage "${selectedStage.id}" from this quest graph draft?`);
+    const confirmed = confirmDangerousAction(`Delete stage "${selectedStage.id}" from this quest graph draft?`);
     if (!confirmed) {
       return;
     }
@@ -5123,11 +5269,15 @@ function QuestGraphEditor({
         return;
       }
       if (validationResponse.validation.warnings.length > 0) {
-        const confirmed = window.confirm("Quest graph has validation warnings. Save anyway?");
+        const confirmed = confirmDangerousAction("Quest graph has validation warnings. Save anyway?");
         if (!confirmed) {
           setMessage("Save cancelled.");
           return;
         }
+      }
+      if (!confirmDangerousAction(DANGEROUS_ACTION_COPY.saveGraphChanges)) {
+        setMessage("Save cancelled.");
+        return;
       }
       const response = await saveQuestGraph(worldId, graph);
       setValidation(response.validation);
@@ -5608,7 +5758,7 @@ function NPCGoalEditorPanel({
     if (!selectedGoal) {
       return;
     }
-    if (!window.confirm(`Delete NPC goal "${selectedGoal.id}" from this authoring draft?`)) {
+    if (!confirmDangerousAction(`Delete NPC goal "${selectedGoal.id}" from this authoring draft?`)) {
       return;
     }
     updateSelectedNpc((npc) => ({
@@ -5685,7 +5835,11 @@ function NPCGoalEditorPanel({
         setMessage("NPC goals have validation errors. Fix them before saving.");
         return;
       }
-      if (validationResponse.validation.warnings.length > 0 && !window.confirm("NPC goals have warnings. Save anyway?")) {
+      if (validationResponse.validation.warnings.length > 0 && !confirmDangerousAction("NPC goals have warnings. Save anyway?")) {
+        setMessage("Save cancelled.");
+        return;
+      }
+      if (!confirmDangerousAction(DANGEROUS_ACTION_COPY.saveGraphChanges)) {
         setMessage("Save cancelled.");
         return;
       }
@@ -6020,7 +6174,7 @@ function ItemEconomyEditorPanel({
     if (!graph || !selectedItemId) {
       return;
     }
-    if (!window.confirm(`Delete item "${selectedItemId}" from this authoring draft?`)) {
+    if (!confirmDangerousAction(`Delete item "${selectedItemId}" from this authoring draft?`)) {
       return;
     }
     const nextItems = graph.items.filter((item) => item.id !== selectedItemId);
@@ -6090,8 +6244,12 @@ function ItemEconomyEditorPanel({
       }
       if (
         validationResponse.confirmation_required &&
-        !window.confirm("Validation returned warnings. Save item/economy changes anyway?")
+        !confirmDangerousAction("Validation returned warnings. Save item/economy changes anyway?")
       ) {
+        setMessage("Item/economy save cancelled.");
+        return;
+      }
+      if (!confirmDangerousAction(DANGEROUS_ACTION_COPY.saveGraphChanges)) {
         setMessage("Item/economy save cancelled.");
         return;
       }
@@ -6373,7 +6531,7 @@ function RumorCrimeConsequenceEditorPanel({
     if (!graph || !selectedRumorId) {
       return;
     }
-    if (!window.confirm(`Delete rumor "${selectedRumorId}" from this authoring draft?`)) {
+    if (!confirmDangerousAction(`Delete rumor "${selectedRumorId}" from this authoring draft?`)) {
       return;
     }
     const nextRumors = graph.rumors.filter((rumor) => rumor.id !== selectedRumorId);
@@ -6440,8 +6598,12 @@ function RumorCrimeConsequenceEditorPanel({
       }
       if (
         validationResponse.confirmation_required &&
-        !window.confirm("Validation returned warnings. Save rumor/consequence changes anyway?")
+        !confirmDangerousAction("Validation returned warnings. Save rumor/consequence changes anyway?")
       ) {
+        setMessage("Consequence save cancelled.");
+        return;
+      }
+      if (!confirmDangerousAction(DANGEROUS_ACTION_COPY.saveGraphChanges)) {
         setMessage("Consequence save cancelled.");
         return;
       }
@@ -6807,7 +6969,7 @@ function SocialGraphEditorPanel({
     if (!graph || !selectedRelationship) {
       return;
     }
-    if (!window.confirm(`Delete relationship "${selectedRelationship.id}" from this authoring draft?`)) {
+    if (!confirmDangerousAction(`Delete relationship "${selectedRelationship.id}" from this authoring draft?`)) {
       return;
     }
     setGraph({
@@ -6907,7 +7069,11 @@ function SocialGraphEditorPanel({
         setMessage("Social graph has validation errors. Fix them before saving.");
         return;
       }
-      if (validationResponse.validation.warnings.length > 0 && !window.confirm("Social graph has warnings. Save anyway?")) {
+      if (validationResponse.validation.warnings.length > 0 && !confirmDangerousAction("Social graph has warnings. Save anyway?")) {
+        setMessage("Save cancelled.");
+        return;
+      }
+      if (!confirmDangerousAction(DANGEROUS_ACTION_COPY.saveGraphChanges)) {
         setMessage("Save cancelled.");
         return;
       }

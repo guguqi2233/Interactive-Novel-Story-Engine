@@ -9,8 +9,9 @@ This project is for local personal use. It is not designed as a hosted service.
 
 ## Current Version Scope
 
-v0.9 turns the visual local studio into a quality and automated playtesting
-toolchain on top of the v0.8 authoring layer:
+v1.0 is the Stable Local Studio Edition. It freezes the local contracts built
+through the v0.x series and keeps the focus on reliable local play, authoring,
+validation, save migration, quality checks, and documentation:
 
 - Multi-world content packs.
 - Structured `GameState`, `StateDelta`, `EventLog`, and SQLite save/load.
@@ -75,6 +76,24 @@ toolchain on top of the v0.8 authoring layer:
 - Quality Gate CLI/API.
 
 The LLM is still not the world judge. Rule outcomes are decided by local code.
+
+## v1.0 Documentation Map
+
+- `docs/SPEC.md`: project scope, boundaries, and known limitations.
+- `docs/WORLD_ENGINE.md`: engine behavior, rules, state, events, authoring,
+  quality, migration, and local studio architecture.
+- `docs/LLM_PROTOCOL.md`: provider boundary, prompt/profile rules, and why LLM
+  output cannot directly change `GameState`.
+- `docs/CONTENT_PACKS.md`: content pack format and authoring notes.
+- `docs/V1_0_CONTENT_SCHEMA_CONTRACT.md`: frozen v1.0 content schema contract.
+- `docs/V1_0_API_CONTRACT.md`: frozen v1.0 API contract.
+- `docs/V1_0_SAVE_MIGRATION_GUARANTEE.md`: migration guarantees and matrix.
+- `docs/V1_0_MOD_CONTRACT.md`: content-only mod packaging contract.
+- `docs/DESKTOP_PACKAGING.md`: local startup scripts and desktop prototype
+  limitations.
+- `docs/END_TO_END_LOCAL_WORKFLOW.md`: start-to-finish local workflow.
+- `docs/UPGRADE_GUIDE_V0_TO_V1.md`: upgrade notes from v0.x to v1.0.
+- `docs/V1_0_RELEASE_CRITERIA.md`: release blockers and tag checklist.
 
 ## Requirements
 
@@ -197,11 +216,12 @@ not edit `.env`.
 
 ## Local Studio Launcher Prototype
 
-v0.8.17 keeps the desktop app shell as a local launcher prototype. The scripts
-check Python and Node/npm dependencies, verify backend imports, warn if `.env`
-is missing, start the backend, start the frontend in dev mode or built-preview
-mode, run local health checks, print safe status, and open the local frontend
-URL:
+v1.0 keeps the desktop app shell as a local launcher prototype. The scripts
+check Python and Node/npm dependencies, verify backend imports, check installed
+frontend dependencies, warn if `.env` is missing, check `DATABASE_URL`, fail
+early when backend/frontend ports are occupied, start the backend, start the
+frontend in dev mode or built-preview mode, run local health checks, print safe
+status, and open the local frontend URL:
 
 ```powershell
 .\scripts\start_local_studio.ps1
@@ -216,6 +236,18 @@ The launcher reads local environment variables and applies safe defaults for
 `ENABLE_PERF_LOGGING`, and `VITE_API_BASE_URL`. It does not set, print, or
 embed `LLM_API_KEY`. If `.env` is missing, it continues with safe defaults and
 suggests copying `.env.example` for local customization.
+
+Common startup checks and fixes:
+
+- Port occupied: stop the existing process or pass `-BackendPort` /
+  `-FrontendPort` on PowerShell, or `--backend-port` / `--frontend-port` on
+  the shell launcher.
+- Missing `.env`: copy `.env.example` to `.env`; keep `.env` untracked.
+- Missing frontend dependencies: run `cd frontend && npm install`.
+- Missing API key: use `LLM_PROVIDER=mock` or `local_stub` for offline startup;
+  only set `LLM_API_KEY` locally when intentionally using `openai`.
+- Local model unavailable: with `LLM_PROVIDER=local_http`, set
+  `LOCAL_LLM_BASE_URL` and start your local model service yourself.
 
 Built frontend preview:
 
@@ -234,20 +266,32 @@ without starting backend/frontend processes. After launch, the scripts check:
 - frontend URL availability
 
 Windows PowerShell is the primary launcher path. The shell launcher is a
-convenience prototype for macOS/Linux-style shells and depends on `open` or
-`xdg-open` to launch a browser automatically. Neither script creates a formal
-installer, signs code, enables auto-update, or packages secrets.
+convenience prototype for macOS/Linux-style shells; macOS uses `open` and Linux
+usually uses `xdg-open` to launch a browser automatically. Neither script
+creates a formal installer, signs code, enables auto-update, syncs to cloud, or
+packages secrets.
 
 See `docs/DESKTOP_PACKAGING.md` for the Tauri/Electron/local-launcher review
 and packaging safety notes.
 
 ## Scenario Templates
 
-v0.8 includes local authoring templates under `templates/`. They are YAML data
+v1.0 includes stable starter templates under `templates/`. They are YAML data
 files used to preview reusable world, quest, location, NPC, faction, mystery,
-or combat encounter drafts. Templates do simple variable substitution, validate
-rendered output through the existing world validator, and never modify active
-sessions or saves.
+trade, rumor, or combat encounter drafts. Templates do simple variable
+substitution, validate rendered output through the existing world validator,
+and never modify active sessions or saves.
+
+Starter templates:
+
+- `basic_village_world`
+- `mystery_quest`
+- `faction_conflict_seed`
+- `small_dungeon`
+- `merchant_and_trade`
+- `rumor_chain`
+- `NPC_goal_set`
+- `combat_encounter_light`
 
 Template preview endpoints are behind `ENABLE_AUTHORING_API`:
 
@@ -255,7 +299,7 @@ Template preview endpoints are behind `ENABLE_AUTHORING_API`:
 Invoke-RestMethod -Method Get http://127.0.0.1:8000/authoring/templates
 ```
 
-The v0.8 Local Template Browser can list templates, show variables/tags,
+The Local Template Browser can list templates, show variables/tags,
 preview rendered YAML, display validation output, and apply templates through
 authoring-gated explicit save flows. Rendered files must still pass validation
 and must not modify active sessions or saves.
@@ -738,20 +782,30 @@ Scenario regression cases can also be authored locally through the authoring
 API/UI when authoring is enabled. Preview does not write disk, save requires
 validation, and scenario output does not modify active saves.
 
-## v0.9 Quality Gate
+## v1.0 Quality Gate
 
 Run the local quality gate from the repository root after setting
 `PYTHONPATH=backend` or installing the backend package:
 
 ```powershell
-python -m app.tools.quality_gate --world mist_valley
-python -m app.tools.quality_gate --world mist_valley --json
+python -m app.tools.quality_gate --world mist_valley --profile standard
+python -m app.tools.quality_gate --world mist_valley --profile standard --json
 ```
 
 The gate combines validation, hidden-leak checks, quest analysis, dead-end
-detection, NPC coverage, economy/combat/social sanity checks, save/load stress,
-benchmarks, scenario regression, and mod compatibility smoke checks. It is a
-deterministic threshold/severity gate; the LLM does not decide pass/fail.
+detection, NPC coverage, schedule conflict detection, economy/combat/social
+sanity checks, save/load stress, benchmarks, scenario regression, and mod
+compatibility smoke checks. It is a deterministic threshold/severity gate; the
+LLM does not decide pass/fail.
+
+v1.0 gate profiles:
+
+- `standard`: default release-candidate profile. Warnings are allowed; errors
+  and blockers fail.
+- `strict`: stricter release freeze profile. Warnings, errors, and blockers
+  fail, with a higher health-score target and broader smoke coverage.
+- `fast`: local quick-check profile. It keeps the same check categories but
+  uses smaller smoke parameters for faster iteration.
 
 The API entry point is local-only and gated through the eval/playtest/debug
 gate path:
@@ -760,7 +814,7 @@ gate path:
 POST /quality/worlds/{world_id}/gate/run
 ```
 
-## v0.9 Quality Analysis APIs
+## v1.0 Quality Analysis APIs
 
 The quality analyzers provide safe local reports for authoring and regression:
 
@@ -784,12 +838,12 @@ POST /quality/mods/compatibility-stress/run
 
 These APIs do not call the LLM and do not modify active `GameState`. Normal
 report views must not include hidden fact text, raw state, raw deltas, API
-keys, or raw environment values. Current v0.9 has no independent
+keys, or raw environment values. Current v1.0 has no independent
 `ENABLE_QUALITY_API`; keep these endpoints local.
 
 ## Hidden Leak And Narrative Consistency Evals
 
-Run the v0.9 hidden information leak suite:
+Run the hidden information leak suite:
 
 ```powershell
 python -m pytest backend/tests/evals/hidden_info_leaks
@@ -836,6 +890,11 @@ Benchmark reports cover game loop turns, world tick, save/load, migration
 dry-run, validation, map graph build, quest graph roundtrip, memory search,
 and scenario regression. They record timings and safe environment summaries
 only. They do not upload telemetry, record prompt text, or store API keys.
+
+v1.0 benchmark reports include local performance budget metadata and warning or
+blocker regressions for sample-world smoke checks. The quality gate consumes
+those regressions in its pass/fail decision. See
+`docs/V1_0_PERFORMANCE_BUDGET.md` for the current budget table and caveats.
 
 ## Prompt Profiles
 

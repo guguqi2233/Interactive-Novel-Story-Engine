@@ -393,7 +393,7 @@ class WorldPack(BaseModel):
                 location.id: LocationState(
                     id=location.id,
                     name=location.name,
-                    exits=location.exits,
+                    exits=_runtime_visible_exits(location, self.locations),
                     visible_objects=location.visible_objects,
                     cover_level=location.cover_level,
                     light_level=location.light_level,
@@ -455,6 +455,23 @@ class WorldPack(BaseModel):
             rumors=rumors,
             relationships=relationships,
         )
+
+
+def _runtime_visible_exits(location: LocationDef, locations: list[LocationDef]) -> dict[str, str]:
+    """Keep authoring-hidden locations out of player-visible runtime exits."""
+    by_id = {item.id: item for item in locations}
+    visible_exits: dict[str, str] = {}
+    for label, target_id in location.exits.items():
+        target = by_id.get(target_id)
+        if target is None:
+            visible_exits[label] = target_id
+            continue
+        source_visibility = location.visual.visibility if location.visual else MapVisibility.PUBLIC
+        target_visibility = target.visual.visibility if target.visual else MapVisibility.PUBLIC
+        if source_visibility == MapVisibility.HIDDEN or target_visibility == MapVisibility.HIDDEN:
+            continue
+        visible_exits[label] = target_id
+    return visible_exits
 
 
 class WorldLoader:

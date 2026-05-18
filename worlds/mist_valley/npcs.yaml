@@ -42,7 +42,7 @@ npcs:
     plan_state: {}
     merchant: true
     shop_inventory:
-      - sealed_letter
+      - iron_nails
     buy_price_modifier: 1.0
     sell_price_modifier: 0.5
     schedule:

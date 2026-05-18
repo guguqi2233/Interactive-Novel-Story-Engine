@@ -84,7 +84,7 @@ def test_v03_full_system_regression_flow(tmp_path: Path) -> None:
     assert game_loop.state.objects["locked_cache"].locked is False
     assert sneak.event is not None and sneak.event.action_type == "sneak"
     assert talk.event is not None and talk.event.action_type == "talk"
-    assert "take_letter" in game_loop.state.quests["sealed_letter"].completed_objectives
+    assert "take_letter" in game_loop.state.quests["sealed_letter_mystery"].completed_objectives
     assert "talk_to_harlan" in game_loop.state.quests["missing_tools"].completed_objectives
     assert game_loop.state.quests["missing_tools"].current_stage == "follow_bridge_clue"
 

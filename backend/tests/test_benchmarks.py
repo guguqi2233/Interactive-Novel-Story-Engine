@@ -5,7 +5,13 @@ from fastapi.testclient import TestClient
 
 from app.config import Settings
 from app.main import app
-from app.quality.benchmarks import BenchmarkRunRequest, run_benchmark_suite
+from app.quality.benchmarks import (
+    BenchmarkReport,
+    BenchmarkRunRequest,
+    BenchmarkSample,
+    load_performance_budget,
+    run_benchmark_suite,
+)
 from app.tools.benchmark import main as benchmark_cli_main
 
 
@@ -44,6 +50,72 @@ def test_benchmark_thresholds_report_regressions() -> None:
     assert report.thresholds["memory_search"] == -1
     assert report.regressions
     assert report.regressions[0].benchmark_type == "memory_search"
+
+
+def test_benchmark_loads_v1_budget_and_reports_warning(tmp_path: Path) -> None:
+    budget_path = tmp_path / "budget.json"
+    budget_path.write_text(
+        json.dumps(
+            {
+                "budgets": {
+                    "memory_search": {
+                        "target_ms": 0,
+                        "warning_ms": 0,
+                        "blocker_ms": 999999,
+                        "measurement_method": "test budget",
+                        "known_caveats": ["test only"],
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    loaded = load_performance_budget(budget_path)
+    report = run_benchmark_suite(
+        BenchmarkRunRequest(
+            world_id="mist_valley",
+            iterations=1,
+            benchmarks=["memory_search"],
+            budget_path=str(budget_path),
+        )
+    )
+
+    assert loaded["memory_search"].measurement_method == "test budget"
+    assert report.budgets["memory_search"].warning_ms == 0
+    assert any(
+        regression.benchmark_type == "memory_search"
+        and regression.severity == "warning"
+        for regression in report.regressions
+    )
+
+
+def test_benchmark_budget_blocker_regression(tmp_path: Path) -> None:
+    budget_path = tmp_path / "budget.json"
+    budget_path.write_text(
+        json.dumps(
+            {
+                "memory_search": {
+                    "target_ms": 0,
+                    "warning_ms": 0,
+                    "blocker_ms": 0,
+                    "measurement_method": "test budget",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    report = run_benchmark_suite(
+        BenchmarkRunRequest(
+            world_id="mist_valley",
+            iterations=1,
+            benchmarks=["memory_search"],
+            budget_path=str(budget_path),
+        )
+    )
+
+    assert any(regression.severity == "blocker" for regression in report.regressions)
 
 
 def test_benchmark_uses_temporary_db_for_save_load() -> None:
@@ -98,6 +170,19 @@ def test_benchmark_api_respects_debug_or_perf_gate(tmp_path: Path) -> None:
             "/quality/benchmarks/run",
             json={"world_id": "mist_valley", "iterations": 1, "benchmarks": ["memory_search"]},
         )
+        app.state.benchmark_reports.append(
+            BenchmarkReport(
+                world_id="mist_valley",
+                samples=[
+                    BenchmarkSample(
+                        benchmark_type="memory_search",
+                        duration_ms=1,
+                        ok=False,
+                        error="prompt leaked hidden fact with api_key sk-test-fake-not-real",
+                    )
+                ],
+            )
+        )
         recent = client.get("/quality/benchmarks/recent")
     finally:
         app.state.settings = previous_settings or Settings(llm_provider="mock")
@@ -110,3 +195,7 @@ def test_benchmark_api_respects_debug_or_perf_gate(tmp_path: Path) -> None:
     assert enabled.json()["samples"][0]["benchmark_type"] == "memory_search"
     assert recent.status_code == 200
     assert recent.json()
+    recent_payload = json.dumps(recent.json(), ensure_ascii=False).lower()
+    assert "prompt leaked hidden fact" not in recent_payload
+    assert "api_key" not in recent_payload
+    assert "sk-test" not in recent_payload

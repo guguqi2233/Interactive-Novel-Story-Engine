@@ -36,9 +36,9 @@ def test_items_yaml_parses_to_item_economy_authoring_graph(tmp_path: Path) -> No
 
     graph = parse_item_economy_authoring("mist_valley", ContentAuthoringService(worlds_root))
 
-    assert [item.id for item in graph.items] == ["notice_board", "anvil", "sealed_letter"]
+    assert [item.id for item in graph.items] == ["notice_board", "anvil", "sealed_letter", "iron_nails"]
     assert graph.merchants[0].npc_id == "harlan"
-    assert graph.merchants[0].shop_inventory == ["sealed_letter"]
+    assert graph.merchants[0].shop_inventory == ["iron_nails"]
 
 
 def test_item_economy_roundtrip_preserves_price_fields(tmp_path: Path) -> None:

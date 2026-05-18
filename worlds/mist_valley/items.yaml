@@ -26,4 +26,15 @@ items:
     discovered_by: []
     tags:
       - location:village_square
+  - id: iron_nails
+    name: Iron Nails
+    description: A small packet of hand-forged nails for mending doors and crates.
+    owner_id: harlan
+    portable: true
+    base_price: 2
+    tradeable: true
+    rarity: common
+    tags:
+      - shop
+      - blacksmith
 

@@ -119,8 +119,16 @@ FORBIDDEN_CODE_SUFFIXES = {
     ".bat",
     ".cmd",
     ".ps1",
+    ".psm1",
+    ".vbs",
+    ".jar",
     ".exe",
+    ".com",
+    ".scr",
     ".dll",
+    ".so",
+    ".dylib",
+    ".msi",
 }
 
 

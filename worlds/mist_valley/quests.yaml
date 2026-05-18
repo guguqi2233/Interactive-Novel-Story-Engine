@@ -28,7 +28,7 @@ quests:
         id: old_bridge_creaks_at_midnight
         action: complete_objective
         objective_id: discover_bridge_clue
-  - id: sealed_letter
+  - id: sealed_letter_mystery
     title: Sealed Letter
     description: A hidden letter may explain who has been moving through the square.
     initial_stage: find_letter

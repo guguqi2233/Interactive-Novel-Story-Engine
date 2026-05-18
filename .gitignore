@@ -1,7 +1,13 @@
 .env
 *.db
+*.db-journal
+*.sqlite
+*.sqlite3
+*.sqlite-journal
+*.log
 __pycache__/
 .pytest_cache/
+.cache/
 logs/
 node_modules/
 dist/

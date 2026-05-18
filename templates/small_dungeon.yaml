@@ -1,0 +1,81 @@
+id: small_dungeon
+name: Small Dungeon
+description: Adds a two-room local dungeon branch with map visual fields and safe exits.
+template_type: location_cluster
+required_variables: []
+optional_variables:
+  entrance_id: old_cellar
+  chamber_id: cellar_chamber
+output_files:
+  - file_name: locations.yaml
+    content: |
+      locations:
+        - id: village_square
+          name: Village Square
+          description: A stone square damp with mist, bordered by shuttered cottages.
+          exits:
+            north: old_bridge
+            east: blacksmith
+            down: {{entrance_id}}
+          visible_objects: [notice_board]
+          visual:
+            x: 0
+            y: 0
+            region_id: village
+            icon: plaza
+            color_tag: civic
+            display_group: village_center
+            tags: [hub]
+        - id: old_bridge
+          name: Old Bridge
+          description: A narrow bridge crosses a pale stream into the fog.
+          exits:
+            south: village_square
+          visual:
+            x: 0
+            y: -140
+            region_id: outskirts
+            icon: bridge
+            color_tag: travel
+            display_group: north_road
+        - id: blacksmith
+          name: Blacksmith
+          description: The forge is cold, but iron filings still glitter near the anvil.
+          exits:
+            west: village_square
+          visible_objects: [anvil]
+          visual:
+            x: 160
+            y: 0
+            region_id: village
+            icon: hammer
+            color_tag: craft
+            display_group: village_center
+        - id: {{entrance_id}}
+          name: Old Cellar
+          description: A low stone stair leads into a quiet cellar.
+          exits:
+            up: village_square
+            east: {{chamber_id}}
+          visual:
+            x: -120
+            y: 120
+            region_id: underground
+            icon: stairs
+            color_tag: dungeon
+            display_group: cellar
+        - id: {{chamber_id}}
+          name: Cellar Chamber
+          description: A small chamber with old crates and a safe return path.
+          exits:
+            west: {{entrance_id}}
+          visual:
+            x: -240
+            y: 120
+            region_id: underground
+            icon: chamber
+            color_tag: dungeon
+            display_group: cellar
+validation_rules:
+  - All exits must reference locations that exist after rendering.
+tags: [starter, map, dungeon]

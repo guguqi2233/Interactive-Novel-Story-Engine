@@ -228,6 +228,35 @@ def test_import_package_dry_run_rejects_executable(tmp_path: Path) -> None:
     assert "executable code" in response.json()["errors"][0]
 
 
+def test_import_package_dry_run_rejects_platform_executable_suffixes(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    archive = _archive_b64(
+        {
+            "export_manifest.json": {"export_type": "world", "id": "bad_world"},
+            "local_package_manifest.json": {
+                "package_id": "bad_world",
+                "package_type": "world",
+                "version": "1.0.0",
+                "engine_version_min": "1.0.0",
+                "schema_version": "1.0",
+                "included_files": ["worlds/bad_world/helpers.psm1"],
+                "checksums": {"worlds/bad_world/helpers.psm1": "x"},
+                "dependencies": [],
+                "conflicts": [],
+                "created_at": "2026-05-19T00:00:00Z",
+                "notes": "",
+            },
+            "worlds/bad_world/helpers.psm1": "Write-Host nope\n",
+        }
+    )
+
+    response = client.post("/authoring/import/packages/dry-run", json={"archive_base64": archive})
+
+    assert response.status_code == 200
+    assert response.json()["ok"] is False
+    assert "executable code" in response.json()["errors"][0]
+
+
 def test_import_package_reports_conflict(tmp_path: Path) -> None:
     client = make_client(tmp_path)
     export_response = client.get("/authoring/export/worlds/mist_valley")

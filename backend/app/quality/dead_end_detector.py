@@ -353,7 +353,7 @@ def _detect_required_facts(
             continue
         visibility = str(fact.get("visibility", ""))
         known_by = _string_list(fact.get("known_by"))
-        if visibility == FactVisibility.HIDDEN and "player" not in known_by:
+        if visibility == FactVisibility.HIDDEN and "player" not in known_by and not _fact_has_discovery_path(fact):
             ref = _ref(
                 code="required_fact_hidden_without_discovery",
                 severity=QualityIssueSeverity.ERROR,
@@ -703,6 +703,17 @@ def _is_hidden(value: dict[str, Any]) -> bool:
 
 def _is_discoverable_item(item: dict[str, Any]) -> bool:
     return bool(item.get("discoverable")) or bool(_string_list(item.get("discovered_by")))
+
+
+def _fact_has_discovery_path(fact: dict[str, Any]) -> bool:
+    tags = _string_list(fact.get("tags"))
+    return any(
+        tag == "searchable"
+        or tag.startswith("location:")
+        or tag.startswith("object:")
+        or tag.startswith("npc:")
+        for tag in tags
+    )
 
 
 def _ref(

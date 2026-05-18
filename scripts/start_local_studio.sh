@@ -93,7 +93,34 @@ wait_http_ok() {
   return 1
 }
 
+port_available() {
+  local host="$1"
+  local port="$2"
+  python -c "import socket, sys; host=sys.argv[1]; port=int(sys.argv[2]); sock=socket.socket(); sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1); 
+try:
+    sock.bind((host, port))
+except OSError:
+    sys.exit(1)
+finally:
+    sock.close()
+sys.exit(0)" "${host}" "${port}" >/dev/null 2>&1
+}
+
+require_port_available() {
+  local host="$1"
+  local port="$2"
+  local service="$3"
+  if ! port_available "${host}" "${port}"; then
+    echo "${service} port ${port} on ${host} is already in use. Stop the existing process or rerun with a different port." >&2
+    exit 1
+  fi
+}
+
 export DATABASE_URL="${DATABASE_URL:-sqlite:///./world_engine.db}"
+if [ -z "${DATABASE_URL}" ]; then
+  echo "DATABASE_URL is empty. Set DATABASE_URL or copy .env.example to .env and configure a local SQLite URL." >&2
+  exit 1
+fi
 export LLM_PROVIDER="${LLM_PROVIDER:-mock}"
 export ENABLE_DEBUG_API="${ENABLE_DEBUG_API:-true}"
 export ENABLE_AUTHORING_API="${ENABLE_AUTHORING_API:-false}"
@@ -114,10 +141,13 @@ if [ "${SKIP_DEPENDENCY_CHECK}" != "true" ]; then
   if [ "${USE_BUILT_FRONTEND}" = "true" ]; then
     require_path "${FRONTEND_ROOT}/dist/index.html" "frontend/dist was not found. Run: cd frontend && npm run build"
   fi
+  require_port_available "${BACKEND_HOST}" "${BACKEND_PORT}" "Backend"
+  require_port_available "127.0.0.1" "${FRONTEND_PORT}" "Frontend"
 fi
 
 if [ ! -f "${REPO_ROOT}/.env" ]; then
-  echo "No .env file found. Continuing with safe local defaults. To customize, copy .env.example to .env and keep it untracked."
+  echo "No .env file found. Continuing with safe local defaults."
+  echo "To customize, copy .env.example to .env and keep it untracked: cp .env.example .env"
 fi
 
 BACKEND_OUT="${LOGS_ROOT}/desktop-backend.out.log"
@@ -140,11 +170,18 @@ echo "Frontend: ${FRONTEND_URL}"
 echo "Frontend mode: ${FRONTEND_MODE}"
 echo "Logs:     ${LOGS_ROOT}"
 echo "LLM_PROVIDER: ${LLM_PROVIDER}"
+echo "DATABASE_URL configured: yes"
 echo "Authoring API: ${ENABLE_AUTHORING_API}"
 echo "Debug API:     ${ENABLE_DEBUG_API}"
 echo "Perf logging:  ${ENABLE_PERF_LOGGING}"
 echo "VITE_API_BASE_URL: ${VITE_API_BASE_URL}"
 echo "LLM_API_KEY is not read by this script and is never written to logs by the launcher."
+if [ "${LLM_PROVIDER}" = "openai" ] && [ -z "${LLM_API_KEY:-}" ]; then
+  echo "Warning: LLM_PROVIDER=openai but LLM_API_KEY is not set. Use mock/local_stub for offline local startup."
+fi
+if [ "${LLM_PROVIDER}" = "local_http" ] && [ -z "${LOCAL_LLM_BASE_URL:-}" ]; then
+  echo "Warning: LLM_PROVIDER=local_http but LOCAL_LLM_BASE_URL is not set. The local model provider will fail until configured."
+fi
 echo "Safety: do not expose these local-only authoring/debug/perf APIs outside trusted localhost."
 
 if [ "${PREFLIGHT_ONLY}" = "true" ]; then

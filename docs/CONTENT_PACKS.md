@@ -7,6 +7,43 @@ runtime `GameState`.
 The engine must not hardcode a specific world. `mist_valley` is only the sample
 world.
 
+## v1.0 Schema Freeze
+
+v1.0 freezes the current local content-pack schema for Stable Local Studio
+Edition. The detailed freeze contract lives in
+`docs/V1_0_CONTENT_SCHEMA_CONTRACT.md`.
+
+Frozen v1.0 formats:
+
+- `manifest.yaml`
+- `locations.yaml`, including optional `visual` map fields
+- `npcs.yaml`, including schedules, goals, merchant fields, and visibility
+- `items.yaml`, including economy, lock, ownership, and visibility fields
+- `quests.yaml`, including graph editor stages, triggers, rewards, and
+  alternate/failure paths
+- `facts.yaml`
+- `factions.yaml`
+- `rumors.yaml`
+- `relationships.yaml`
+- scenario templates in `templates/`
+- content-only `mod.yaml`
+- scenario regression files
+- prompt profiles
+- import/export package manifests
+
+Post-v1.0 compatibility policy:
+
+- New fields must be optional first.
+- Breaking field removals, renames, or required semantic changes require a
+  migration and release notes.
+- Validation should warn before a planned breaking change becomes an error.
+- Content migrations must not make hidden/debug data player-visible.
+- Visual editors, template application, import/export, and authoring saves must
+  continue to run validation before writing.
+
+Content packs still do not configure LLM providers, execute scripts, or modify
+active runtime `GameState` directly.
+
 ## Directory Layout
 
 ```text
@@ -33,7 +70,7 @@ Required fields:
 ```yaml
 world_id: mist_valley
 name: Mist Valley
-version: 0.8.0
+version: 1.0.0
 start_location_id: village_square
 description: A small valley world used for local testing.
 ```
@@ -489,9 +526,20 @@ to player-known relationships and factions.
 
 ## ScenarioTemplate Schema
 
-v0.7 scenario templates live under `templates/` and are YAML data, not
+v1.0 starter scenario templates live under `templates/` and are YAML data, not
 executable scripts. They can generate world, quest, location cluster, NPC set,
 faction set, mystery, or combat encounter drafts.
+
+The stable v1.0 starter set is:
+
+- `basic_village_world`: complete minimal world pack.
+- `mystery_quest`: hidden clue and hidden quest seed.
+- `faction_conflict_seed`: visible and hidden faction tension seed.
+- `small_dungeon`: two-room location cluster with map visual fields.
+- `merchant_and_trade`: safe merchant inventory and trade item.
+- `rumor_chain`: rumor chain that avoids hidden fact text leakage.
+- `NPC_goal_set`: supported NPC goal/planning examples.
+- `combat_encounter_light`: light non-lethal combat encounter seed.
 
 ```yaml
 id: mist_valley_mystery_seed
@@ -520,8 +568,9 @@ tags:
 
 Template variable names must be safe ids, variable values cannot contain path
 traversal patterns, and output files must be whitelisted content YAML files.
-Preview/render does not write active saves or active `GameState`; applying
-rendered output must go through authoring save and validation.
+Template directories reject executable/script files. Preview/render does not
+write active saves or active `GameState`; applying rendered output must go
+through authoring save and validation.
 
 ## Quest Graph Format
 
@@ -765,9 +814,9 @@ Validation reports contain:
 
 The CLI returns a non-zero exit code when errors are present.
 
-## v0.9 Quality Authoring Notes
+## v1.0 Quality Authoring Notes
 
-v0.9 quality tools analyze content packs without changing them. They can report
+v1.0 quality tools analyze content packs without changing them. They can report
 quest reachability problems, dead ends, NPC schedule conflicts, hidden
 information leak risks, economy/combat/social sanity issues, scenario
 regression failures, benchmark regressions, and content coverage gaps.
@@ -782,7 +831,7 @@ They must not contain API keys, `.env` contents, database paths, or executable
 scripts. Imports and advanced packages must pass manifest, checksum, path, file
 type, and validation checks before apply.
 
-See `docs/QUALITY_SYSTEM.md` for the v0.9 report schemas, quality gate config,
+See `docs/QUALITY_SYSTEM.md` for the report schemas, quality gate config,
 playtest scenario schema, benchmark report schema, health score categories, and
 coverage report categories.
 
@@ -799,7 +848,7 @@ coverage report categories.
 
 ## Current Limits
 
-- The v0.9 authoring UI has multiple visual editors and quality dashboards, but
+- The v1.0 authoring UI has multiple visual editors and quality dashboards, but
   it is still not a
   full IDE, multiplayer editor, or complex drag/drop graph system.
 - No automatic YAML repair.

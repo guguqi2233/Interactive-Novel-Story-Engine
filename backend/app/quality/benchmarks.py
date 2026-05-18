@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from datetime import datetime, timezone
+import json
 from pathlib import Path
 from statistics import median
 from tempfile import TemporaryDirectory
@@ -54,12 +55,17 @@ BENCHMARK_TYPES = [
 ]
 
 
+DEFAULT_PERFORMANCE_BUDGET: dict[str, "PerformanceBudgetEntry"] = {}
+
+
 class BenchmarkRunRequest(BaseModel):
     world_id: str = "mist_valley"
     worlds_root: str = "worlds"
     iterations: int = Field(default=3, ge=1, le=25)
     benchmarks: list[str] = Field(default_factory=lambda: list(BENCHMARK_TYPES))
     thresholds_ms: dict[str, float] = Field(default_factory=dict)
+    budget_path: str | None = None
+    use_v1_budget: bool = True
 
 
 class BenchmarkSample(BaseModel):
@@ -75,6 +81,89 @@ class BenchmarkRegression(BaseModel):
     threshold_ms: float
     observed_ms: float
     severity: str = "warning"
+    budget_name: str | None = None
+
+
+class PerformanceBudgetEntry(BaseModel):
+    target_ms: float = Field(ge=0)
+    warning_ms: float = Field(ge=0)
+    blocker_ms: float = Field(ge=0)
+    measurement_method: str
+    known_caveats: list[str] = Field(default_factory=list)
+
+
+DEFAULT_PERFORMANCE_BUDGET = {
+    BenchmarkType.GAME_LOOP_TURN: PerformanceBudgetEntry(
+        target_ms=150,
+        warning_ms=300,
+        blocker_ms=1000,
+        measurement_method="Benchmark suite p95/max timing for one mock-provider game_loop.step('observe').",
+        known_caveats=["Local CPU, antivirus, and debug logging can affect short-running timings."],
+    ),
+    BenchmarkType.WORLD_TICK: PerformanceBudgetEntry(
+        target_ms=50,
+        warning_ms=150,
+        blocker_ms=500,
+        measurement_method="Benchmark suite p95/max timing for one deterministic world_tick.",
+        known_caveats=["Larger worlds may require a documented budget update."],
+    ),
+    BenchmarkType.SAVE_LOAD: PerformanceBudgetEntry(
+        target_ms=80,
+        warning_ms=200,
+        blocker_ms=750,
+        measurement_method="Temporary SQLite save_snapshot plus load_save benchmark.",
+        known_caveats=["Disk and filesystem cache differences can shift timing."],
+    ),
+    BenchmarkType.MIGRATION_DRY_RUN: PerformanceBudgetEntry(
+        target_ms=80,
+        warning_ms=200,
+        blocker_ms=750,
+        measurement_method="Temporary SQLite save migration dry-run benchmark.",
+        known_caveats=["Current-schema saves are expected to be no-op dry-runs."],
+    ),
+    BenchmarkType.VALIDATE_WORLD: PerformanceBudgetEntry(
+        target_ms=150,
+        warning_ms=500,
+        blocker_ms=1500,
+        measurement_method="validate_world_pack over the sample world.",
+        known_caveats=["Content-heavy worlds can exceed the sample-world budget."],
+    ),
+    BenchmarkType.MAP_GRAPH_BUILD: PerformanceBudgetEntry(
+        target_ms=80,
+        warning_ms=250,
+        blocker_ms=1000,
+        measurement_method="World load plus authoring map graph construction.",
+        known_caveats=["Large location graphs should define their own budget before v1.1."],
+    ),
+    BenchmarkType.QUEST_GRAPH_ROUNDTRIP: PerformanceBudgetEntry(
+        target_ms=100,
+        warning_ms=350,
+        blocker_ms=1200,
+        measurement_method="quests.yaml -> graph -> YAML -> graph roundtrip.",
+        known_caveats=["Complex quest packs may need a documented larger authoring budget."],
+    ),
+    BenchmarkType.MEMORY_SEARCH: PerformanceBudgetEntry(
+        target_ms=20,
+        warning_ms=80,
+        blocker_ms=250,
+        measurement_method="Local in-memory search across 100 safe benchmark records.",
+        known_caveats=["External vector backends are not part of this local smoke budget."],
+    ),
+    BenchmarkType.SCENARIO_REGRESSION_RUN: PerformanceBudgetEntry(
+        target_ms=250,
+        warning_ms=750,
+        blocker_ms=2500,
+        measurement_method="Two-step deterministic scenario regression smoke run.",
+        known_caveats=["Long scenario suites are measured separately by playtest batch reports."],
+    ),
+    "quality_gate_standard_profile": PerformanceBudgetEntry(
+        target_ms=3000,
+        warning_ms=8000,
+        blocker_ms=20000,
+        measurement_method="Manual end-to-end wall-clock observation of quality_gate --profile standard.",
+        known_caveats=["The benchmark suite does not time the full gate directly yet."],
+    ),
+}
 
 
 class BenchmarkStats(BaseModel):
@@ -93,6 +182,7 @@ class BenchmarkReport(BaseModel):
     p95: dict[str, float] = Field(default_factory=dict)
     max: dict[str, float] = Field(default_factory=dict)
     thresholds: dict[str, float] = Field(default_factory=dict)
+    budgets: dict[str, PerformanceBudgetEntry] = Field(default_factory=dict)
     regressions: list[BenchmarkRegression] = Field(default_factory=list)
 
     def model_dump_safe(self) -> dict[str, Any]:
@@ -115,7 +205,8 @@ def run_benchmark_suite(request: BenchmarkRunRequest) -> BenchmarkReport:
             for _ in range(request.iterations):
                 samples.append(_time_runner(benchmark_type, runner, context))
     stats = _stats(samples)
-    regressions = _regressions(stats.max, request.thresholds_ms)
+    budgets = load_performance_budget(request.budget_path) if request.use_v1_budget else {}
+    regressions = _regressions(stats.max, request.thresholds_ms, budgets)
     return BenchmarkReport(
         world_id=request.world_id,
         environment_summary_safe={
@@ -132,8 +223,22 @@ def run_benchmark_suite(request: BenchmarkRunRequest) -> BenchmarkReport:
         p95=stats.p95,
         max=stats.max,
         thresholds=request.thresholds_ms,
+        budgets={name: budget for name, budget in budgets.items() if name in selected or name == "quality_gate_standard_profile"},
         regressions=regressions,
     )
+
+
+def load_performance_budget(path: str | Path | None = None) -> dict[str, PerformanceBudgetEntry]:
+    if path is None:
+        return dict(DEFAULT_PERFORMANCE_BUDGET)
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    raw_budgets = payload.get("budgets", payload)
+    if not isinstance(raw_budgets, dict):
+        raise ValueError("Performance budget file must contain a mapping or a 'budgets' mapping.")
+    return {
+        str(name): PerformanceBudgetEntry.model_validate(raw_budget)
+        for name, raw_budget in raw_budgets.items()
+    }
 
 
 class _BenchmarkContext(BaseModel):
@@ -292,17 +397,49 @@ def _percentile(values: list[float], percentile: int) -> float:
     return round(ordered[index], 3)
 
 
-def _regressions(max_values: dict[str, float], thresholds: dict[str, float]) -> list[BenchmarkRegression]:
-    return [
-        BenchmarkRegression(
-            benchmark_type=name,
-            threshold_ms=threshold,
-            observed_ms=observed,
-        )
-        for name, threshold in sorted(thresholds.items())
-        for observed in [max_values.get(name)]
-        if observed is not None and observed > threshold
-    ]
+def _regressions(
+    max_values: dict[str, float],
+    thresholds: dict[str, float],
+    budgets: dict[str, PerformanceBudgetEntry],
+) -> list[BenchmarkRegression]:
+    regressions: list[BenchmarkRegression] = []
+    for name, budget in sorted(budgets.items()):
+        observed = max_values.get(name)
+        if observed is None:
+            continue
+        if observed > budget.blocker_ms:
+            regressions.append(
+                BenchmarkRegression(
+                    benchmark_type=name,
+                    threshold_ms=budget.blocker_ms,
+                    observed_ms=observed,
+                    severity="blocker",
+                    budget_name="v1.0",
+                )
+            )
+        elif observed > budget.warning_ms:
+            regressions.append(
+                BenchmarkRegression(
+                    benchmark_type=name,
+                    threshold_ms=budget.warning_ms,
+                    observed_ms=observed,
+                    severity="warning",
+                    budget_name="v1.0",
+                )
+            )
+    for name, threshold in sorted(thresholds.items()):
+        observed = max_values.get(name)
+        if observed is not None and observed > threshold:
+            regressions.append(
+                BenchmarkRegression(
+                    benchmark_type=name,
+                    threshold_ms=threshold,
+                    observed_ms=observed,
+                    severity="warning",
+                    budget_name="custom_threshold",
+                )
+            )
+    return regressions
 
 
 def _strip_sensitive(value: Any) -> Any:

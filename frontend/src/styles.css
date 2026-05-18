@@ -239,6 +239,30 @@ textarea {
   overflow-wrap: anywhere;
 }
 
+.success-panel {
+  display: grid;
+  gap: 3px;
+  max-width: 760px;
+  width: 100%;
+  margin: 0 auto;
+  border: 1px solid #9fd3ad;
+  border-radius: 6px;
+  background: #f0fff4;
+  color: #14532d;
+  padding: 10px 12px;
+}
+
+.success-panel.compact {
+  max-width: none;
+  margin: 0;
+  font-size: 12px;
+}
+
+.success-panel p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 .empty-state {
   display: grid;
   gap: 3px;

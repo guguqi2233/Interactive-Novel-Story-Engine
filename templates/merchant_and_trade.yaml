@@ -1,0 +1,93 @@
+id: merchant_and_trade
+name: Merchant And Trade
+description: Adds a safe starter merchant item and merchant inventory without exposing hidden items.
+template_type: npc_set
+required_variables: []
+optional_variables:
+  trade_item_id: copper_lantern
+output_files:
+  - file_name: items.yaml
+    content: |
+      items:
+        - id: notice_board
+          name: Notice Board
+          description: Weather-stained notices curl under rusted nails.
+          location_id: village_square
+          portable: false
+          base_price: 0
+          tradeable: false
+        - id: anvil
+          name: Anvil
+          description: A scarred anvil with fresh hammer marks.
+          location_id: blacksmith
+          portable: false
+          base_price: 80
+          tradeable: false
+        - id: sealed_letter
+          name: Sealed Letter
+          description: A letter tucked beneath a loose paving stone.
+          location_id: village_square
+          portable: true
+          base_price: 5
+          tradeable: true
+          rarity: uncommon
+          hidden: true
+          discoverable: true
+          discovered_by: []
+          tags: [location:village_square]
+        - id: iron_nails
+          name: Iron Nails
+          description: A small packet of hand-forged nails for mending doors and crates.
+          owner_id: harlan
+          portable: true
+          base_price: 2
+          tradeable: true
+          rarity: common
+          tags: [shop, blacksmith]
+        - id: {{trade_item_id}}
+          name: Copper Lantern
+          description: A simple lantern suitable for a starter trade scene.
+          owner_id: harlan
+          portable: true
+          base_price: 12
+          tradeable: true
+          rarity: common
+          tags: [starter, shop]
+  - file_name: npcs.yaml
+    content: |
+      npcs:
+        - id: harlan
+          name: Harlan
+          location_id: blacksmith
+          faction_id: village_council
+          personality: Wary, practical, and slow to trust strangers.
+          knowledge: [old_bridge_creaks_at_midnight, mayor_hides_missing_tools]
+          goals:
+            - id: share_bridge_warning
+              description: Warn trusted villagers about the old bridge.
+              priority: 5
+              status: active
+              conditions: [knows:old_bridge_creaks_at_midnight]
+              desired_state:
+                rumor: bridge_warning_shared
+              allowed_actions: [talk_to_npc, spread_rumor]
+              forbidden_actions: [attack]
+          priorities:
+            community_safety: 5
+            personal_risk: 3
+          constraints: [avoid_unnecessary_violence]
+          plan_state: {}
+          merchant: true
+          shop_inventory: [iron_nails, {{trade_item_id}}]
+          buy_price_modifier: 1.0
+          sell_price_modifier: 0.5
+          schedule:
+            - time_of_day: morning
+              location_id: blacksmith
+              activity: tending the cold forge
+            - time_of_day: evening
+              location_id: village_square
+              activity: listening for village gossip
+validation_rules:
+  - Merchant inventory must not include hidden items.
+tags: [starter, economy, trade]

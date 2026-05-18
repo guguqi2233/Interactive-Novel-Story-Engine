@@ -9,6 +9,7 @@ from app.engine.content.map_visual import (
 )
 from app.engine.content.world_loader import MapVisibility, WorldLoader, WorldLoaderError
 from app.engine.content.validator import ValidationSeverity, validate_world_pack
+from app.session_store import build_visible_state
 
 
 def test_old_locations_without_visual_still_load(tmp_path: Path) -> None:
@@ -160,6 +161,40 @@ locations:
     assert any(node.location_id == "secret_room" for node in authoring_graph.nodes)
     assert all(node.location_id != "secret_room" for node in player_graph.nodes)
     assert player_graph.edges == []
+
+
+def test_hidden_visual_exit_does_not_enter_player_visible_state(tmp_path: Path) -> None:
+    write_world(
+        tmp_path,
+        "hidden_runtime_exit",
+        locations_yaml="""
+locations:
+  - id: square
+    name: Square
+    description: A quiet square.
+    exits:
+      north: secret_room
+      east: forge
+  - id: forge
+    name: Forge
+    description: A warm forge.
+    exits:
+      west: square
+  - id: secret_room
+    name: Secret Room
+    description: A hidden chamber.
+    exits:
+      south: square
+    visual:
+      visibility: hidden
+""",
+    )
+
+    state = WorldLoader(tmp_path).load("hidden_runtime_exit").to_game_state()
+    visible_state = build_visible_state(state)
+
+    assert visible_state.location.exits == {"east": "forge"}
+    assert "secret_room" not in visible_state.model_dump_json()
 
 
 def test_authoring_map_contains_complete_hidden_content(tmp_path: Path) -> None:

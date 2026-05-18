@@ -1,0 +1,32 @@
+id: rumor_chain
+name: Rumor Chain
+description: Adds a two-step safe rumor chain that references existing facts without revealing hidden text.
+template_type: mystery
+required_variables: []
+optional_variables:
+  rumor_id: template_bridge_rumor
+output_files:
+  - file_name: rumors.yaml
+    content: |
+      rumors:
+        - id: forge_tools_missing_rumor
+          fact_id: sealed_letter_under_stone
+          text_for_player: People mutter that the missing tools may not be simple bad luck.
+          truth_status: unknown
+          known_by_npcs: [harlan]
+          known_by_factions: [village_council]
+          known_by_player: false
+          spread_level: 1
+          tags: [tools, village]
+        - id: {{rumor_id}}
+          fact_id: old_bridge_creaks_at_midnight
+          text_for_player: Travelers say the old bridge complains at night.
+          truth_status: distorted
+          known_by_npcs: [harlan]
+          known_by_factions: [village_council]
+          known_by_player: false
+          spread_level: 1
+          tags: [starter, bridge]
+validation_rules:
+  - Rumor player-facing text must not include hidden fact text.
+tags: [starter, rumor, consequence]

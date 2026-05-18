@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from app.quality.gate import QualityGateConfig, run_quality_gate  # noqa: E402
+from app.quality.gate import QualityGateConfig, QualityGateProfile, run_quality_gate  # noqa: E402
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -13,23 +13,35 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--world", default="mist_valley", help="World id to validate.")
     parser.add_argument("--worlds-root", default="worlds", help="World pack root.")
     parser.add_argument("--mods-root", default="mods", help="Local mods root.")
+    parser.add_argument(
+        "--profile",
+        choices=[profile.value for profile in QualityGateProfile],
+        default=QualityGateProfile.STANDARD.value,
+        help="Quality gate profile: standard, strict, or fast.",
+    )
     parser.add_argument("--fail-on-warning", action="store_true", help="Fail when warnings are present.")
     parser.add_argument("--allow-errors", action="store_true", help="Do not fail on error issues.")
     parser.add_argument("--allow-blockers", action="store_true", help="Do not fail on blocker issues.")
-    parser.add_argument("--min-health-score", type=int, default=70, help="Minimum heuristic health score.")
+    parser.add_argument("--min-health-score", type=int, default=None, help="Minimum heuristic health score.")
     parser.add_argument("--max-performance-p95", type=float, default=None, help="Optional max benchmark p95 in ms.")
     parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
     args = parser.parse_args(argv)
 
+    config_data = {"profile": args.profile}
+    if args.fail_on_warning:
+        config_data["allow_warnings"] = False
+    if args.allow_errors:
+        config_data["fail_on_error"] = False
+    if args.allow_blockers:
+        config_data["fail_on_blocker"] = False
+    if args.min_health_score is not None:
+        config_data["min_health_score"] = args.min_health_score
+    if args.max_performance_p95 is not None:
+        config_data["max_performance_p95_ms"] = args.max_performance_p95
+
     result = run_quality_gate(
         args.world,
-        QualityGateConfig(
-            allow_warnings=not args.fail_on_warning,
-            fail_on_error=not args.allow_errors,
-            fail_on_blocker=not args.allow_blockers,
-            min_health_score=args.min_health_score,
-            max_performance_p95_ms=args.max_performance_p95,
-        ),
+        QualityGateConfig.model_validate(config_data),
         worlds_root=args.worlds_root,
         mods_root=args.mods_root,
     )
@@ -42,6 +54,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Blockers: {len(result.blockers)}")
         print(f"Errors: {len(result.errors)}")
         print(f"Warnings: {len(result.warnings)}")
+        print(f"Skipped: {len(result.skipped)}")
         print(f"Reports: {len(result.report_links)}")
     return 0 if result.passed else 1
 

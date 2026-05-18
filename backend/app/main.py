@@ -1230,8 +1230,8 @@ def get_playtest(run_id: str) -> PlaytestReportResponse:
     raise HTTPException(status_code=404, detail=f"Playtest run not found: {run_id}")
 
 
-@app.post("/quality/benchmarks/run", response_model=BenchmarkReport)
-def run_benchmarks_api(request: BenchmarkRunRequest) -> BenchmarkReport:
+@app.post("/quality/benchmarks/run", response_model=dict[str, Any])
+def run_benchmarks_api(request: BenchmarkRunRequest) -> dict[str, Any]:
     require_benchmark_api()
     benchmark_request = request.model_copy(update={"worlds_root": get_worlds_root()})
     try:
@@ -1239,13 +1239,13 @@ def run_benchmarks_api(request: BenchmarkRunRequest) -> BenchmarkReport:
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     get_benchmark_reports().append(report)
-    return report
+    return report.model_dump_safe()
 
 
-@app.get("/quality/benchmarks/recent", response_model=list[BenchmarkReport])
-def get_recent_benchmarks() -> list[BenchmarkReport]:
+@app.get("/quality/benchmarks/recent", response_model=list[dict[str, Any]])
+def get_recent_benchmarks() -> list[dict[str, Any]]:
     require_benchmark_api()
-    return get_benchmark_reports()[-10:]
+    return [report.model_dump_safe() for report in get_benchmark_reports()[-10:]]
 
 
 @app.get("/quality/worlds/{world_id}/health", response_model=dict[str, Any])

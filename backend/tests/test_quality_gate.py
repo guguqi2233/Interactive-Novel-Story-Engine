@@ -6,8 +6,9 @@ from fastapi.testclient import TestClient
 from app.config import Settings
 from app.db.repository import SQLiteSaveRepository
 from app.main import app
+from app.quality.benchmarks import BenchmarkRegression, BenchmarkReport
 from app.quality import QualityIssue, QualityIssueSeverity, WorldQualityReport
-from app.quality.gate import QualityGateConfig, run_quality_gate
+from app.quality.gate import QualityGateConfig, QualityGateProfile, resolved_gate_config, run_quality_gate
 from app.session_store import InMemorySessionStore
 from app.tools import quality_gate as quality_gate_cli
 
@@ -41,6 +42,27 @@ def test_quality_gate_valid_world_passes_with_release_tolerant_config() -> None:
     assert result.passed is True
     assert result.report_links
     assert "validate_world" in result.summary["checks"]
+    assert "schedule_conflict_detector" in result.summary["checks"]
+    assert result.summary["profile"] == QualityGateProfile.STANDARD.value
+    assert result.skipped == []
+
+
+def test_quality_gate_profiles_resolve_expected_defaults() -> None:
+    standard = resolved_gate_config(QualityGateConfig(profile=QualityGateProfile.STANDARD))
+    strict = resolved_gate_config(QualityGateConfig(profile=QualityGateProfile.STRICT))
+    fast = resolved_gate_config(QualityGateConfig(profile=QualityGateProfile.FAST))
+    override = resolved_gate_config(
+        QualityGateConfig(profile=QualityGateProfile.STRICT, allow_warnings=True, playtest_steps=2)
+    )
+
+    assert standard.allow_warnings is True
+    assert standard.fail_on_error is True
+    assert strict.allow_warnings is False
+    assert strict.min_health_score > standard.min_health_score
+    assert strict.playtest_steps > standard.playtest_steps
+    assert fast.playtest_steps < standard.playtest_steps
+    assert override.allow_warnings is True
+    assert override.playtest_steps == 2
 
 
 def test_quality_gate_blocker_issue_fails_and_redacts_hidden_details(monkeypatch) -> None:
@@ -109,6 +131,34 @@ def test_quality_gate_warning_only_can_pass_or_fail_by_config(monkeypatch) -> No
     assert "Optional quality warning." in failing.warnings
 
 
+def test_quality_gate_budget_blocker_fails(monkeypatch) -> None:
+    def fake_benchmark(request):
+        _ = request
+        return BenchmarkReport(
+            world_id="mist_valley",
+            regressions=[
+                BenchmarkRegression(
+                    benchmark_type="memory_search",
+                    threshold_ms=1,
+                    observed_ms=2,
+                    severity="blocker",
+                    budget_name="v1.0",
+                )
+            ],
+        )
+
+    monkeypatch.setattr("app.quality.gate.run_benchmark_suite", fake_benchmark)
+
+    result = run_quality_gate(
+        "mist_valley",
+        QualityGateConfig(fail_on_error=False, min_health_score=0, benchmark_iterations=1, playtest_steps=1),
+    )
+
+    assert result.passed is False
+    assert any("Performance budget memory_search" in blocker for blocker in result.blockers)
+    assert result.summary["benchmark_regressions"][0]["severity"] == "blocker"
+
+
 def test_quality_gate_api_disabled(tmp_path: Path) -> None:
     client = make_client(tmp_path, enabled=False)
 
@@ -122,13 +172,15 @@ def test_quality_gate_api_runs(tmp_path: Path) -> None:
 
     response = client.post(
         "/quality/worlds/mist_valley/gate/run",
-        json={"allow_warnings": True, "fail_on_error": False, "min_health_score": 0, "playtest_steps": 1},
+        json={"profile": "standard", "allow_warnings": True, "fail_on_error": False, "min_health_score": 0, "playtest_steps": 1},
     )
 
     assert response.status_code == 200
     payload = response.json()
     assert payload["world_id"] == "mist_valley"
     assert payload["report_links"]
+    assert payload["skipped"] == []
+    assert payload["summary"]["profile"] == "standard"
 
 
 def test_quality_gate_cli_runs() -> None:
@@ -136,6 +188,8 @@ def test_quality_gate_cli_runs() -> None:
         [
             "--world",
             "mist_valley",
+            "--profile",
+            "standard",
             "--allow-errors",
             "--allow-blockers",
             "--min-health-score",

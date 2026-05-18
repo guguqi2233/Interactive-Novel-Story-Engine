@@ -86,8 +86,12 @@ class ScenarioTemplateRenderer:
         ".js",
         ".mjs",
         ".ps1",
+        ".psm1",
         ".py",
         ".sh",
+        ".vbs",
+        ".jar",
+        ".msi",
     }
 
     def __init__(

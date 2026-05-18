@@ -4,7 +4,7 @@
 
 The LLM protocol defines how this project talks to model providers without letting model output become trusted world state. All model calls pass through `LLMProvider`, and structured outputs are validated with Pydantic schemas.
 
-The LLM is a parser, narrator, summarizer, and optional authoring draft assistant. It is not the world judge.
+The LLM is a parser, narrator, summarizer, and optional authoring draft assistant. It is not the world judge. In v1.0 this boundary is frozen as a stable local studio contract: model output can affect language-facing fields only after schema validation and cannot directly modify `GameState`.
 
 ## Provider Boundary
 
@@ -179,7 +179,7 @@ It does not:
 
 Any future API/UI exposure for LLM-assisted drafts must remain authoring-only and require explicit user review/export.
 
-## v0.5/v0.6/v0.7/v0.8/v0.9 Rule, Studio, And Quality Modules Do Not Call LLM
+## v1.0 Rule, Studio, And Quality Modules Do Not Call LLM
 
 The following v0.5 modules are deterministic rule/code paths and do not call `LLMProvider`:
 
@@ -274,9 +274,9 @@ visible-state snapshots, validation reports, and temporary sessions. They must
 not use a model to decide whether a rule outcome is correct, whether content is
 valid, or whether a quality gate passes.
 
-### v0.9 Quality And Eval Boundary
+### v1.0 Quality And Eval Boundary
 
-v0.9 evals and playtests use deterministic fixtures, mock providers,
+v1.0 evals and playtests use deterministic fixtures, mock providers,
 `local_stub`, or test harnesses. They do not call real OpenAI APIs, local HTTP
 model services, or external LLM judges in automated tests.
 
@@ -460,7 +460,7 @@ Prompt inputs must obey world visibility:
 
 The LLM can render prose or draft authoring candidates, but it cannot create canonical items, NPCs, locations, quest progress, crimes, rumors, combat outcomes, faction changes, memories, relationships, trade results, or facts.
 
-## Known v0.9 Hardening Items
+## v1.0 Known Limitations
 
 - Split `ActionResult.reason` into `player_reason` and `debug_reason`.
 - Classify memory summaries from raw non-player-visible events as `debug_only` or `hidden` by default.

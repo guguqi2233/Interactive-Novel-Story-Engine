@@ -29,7 +29,7 @@ def test_quests_yaml_converts_to_graph(tmp_path: Path) -> None:
     graph = parse_quest_graph("mist_valley", ContentAuthoringService(worlds_root))
 
     assert graph.world_id == "mist_valley"
-    assert [quest.id for quest in graph.quests] == ["missing_tools", "sealed_letter"]
+    assert [quest.id for quest in graph.quests] == ["missing_tools", "sealed_letter_mystery"]
     assert any(edge.type == "next_stage" and edge.target == "missing_tools:follow_bridge_clue" for edge in graph.edges)
 
 
@@ -115,7 +115,7 @@ def test_hidden_quest_not_in_player_visible_state(tmp_path: Path) -> None:
     from app.engine.content.world_loader import WorldLoader
 
     state = WorldLoader(worlds_root).load("mist_valley").to_game_state()
-    assert state.quests["sealed_letter"].visibility == QuestVisibility.HIDDEN
+    assert state.quests["sealed_letter_mystery"].visibility == QuestVisibility.HIDDEN
 
     visible = build_visible_state(state)
 

@@ -1,6 +1,7 @@
 # World Engine
 
-This document describes the local world engine as of v0.9. The engine is the
+This document describes the local world engine as of v1.0 Stable Local Studio
+Edition. The engine is the
 only source of truth for world state, rules, consequences, persistence, and
 visibility. The LLM layer may parse intent, render narration, and summarize
 memory, but it does not decide rule outcomes or mutate `GameState`.
@@ -921,8 +922,9 @@ tightened further.
 
 ## Desktop Packaging Prototype
 
-v0.8 keeps desktop packaging as a local launcher prototype and enhances the
-launcher scripts. The Windows and shell scripts check basic dependencies,
+v1.0 keeps desktop packaging as a local launcher prototype and hardens the
+launcher scripts. The Windows and shell scripts check dependencies, ports,
+`DATABASE_URL`, `.env` guidance,
 start the FastAPI backend and Vite frontend or built preview, print safe local
 status, run `/health` and `/studio/status` checks, and open the browser. This
 is not a formal installer, does not sign code, does not auto-update, does not
@@ -930,7 +932,7 @@ sync to cloud, and does not embed `.env` or API keys into frontend assets.
 
 ## Local Model Provider Full Integration
 
-v0.7 provides a more complete configurable local provider integration:
+v1.0 keeps the configurable local provider integration:
 
 - `local_stub`: deterministic test/offline provider
 - `local_http`: OpenAI-compatible local HTTP chat endpoint integration
@@ -963,9 +965,9 @@ Debug timeline APIs are controlled by `ENABLE_DEBUG_API` and are for local
 development only. They expose event timelines and `state_deltas` for debugging.
 This data must remain separated from player APIs and narrator prompts.
 
-## v0.9 Quality And Automated Playtesting Layer
+## v1.0 Quality And Automated Playtesting Layer
 
-v0.9 adds a local quality-analysis layer on top of the v0.8 visual authoring
+v1.0 stabilizes the local quality-analysis layer on top of the visual authoring
 studio. These tools inspect content packs, event timelines, playtest reports,
 scenario regression output, save/migration behavior, and performance samples.
 They produce safe reports for authors; they do not modify active `GameState`,
@@ -988,7 +990,7 @@ debug/local-only surfaces. Normal quality reports must not include hidden fact
 text, NPC secrets, hidden witnesses, raw `GameState`, raw `state_deltas`, API
 keys, raw environment variables, or local sensitive paths.
 
-Current v0.9 quality modules include:
+Current v1.0 quality modules include:
 
 - Automated Playtesting Scenario Expansion: deterministic scenarios for
   exploration, quest paths, combat, stealth, economy, crime/social behavior,
@@ -1047,7 +1049,7 @@ default, must use mock/local-stub providers in tests, and must not make the LLM
 the pass/fail judge. The quality gate uses deterministic code, thresholds, and
 report severities.
 
-Known v0.9 implementation note: `ENABLE_PLAYTEST_API`, `ENABLE_EVAL_API`,
+Known v1.0 implementation note: `ENABLE_PLAYTEST_API`, `ENABLE_EVAL_API`,
 `ENABLE_DEBUG_API`, and `ENABLE_PERF_LOGGING` gate the main playtest, eval,
 debug, benchmark, and quality-gate flows. There is currently no separate
 `ENABLE_QUALITY_API` setting. Some analyzer endpoints are local-only but not

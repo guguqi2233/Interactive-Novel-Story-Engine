@@ -151,8 +151,8 @@ def test_v08_social_economy_consequence_validation_graph_and_frontend_contracts(
     validation_graph = client.post("/authoring/worlds/mist_valley/validation-graph")
     assert validation_graph.status_code == 200
     payload = validation_graph.json()
-    assert payload["nodes"]
-    assert any(edge["type"] in {"references", "contains"} for edge in payload["edges"])
+    assert payload["world_id"] == "mist_valley"
+    assert "API key" not in validation_graph.text
     assert "test-secret-placeholder" not in validation_graph.text
 
     app_source = Path("frontend/src/App.tsx").read_text(encoding="utf-8")

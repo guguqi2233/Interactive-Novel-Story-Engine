@@ -66,8 +66,37 @@ function Wait-HttpOk {
     return $false
 }
 
+function Test-PortAvailable {
+    param(
+        [string]$HostName,
+        [int]$Port
+    )
+    try {
+        $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Parse($HostName), $Port)
+        $listener.Start()
+        $listener.Stop()
+        return $true
+    } catch {
+        return $false
+    }
+}
+
+function Assert-PortAvailable {
+    param(
+        [string]$HostName,
+        [int]$Port,
+        [string]$ServiceName
+    )
+    if (-not (Test-PortAvailable $HostName $Port)) {
+        throw "$ServiceName port ${Port} on ${HostName} is already in use. Stop the existing process or rerun with a different port."
+    }
+}
+
 if (-not $env:DATABASE_URL) {
     $env:DATABASE_URL = "sqlite:///./world_engine.db"
+}
+if ([string]::IsNullOrWhiteSpace($env:DATABASE_URL)) {
+    throw "DATABASE_URL is empty. Set DATABASE_URL or copy .env.example to .env and configure a local SQLite URL."
 }
 if (-not $env:LLM_PROVIDER) {
     $env:LLM_PROVIDER = "mock"
@@ -101,10 +130,13 @@ if (-not $SkipDependencyCheck) {
     if ($UseBuiltFrontend) {
         Assert-PathExists (Join-Path $FrontendRoot "dist/index.html") "frontend/dist was not found. Run: cd frontend; npm run build"
     }
+    Assert-PortAvailable $BackendHost $BackendPort "Backend"
+    Assert-PortAvailable "127.0.0.1" $FrontendPort "Frontend"
 }
 
 if (-not (Test-Path (Join-Path $RepoRoot ".env"))) {
-    Write-Host "No .env file found. Continuing with safe local defaults. To customize, copy .env.example to .env and keep it untracked."
+    Write-Host "No .env file found. Continuing with safe local defaults."
+    Write-Host "To customize, copy .env.example to .env and keep it untracked: Copy-Item .env.example .env"
 }
 
 $BackendOut = Join-Path $LogsRoot "desktop-backend.out.log"
@@ -146,11 +178,18 @@ Write-Host "Frontend: $FrontendUrl"
 Write-Host "Frontend mode: $FrontendMode"
 Write-Host "Logs:     $LogsRoot"
 Write-Host "LLM_PROVIDER: $($env:LLM_PROVIDER)"
+Write-Host "DATABASE_URL configured: $([bool]$env:DATABASE_URL)"
 Write-Host "Authoring API: $($env:ENABLE_AUTHORING_API)"
 Write-Host "Debug API:     $($env:ENABLE_DEBUG_API)"
 Write-Host "Perf logging:  $($env:ENABLE_PERF_LOGGING)"
 Write-Host "VITE_API_BASE_URL: $($env:VITE_API_BASE_URL)"
 Write-Host "LLM_API_KEY is not read by this script and is never written to logs by the launcher."
+if ($env:LLM_PROVIDER -eq "openai" -and -not $env:LLM_API_KEY) {
+    Write-Host "Warning: LLM_PROVIDER=openai but LLM_API_KEY is not set. Use mock/local_stub for offline local startup."
+}
+if ($env:LLM_PROVIDER -eq "local_http" -and -not $env:LOCAL_LLM_BASE_URL) {
+    Write-Host "Warning: LLM_PROVIDER=local_http but LOCAL_LLM_BASE_URL is not set. The local model provider will fail until configured."
+}
 Write-Host "Use -UseBuiltFrontend after running 'cd frontend; npm run build' to serve the built frontend."
 Write-Host "Safety: do not expose these local-only authoring/debug/perf APIs outside trusted localhost."
 

@@ -113,6 +113,18 @@ def assert_save_migrated(
     return state
 
 
+def assert_save_latest(
+    repository: SQLiteSaveRepository,
+    save_id: str,
+) -> GameState:
+    save = repository.get_save(save_id)
+    state = repository.load_save(save_id)
+
+    assert save.schema_version == CURRENT_SAVE_SCHEMA_VERSION
+    assert state.schema_version == CURRENT_GAME_STATE_SCHEMA_VERSION
+    return state
+
+
 def assert_no_visibility_leak(state: GameState) -> None:
     for fact_id, fact in state.facts.items():
         if fact.visibility in {FactVisibility.HIDDEN, FactVisibility.DISCOVERABLE}:
@@ -149,6 +161,59 @@ def test_fixture_save_migrates_to_latest(
         expected_migration_id
     ]
     assert_no_visibility_leak(migrated_state)
+
+
+@pytest.mark.parametrize(
+    "fixture_name",
+    [
+        "v06_like_save.json",
+        "v07_like_save.json",
+        "v08_like_save.json",
+        "v09_like_save.json",
+    ],
+)
+def test_current_schema_v06_to_v09_like_saves_are_idempotent_latest(
+    tmp_path: Path,
+    fixture_name: str,
+) -> None:
+    repository = make_repository(tmp_path)
+    fixture = load_fixture_save(fixture_name)
+    insert_fixture_save(repository, fixture)
+    before = repository.get_save(fixture["save_id"])
+
+    dry_run = repository.migrate_save(fixture["save_id"], dry_run=True)
+    after_dry_run = repository.get_save(fixture["save_id"])
+    apply_report = repository.migrate_save(fixture["save_id"])
+    after_apply = repository.get_save(fixture["save_id"])
+    latest_state = assert_save_latest(repository, fixture["save_id"])
+
+    assert dry_run.dry_run is True
+    assert dry_run.applied_migrations == []
+    assert dry_run.warnings == ["Save already at target schema version."]
+    assert after_dry_run.state_json == before.state_json
+    assert after_dry_run.migration_history == before.migration_history
+    assert apply_report.applied_migrations == []
+    assert apply_report.warnings == ["Save already at target schema version."]
+    assert after_apply.state_json == before.state_json
+    assert after_apply.migration_history == before.migration_history
+    assert_no_visibility_leak(latest_state)
+
+
+def test_migration_apply_is_idempotent_after_legacy_migration(tmp_path: Path) -> None:
+    repository = make_repository(tmp_path)
+    fixture = load_fixture_save("legacy_save.json")
+    insert_fixture_save(repository, fixture)
+
+    first = repository.migrate_save(fixture["save_id"])
+    after_first = repository.get_save(fixture["save_id"])
+    second = repository.migrate_save(fixture["save_id"])
+    after_second = repository.get_save(fixture["save_id"])
+
+    assert [entry.migration_id for entry in first.applied_migrations] == ["legacy->0.6"]
+    assert second.applied_migrations == []
+    assert second.warnings == ["Save already at target schema version."]
+    assert after_second.state_json == after_first.state_json
+    assert after_second.migration_history == after_first.migration_history
 
 
 def test_migration_preserves_event_log(tmp_path: Path) -> None:

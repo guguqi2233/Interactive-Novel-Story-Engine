@@ -75,6 +75,44 @@ quests:
     assert "hidden_ledger_truth" in normal_payload
 
 
+def test_hidden_fact_with_search_discovery_path_is_not_dead_end(tmp_path: Path) -> None:
+    write_world(
+        tmp_path,
+        facts_yaml="""
+facts:
+  - id: loose_stone_letter
+    text: A letter waits under the loose stone.
+    visibility: hidden
+    known_by: []
+    tags:
+      - searchable
+      - location:square
+""",
+        quests_yaml="""
+quests:
+  - id: letter_quest
+    title: Letter Quest
+    initial_stage: start
+    visibility: hidden
+    stages:
+      - id: start
+        title: Start
+        objectives: [discover_letter]
+        next_stages: []
+    triggers:
+      - type: fact_discovered
+        id: loose_stone_letter
+        action: complete_objective
+        objective_id: discover_letter
+""",
+    )
+
+    analysis = analyze_dead_ends("test_world", worlds_root=tmp_path)
+
+    assert not analysis.required_fact_undiscoverable
+    assert not analysis.hidden_clue_never_discoverable
+
+
 def test_locked_location_without_access_path_is_caught(tmp_path: Path) -> None:
     write_world(
         tmp_path,

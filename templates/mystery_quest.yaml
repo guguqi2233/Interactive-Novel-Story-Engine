@@ -1,0 +1,103 @@
+id: mystery_quest
+name: Mystery Quest
+description: Adds a small hidden-clue mystery quest with a searchable fact and safe player-facing text.
+template_type: mystery
+required_variables: []
+optional_variables:
+  quest_id: template_mystery
+  quest_title: Template Mystery
+  clue_fact_id: template_hidden_clue
+  clue_item_id: template_clue_token
+  location_id: village_square
+output_files:
+  - file_name: facts.yaml
+    content: |
+      facts:
+        - id: village_square_is_misty
+          text: The village square is damp with morning mist.
+          visibility: public
+          known_by: [player, harlan]
+          tags: [location, atmosphere]
+        - id: sealed_letter_under_stone
+          text: A sealed letter is hidden beneath a loose paving stone.
+          visibility: hidden
+          known_by: [harlan]
+          tags: [secret, item, searchable, location:village_square]
+        - id: old_bridge_creaks_at_midnight
+          text: The old bridge creaks loudly around midnight.
+          visibility: discoverable
+          known_by: [harlan]
+          tags: [clue, location]
+        - id: {{clue_fact_id}}
+          text: A second clue waits where careful searchers can find it.
+          visibility: hidden
+          known_by: []
+          tags: [template, mystery, searchable, location:{{location_id}}]
+  - file_name: quests.yaml
+    content: |
+      quests:
+        - id: missing_tools
+          title: Missing Tools
+          description: Harlan's best tools vanished before dawn.
+          initial_stage: ask_harlan
+          visibility: public
+          stages:
+            - id: ask_harlan
+              title: Speak with Harlan
+              description: Ask Harlan what went missing from the forge.
+              objectives: [talk_to_harlan]
+              next_stages: [follow_bridge_clue]
+            - id: follow_bridge_clue
+              title: Follow the Bridge Clue
+              description: Check the old bridge for signs tied to the missing tools.
+              objectives: [discover_bridge_clue]
+              next_stages: []
+          triggers:
+            - type: npc_talked
+              id: harlan
+              action: complete_objective
+              objective_id: talk_to_harlan
+              next_stage: follow_bridge_clue
+            - type: fact_discovered
+              id: old_bridge_creaks_at_midnight
+              action: complete_objective
+              objective_id: discover_bridge_clue
+        - id: sealed_letter_mystery
+          title: Sealed Letter
+          description: A hidden letter may explain who has been moving through the square.
+          initial_stage: find_letter
+          visibility: hidden
+          stages:
+            - id: find_letter
+              title: Find the Letter
+              description: Locate the sealed letter hidden somewhere in the village square.
+              objectives: [discover_letter, take_letter]
+              next_stages: []
+          triggers:
+            - type: fact_discovered
+              id: sealed_letter_under_stone
+              action: complete_objective
+              objective_id: discover_letter
+            - type: item_acquired
+              id: sealed_letter
+              action: complete_objective
+              objective_id: take_letter
+        - id: {{quest_id}}
+          title: {{quest_title}}
+          description: Follow a safe clue chain without exposing hidden text.
+          initial_stage: find_clue
+          visibility: hidden
+          stages:
+            - id: find_clue
+              title: Find the Clue
+              description: Search the marked place for a clue.
+              objectives: [discover_template_clue]
+              next_stages: []
+          triggers:
+            - type: fact_discovered
+              id: {{clue_fact_id}}
+              action: complete_objective
+              objective_id: discover_template_clue
+validation_rules:
+  - Rendered quest and fact files must pass validate_world_pack against a target world.
+tags: [starter, mystery, quest]

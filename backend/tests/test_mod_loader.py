@@ -120,6 +120,19 @@ def test_mod_cannot_contain_executable_code(tmp_path: Path) -> None:
     assert any(issue.code == "mod_executable_code_forbidden" for issue in report.errors)
 
 
+def test_mod_cannot_contain_platform_executable_content(tmp_path: Path) -> None:
+    mod_path = write_mod(tmp_path)
+    mod_path.joinpath("helpers.psm1").write_text("Write-Host nope\n", encoding="utf-8")
+    mod_path.joinpath("payload.jar").write_text("not really a jar\n", encoding="utf-8")
+
+    report = ModLoader(tmp_path / "mods").validate_mod("mist_mod")
+
+    assert not report.ok
+    forbidden_paths = {issue.path for issue in report.errors if issue.code == "mod_executable_code_forbidden"}
+    assert "helpers.psm1" in forbidden_paths
+    assert "payload.jar" in forbidden_paths
+
+
 def test_validate_mod_reuses_world_validation(tmp_path: Path) -> None:
     mod_path = write_mod(tmp_path)
     locations_path = mod_path / "content" / "mist_valley" / "locations.yaml"
@@ -201,6 +214,15 @@ def test_engine_version_min_not_satisfied_is_error(tmp_path: Path) -> None:
 
     assert not report.ok
     assert any(issue.code == "mod_version_incompatible" for issue in report.errors)
+
+
+def test_content_schema_mismatch_is_reported_as_warning(tmp_path: Path) -> None:
+    write_mod(tmp_path, content_schema_version="9.9")
+
+    report = ModLoader(tmp_path / "mods").validate_mod("mist_mod")
+
+    assert any(issue.code == "mod_version_warning" for issue in report.warnings)
+    assert any("Content schema 9.9 differs" in issue.message for issue in report.warnings)
 
 
 def test_load_order_is_deterministic_and_dependency_aware(tmp_path: Path) -> None:

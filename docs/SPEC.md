@@ -41,7 +41,7 @@ All handled player actions, system ticks, NPC planning ticks, and system consequ
 
 Authoring APIs edit content-pack YAML, not active `GameState`. Procedural quest generation produces drafts only.
 
-## Current v0.9 Gameplay Loop
+## Current v1.0 Gameplay Loop
 
 1. Player submits text through API or frontend.
 2. `IntentParser` returns schema-validated `PlayerIntent`.
@@ -56,7 +56,13 @@ Authoring APIs edit content-pack YAML, not active `GameState`. Procedural quest 
 11. Narrator receives visible action facts and returns `NarrativeResult`.
 12. API returns narration plus filtered `visible_state`.
 
-## v0.9 Included Scope
+## v1.0 Stable Scope
+
+v1.0 is the Stable Local Studio Edition. It freezes the core local contracts
+around `GameState`, `StateDelta`, `EventLog`, content packs, mod manifests,
+save migration, `LLMProvider`, player APIs, local authoring APIs, debug APIs,
+and quality tooling. The goal is long-term local reliability rather than major
+new gameplay expansion.
 
 Backend:
 
@@ -175,9 +181,9 @@ Testing:
 - Deterministic quality gate, benchmark, stress, coverage, and analyzer tests.
 - Fake/mock LLM providers in automated tests.
 
-## v0.9 Quality Verification Model
+## v1.0 Quality Verification Model
 
-v0.9 introduces local quality verification as an authoring and regression
+v1.0 keeps local quality verification as an authoring and regression
 toolchain. Quality reports can aggregate validation issues, playtest results,
 scenario regression output, hidden-leak checks, quest reachability analysis,
 dead-end detection, NPC/schedule coverage, economy/combat/social sanity
@@ -201,7 +207,7 @@ gate routes use existing local feature flags such as `ENABLE_PLAYTEST_API`,
 `ENABLE_EVAL_API`, `ENABLE_DEBUG_API`, and `ENABLE_PERF_LOGGING`. There is no
 separate `ENABLE_QUALITY_API` setting yet, and some analyzer endpoints remain
 local-only without an independent quality flag. The backend should remain
-bound to localhost for v0.9 local studio use.
+bound to localhost for local studio use.
 
 ## Persistence Model
 
@@ -364,7 +370,7 @@ event logging, provider abstraction, or content-only mod restrictions.
 - Do not expose provider secrets, raw env, raw `GameState`, or raw
   `state_deltas` through Studio Home, Settings, dashboards, or player APIs.
 
-## Not In v0.9
+## Not In v1.0
 
 - Hosted service security, auth, accounts, cloud sync, or multiplayer.
 - Tactical grid combat or multi-round combat AI.
@@ -396,7 +402,7 @@ event logging, provider abstraction, or content-only mod restrictions.
   saves.
 - Hosted quality service, telemetry upload, or cloud report storage.
 
-## v0.9 Known Hardening Items
+## v1.0 Known Limitations
 
 - Split `ActionResult.reason` into player-safe and debug-only reason fields.
 - Move raw faction reputation out of player API.

@@ -18,6 +18,17 @@ REQUIRED_VARIABLES = {
     "npc_name": "Mara",
 }
 
+STARTER_TEMPLATE_IDS = [
+    "NPC_goal_set",
+    "basic_village_world",
+    "combat_encounter_light",
+    "faction_conflict_seed",
+    "merchant_and_trade",
+    "mystery_quest",
+    "rumor_chain",
+    "small_dungeon",
+]
+
 
 def _copy_templates(tmp_path: Path) -> Path:
     templates_root = tmp_path / "templates"
@@ -34,39 +45,49 @@ def test_list_templates_returns_example(tmp_path: Path) -> None:
 
     templates = renderer.list_templates()
 
-    assert [template.id for template in templates] == ["basic_village_world"]
-    assert templates[0].template_type == "world"
+    assert [template.id for template in templates] == STARTER_TEMPLATE_IDS
+    assert any(template.template_type == "world" for template in templates)
 
 
 def test_preview_template_does_not_write_disk(tmp_path: Path) -> None:
     worlds_root = tmp_path / "worlds"
+    copytree(Path("worlds") / "mist_valley", worlds_root / "mist_valley")
     renderer = ScenarioTemplateRenderer(
         templates_root=_copy_templates(tmp_path),
         worlds_root=worlds_root,
     )
 
-    preview = renderer.preview_template("basic_village_world", REQUIRED_VARIABLES)
+    for template in renderer.list_templates():
+        variables = REQUIRED_VARIABLES if template.id == "basic_village_world" else {}
+        target_world_id = None if template.id == "basic_village_world" else "mist_valley"
+        preview = renderer.preview_template(template.id, variables, target_world_id=target_world_id)
 
-    assert preview.writes_to_disk is False
-    assert preview.validation_report is not None
-    assert preview.validation_report.ok
+        assert preview.writes_to_disk is False
+        assert preview.validation_report is not None
+        assert preview.validation_report.ok, template.id
     assert not (worlds_root / "test_world").exists()
 
 
-def test_render_template_generates_valid_yaml(tmp_path: Path) -> None:
+def test_render_each_starter_template_generates_valid_yaml(tmp_path: Path) -> None:
+    worlds_root = tmp_path / "worlds"
+    copytree(Path("worlds") / "mist_valley", worlds_root / "mist_valley")
     renderer = ScenarioTemplateRenderer(
         templates_root=_copy_templates(tmp_path),
-        worlds_root=tmp_path / "worlds",
+        worlds_root=worlds_root,
     )
-    template = renderer.get_template("basic_village_world")
 
-    rendered = renderer.render_template(template, REQUIRED_VARIABLES)
-    validation = renderer.validate_rendered_content(rendered)
+    for template in renderer.list_templates():
+        variables = REQUIRED_VARIABLES if template.id == "basic_village_world" else {}
+        target_world_id = None if template.id == "basic_village_world" else "mist_valley"
+        rendered = renderer.render_template(template, variables)
+        validation = renderer.validate_rendered_content(rendered, target_world_id=target_world_id)
 
-    assert validation is not None
-    assert validation.ok
-    assert {file.file_name for file in rendered.files} >= {"manifest.yaml", "locations.yaml", "npcs.yaml"}
-    assert "world_id: test_world" in rendered.files[0].content
+        assert validation is not None
+        assert validation.ok, template.id
+        assert rendered.files
+    basic = renderer.render_template(renderer.get_template("basic_village_world"), REQUIRED_VARIABLES)
+    assert {file.file_name for file in basic.files} >= {"manifest.yaml", "locations.yaml", "npcs.yaml"}
+    assert "world_id: test_world" in basic.files[0].content
 
 
 def test_invalid_variables_return_clear_error(tmp_path: Path) -> None:
@@ -127,7 +148,7 @@ def test_apply_template_requires_confirmation_and_writes_valid_world(tmp_path: P
 
 def test_template_directory_rejects_executable_files(tmp_path: Path) -> None:
     templates_root = _copy_templates(tmp_path)
-    (templates_root / "evil.py").write_text("print('nope')", encoding="utf-8")
+    (templates_root / "evil.psm1").write_text("Write-Host nope", encoding="utf-8")
     renderer = ScenarioTemplateRenderer(
         templates_root=templates_root,
         worlds_root=tmp_path / "worlds",

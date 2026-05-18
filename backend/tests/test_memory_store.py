@@ -62,6 +62,22 @@ def test_add_memory_and_search_by_tag() -> None:
     assert store.search_by_tags(["key"]) == [record]
 
 
+def test_memory_record_unordered_fields_are_canonicalized() -> None:
+    record = MemoryRecord(
+        id="memory-canonical",
+        content="Canonical memory.",
+        source_event_ids={"event-b", "event-a", "event-b"},
+        tags={"key", "quest", "key"},
+        entity_ids={"npc:harlan", "npc:mira", "npc:harlan"},
+        fact_ids={"fact:bridge", "fact:well", "fact:bridge"},
+    )
+
+    assert record.source_event_ids == ["event-a", "event-b"]
+    assert record.tags == ["key", "quest"]
+    assert record.entity_ids == ["npc:harlan", "npc:mira"]
+    assert record.fact_ids == ["fact:bridge", "fact:well"]
+
+
 def test_search_by_entity_and_fact() -> None:
     store = InMemoryMemoryStore()
     record = make_record(

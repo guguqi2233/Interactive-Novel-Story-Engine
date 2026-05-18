@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from enum import StrEnum
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
@@ -27,12 +28,20 @@ from app.quality.reports import (
     world_quality_report_from_validation_report,
 )
 from app.quality.save_load_stress import run_save_load_migration_stress
+from app.quality.schedule_conflict_detector import analyze_schedule_conflicts
 from app.quality.social_consequence_coverage import analyze_social_consequence_coverage
 from app.scenarios.regression import sample_scenario_regression_cases, run_scenario_regression_suite
 from app.session_store import create_initial_state
 
 
+class QualityGateProfile(StrEnum):
+    FAST = "fast"
+    STANDARD = "standard"
+    STRICT = "strict"
+
+
 class QualityGateConfig(BaseModel):
+    profile: QualityGateProfile = QualityGateProfile.STANDARD
     allow_warnings: bool = True
     fail_on_error: bool = True
     fail_on_blocker: bool = True
@@ -58,6 +67,7 @@ class QualityGateResult(BaseModel):
     blockers: list[str] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+    skipped: list[str] = Field(default_factory=list)
     report_links: list[QualityGateReportLink] = Field(default_factory=list)
     health_score: int | None = None
     summary: dict[str, Any] = Field(default_factory=dict)
@@ -73,9 +83,10 @@ def run_quality_gate(
     worlds_root: str = "worlds",
     mods_root: str = "mods",
 ) -> QualityGateResult:
-    config = config or QualityGateConfig()
+    config = resolved_gate_config(config)
     reports: list[WorldQualityReport] = []
     links: list[QualityGateReportLink] = []
+    skipped: list[str] = []
 
     validation_report = ContentAuthoringService(worlds_root).validate_world(world_id)
     _append_report(reports, links, "validate_world", world_quality_report_from_validation_report(validation_report))
@@ -83,6 +94,7 @@ def run_quality_gate(
     _append_report(reports, links, "quest_completion", analyze_quest_completion(world_id, worlds_root=worlds_root).quality_report)
     _append_report(reports, links, "dead_ends", analyze_dead_ends(world_id, worlds_root=worlds_root).quality_report)
     _append_report(reports, links, "npc_coverage", analyze_npc_behavior_coverage(world_id, worlds_root=worlds_root).quality_report)
+    _append_report(reports, links, "schedule_conflict", analyze_schedule_conflicts(world_id, worlds_root=worlds_root).quality_report)
     _append_report(reports, links, "economy_balance", analyze_economy_balance(world_id, worlds_root=worlds_root).quality_report)
     _append_report(reports, links, "combat_balance", analyze_combat_balance(world_id, worlds_root=worlds_root).quality_report)
     _append_report(
@@ -149,6 +161,9 @@ def run_quality_gate(
     blockers, errors, warnings = _collect_issues(reports)
     performance_errors = _performance_errors(benchmark, config.max_performance_p95_ms)
     errors.extend(performance_errors)
+    performance_blockers, performance_warnings = _performance_budget_issues(benchmark)
+    blockers.extend(performance_blockers)
+    warnings.extend(performance_warnings)
     if health.overall_score < config.min_health_score:
         errors.append(f"World health score {health.overall_score} is below threshold {config.min_health_score}.")
 
@@ -160,14 +175,17 @@ def run_quality_gate(
         errors=errors,
         warnings=warnings,
         report_links=links,
+        skipped=skipped,
         health_score=health.overall_score,
         summary={
+            "profile": config.profile.value,
             "checks": [
                 "validate_world",
                 "hidden_leak_regression",
                 "quest_completion_analysis",
                 "dead_end_detector",
                 "npc_coverage",
+                "schedule_conflict_detector",
                 "economy_balance",
                 "combat_balance",
                 "social_consequence_coverage",
@@ -177,11 +195,64 @@ def run_quality_gate(
                 "mod_compatibility_smoke",
             ],
             "reports": len(reports),
+            "skipped": skipped,
             "benchmark_id": benchmark.benchmark_id,
             "scenario_regression_run_id": scenario_run.run_id if scenario_run else None,
             "playtest_batch_run_id": batch.run_id,
             "mod_compatibility_report_id": mod_report.report_id,
+            "benchmark_regressions": [
+                regression.model_dump(mode="json")
+                for regression in benchmark.regressions
+            ],
         },
+    )
+
+
+def resolved_gate_config(config: QualityGateConfig | None = None) -> QualityGateConfig:
+    raw_config = config or QualityGateConfig()
+    profile_defaults = _profile_defaults(raw_config.profile)
+    data = profile_defaults.model_dump()
+    explicit = raw_config.model_fields_set
+    for field_name in explicit:
+        data[field_name] = getattr(raw_config, field_name)
+    return QualityGateConfig.model_validate(data)
+
+
+def _profile_defaults(profile: QualityGateProfile) -> QualityGateConfig:
+    if profile == QualityGateProfile.STRICT:
+        return QualityGateConfig(
+            profile=profile,
+            allow_warnings=False,
+            fail_on_error=True,
+            fail_on_blocker=True,
+            min_health_score=85,
+            benchmark_iterations=3,
+            playtest_seeds=[101, 202, 303],
+            playtest_steps=16,
+            mod_max_combinations=8,
+        )
+    if profile == QualityGateProfile.FAST:
+        return QualityGateConfig(
+            profile=profile,
+            allow_warnings=True,
+            fail_on_error=True,
+            fail_on_blocker=True,
+            min_health_score=60,
+            benchmark_iterations=1,
+            playtest_seeds=[123],
+            playtest_steps=4,
+            mod_max_combinations=2,
+        )
+    return QualityGateConfig(
+        profile=QualityGateProfile.STANDARD,
+        allow_warnings=True,
+        fail_on_error=True,
+        fail_on_blocker=True,
+        min_health_score=70,
+        benchmark_iterations=1,
+        playtest_seeds=[123],
+        playtest_steps=8,
+        mod_max_combinations=3,
     )
 
 
@@ -241,6 +312,21 @@ def _performance_errors(benchmark: Any, max_p95: float | None) -> list[str]:
     if observed > max_p95:
         return [f"Performance p95 {observed:.3f}ms exceeds threshold {max_p95:.3f}ms."]
     return []
+
+
+def _performance_budget_issues(benchmark: Any) -> tuple[list[str], list[str]]:
+    blockers: list[str] = []
+    warnings: list[str] = []
+    for regression in getattr(benchmark, "regressions", []):
+        message = (
+            f"Performance budget {regression.benchmark_type} observed "
+            f"{regression.observed_ms:.3f}ms over {regression.threshold_ms:.3f}ms."
+        )
+        if regression.severity == "blocker":
+            blockers.append(message)
+        elif regression.severity == "warning":
+            warnings.append(message)
+    return sorted(set(blockers)), sorted(set(warnings))
 
 
 def _passed(config: QualityGateConfig, blockers: list[str], errors: list[str], warnings: list[str]) -> bool:

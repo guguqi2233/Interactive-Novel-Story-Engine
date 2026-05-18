@@ -16,6 +16,8 @@ facts:
     tags:
       - secret
       - item
+      - searchable
+      - location:village_square
   - id: old_bridge_creaks_at_midnight
     text: The old bridge creaks loudly around midnight.
     visibility: discoverable

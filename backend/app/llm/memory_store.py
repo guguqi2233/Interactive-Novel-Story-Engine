@@ -4,7 +4,7 @@ from time import perf_counter
 from typing import Any, Protocol
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.core.instrumentation import record_performance_sample
 from app.llm.schemas import MemorySummary
@@ -28,6 +28,15 @@ class MemoryRecord(BaseModel):
     importance: int = Field(default=0, ge=0)
     created_turn: int = Field(default=0, ge=0)
     embedding: list[float] | None = None
+
+    @field_validator("source_event_ids", "tags", "entity_ids", "fact_ids", mode="before")
+    @classmethod
+    def canonicalize_unordered_ids(cls, value: Any) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            return [value]
+        return sorted({str(item) for item in value})
 
 
 class MemoryQuery(BaseModel):

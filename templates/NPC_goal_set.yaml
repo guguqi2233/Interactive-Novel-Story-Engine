@@ -1,0 +1,55 @@
+id: NPC_goal_set
+name: NPC Goal Set
+description: Adds starter NPC goal examples using supported planning actions.
+template_type: npc_set
+required_variables: []
+optional_variables:
+  goal_id: keep_square_safe
+output_files:
+  - file_name: npcs.yaml
+    content: |
+      npcs:
+        - id: harlan
+          name: Harlan
+          location_id: blacksmith
+          faction_id: village_council
+          personality: Wary, practical, and slow to trust strangers.
+          knowledge: [old_bridge_creaks_at_midnight, mayor_hides_missing_tools]
+          goals:
+            - id: share_bridge_warning
+              description: Warn trusted villagers about the old bridge.
+              priority: 5
+              status: active
+              conditions: [knows:old_bridge_creaks_at_midnight]
+              desired_state:
+                rumor: bridge_warning_shared
+              allowed_actions: [talk_to_npc, spread_rumor]
+              forbidden_actions: [attack]
+            - id: {{goal_id}}
+              description: Keep the village square calm if rumors rise.
+              priority: 2
+              status: active
+              conditions: [knows:old_bridge_creaks_at_midnight]
+              desired_state:
+                location_id: village_square
+              allowed_actions: [move, talk_to_npc]
+              forbidden_actions: [attack]
+          priorities:
+            community_safety: 5
+            personal_risk: 3
+          constraints: [avoid_unnecessary_violence]
+          plan_state: {}
+          merchant: true
+          shop_inventory: [iron_nails]
+          buy_price_modifier: 1.0
+          sell_price_modifier: 0.5
+          schedule:
+            - time_of_day: morning
+              location_id: blacksmith
+              activity: tending the cold forge
+            - time_of_day: evening
+              location_id: village_square
+              activity: listening for village gossip
+validation_rules:
+  - Goals must use supported planning actions and existing fact/location references.
+tags: [starter, npc, goals]

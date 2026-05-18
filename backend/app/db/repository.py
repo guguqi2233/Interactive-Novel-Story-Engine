@@ -652,6 +652,7 @@ class SQLiteSaveRepository:
             SELECT memory_id, memory_json, created_turn
             FROM stored_memories
             WHERE save_id = ?
+            ORDER BY created_turn DESC, memory_id ASC
             """,
             (save_id,),
         ).fetchall():
