@@ -164,6 +164,19 @@ from app.engine.content.authoring_workflows import (
     AuthoringWorkflowPresetList,
     list_authoring_workflow_presets,
 )
+from app.engine.content.batch_character_card_import import (
+    BatchCharacterCardImportReport,
+    BatchCharacterCardImportRequest,
+    apply_batch_character_card_import_draft,
+    export_batch_character_card_pack,
+    preview_batch_character_card_import,
+)
+from app.engine.content.batch_lorebook_classification import (
+    BatchLorebookClassificationReport,
+    BatchLorebookClassificationRequest,
+    apply_batch_lorebook_classification_draft,
+    preview_batch_lorebook_classification,
+)
 from app.engine.content.authoring_project_dashboard import (
     AuthoringProjectSummary,
     build_authoring_project_summary,
@@ -177,6 +190,15 @@ from app.engine.content.character_pack_builder import (
     apply_character_pack_import,
     export_character_pack,
     import_character_pack_dry_run,
+)
+from app.engine.content.import_export_profiles import (
+    ImportExportProfileCatalog,
+    apply_export_profile_to_character_pack,
+    get_export_profile,
+    get_import_export_profile_catalog,
+    get_import_profile,
+    validate_character_pack_import_profile,
+    character_pack_export_request_for_profile,
 )
 from app.engine.content.content_diff_review import (
     ContentDiffReview,
@@ -208,6 +230,8 @@ from app.engine.content.local_content_library import (
     LocalContentLibraryItem,
     LocalContentLibraryService,
     LocalContentLibraryDuplicateRequest,
+    LocalContentLibrarySearchRequest,
+    LocalContentLibraryBatchValidateRequest,
     LocalContentType,
 )
 from app.engine.content.item_economy_authoring import (
@@ -280,6 +304,80 @@ from app.engine.content.npc_simulation_presets import (
     list_npc_simulation_presets,
     preview_npc_simulation_preset,
 )
+from app.engine.content.npc_pack_generator import (
+    NPCPackGeneratorApplyRequest,
+    NPCPackGeneratorDraft,
+    NPCPackGeneratorError,
+    NPCPackGeneratorExportRequest,
+    NPCPackGeneratorPreview,
+    apply_npc_pack_generator,
+    export_npc_pack_generator,
+    preview_npc_pack_generator,
+    validate_npc_pack_generator,
+)
+from app.engine.content.quest_pack_generator import (
+    QuestPackGeneratorApplyRequest,
+    QuestPackGeneratorDraft,
+    QuestPackGeneratorError,
+    QuestPackGeneratorPreview,
+    apply_quest_pack_generator,
+    preview_quest_pack_generator,
+    validate_quest_pack_generator,
+)
+from app.engine.content.location_cluster_templates import (
+    LocationClusterPreview,
+    LocationClusterPreviewRequest,
+    LocationClusterTemplateError,
+    LocationClusterTemplateList,
+    apply_location_cluster_draft,
+    list_location_cluster_templates,
+    preview_location_cluster,
+)
+from app.engine.content.mystery_templates import (
+    MysteryTemplateError,
+    MysteryTemplateList,
+    MysteryTemplatePreview,
+    MysteryTemplatePreviewRequest,
+    apply_mystery_template,
+    list_mystery_templates,
+    preview_mystery_template,
+)
+from app.engine.content.faction_templates import (
+    FactionTemplateError,
+    FactionTemplateList,
+    FactionTemplatePreview,
+    FactionTemplatePreviewRequest,
+    apply_faction_template,
+    list_faction_templates,
+    preview_faction_template,
+)
+from app.engine.content.content_batch_validator import (
+    ContentBatchValidationReport,
+    ContentBatchValidationRequest,
+    validate_content_batch,
+)
+from app.engine.content.script_package_builder import (
+    ScriptPackageBuildReport,
+    ScriptPackageBuildRequest,
+    ScriptPackageBuilderError,
+    build_script_package,
+    build_script_package_dry_run,
+    export_script_package,
+    validate_script_package,
+)
+from app.engine.content.campaign_starter_kit import (
+    CampaignStarterKitBuildRequest,
+    CampaignStarterKitDraft,
+    CampaignStarterKitError,
+    CampaignStarterKitPreview,
+    build_campaign_starter_kit,
+    export_campaign_starter_script_package,
+    preview_campaign_starter_kit,
+)
+from app.engine.content.production_pipeline_dashboard import (
+    ProductionPipelineSummary,
+    build_production_pipeline_summary,
+)
 from app.engine.content.scenario_templates import (
     RenderedTemplate,
     ScenarioTemplate,
@@ -295,6 +393,13 @@ from app.engine.content.template_wizard import (
     apply_template_wizard_draft,
     preview_template_wizard_draft,
     validate_template_wizard_draft,
+)
+from app.engine.content.world_pack_wizard import (
+    WorldPackWizard,
+    WorldPackWizardApplyRequest,
+    WorldPackWizardDraft,
+    WorldPackWizardError,
+    WorldPackWizardPreview,
 )
 from app.engine.content.quest_graph import (
     QuestGraph,
@@ -360,10 +465,20 @@ from app.quality.content_coverage import (
     ContentCoverageRequest,
     analyze_content_coverage,
 )
+from app.quality.content_coverage_planner import (
+    ContentCoveragePlan,
+    ContentCoveragePlanRequest,
+    build_content_coverage_plan,
+)
 from app.quality.benchmarks import (
     BenchmarkReport,
     BenchmarkRunRequest,
     run_benchmark_suite,
+)
+from app.quality.batch_quality_gate import (
+    BatchQualityGateReport,
+    BatchQualityGateRequest,
+    run_batch_quality_gate,
 )
 from app.quality.branch_diff_regression import (
     BranchRegressionReport,
@@ -965,6 +1080,15 @@ def get_authoring_project_summary(
         branch_service=get_world_branch_service(),
         library_service=get_local_content_library_service(),
         quality_gate_results=get_quality_gate_results(),
+    )
+
+
+def get_production_pipeline_summary(world_id: str | None = None) -> ProductionPipelineSummary:
+    return build_production_pipeline_summary(
+        worlds_root=get_worlds_root(),
+        library_service=get_local_content_library_service(),
+        quality_gate_results=get_quality_gate_results(),
+        active_world=world_id,
     )
 
 
@@ -1958,6 +2082,60 @@ def run_content_coverage(
     return _quality_api_payload(report)
 
 
+@app.post("/production/content-coverage-plan", response_model=ContentCoveragePlan)
+def plan_production_content_coverage(request: ContentCoveragePlanRequest) -> ContentCoveragePlan:
+    require_authoring_api()
+    try:
+        return build_content_coverage_plan(request, worlds_root=get_worlds_root())
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=f"World pack not found: {request.target_world}") from exc
+
+
+@app.post("/production/characters/batch-import/preview", response_model=BatchCharacterCardImportReport)
+def preview_production_batch_character_cards(request: BatchCharacterCardImportRequest) -> BatchCharacterCardImportReport:
+    require_authoring_api()
+    try:
+        return preview_batch_character_card_import(request)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/production/characters/batch-import/apply-draft", response_model=BatchCharacterCardImportReport)
+def apply_production_batch_character_cards_draft(request: BatchCharacterCardImportRequest) -> BatchCharacterCardImportReport:
+    require_authoring_api()
+    try:
+        return apply_batch_character_card_import_draft(request)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/production/characters/batch-import/export-pack", response_model=CharacterPack)
+def export_production_batch_character_cards_pack(request: BatchCharacterCardImportRequest) -> CharacterPack:
+    require_authoring_api()
+    try:
+        return export_batch_character_card_pack(request)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/production/lorebooks/batch-classify/preview", response_model=BatchLorebookClassificationReport)
+def preview_production_batch_lorebooks(request: BatchLorebookClassificationRequest) -> BatchLorebookClassificationReport:
+    require_authoring_api()
+    try:
+        return preview_batch_lorebook_classification(request)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/production/lorebooks/batch-classify/apply-draft", response_model=BatchLorebookClassificationReport)
+def apply_production_batch_lorebooks_draft(request: BatchLorebookClassificationRequest) -> BatchLorebookClassificationReport:
+    require_authoring_api()
+    try:
+        return apply_batch_lorebook_classification_draft(request, get_authoring_service())
+    except (AuthoringError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.post("/quality/worlds/{world_id}/branch-regression/run", response_model=dict[str, Any])
 def run_branch_regression(
     world_id: str,
@@ -2527,16 +2705,30 @@ def save_authoring_group_rp_scenes(
 def export_authoring_character_pack(request: CharacterPackExportRequest) -> CharacterPack:
     require_authoring_api()
     try:
-        return export_character_pack(request, get_authoring_service())
+        profile = get_export_profile(request.export_profile_id or "safe")
+        profiled_request = character_pack_export_request_for_profile(request, profile)
+        pack = export_character_pack(profiled_request, get_authoring_service())
+        return apply_export_profile_to_character_pack(pack, profile)
     except (AuthoringError, CharacterPackError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/authoring/import-export-profiles", response_model=ImportExportProfileCatalog)
+def list_authoring_import_export_profiles() -> ImportExportProfileCatalog:
+    require_authoring_api()
+    return get_import_export_profile_catalog()
 
 
 @app.post("/authoring/character-packs/import-dry-run", response_model=CharacterPackImportPreview)
 def dry_run_authoring_character_pack_import(request: CharacterPackImportRequest) -> CharacterPackImportPreview:
     require_authoring_api()
     try:
-        return import_character_pack_dry_run(request, get_authoring_service())
+        profile_report = validate_character_pack_import_profile(request, get_import_profile(request.import_profile_id or "safe"))
+        preview = import_character_pack_dry_run(request, get_authoring_service())
+        preview.validation.errors = profile_report.errors + preview.validation.errors
+        preview.validation.warnings = profile_report.warnings + preview.validation.warnings
+        preview.validation.suggestions = profile_report.suggestions + preview.validation.suggestions
+        return preview
     except (AuthoringError, CharacterPackError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -2545,6 +2737,15 @@ def dry_run_authoring_character_pack_import(request: CharacterPackImportRequest)
 def apply_authoring_character_pack_import(request: CharacterPackImportRequest) -> CharacterPackImportPreview:
     require_authoring_api()
     try:
+        profile_report = validate_character_pack_import_profile(request, get_import_profile(request.import_profile_id or "safe"))
+        if profile_report.errors:
+            return CharacterPackImportPreview(
+                world_id=request.world_id,
+                pack_id=request.pack.manifest.pack_id,
+                validation=profile_report,
+                confirmation_required=False,
+                applied=False,
+            )
         return apply_character_pack_import(request, get_authoring_service())
     except (AuthoringError, CharacterPackError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -3032,6 +3233,24 @@ def read_authoring_project_summary(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@app.get("/production/pipeline-summary", response_model=ProductionPipelineSummary)
+def read_production_pipeline_summary(world_id: str | None = None) -> ProductionPipelineSummary:
+    require_authoring_api()
+    try:
+        return get_production_pipeline_summary(world_id=world_id)
+    except (AuthoringError, ImportExportError, LocalContentLibraryError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/production/batch-quality-gate", response_model=BatchQualityGateReport)
+def run_production_batch_quality_gate(request: BatchQualityGateRequest) -> BatchQualityGateReport:
+    require_authoring_api()
+    try:
+        return run_batch_quality_gate(request)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.get("/authoring/worlds/{world_id}/references", response_model=ReferenceIndex)
 def get_authoring_reference_index(world_id: str) -> ReferenceIndex:
     require_authoring_api()
@@ -3401,6 +3620,271 @@ def apply_authoring_template_wizard(request: TemplateWizardApplyRequest) -> Temp
     try:
         return apply_template_wizard_draft(request, get_authoring_service())
     except (AuthoringError, TemplateWizardError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def get_world_pack_wizard() -> WorldPackWizard:
+    return WorldPackWizard(get_worlds_root())
+
+
+@app.post("/authoring/production/world-pack/create-draft", response_model=WorldPackWizardDraft)
+def create_authoring_world_pack_wizard_draft(draft: WorldPackWizardDraft) -> WorldPackWizardDraft:
+    require_authoring_api()
+    try:
+        return get_world_pack_wizard().create_draft(**draft.model_dump())
+    except (WorldPackWizardError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/authoring/production/world-pack/preview", response_model=WorldPackWizardPreview)
+def preview_authoring_world_pack_wizard(draft: WorldPackWizardDraft) -> WorldPackWizardPreview:
+    require_authoring_api()
+    try:
+        return get_world_pack_wizard().preview_files(draft)
+    except (WorldPackWizardError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/authoring/production/world-pack/validate", response_model=WorldPackWizardPreview)
+def validate_authoring_world_pack_wizard(draft: WorldPackWizardDraft) -> WorldPackWizardPreview:
+    require_authoring_api()
+    try:
+        return get_world_pack_wizard().validate_draft(draft)
+    except (WorldPackWizardError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/authoring/production/world-pack/apply", response_model=WorldPackWizardPreview)
+def apply_authoring_world_pack_wizard(request: WorldPackWizardApplyRequest) -> WorldPackWizardPreview:
+    require_authoring_api()
+    try:
+        return get_world_pack_wizard().apply_to_worlds_directory(request)
+    except (WorldPackWizardError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/production/npc-pack/preview", response_model=NPCPackGeneratorPreview)
+def preview_production_npc_pack(draft: NPCPackGeneratorDraft) -> NPCPackGeneratorPreview:
+    require_authoring_api()
+    try:
+        return preview_npc_pack_generator(draft, get_authoring_service())
+    except (AuthoringError, NPCPackGeneratorError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/production/npc-pack/validate", response_model=NPCPackGeneratorPreview)
+def validate_production_npc_pack(draft: NPCPackGeneratorDraft) -> NPCPackGeneratorPreview:
+    require_authoring_api()
+    try:
+        return validate_npc_pack_generator(draft, get_authoring_service())
+    except (AuthoringError, NPCPackGeneratorError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/production/npc-pack/apply", response_model=NPCPackGeneratorPreview)
+def apply_production_npc_pack(request: NPCPackGeneratorApplyRequest) -> NPCPackGeneratorPreview:
+    require_authoring_api()
+    try:
+        return apply_npc_pack_generator(request, get_authoring_service())
+    except (AuthoringError, NPCPackGeneratorError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/production/npc-pack/export", response_model=NPCPackGeneratorPreview)
+def export_production_npc_pack(request: NPCPackGeneratorExportRequest) -> NPCPackGeneratorPreview:
+    require_authoring_api()
+    try:
+        return export_npc_pack_generator(request, get_authoring_service())
+    except (AuthoringError, NPCPackGeneratorError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/production/quest-pack/preview", response_model=QuestPackGeneratorPreview)
+def preview_production_quest_pack(draft: QuestPackGeneratorDraft) -> QuestPackGeneratorPreview:
+    require_authoring_api()
+    try:
+        return preview_quest_pack_generator(draft, get_authoring_service())
+    except (AuthoringError, QuestPackGeneratorError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/production/quest-pack/validate", response_model=QuestPackGeneratorPreview)
+def validate_production_quest_pack(draft: QuestPackGeneratorDraft) -> QuestPackGeneratorPreview:
+    require_authoring_api()
+    try:
+        return validate_quest_pack_generator(draft, get_authoring_service())
+    except (AuthoringError, QuestPackGeneratorError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/production/quest-pack/apply", response_model=QuestPackGeneratorPreview)
+def apply_production_quest_pack(request: QuestPackGeneratorApplyRequest) -> QuestPackGeneratorPreview:
+    require_authoring_api()
+    try:
+        return apply_quest_pack_generator(request, get_authoring_service())
+    except (AuthoringError, QuestPackGeneratorError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/production/location-clusters", response_model=LocationClusterTemplateList)
+def list_production_location_clusters() -> LocationClusterTemplateList:
+    require_authoring_api()
+    return LocationClusterTemplateList(templates=list_location_cluster_templates())
+
+
+@app.post("/production/location-clusters/{template_id}/preview", response_model=LocationClusterPreview)
+def preview_production_location_cluster(
+    template_id: str,
+    request: LocationClusterPreviewRequest,
+) -> LocationClusterPreview:
+    require_authoring_api()
+    try:
+        return preview_location_cluster(template_id, request, get_authoring_service())
+    except (AuthoringError, LocationClusterTemplateError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/production/location-clusters/{template_id}/apply-draft", response_model=LocationClusterPreview)
+def apply_production_location_cluster(
+    template_id: str,
+    request: LocationClusterPreviewRequest,
+) -> LocationClusterPreview:
+    require_authoring_api()
+    try:
+        return apply_location_cluster_draft(template_id, request, get_authoring_service())
+    except (AuthoringError, LocationClusterTemplateError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/production/mystery-templates", response_model=MysteryTemplateList)
+def list_production_mystery_templates() -> MysteryTemplateList:
+    require_authoring_api()
+    return MysteryTemplateList(templates=list_mystery_templates())
+
+
+@app.post("/production/mystery-templates/{template_id}/preview", response_model=MysteryTemplatePreview)
+def preview_production_mystery_template(
+    template_id: str,
+    request: MysteryTemplatePreviewRequest,
+) -> MysteryTemplatePreview:
+    require_authoring_api()
+    try:
+        return preview_mystery_template(template_id, request, get_authoring_service())
+    except (AuthoringError, MysteryTemplateError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/production/mystery-templates/{template_id}/apply-draft", response_model=MysteryTemplatePreview)
+def apply_production_mystery_template(
+    template_id: str,
+    request: MysteryTemplatePreviewRequest,
+) -> MysteryTemplatePreview:
+    require_authoring_api()
+    try:
+        return apply_mystery_template(template_id, request, get_authoring_service())
+    except (AuthoringError, MysteryTemplateError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/production/faction-templates", response_model=FactionTemplateList)
+def list_production_faction_templates() -> FactionTemplateList:
+    require_authoring_api()
+    return FactionTemplateList(templates=list_faction_templates())
+
+
+@app.post("/production/faction-templates/{template_id}/preview", response_model=FactionTemplatePreview)
+def preview_production_faction_template(
+    template_id: str,
+    request: FactionTemplatePreviewRequest,
+) -> FactionTemplatePreview:
+    require_authoring_api()
+    try:
+        return preview_faction_template(template_id, request, get_authoring_service())
+    except (AuthoringError, FactionTemplateError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/production/faction-templates/{template_id}/apply-draft", response_model=FactionTemplatePreview)
+def apply_production_faction_template(
+    template_id: str,
+    request: FactionTemplatePreviewRequest,
+) -> FactionTemplatePreview:
+    require_authoring_api()
+    try:
+        return apply_faction_template(template_id, request, get_authoring_service())
+    except (AuthoringError, FactionTemplateError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/production/batch-validate", response_model=ContentBatchValidationReport)
+def batch_validate_production_content(request: ContentBatchValidationRequest) -> ContentBatchValidationReport:
+    require_authoring_api()
+    try:
+        return validate_content_batch(request)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/production/script-packages/build-dry-run", response_model=ScriptPackageBuildReport)
+def dry_run_production_script_package(request: ScriptPackageBuildRequest) -> ScriptPackageBuildReport:
+    require_authoring_api()
+    try:
+        return build_script_package_dry_run(request)
+    except (ScriptPackageBuilderError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/production/script-packages/build", response_model=ScriptPackageBuildReport)
+def build_production_script_package(request: ScriptPackageBuildRequest) -> ScriptPackageBuildReport:
+    require_authoring_api()
+    try:
+        return build_script_package(request)
+    except (ScriptPackageBuilderError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/production/script-packages/validate", response_model=ScriptPackageBuildReport)
+def validate_production_script_package(request: ScriptPackageBuildRequest) -> ScriptPackageBuildReport:
+    require_authoring_api()
+    try:
+        return validate_script_package(request)
+    except (ScriptPackageBuilderError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/production/script-packages/export", response_model=ScriptPackageBuildReport)
+def export_production_script_package(request: ScriptPackageBuildRequest) -> ScriptPackageBuildReport:
+    require_authoring_api()
+    try:
+        return export_script_package(request)
+    except (ScriptPackageBuilderError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/production/campaign-starter/preview", response_model=CampaignStarterKitPreview)
+def preview_production_campaign_starter(draft: CampaignStarterKitDraft) -> CampaignStarterKitPreview:
+    require_authoring_api()
+    try:
+        return preview_campaign_starter_kit(draft, worlds_root=str(get_worlds_root()))
+    except (CampaignStarterKitError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/production/campaign-starter/build", response_model=CampaignStarterKitPreview)
+def build_production_campaign_starter(request: CampaignStarterKitBuildRequest) -> CampaignStarterKitPreview:
+    require_authoring_api()
+    try:
+        return build_campaign_starter_kit(request, worlds_root=str(get_worlds_root()))
+    except (CampaignStarterKitError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/production/campaign-starter/export-script", response_model=ScriptPackageBuildReport)
+def export_production_campaign_starter_script(draft: CampaignStarterKitDraft) -> ScriptPackageBuildReport:
+    require_authoring_api()
+    try:
+        return export_campaign_starter_script_package(draft)
+    except (CampaignStarterKitError, ScriptPackageBuilderError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
@@ -4037,6 +4521,9 @@ def export_authoring_world(world_id: str) -> ArchiveExportResponse:
 def import_authoring_world(request: ArchiveImportRequest) -> ArchiveImportResponse:
     require_authoring_api()
     try:
+        profile = get_import_profile(request.import_profile_id or "safe")
+        if request.import_profile_id and request.overwrite and not profile.allow_overwrite:
+            raise ImportExportError("Selected import profile does not allow overwrite.")
         result = get_import_export_service().import_world(request.archive_base64, overwrite=request.overwrite)
     except ImportExportError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -4057,6 +4544,9 @@ def export_authoring_mod(mod_id: str) -> ArchiveExportResponse:
 def import_authoring_mod(request: ArchiveImportRequest) -> ArchiveImportResponse:
     require_authoring_api()
     try:
+        profile = get_import_profile(request.import_profile_id or "safe")
+        if request.import_profile_id and request.overwrite and not profile.allow_overwrite:
+            raise ImportExportError("Selected import profile does not allow overwrite.")
         result = get_import_export_service().import_mod(request.archive_base64, overwrite=request.overwrite)
     except ImportExportError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -4094,11 +4584,28 @@ def export_authoring_scenario_suite(suite_id: str = "local_scenarios") -> Archiv
 
 
 @app.get("/library/items", response_model=LocalContentLibrary)
-def list_library_items(content_type: str | None = None) -> LocalContentLibrary:
+def list_library_items(content_type: str | None = None, query: str = "", tag: str | None = None) -> LocalContentLibrary:
     require_authoring_api()
     try:
         parsed_type = LocalContentType(content_type) if content_type else None
+        if query or tag:
+            return get_local_content_library_service().search_items(
+                LocalContentLibrarySearchRequest(
+                    query=query,
+                    content_types=[parsed_type] if parsed_type else [],
+                    tags=[tag] if tag else [],
+                )
+            )
         return get_local_content_library_service().list_items(parsed_type)
+    except (ImportExportError, LocalContentLibraryError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/library/items/search", response_model=LocalContentLibrary)
+def search_library_items(request: LocalContentLibrarySearchRequest) -> LocalContentLibrary:
+    require_authoring_api()
+    try:
+        return get_local_content_library_service().search_items(request)
     except (ImportExportError, LocalContentLibraryError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -4117,6 +4624,15 @@ def validate_library_item(item_id: str) -> ValidationReport:
     require_authoring_api()
     try:
         return get_local_content_library_service().validate_item(item_id)
+    except (ImportExportError, LocalContentLibraryError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/library/items/batch-validate")
+def batch_validate_library_items(request: LocalContentLibraryBatchValidateRequest) -> dict[str, Any]:
+    require_authoring_api()
+    try:
+        return get_local_content_library_service().batch_validate(request).model_dump(mode="json")
     except (ImportExportError, LocalContentLibraryError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -4164,6 +4680,9 @@ def dry_run_authoring_package_import(request: ArchiveImportRequest) -> PackageDr
 def apply_authoring_package_import(request: ArchiveImportRequest) -> ArchiveImportResponse:
     require_authoring_api()
     try:
+        profile = get_import_profile(request.import_profile_id or "safe")
+        if request.import_profile_id and request.overwrite and not profile.allow_overwrite:
+            raise ImportExportError("Selected import profile does not allow overwrite.")
         result = get_import_export_service().apply_import_package(
             request.archive_base64,
             overwrite=request.overwrite,
@@ -4178,6 +4697,9 @@ def apply_authoring_package_import(request: ArchiveImportRequest) -> ArchiveImpo
 def import_authoring_save(request: ArchiveImportRequest) -> ArchiveImportResponse:
     require_authoring_api()
     try:
+        profile = get_import_profile(request.import_profile_id or "safe")
+        if request.import_profile_id and request.overwrite and not profile.allow_overwrite:
+            raise ImportExportError("Selected import profile does not allow overwrite.")
         result = get_import_export_service().import_save(request.archive_base64, overwrite=request.overwrite)
     except (ImportExportError, SaveRepositoryError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

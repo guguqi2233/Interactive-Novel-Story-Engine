@@ -1179,6 +1179,229 @@ coverage report categories.
 - Memory records are context aids, not content pack facts.
 - Mods are data only and cannot execute code.
 
+## v1.4 Content Production Schemas
+
+v1.4 production schemas describe local drafts, templates, packages, and
+profiles. They are not runtime `GameState` and do not become player-visible
+content until explicitly saved into a content pack, loaded by the world engine,
+and exposed by normal visibility rules.
+
+### WorldPackWizardDraft
+
+```yaml
+world_id: demo_world
+name: Demo World
+genre: fantasy
+tone: grounded
+description: Local draft world.
+starting_location: start
+location_seed_count: 3
+npc_seed_count: 2
+quest_seed_count: 1
+enabled_systems:
+  - quests
+  - roleplay
+  - npc_simulation
+default_prompt_profile: default_safe
+default_quality_profile: standard
+llm_assisted: false
+current_step: basic_info
+```
+
+The wizard previews generated files and applies only after explicit
+confirmation and validation gate approval.
+
+### NPCPackGeneratorDraft
+
+```yaml
+target_world_id: mist_valley
+pack_id: villagers
+theme: local ensemble
+faction_ids: []
+location_ids: []
+npc_count: 3
+archetypes:
+  - guide
+  - witness
+  - rival
+rp_style: grounded
+simulation_preset_ids: []
+relationship_density: 0.25
+hidden_secret_ratio: 0.0
+llm_assisted: false
+```
+
+Generated content includes NPC candidates, RP profiles, voice profiles,
+relationship candidates, goal candidates, and schedule candidates. Hidden
+secrets are marked hidden.
+
+### QuestPackGeneratorDraft
+
+```yaml
+target_world_id: mist_valley
+pack_id: starter_quests
+theme: local mystery
+quest_count: 1
+involved_npcs: []
+involved_locations: []
+involved_factions: []
+required_facts: []
+mystery_mode: false
+failure_paths_enabled: false
+reward_policy: story
+llm_assisted: false
+```
+
+Generated content includes quest candidates, fact candidates, optional
+rumor/consequence candidates, scenario regression candidates, and a quest graph
+draft.
+
+### LocationClusterTemplate
+
+```yaml
+id: village_cluster
+name: Village Cluster
+cluster_type: village
+required_variables:
+  - prefix
+location_nodes: []
+exit_edges: []
+optional_hidden_edges: []
+default_visual_layout: grid
+tags:
+  - starter
+```
+
+Location clusters render to `MapVisualGraph`. Hidden edges remain hidden.
+
+### MysteryTemplate
+
+```yaml
+id: missing_heirloom
+name: Missing Heirloom
+mystery_type: theft
+truth_fact:
+  id: truth_missing_heirloom
+  text: Hidden truth text.
+  visibility: hidden
+suspects: []
+clues: []
+red_herrings: []
+witness_statements: []
+reveal_conditions: []
+failure_conditions: []
+required_locations: []
+required_npcs: []
+```
+
+`truth_fact` must be hidden. Normal reports must not reveal hidden truth text.
+
+### FactionTemplate
+
+```yaml
+id: town_guard
+name: Town Guard
+faction_type: civic_guard
+default_reputation: 0
+relations: []
+duties: []
+ranks: []
+typical_npc_archetypes: []
+rumor_policies: {}
+crime_policies: {}
+quest_hooks: []
+hidden: false
+tags: []
+```
+
+Faction templates generate faction, relation, duty, relationship, and quest
+hook drafts. Hidden factions are excluded from player-visible graphs until
+revealed.
+
+### ExportProfile / ImportProfile
+
+Safe export profile shape:
+
+```yaml
+profile_id: safe
+name: Safe Export
+kind: safe
+include_world: true
+include_characters: true
+include_templates: false
+include_scenarios: false
+include_prompt_profiles: false
+include_hidden_authoring_data: false
+redact_hidden_text: true
+include_quality_reports: false
+include_test_fixtures: false
+forbids_api_keys: true
+```
+
+Safe import profile shape:
+
+```yaml
+profile_id: safe
+name: Safe Import
+kind: safe
+allow_overwrite: false
+allow_hidden_authoring_data: false
+require_validation: true
+require_quality_gate: true
+require_migration_check: true
+reject_executables: true
+reject_unknown_schema: true
+forbids_api_keys: true
+```
+
+Profiles cannot allow API keys. Imports must require validation and reject
+executables.
+
+### ScriptPackageManifest
+
+```yaml
+package_id: starter_package
+name: Starter Package
+version: "1.0"
+target_engine_version: current
+target_schema_version: current
+included_worlds: []
+included_quests: []
+included_characters: []
+included_templates: []
+included_scenarios: []
+included_quality_profile:
+dependencies: []
+conflicts: []
+checksums: {}
+normal_manifest: true
+```
+
+Script packages are data packages. They must not include executable files,
+`.env`, API keys, database files, logs, or hidden fact text in normal manifests.
+
+### CampaignStarterKitDraft
+
+```yaml
+campaign_id: starter
+name: Starter Campaign
+genre: fantasy
+tone: grounded
+starting_region: start
+core_conflict: local mystery
+npc_count: 3
+questline_count: 1
+faction_count: 2
+mystery_enabled: true
+RP_focus_level: medium
+target_playtime_hours: 2
+llm_assisted: false
+```
+
+Campaign starter kits compose world, NPC, quest, faction, optional mystery,
+scenario, quality, and script package drafts. Preview does not write disk;
+build requires validation and quality dry-run.
+
 ## Current Limits
 
 - The v1.0 authoring UI has multiple visual editors and quality dashboards, but

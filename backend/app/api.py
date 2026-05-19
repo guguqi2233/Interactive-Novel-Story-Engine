@@ -1544,6 +1544,7 @@ class ArchiveImportRequest(BaseModel):
     archive_base64: str
     overwrite: bool = False
     confirm_apply: bool = False
+    import_profile_id: str | None = None
 
 
 class ArchiveImportResponse(BaseModel):

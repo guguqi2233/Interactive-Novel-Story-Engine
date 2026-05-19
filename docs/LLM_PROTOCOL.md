@@ -5,11 +5,13 @@
 The LLM protocol defines how this project talks to model providers without letting model output become trusted world state. All model calls pass through `LLMProvider`, and structured outputs are validated with Pydantic schemas.
 
 The LLM is a parser, narrator, summarizer, roleplay expression layer, and
-optional authoring draft assistant. It is not the world judge. In v1.0 this
-boundary is frozen as a stable local studio contract, v1.1 extends it to RP
-dialogue, and v1.2 extends local visual authoring without expanding LLM
-authority: model output can affect language-facing fields only after schema
-validation and consistency checks, and cannot directly modify `GameState`.
+optional authoring/production draft assistant. It is not the world judge. In
+v1.0 this boundary is frozen as a stable local studio contract, v1.1 extends it
+to RP dialogue, v1.2 extends local visual authoring, v1.3 adds deterministic
+NPC simulation, and v1.4 adds local content production without expanding LLM
+authority: model output can affect language-facing draft fields only after
+schema validation and consistency checks, and cannot directly modify
+`GameState`.
 
 ## Provider Boundary
 
@@ -681,6 +683,73 @@ NPC's hidden knowledge cannot be copied into another NPC's prompt.
 Prompt profiles, RP profiles, scene moods, social disposition, relationship
 tone, and simulation presets are expression/configuration inputs only. They
 cannot expand LLM permissions or make model text authoritative.
+
+## v1.4 Content Production LLM Boundary
+
+v1.4 Content Production Pipeline modules are deterministic local draft and
+package tools by default. They do not call a real LLM to create worlds, NPCs,
+quests, mysteries, factions, script packages, campaign starters, imports,
+batch reports, coverage plans, or quality gate decisions.
+
+The following v1.4 modules are rule/service paths and must not call
+`LLMProvider`, concrete provider classes, `generate_text`, or `generate_json`
+in normal operation:
+
+- Content Production Boundary policy
+- World Pack Wizard
+- NPC Pack Generator
+- Quest Pack Generator
+- Location Cluster Templates
+- Mystery Template System
+- Faction Template System
+- Content Batch Validator
+- Content Coverage Planner
+- Export / Import Profiles
+- Local Content Library Pro
+- Batch Character Card Import
+- Batch Lorebook Classification
+- Script Package Builder
+- Campaign Starter Kit Builder
+- Production Pipeline Dashboard
+- Content Production CLI
+- Batch Quality Gate
+
+Some draft schemas expose `llm_assisted` as reserved metadata for a future
+draft helper. In the current implementation it does not call a real provider.
+If a future LLM-assisted generation path is added, it must:
+
+- use `create_llm_provider(settings)` / `LLMProvider`
+- default to `mock`, `local_stub`, or fake providers in tests
+- produce `production_draft`, `generated_content_candidate`, or package draft
+  objects only
+- validate output through Pydantic schemas
+- classify hidden/public fields before preview
+- run Authoring Validation Gate before save/apply/import/export/build
+- run Quality Gate or Batch Quality Gate for release/package operations
+- never write active `GameState`
+- never apply `StateDelta`
+- never record runtime `Event` as a consequence of generation
+- never bypass visibility, NPC knowledge, RP private-field, or hidden-content
+  redaction rules
+
+Content generation output is not authoritative content until the user reviews
+it, validation passes, and explicit save/apply/build writes content-pack or
+package files. Even after content is saved, it affects runtime only when a
+world pack is loaded and normal rules expose it.
+
+Batch character card import and batch lorebook classification treat external
+prompt text as untrusted data. Imported prompt instructions cannot override
+system prompts, visibility, `StateDelta`, `EventLog`, validation gates, or
+package safety. Unsafe entries are flagged for review, and hidden facts remain
+hidden fact candidates rather than player-facing prompt content.
+
+Narrator and dialogue prompt boundaries are unchanged in v1.4:
+
+- Narrator receives visible facts and narrator-safe memory only.
+- NPC dialogue receives NPC-known facts and NPC-safe memory only.
+- RP prompt profiles can tune expression but cannot expand authority.
+- Production debug data, package manifests, batch reports, hidden truth facts,
+  unsafe import text, and dry-run reports are not narrator inputs.
 
 ## Output Validation
 

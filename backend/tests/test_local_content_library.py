@@ -41,6 +41,42 @@ def test_library_list_works(tmp_path: Path) -> None:
     assert "C:\\" not in response.text
 
 
+def test_library_search_and_filter_works(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+
+    response = client.post(
+        "/library/items/search",
+        json={"query": "mist", "content_types": ["world"], "tags": ["world"]},
+    )
+
+    assert response.status_code == 200
+    items = response.json()["items"]
+    assert len(items) == 1
+    assert items[0]["id"] == "mist_valley"
+    assert items[0]["content_type"] == "world"
+
+
+def test_library_batch_validate_works(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+
+    response = client.post("/library/items/batch-validate", json={"item_ids": ["mist_valley"], "content_types": ["world"]})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 1
+    assert payload["passed"] == 1
+
+
+def test_library_dependencies_display_correctly(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+
+    response = client.get("/library/items")
+
+    mod = next(item for item in response.json()["items"] if item["id"] == "mist_mod")
+    assert mod["dependencies"] == ["base_mod"]
+    assert "C:\\" not in response.text
+
+
 def test_invalid_package_is_identified(tmp_path: Path) -> None:
     client = _client(tmp_path)
     archive = _archive_b64(
@@ -138,6 +174,8 @@ name: Mist Mod
 version: 1.0.0
 engine_version_min: 0.8.0
 content_schema_version: '1.0'
+dependencies:
+  - base_mod
 entry_worlds:
   - mist_valley
 content_paths:

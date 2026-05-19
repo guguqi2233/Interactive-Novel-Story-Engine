@@ -39,7 +39,9 @@ All canonical changes must go through `StateDelta`.
 
 All handled player actions, system ticks, NPC planning ticks, and system consequences must be recorded as `Event` entries.
 
-Authoring APIs edit content-pack YAML, not active `GameState`. Procedural quest generation produces drafts only.
+Authoring APIs edit content-pack YAML, not active `GameState`. Procedural
+quest generation and v1.4 content production generate drafts, candidates,
+packages, previews, and reports only.
 
 ## Current v1.0 Gameplay Loop
 
@@ -333,6 +335,51 @@ Debug simulation APIs are local tools behind `ENABLE_DEBUG_API`. Debug traces,
 hidden fact ids, intent queues, plans, and behavior timelines must not enter
 player APIs or narrator prompts.
 
+## v1.4 Content Production Pipeline Scope
+
+v1.4 adds local content-production tooling on top of the existing world engine,
+RP layer, visual authoring, and NPC simulation systems. The goal is to help a
+local creator produce, review, validate, package, and export structured content
+at a larger batch scale without changing runtime authority.
+
+Included:
+
+- Content Production Boundary Contract and policy checks.
+- World Pack Wizard for draft world-pack generation.
+- NPC Pack Generator for NPC/RP/voice/relationship/goal/schedule candidates.
+- Quest Pack Generator with quest graph and scenario regression candidates.
+- Location Cluster Templates for reusable map fragments.
+- Mystery Template System for hidden-truth clue structures.
+- Faction Template System for faction/relation/duty/quest-hook drafts.
+- Content Batch Validator.
+- Content Coverage Planner.
+- Export / Import Profiles.
+- Local Content Library Pro.
+- Batch Character Card Import.
+- Batch Lorebook Classification.
+- Script Package Builder.
+- Campaign Starter Kit Builder.
+- Production Pipeline Dashboard.
+- Content Production CLI.
+- Batch Quality Gate.
+- v1.4 integration tests and LLM/visibility/security audit docs.
+
+Production drafts are not active runtime state. Preview and validate do not
+write disk. Apply/build operations require explicit confirmation and validation
+gate approval, and release/package operations use the relevant quality gate.
+Production tools write content-pack or package files only after those gates
+pass; they do not modify active sessions or active `GameState`.
+
+Generated content is schema-checked structure, not trusted world truth. Hidden
+facts, NPC secrets, private RP fields, unsafe imported prompts, and production
+debug data must remain out of normal reports, player-visible state, narrator
+prompts, and player UI unless revealed through normal rule/visibility flows.
+
+v1.4 does not add LLM authority. Generators default to deterministic local
+logic. Reserved `llm_assisted` fields are metadata only in the current
+implementation and must remain draft/candidate-only if a future assisted path
+is added.
+
 ## RP And World Engine Boundary
 
 The RP layer is above the world engine. It reads safe context from structured
@@ -622,6 +669,28 @@ event logging, provider abstraction, or content-only mod restrictions.
 - Debugger frontend editing of NPC runtime state.
 - Simulation presets that directly modify active NPC state or grant unknown
   facts.
+
+## Not In v1.4
+
+- LLM world judge or LLM-decided canonical content acceptance.
+- LLM direct `GameState` mutation.
+- Generators directly modifying active `GameState`, active sessions, or active
+  saves.
+- Batch import or package apply that bypasses validation gate or quality gate.
+- Automatic overwrite of user world packs.
+- Arbitrary package/script/template/plugin execution.
+- Online marketplace, cloud sync, hosted collaboration, remote publishing, or
+  remote URL auto-download.
+- Applying untrusted character cards, lorebooks, templates, or generated packs
+  directly to active worlds.
+- Default real-LLM generation.
+- Generated content bypassing Quality Gate.
+- Batch tools reading `.env`, API keys, databases, logs, caches, build
+  outputs, or system files as content.
+- Hidden facts, NPC secrets, RP private fields, or package debug data in normal
+  production reports, player APIs, narrator prompts, or player UI.
+- Large-scale automatic campaign writing, literary-quality guarantees,
+  automatic content repair, or full production task queue orchestration.
 
 ## v1.0 Known Limitations
 

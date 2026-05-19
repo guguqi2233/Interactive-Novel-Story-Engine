@@ -56,6 +56,17 @@ class NormalizedCharacterCard(BaseModel):
             return []
         if isinstance(value, str):
             return [line.strip() for line in value.splitlines() if line.strip()]
+        if isinstance(value, list):
+            coerced: list[str] = []
+            for item in value:
+                if isinstance(item, str):
+                    coerced.append(item)
+                elif isinstance(item, dict) and len(item) == 1:
+                    key, child = next(iter(item.items()))
+                    coerced.append(f"{key}: {child}")
+                else:
+                    coerced.append(_stringify(item))
+            return coerced
         return value
 
 

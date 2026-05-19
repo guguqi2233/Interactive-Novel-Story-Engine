@@ -66,6 +66,7 @@ class CharacterPackExportRequest(BaseModel):
     name: str | None = None
     safe_export: bool = True
     include_hidden_facts: bool = False
+    export_profile_id: str | None = None
 
 
 class CharacterPackImportRequest(BaseModel):
@@ -73,6 +74,7 @@ class CharacterPackImportRequest(BaseModel):
     pack: CharacterPack
     confirm_apply: bool = False
     confirm_warnings: bool = False
+    import_profile_id: str | None = None
 
 
 class CharacterPackImportPreview(BaseModel):
@@ -149,10 +151,10 @@ def export_character_pack(
         if _template_mentions_character(template, selected_ids)
         and (not request.safe_export or not _contains_any_hidden_text(template, hidden_terms))
     ]
-    public_facts = [
+    source_facts = [
         fact
         for fact in _read_list_file(service, world_id, "facts.yaml", "facts", required=False)
-        if str(fact.get("visibility", "hidden")) == "public"
+        if request.include_hidden_facts or str(fact.get("visibility", "hidden")) == "public"
     ]
     fact_candidates = [] if request.safe_export and not request.include_hidden_facts else [
         CharacterPackFactCandidate(
@@ -162,7 +164,7 @@ def export_character_pack(
             known_by=[str(item) for item in fact.get("known_by", []) if isinstance(item, str)],
             tags=[str(item) for item in fact.get("tags", []) if isinstance(item, str)],
         )
-        for fact in public_facts
+        for fact in source_facts
     ]
     manifest = CharacterPackManifest(
         pack_id=f"{world_id}_characters",
@@ -185,10 +187,10 @@ def export_character_pack(
             CharacterPackLoreEntry(
                 id=str(fact.get("id", "")),
                 text=str(fact.get("text", "")),
-                visibility="public",
+                visibility=str(fact.get("visibility", "hidden")),
                 tags=[str(item) for item in fact.get("tags", []) if isinstance(item, str)],
             )
-            for fact in public_facts
+            for fact in source_facts
         ],
         fact_candidates=fact_candidates,
     )

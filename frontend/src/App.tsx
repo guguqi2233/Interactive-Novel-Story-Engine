@@ -25,12 +25,27 @@ import {
   DebugPerformanceSummaryResponse,
   applyScenarioTemplate,
   applyTemplateWizard,
+  applyWorldPackWizard,
+  applyBatchCharacterCardImportDraft,
+  applyBatchLorebookClassificationDraft,
+  applyNPCPackGenerator,
+  applyQuestPackGenerator,
+  applyLocationClusterTemplate,
+  batchValidateLocalContentLibrary,
   applyNPCSimulationPresetDraft,
   applyRPScenarioTemplate,
   deleteSave,
   dryRunNPCSimulationTick,
+  dryRunScriptPackageBuild,
   dryRunSaveTimelineReplay,
+  buildScriptPackage,
+  buildCampaignStarterKit,
   exportModArchive,
+  exportBatchCharacterCardPack,
+  exportCharacterPack,
+  exportNPCPackGenerator,
+  exportScriptPackage,
+  exportCampaignStarterScriptPackage,
   exportSafeRPCharacterCard,
   exportSaveArchive,
   exportWorldArchive,
@@ -60,8 +75,12 @@ import {
   fetchAuthoringWorlds,
   fetchAuthoringWorkflowPresets,
   fetchAuthoringProjectSummary,
+  fetchImportExportProfiles,
+  fetchProductionPipelineSummary,
   fetchReferenceIndex,
   fetchLocalContentLibrary,
+  searchLocalContentLibrary,
+  fetchLocationClusterTemplates,
   fetchWorldBranches,
   fetchScenarioTemplates,
   fetchRPScenarioTemplates,
@@ -96,6 +115,7 @@ import {
   reviewContentDiff,
   GameInputResponse,
   ContentDiffReview,
+  ContentCoveragePlan,
   GraphResponse,
   listSaves,
   loadGame,
@@ -108,8 +128,16 @@ import {
   previewQuestGraph,
   previewScenarioTemplate,
   previewTemplateWizard,
+  previewWorldPackWizard,
+  previewNPCPackGenerator,
+  previewBatchCharacterCardImport,
+  previewBatchLorebookClassification,
+  previewCampaignStarterKit,
+  previewQuestPackGenerator,
+  previewLocationClusterTemplate,
   previewWorldMerge,
   previewRPScenarioTemplate,
+  planContentCoverage,
   runNarrativeEval,
   runContentCoverage,
   runPlaytest,
@@ -129,6 +157,14 @@ import {
   TemplateWizardDraft,
   TemplateWizardPreviewResponse,
   TemplateWizardType,
+  WorldPackWizardDraft,
+  WorldPackWizardPreviewResponse,
+  NPCPackGeneratorDraft,
+  NPCPackGeneratorPreviewResponse,
+  QuestPackGeneratorDraft,
+  QuestPackGeneratorPreviewResponse,
+  LocationClusterTemplate,
+  LocationClusterPreviewResponse,
   WorldBranch,
   WorldMergeDraft,
   RPScenarioTemplate,
@@ -163,9 +199,19 @@ import {
   NPCSimulationPreset,
   ItemEconomyAuthoring,
   ItemEconomyItem,
+  ExportProfile,
+  ImportProfile,
   MerchantEconomyNode,
   ShopInventoryEdge,
   CharacterCardImportReport,
+  BatchCharacterCardImportReport,
+  BatchLorebookClassificationReport,
+  ScriptPackageBuildReport,
+  ScriptPackageBuildRequest,
+  CampaignStarterKitDraft,
+  CampaignStarterKitPreview,
+  ProductionPipelineSummary,
+  ProductionPipelineTask,
   RumorAuthoringNode,
   RumorCrimeConsequenceAuthoring,
   RPCharacterAuthoring,
@@ -206,6 +252,10 @@ import {
   validateRumorCrimeAuthoring,
   validateSocialAuthoringGraph,
   validateTemplateWizard,
+  validateWorldPackWizard,
+  validateNPCPackGenerator,
+  validateQuestPackGenerator,
+  validateScriptPackage,
   validateLocalContentLibraryItem,
   fetchWorldHealth,
   runWorldHealth,
@@ -298,6 +348,10 @@ type AuthoringToolId =
   | "scenarios"
   | "templates"
   | "template_wizard"
+  | "world_pack_wizard"
+  | "npc_pack_generator"
+  | "quest_pack_generator"
+  | "location_clusters"
   | "merge_assistant"
   | "diff_review"
   | "library"
@@ -318,6 +372,10 @@ const AUTHORING_TOOL_NAV: { id: AuthoringToolId; label: string; description: str
   { id: "scenarios", label: "Scenarios", description: "regression case authoring" },
   { id: "templates", label: "Templates", description: "local scenario templates" },
   { id: "template_wizard", label: "Template Wizard", description: "guided template drafts" },
+  { id: "world_pack_wizard", label: "World Pack Wizard", description: "new world pack drafts" },
+  { id: "npc_pack_generator", label: "NPC Pack", description: "batch NPC draft generation" },
+  { id: "quest_pack_generator", label: "Quest Pack", description: "batch questline drafts" },
+  { id: "location_clusters", label: "Location Clusters", description: "map cluster templates" },
   { id: "merge_assistant", label: "Merge Assistant", description: "branch conflict review" },
   { id: "diff_review", label: "Diff Review", description: "content change review" },
   { id: "library", label: "Library", description: "local content packages" },
@@ -441,6 +499,7 @@ export function App() {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>("");
   const [mode, setMode] = useState<"studio" | "play" | "authoring">("studio");
+  const [requestedAuthoringTool, setRequestedAuthoringTool] = useState<AuthoringToolId | null>(null);
   const [studioStatus, setStudioStatus] = useState<StudioStatus | null>(null);
   const [studioStatusError, setStudioStatusError] = useState<string>("");
   const [studioConfigSummary, setStudioConfigSummary] = useState<StudioConfigSummary | null>(null);
@@ -1447,7 +1506,10 @@ export function App() {
 
       <section className="story-panel">
         {mode === "authoring" ? (
-          <AuthoringPanel />
+          <AuthoringPanel
+            requestedTool={requestedAuthoringTool}
+            onRequestedToolHandled={() => setRequestedAuthoringTool(null)}
+          />
         ) : mode === "studio" ? (
           <StudioHome
             status={studioStatus}
@@ -1498,7 +1560,12 @@ export function App() {
             onRefreshWorldHealth={() => void refreshWorldHealth()}
             onRunContentCoverage={() => void handleRunContentCoverage()}
             onRefreshContentCoverage={() => void refreshContentCoverage()}
-            onNavigate={setMode}
+            onNavigate={(nextMode, toolId) => {
+              if (toolId) {
+                setRequestedAuthoringTool(toolId);
+              }
+              setMode(nextMode);
+            }}
           />
         ) : (
           <>
@@ -1802,7 +1869,7 @@ function StudioHome({
   onRunContentCoverage: () => void;
   onRefreshContentCoverage: () => void;
   onSelectPromptProfile: (profileId: string) => void;
-  onNavigate: (mode: "studio" | "play" | "authoring") => void;
+  onNavigate: (mode: "studio" | "play" | "authoring", toolId?: AuthoringToolId) => void;
 }) {
   const recentSaves = status?.recent_saves.length ? status.recent_saves : saves.slice(0, 5);
   const validationSummaries = status?.validation_summaries ?? [];
@@ -1931,7 +1998,7 @@ function StudioHome({
         error={contentCoverageError}
         onRun={onRunContentCoverage}
         onRefresh={onRefreshContentCoverage}
-        onOpenAuthoring={() => onNavigate("authoring")}
+        onOpenAuthoring={(toolId) => onNavigate("authoring", toolId)}
       />
 
       <NarrativeQualityDashboard
@@ -2076,13 +2143,38 @@ function ContentCoverageDashboard({
   error: string;
   onRun: () => void;
   onRefresh: () => void;
-  onOpenAuthoring: () => void;
+  onOpenAuthoring: (toolId?: AuthoringToolId) => void;
 }) {
   const [showUncoveredOnly, setShowUncoveredOnly] = useState<boolean>(false);
+  const [plan, setPlan] = useState<ContentCoveragePlan | null>(null);
+  const [planError, setPlanError] = useState<string>("");
+  const [isPlanning, setIsPlanning] = useState<boolean>(false);
   const rows = report ? contentCoverageRows(report) : [];
   const average = rows.length
     ? Math.round(rows.reduce((total, row) => total + row.summary.coverage_percent, 0) / rows.length)
     : 0;
+  async function handlePlanCoverage() {
+    if (!report || isPlanning) {
+      return;
+    }
+    setIsPlanning(true);
+    setPlanError("");
+    try {
+      const response = await planContentCoverage({
+        target_world: report.world_id,
+        genre: "general",
+        desired_playtime: "short",
+        desired_complexity: "medium",
+        current_content_coverage_report: report
+      });
+      setPlan(response);
+    } catch (err) {
+      setPlan(null);
+      setPlanError(toErrorMessage(err));
+    } finally {
+      setIsPlanning(false);
+    }
+  }
   return (
     <section className="studio-section content-coverage-dashboard">
       <div className="mod-detail-header">
@@ -2093,10 +2185,14 @@ function ContentCoverageDashboard({
         <div className="quick-actions">
           <button type="button" onClick={onRefresh}>Refresh</button>
           <button type="button" onClick={onRun}>Run Coverage</button>
-          <button type="button" onClick={onOpenAuthoring}>Authoring</button>
+          <button type="button" onClick={handlePlanCoverage} disabled={!report || isPlanning}>
+            {isPlanning ? "Planning..." : "Plan Coverage"}
+          </button>
+          <button type="button" onClick={() => onOpenAuthoring()}>Authoring</button>
         </div>
       </div>
       <ErrorPanel message={error} compact />
+      <ErrorPanel message={planError} compact />
       <div className="studio-grid compact-dashboard-grid">
         <DashboardCard title="Average" value={report ? `${average}%` : "none"}>
           <p>{report ? report.world_id : "Run coverage to create a local report"}</p>
@@ -2146,8 +2242,71 @@ function ContentCoverageDashboard({
             .join(", ")}
         </p>
       )}
+      {plan && (
+        <section className="studio-section nested-section">
+          <div className="mod-detail-header">
+            <div>
+              <h4>Coverage Plan</h4>
+              <p className="muted">Rule-based planning suggestions only; no content is generated or saved.</p>
+            </div>
+          </div>
+          <div className="studio-grid compact-dashboard-grid">
+            {contentCoveragePlanGroups(plan).map((group) => (
+              <DashboardCard title={group.label} value={String(group.items.length)} key={group.label}>
+                {group.items.length ? (
+                  <ul className="compact-list">
+                    {group.items.map((item) => (
+                      <li key={`${group.label}-${item.summary}`}>
+                        <strong>{item.priority}</strong> {item.summary}
+                        {item.safe_refs.length > 0 && (
+                          <span className="muted"> refs: {item.safe_refs.join(", ")}</span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => onOpenAuthoring(coveragePlannerTool(item.recommended_tool))}
+                        >
+                          Open Tool
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p>No suggested gaps.</p>
+                )}
+              </DashboardCard>
+            ))}
+          </div>
+        </section>
+      )}
     </section>
   );
+}
+
+function contentCoveragePlanGroups(plan: ContentCoveragePlan) {
+  return [
+    { label: "Locations", items: plan.missing_location_types },
+    { label: "NPCs", items: plan.missing_npc_archetypes },
+    { label: "Quests", items: plan.missing_quest_types },
+    { label: "Clues", items: plan.missing_clue_paths },
+    { label: "Factions", items: plan.missing_faction_hooks },
+    { label: "RP Scenes", items: plan.missing_rp_scenes },
+    { label: "Scenarios", items: plan.missing_scenario_regressions },
+    { label: "Playtests", items: plan.missing_playtest_paths }
+  ];
+}
+
+function coveragePlannerTool(tool: string): AuthoringToolId {
+  const mapping: Record<string, AuthoringToolId> = {
+    location_clusters: "location_clusters",
+    npc_pack_generator: "npc_pack_generator",
+    quest_pack_generator: "quest_pack_generator",
+    mystery_templates: "quest_pack_generator",
+    faction_templates: "social",
+    dialogue_scenes: "dialogue_scenes",
+    scenarios: "scenarios",
+    playtests: "scenarios"
+  };
+  return mapping[tool] ?? "project_dashboard";
 }
 
 function contentCoverageRows(report: ContentCoverageReport) {
@@ -4005,10 +4164,32 @@ function ImportPackagePanel() {
   const [kind, setKind] = useState<ImportPackageKind>("world");
   const [archiveBase64, setArchiveBase64] = useState<string>("");
   const [overwrite, setOverwrite] = useState<boolean>(false);
+  const [importProfiles, setImportProfiles] = useState<ImportProfile[]>([]);
+  const [selectedProfileId, setSelectedProfileId] = useState<string>("safe");
   const [result, setResult] = useState<ArchiveImportResponse | null>(null);
   const [message, setMessage] = useState<string>("");
   const [error, setError] = useState<string>("");
   const [isBusy, setIsBusy] = useState<boolean>(false);
+  const selectedProfile = importProfiles.find((profile) => profile.profile_id === selectedProfileId) ?? null;
+
+  useEffect(() => {
+    void loadProfiles();
+  }, []);
+
+  async function loadProfiles() {
+    try {
+      const catalog = await fetchImportExportProfiles();
+      setImportProfiles(catalog.import_profiles);
+      setSelectedProfileId((current) =>
+        catalog.import_profiles.some((profile) => profile.profile_id === current)
+          ? current
+          : catalog.import_profiles[0]?.profile_id ?? "safe"
+      );
+    } catch {
+      setImportProfiles([]);
+      setSelectedProfileId("safe");
+    }
+  }
 
   async function handleImportApply() {
     const archive = archiveBase64.trim();
@@ -4028,10 +4209,10 @@ function ImportPackagePanel() {
     try {
       const response =
         kind === "world"
-          ? await importWorldArchive(archive, overwrite)
+          ? await importWorldArchive(archive, overwrite, selectedProfileId)
           : kind === "mod"
-            ? await importModArchive(archive, overwrite)
-            : await importSaveArchive(archive, overwrite);
+            ? await importModArchive(archive, overwrite, selectedProfileId)
+            : await importSaveArchive(archive, overwrite, selectedProfileId);
       setResult(response);
       setMessage(
         response.imported
@@ -4062,10 +4243,44 @@ function ImportPackagePanel() {
           </select>
         </label>
         <label>
-          <input type="checkbox" checked={overwrite} onChange={(event) => setOverwrite(event.target.checked)} disabled={isBusy} />
+          Import profile
+          <select
+            value={selectedProfileId}
+            onChange={(event) => {
+              const nextProfile = importProfiles.find((profile) => profile.profile_id === event.target.value);
+              setSelectedProfileId(event.target.value);
+              if (nextProfile && !nextProfile.allow_overwrite) {
+                setOverwrite(false);
+              }
+            }}
+            disabled={isBusy}
+          >
+            {importProfiles.length === 0 && <option value="safe">Safe Import</option>}
+            {importProfiles.map((profile) => (
+              <option key={profile.profile_id} value={profile.profile_id}>
+                {profile.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <input
+            type="checkbox"
+            checked={overwrite}
+            onChange={(event) => setOverwrite(event.target.checked)}
+            disabled={isBusy || selectedProfile?.allow_overwrite === false}
+          />
           Allow overwrite
         </label>
       </div>
+      {selectedProfile && (
+        <p className="muted">
+          Profile: validation {selectedProfile.require_validation ? "required" : "off"},
+          quality gate {selectedProfile.require_quality_gate ? "required" : "off"},
+          executables {selectedProfile.reject_executables ? "rejected" : "allowed"},
+          hidden authoring data {selectedProfile.allow_hidden_authoring_data ? "reviewable" : "blocked"}.
+        </p>
+      )}
       <label className="full-width-field">
         archive_base64
         <textarea
@@ -4124,7 +4339,13 @@ function ImportPackagePanel() {
   );
 }
 
-function AuthoringPanel() {
+function AuthoringPanel({
+  requestedTool,
+  onRequestedToolHandled
+}: {
+  requestedTool: AuthoringToolId | null;
+  onRequestedToolHandled: () => void;
+}) {
   const [worlds, setWorlds] = useState<AuthoringWorldSummary[]>([]);
   const [selectedWorldId, setSelectedWorldId] = useState<string>("");
   const [files, setFiles] = useState<string[]>([]);
@@ -4327,6 +4548,12 @@ function AuthoringPanel() {
   const usableFiles = files.length > 0 ? files : AUTHORING_FILES;
   const disabled = isBusy || worlds.length === 0;
   const isDirty = content !== diskContent;
+  useEffect(() => {
+    if (requestedTool) {
+      handleSelectAuthoringTool(requestedTool);
+      onRequestedToolHandled();
+    }
+  }, [requestedTool, onRequestedToolHandled]);
   const parsedEntities = useMemo(
     () => parseAuthoringEntities(selectedFile, content),
     [selectedFile, content]
@@ -4516,6 +4743,10 @@ function AuthoringPanel() {
             description="Current world, branch, validation, quality, packages, and recent local edits."
           >
             <AuthoringProjectDashboardPanel
+              worldId={selectedWorldId}
+              onOpenEditor={handleSelectAuthoringTool}
+            />
+            <ProductionPipelineDashboardPanel
               worldId={selectedWorldId}
               onOpenEditor={handleSelectAuthoringTool}
             />
@@ -4787,6 +5018,45 @@ function AuthoringPanel() {
             description="Guided local template drafts for worlds, quests, characters, scenes, factions, and mysteries."
           >
             <TemplateWizardPanel worldId={selectedWorldId} />
+            <BatchLorebookClassificationPanel worldId={selectedWorldId} />
+            <ScriptPackageBuilderPanel worldId={selectedWorldId} />
+            <CampaignStarterKitBuilderPanel />
+          </AuthoringSection>
+
+          <AuthoringSection
+            toolId="world_pack_wizard"
+            activeTool={activeAuthoringTool}
+            title="World Pack Wizard"
+            description="Create a new local world-pack draft, preview files, validate, and explicitly apply to worlds."
+          >
+            <WorldPackWizardPanel />
+          </AuthoringSection>
+
+          <AuthoringSection
+            toolId="npc_pack_generator"
+            activeTool={activeAuthoringTool}
+            title="NPC Pack Generator"
+            description="Generate local NPC pack drafts with RP profiles, voice profiles, relationships, goals, and schedules."
+          >
+            <NPCPackGeneratorPanel worldId={selectedWorldId} onOpenEditor={setActiveAuthoringTool} />
+          </AuthoringSection>
+
+          <AuthoringSection
+            toolId="quest_pack_generator"
+            activeTool={activeAuthoringTool}
+            title="Quest Pack Generator"
+            description="Generate local questline drafts with facts, quest graph preview, scenario regression candidates, and quality checks."
+          >
+            <QuestPackGeneratorPanel worldId={selectedWorldId} />
+          </AuthoringSection>
+
+          <AuthoringSection
+            toolId="location_clusters"
+            activeTool={activeAuthoringTool}
+            title="Location Cluster Templates"
+            description="Preview and apply connected location groups through the map validation gate."
+          >
+            <LocationClusterTemplatePanel worldId={selectedWorldId} />
           </AuthoringSection>
 
           <AuthoringSection
@@ -5293,7 +5563,12 @@ function RPCharacterAuthoringPanel({
   const [validation, setValidation] = useState<AuthoringValidation | null>(null);
   const [importDraft, setImportDraft] = useState<string>("");
   const [importReport, setImportReport] = useState<CharacterCardImportReport | null>(null);
+  const [batchImportDraft, setBatchImportDraft] = useState<string>("");
+  const [batchImportReport, setBatchImportReport] = useState<BatchCharacterCardImportReport | null>(null);
+  const [selectedBatchNames, setSelectedBatchNames] = useState<string[]>([]);
   const [safeExport, setSafeExport] = useState<string>("");
+  const [exportProfiles, setExportProfiles] = useState<ExportProfile[]>([]);
+  const [selectedExportProfileId, setSelectedExportProfileId] = useState<string>("safe");
   const [message, setMessage] = useState<string>("");
   const [error, setError] = useState<string>("");
   const [isBusy, setIsBusy] = useState<boolean>(false);
@@ -5301,7 +5576,23 @@ function RPCharacterAuthoringPanel({
 
   useEffect(() => {
     void loadCharacters();
+    void loadImportExportProfiles();
   }, [worldId]);
+
+  async function loadImportExportProfiles() {
+    try {
+      const catalog = await fetchImportExportProfiles();
+      setExportProfiles(catalog.export_profiles);
+      setSelectedExportProfileId((current) =>
+        catalog.export_profiles.some((profile) => profile.profile_id === current)
+          ? current
+          : catalog.export_profiles[0]?.profile_id ?? "safe"
+      );
+    } catch {
+      setExportProfiles([]);
+      setSelectedExportProfileId("safe");
+    }
+  }
 
   async function loadCharacters() {
     setIsBusy(true);
@@ -5422,6 +5713,64 @@ function RPCharacterAuthoringPanel({
     }
   }
 
+  function batchImportTexts(): string[] {
+    return batchImportDraft
+      .split(/\n---+\n/g)
+      .map((value) => value.trim())
+      .filter(Boolean);
+  }
+
+  async function handleBatchImportPreview() {
+    const texts = batchImportTexts();
+    if (!texts.length) {
+      setMessage("Paste one or more character cards separated by ---.");
+      return;
+    }
+    setIsBusy(true);
+    setError("");
+    try {
+      const response = await previewBatchCharacterCardImport(worldId, texts);
+      setBatchImportReport(response);
+      setSelectedBatchNames(response.candidate_characters.map((candidate) => String(candidate.name ?? "")));
+      setMessage(`Batch preview parsed ${response.parsed_count} cards; unsafe ${response.unsafe_count}.`);
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleBatchApplyDraft() {
+    const texts = batchImportTexts();
+    setIsBusy(true);
+    setError("");
+    try {
+      const response = await applyBatchCharacterCardImportDraft(worldId, texts, selectedBatchNames);
+      setBatchImportReport(response);
+      setSafeExport(JSON.stringify(response.character_pack_draft, null, 2));
+      setMessage("Batch draft prepared. It has not been written to the world pack.");
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleBatchExportPack() {
+    const texts = batchImportTexts();
+    setIsBusy(true);
+    setError("");
+    try {
+      const response = await exportBatchCharacterCardPack(worldId, texts, selectedBatchNames);
+      setSafeExport(JSON.stringify(response, null, 2));
+      setMessage("Batch character pack draft exported.");
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
   async function handleSafeExport() {
     if (!selectedNpcId) {
       return;
@@ -5432,6 +5781,23 @@ function RPCharacterAuthoringPanel({
       const response = await exportSafeRPCharacterCard(worldId, selectedNpcId);
       setSafeExport(JSON.stringify(response.card, null, 2));
       setMessage(`Safe export ready. Excluded: ${response.excluded_fields.join(", ")}`);
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleCharacterPackExport() {
+    if (!selectedNpcId) {
+      return;
+    }
+    setIsBusy(true);
+    setError("");
+    try {
+      const response = await exportCharacterPack(worldId, [selectedNpcId], selectedExportProfileId);
+      setSafeExport(JSON.stringify(response, null, 2));
+      setMessage(`Character pack export ready with profile ${selectedExportProfileId}.`);
     } catch (err) {
       setError(authoringErrorMessage(err));
     } finally {
@@ -5535,13 +5901,78 @@ function RPCharacterAuthoringPanel({
               )}
             </section>
 
+            <section className="authoring-preview-box">
+              <h3>Batch Character Import</h3>
+              <p className="muted">Paste multiple JSON/YAML cards separated by --- . Preview and export create drafts only.</p>
+              <textarea value={batchImportDraft} onChange={(event) => setBatchImportDraft(event.target.value)} />
+              <div className="authoring-header-actions">
+                <button type="button" onClick={() => void handleBatchImportPreview()} disabled={isBusy}>Preview Batch</button>
+                <button type="button" onClick={() => void handleBatchApplyDraft()} disabled={isBusy || !batchImportReport}>Apply Draft</button>
+                <button type="button" onClick={() => void handleBatchExportPack()} disabled={isBusy || !batchImportReport}>Export Pack</button>
+              </div>
+              {batchImportReport && (
+                <div className="diff-summary">
+                  <p>
+                    Parsed {batchImportReport.parsed_count}; failed {batchImportReport.failed_count};
+                    unsafe {batchImportReport.unsafe_count}; duplicates {batchImportReport.duplicate_names.join(", ") || "none"}.
+                  </p>
+                  <ul className="compact-list">
+                    {batchImportReport.candidate_characters.map((candidate) => {
+                      const name = String(candidate.name ?? "");
+                      return (
+                        <li key={String(candidate.id ?? name)}>
+                          <label>
+                            <input
+                              type="checkbox"
+                              checked={selectedBatchNames.includes(name)}
+                              onChange={(event) => {
+                                setSelectedBatchNames((current) =>
+                                  event.target.checked
+                                    ? Array.from(new Set([...current, name]))
+                                    : current.filter((item) => item !== name)
+                                );
+                              }}
+                            />
+                            {name || String(candidate.id)}
+                          </label>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  {batchImportReport.unsafe_entries.length > 0 && (
+                    <pre className="template-preview-code">{JSON.stringify(batchImportReport.unsafe_entries, null, 2)}</pre>
+                  )}
+                </div>
+              )}
+            </section>
+
             <AuthoringActionBar
               onPreview={() => void handlePreview()}
               onValidate={() => void handleValidate()}
               onSave={() => void handleSave()}
               disabled={isBusy}
             />
-            <button type="button" onClick={() => void handleSafeExport()} disabled={isBusy || !selectedNpcId}>Export Safe Character Card</button>
+            <div className="template-grid">
+              <label>
+                Export profile
+                <select
+                  value={selectedExportProfileId}
+                  onChange={(event) => setSelectedExportProfileId(event.target.value)}
+                  disabled={isBusy}
+                >
+                  {exportProfiles.length === 0 && <option value="safe">Safe Export</option>}
+                  {exportProfiles.map((profile) => (
+                    <option key={profile.profile_id} value={profile.profile_id}>
+                      {profile.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button type="button" onClick={() => void handleCharacterPackExport()} disabled={isBusy || !selectedNpcId}>
+                Export Character Pack
+              </button>
+              <button type="button" onClick={() => void handleSafeExport()} disabled={isBusy || !selectedNpcId}>Export Safe Character Card</button>
+            </div>
             {safeExport && <textarea readOnly value={safeExport} />}
             <PreviewResultPanel title="RP Character Validation" validation={validation} />
           </div>
@@ -6879,6 +7310,419 @@ function TemplateWizardPanel({ worldId }: { worldId: string }) {
   );
 }
 
+function BatchLorebookClassificationPanel({ worldId }: { worldId: string }) {
+  const [draftText, setDraftText] = useState<string>("entries:\n  - key: village flavor\n    content: Rain changes the village songs.");
+  const [filter, setFilter] = useState<"all" | "unsafe" | "hidden" | "flavor">("all");
+  const [report, setReport] = useState<BatchLorebookClassificationReport | null>(null);
+  const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
+  const [message, setMessage] = useState<string>("");
+  const [error, setError] = useState<string>("");
+  const [isBusy, setIsBusy] = useState<boolean>(false);
+
+  function lorebookTexts(): string[] {
+    return draftText.split(/\n---+\n/g).map((value) => value.trim()).filter(Boolean);
+  }
+
+  async function handlePreview() {
+    const texts = lorebookTexts();
+    if (!texts.length) {
+      setMessage("Paste one or more lorebooks separated by ---.");
+      return;
+    }
+    setIsBusy(true);
+    setError("");
+    try {
+      const response = await previewBatchLorebookClassification(worldId, texts);
+      setReport(response);
+      setSelectedKeys(response.structured_fact_candidates.map((entry) => String(entry.key ?? "")));
+      setMessage(`Classified ${response.total_entries} lorebook entries.`);
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleApplyDraft() {
+    const texts = lorebookTexts();
+    setIsBusy(true);
+    setError("");
+    try {
+      const response = await applyBatchLorebookClassificationDraft(worldId, texts, selectedKeys);
+      setReport(response);
+      setMessage(response.validation?.ok ? "Lorebook draft validates. It was not written to facts.yaml." : "Lorebook draft has validation issues.");
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  const visibleEntries = report ? batchLorebookVisibleEntries(report, filter) : [];
+  return (
+    <section className="authoring-preview-box">
+      <h3>Batch Lorebook Classification</h3>
+      <p className="muted">Classify local lorebook/world-info entries into flavor, fact candidates, hidden candidates, and unsafe entries.</p>
+      <textarea value={draftText} onChange={(event) => setDraftText(event.target.value)} disabled={isBusy} />
+      <div className="template-grid">
+        <label>
+          Filter
+          <select value={filter} onChange={(event) => setFilter(event.target.value as typeof filter)}>
+            <option value="all">all</option>
+            <option value="flavor">flavor</option>
+            <option value="hidden">hidden</option>
+            <option value="unsafe">unsafe</option>
+          </select>
+        </label>
+      </div>
+      <div className="authoring-header-actions">
+        <button type="button" onClick={() => void handlePreview()} disabled={isBusy}>Preview</button>
+        <button type="button" onClick={() => void handleApplyDraft()} disabled={isBusy || !report}>Apply Draft</button>
+      </div>
+      {report && (
+        <div className="diff-summary">
+          <p>
+            Entries {report.total_entries}; flavor {report.flavor_lore.length};
+            structured {report.structured_fact_candidates.length}; hidden {report.hidden_fact_candidates.length};
+            unsafe {report.unsafe_entries.length}; duplicates {report.duplicate_keys.join(", ") || "none"}.
+          </p>
+          <ul className="compact-list">
+            {visibleEntries.map((entry) => {
+              const key = String(entry.key ?? entry.source_name ?? entry.safe_summary ?? Math.random());
+              const selectable = "key" in entry && key;
+              return (
+                <li key={key}>
+                  {selectable && (
+                    <input
+                      type="checkbox"
+                      checked={selectedKeys.includes(key)}
+                      onChange={(event) =>
+                        setSelectedKeys((current) =>
+                          event.target.checked
+                            ? Array.from(new Set([...current, key]))
+                            : current.filter((item) => item !== key)
+                        )
+                      }
+                    />
+                  )}
+                  <strong>{key}</strong> {String(entry.safe_summary ?? entry.reason ?? "")}
+                </li>
+              );
+            })}
+          </ul>
+          {report.validation && <ValidationPanel validation={report.validation} onSelectIssue={() => undefined} />}
+          {report.yaml_draft && <pre className="template-preview-code">{report.yaml_draft}</pre>}
+        </div>
+      )}
+      {message && <p className="muted">{message}</p>}
+      <ErrorPanel message={error} compact />
+    </section>
+  );
+}
+
+function batchLorebookVisibleEntries(
+  report: BatchLorebookClassificationReport,
+  filter: "all" | "unsafe" | "hidden" | "flavor"
+): Record<string, unknown>[] {
+  if (filter === "unsafe") return report.unsafe_entries;
+  if (filter === "hidden") return report.hidden_fact_candidates;
+  if (filter === "flavor") return report.flavor_lore;
+  return [
+    ...report.flavor_lore,
+    ...report.structured_fact_candidates,
+    ...report.hidden_fact_candidates,
+    ...report.unsafe_entries
+  ];
+}
+
+function ScriptPackageBuilderPanel({ worldId }: { worldId: string }) {
+  const [packageId, setPackageId] = useState("local_script_pack");
+  const [name, setName] = useState("Local Script Pack");
+  const [quests, setQuests] = useState("find_the_old_road");
+  const [characters, setCharacters] = useState("elder_mara");
+  const [templates, setTemplates] = useState("opening_scene");
+  const [scenarios, setScenarios] = useState("intro_regression");
+  const [dependencies, setDependencies] = useState(worldId);
+  const [conflicts, setConflicts] = useState("");
+  const [filePath, setFilePath] = useState("beats/opening.yaml");
+  const [fileContent, setFileContent] = useState("beats:\n  - id: opening\n    summary: Safe opening beat.");
+  const [report, setReport] = useState<ScriptPackageBuildReport | null>(null);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [isBusy, setIsBusy] = useState(false);
+
+  function buildRequest(confirmApply = false): ScriptPackageBuildRequest {
+    const deps = parseCommaList(dependencies);
+    return {
+      manifest: {
+        package_id: packageId,
+        name,
+        version: "1.0",
+        target_engine_version: "1.4",
+        target_schema_version: "1.0",
+        included_worlds: [worldId],
+        included_quests: parseCommaList(quests),
+        included_characters: parseCommaList(characters),
+        included_templates: parseCommaList(templates),
+        included_scenarios: parseCommaList(scenarios),
+        included_quality_profile: "default_safe",
+        dependencies: deps,
+        conflicts: parseCommaList(conflicts),
+        checksums: {},
+        normal_manifest: true
+      },
+      files: [{ path: filePath, content: fileContent, hidden: filePath.toLowerCase().includes("hidden") }],
+      available_dependency_ids: [worldId, ...deps],
+      packages_root: "packages",
+      confirm_apply: confirmApply,
+      normal_report: true
+    };
+  }
+
+  async function runAction(action: "dry-run" | "validate" | "build" | "export") {
+    if (action === "build" && !confirmDangerousAction("Build this local script package artifact after validation?")) {
+      return;
+    }
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const request = buildRequest(action === "build");
+      const response =
+        action === "dry-run"
+          ? await dryRunScriptPackageBuild(request)
+          : action === "validate"
+            ? await validateScriptPackage(request)
+            : action === "build"
+              ? await buildScriptPackage(request)
+              : await exportScriptPackage(request);
+      setReport(response);
+      setMessage(
+        action === "export" && response.archive_file_name
+          ? `Export ready: ${response.archive_file_name}`
+          : response.applied
+            ? "Script package built locally."
+            : "Script package report ready."
+      );
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  return (
+    <section className="authoring-card">
+      <div className="section-heading">
+        <div>
+          <h3>Script Package Builder</h3>
+          <p>Build local structured script packages. Executable code and sensitive files are rejected.</p>
+        </div>
+        <div className="button-row">
+          <button onClick={() => void runAction("dry-run")} disabled={isBusy}>Dry-run</button>
+          <button onClick={() => void runAction("validate")} disabled={isBusy}>Validate</button>
+          <button onClick={() => void runAction("build")} disabled={isBusy}>Build</button>
+          <button onClick={() => void runAction("export")} disabled={isBusy}>Export zip</button>
+        </div>
+      </div>
+      <div className="form-grid">
+        <TextInput label="Package id" value={packageId} onChange={setPackageId} />
+        <TextInput label="Name" value={name} onChange={setName} />
+        <TextInput label="Quests" value={quests} onChange={setQuests} />
+        <TextInput label="Characters" value={characters} onChange={setCharacters} />
+        <TextInput label="Templates" value={templates} onChange={setTemplates} />
+        <TextInput label="Scenarios" value={scenarios} onChange={setScenarios} />
+        <TextInput label="Dependencies" value={dependencies} onChange={setDependencies} />
+        <TextInput label="Conflicts" value={conflicts} onChange={setConflicts} />
+        <TextInput label="Package file path" value={filePath} onChange={setFilePath} />
+      </div>
+      <label className="field wide-field">
+        <span>Package file content</span>
+        <textarea value={fileContent} onChange={(event) => setFileContent(event.target.value)} rows={5} disabled={isBusy} />
+      </label>
+      {report && (
+        <div className="preview-panel">
+          <dl className="summary-list compact">
+            <dt>Validation</dt>
+            <dd>{report.validation.ok ? "OK" : "Blocked"}</dd>
+            <dt>Files</dt>
+            <dd>{report.files.length}</dd>
+            <dt>Checksums</dt>
+            <dd>{Object.keys(report.manifest.checksums).length}</dd>
+            <dt>Applied</dt>
+            <dd>{report.applied ? "Yes" : "No"}</dd>
+          </dl>
+          <ValidationPanel validation={report.validation} onSelectIssue={() => undefined} />
+          <h4>Dependencies / conflicts</h4>
+          <p className="muted">Dependencies: {report.dependencies.join(", ") || "none"}</p>
+          <p className="muted">Conflicts: {report.conflicts.join(", ") || "none"}</p>
+          <h4>Normal manifest</h4>
+          <pre className="template-preview-code">{JSON.stringify(report.normal_manifest, null, 2)}</pre>
+        </div>
+      )}
+      {message && <p className="muted">{message}</p>}
+      <ErrorPanel message={error} compact />
+    </section>
+  );
+}
+
+function CampaignStarterKitBuilderPanel() {
+  const [draft, setDraft] = useState<CampaignStarterKitDraft>(() => defaultCampaignStarterKitDraft());
+  const [preview, setPreview] = useState<CampaignStarterKitPreview | null>(null);
+  const [exportReport, setExportReport] = useState<ScriptPackageBuildReport | null>(null);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [isBusy, setIsBusy] = useState(false);
+
+  function updateDraft(patch: Partial<CampaignStarterKitDraft>) {
+    setDraft((current) => ({ ...current, ...patch }));
+  }
+
+  async function runPreview() {
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await previewCampaignStarterKit(draft);
+      setPreview(response);
+      setMessage("Campaign starter preview ready.");
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function runBuild() {
+    if (!confirmDangerousAction("Build this campaign starter draft after validation and quality dry-run?")) {
+      return;
+    }
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await buildCampaignStarterKit(draft, true);
+      setPreview(response);
+      setMessage(response.built ? "Campaign starter build passed dry-run gates." : "Campaign starter build blocked.");
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function runExportScript() {
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await exportCampaignStarterScriptPackage(draft);
+      setExportReport(response);
+      setMessage(response.archive_file_name ? `Script package export ready: ${response.archive_file_name}` : "Script package export blocked.");
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  return (
+    <section className="authoring-card">
+      <div className="section-heading">
+        <div>
+          <h3>Campaign Starter Kit Builder</h3>
+          <p>Assemble a playable local starter from world, NPC, quest, faction, mystery, scenario, quality, and script drafts.</p>
+        </div>
+        <div className="button-row">
+          <button onClick={() => void runPreview()} disabled={isBusy}>Preview</button>
+          <button onClick={() => void runBuild()} disabled={isBusy}>Build dry-run</button>
+          <button onClick={() => void runExportScript()} disabled={isBusy}>Export script package</button>
+        </div>
+      </div>
+      <div className="form-grid">
+        <TextInput label="Campaign id" value={draft.campaign_id} onChange={(value) => updateDraft({ campaign_id: value })} />
+        <TextInput label="Name" value={draft.name} onChange={(value) => updateDraft({ name: value })} />
+        <TextInput label="Genre" value={draft.genre} onChange={(value) => updateDraft({ genre: value })} />
+        <TextInput label="Tone" value={draft.tone} onChange={(value) => updateDraft({ tone: value })} />
+        <TextInput label="Starting region" value={draft.starting_region} onChange={(value) => updateDraft({ starting_region: value })} />
+        <TextInput label="Core conflict" value={draft.core_conflict} onChange={(value) => updateDraft({ core_conflict: value })} />
+        <label className="field">
+          <span>NPC count</span>
+          <input type="number" min={1} max={20} value={draft.npc_count} onChange={(event) => updateDraft({ npc_count: Number(event.target.value) })} disabled={isBusy} />
+        </label>
+        <label className="field">
+          <span>Questlines</span>
+          <input type="number" min={1} max={10} value={draft.questline_count} onChange={(event) => updateDraft({ questline_count: Number(event.target.value) })} disabled={isBusy} />
+        </label>
+        <label className="field">
+          <span>Factions</span>
+          <input type="number" min={0} max={10} value={draft.faction_count} onChange={(event) => updateDraft({ faction_count: Number(event.target.value) })} disabled={isBusy} />
+        </label>
+        <TextInput label="RP focus" value={draft.RP_focus_level} onChange={(value) => updateDraft({ RP_focus_level: value })} />
+        <label className="field">
+          <span>Playtime hours</span>
+          <input type="number" min={1} max={40} value={draft.target_playtime_hours} onChange={(event) => updateDraft({ target_playtime_hours: Number(event.target.value) })} disabled={isBusy} />
+        </label>
+        <label className="field checkbox-field">
+          <input type="checkbox" checked={draft.mystery_enabled} onChange={(event) => updateDraft({ mystery_enabled: event.target.checked })} disabled={isBusy} />
+          <span>Mystery enabled</span>
+        </label>
+      </div>
+      {preview && (
+        <div className="preview-panel">
+          <dl className="summary-list compact">
+            <dt>Validation</dt>
+            <dd>{preview.validation.ok ? "OK" : "Blocked"}</dd>
+            <dt>Quality dry-run</dt>
+            <dd>{preview.quality_gate_dry_run.passed ? "passed" : "blocked"}</dd>
+            <dt>Scenarios</dt>
+            <dd>{preview.scenario_regression_suite.length}</dd>
+            <dt>Built</dt>
+            <dd>{preview.built ? "Yes" : "No"}</dd>
+          </dl>
+          <ValidationPanel validation={preview.validation} onSelectIssue={() => undefined} />
+          <h4>Generated content</h4>
+          <ul className="compact-list">
+            <li>World: {preview.world_pack_draft.world_id}</li>
+            <li>NPC pack: {preview.npc_pack_draft.pack_id}</li>
+            <li>Quest pack: {preview.quest_pack_draft.pack_id}</li>
+            <li>Script package: {preview.script_package_draft.manifest.package_id}</li>
+          </ul>
+          <h4>Quality gate dry-run</h4>
+          <pre className="template-preview-code">{JSON.stringify(preview.quality_gate_dry_run, null, 2)}</pre>
+        </div>
+      )}
+      {exportReport && (
+        <div className="preview-panel">
+          <h4>Script package export</h4>
+          <p className="muted">{exportReport.archive_file_name || "No archive generated"}</p>
+          <ValidationPanel validation={exportReport.validation} onSelectIssue={() => undefined} />
+        </div>
+      )}
+      {message && <p className="muted">{message}</p>}
+      <ErrorPanel message={error} compact />
+    </section>
+  );
+}
+
+function defaultCampaignStarterKitDraft(): CampaignStarterKitDraft {
+  return {
+    campaign_id: "starter_mist",
+    name: "Starter Mist",
+    genre: "mystery",
+    tone: "grounded",
+    starting_region: "square",
+    core_conflict: "missing heirloom",
+    npc_count: 3,
+    questline_count: 1,
+    faction_count: 2,
+    mystery_enabled: true,
+    RP_focus_level: "medium",
+    target_playtime_hours: 2,
+    llm_assisted: false
+  };
+}
+
 function defaultTemplateWizardDraft(worldId: string): TemplateWizardDraft {
   return {
     id: "wizard_template",
@@ -6889,6 +7733,653 @@ function defaultTemplateWizardDraft(worldId: string): TemplateWizardDraft {
     target_world_id: worldId,
     save_as_template: false
   };
+}
+
+const WORLD_PACK_WIZARD_SYSTEMS = ["quests", "roleplay", "npc_simulation", "factions", "rumors"] as const;
+
+function WorldPackWizardPanel() {
+  const [draft, setDraft] = useState<WorldPackWizardDraft>(() => defaultWorldPackWizardDraft());
+  const [preview, setPreview] = useState<WorldPackWizardPreviewResponse | null>(null);
+  const [message, setMessage] = useState<string>("");
+  const [error, setError] = useState<string>("");
+  const [isBusy, setIsBusy] = useState<boolean>(false);
+
+  function updateDraft(patch: Partial<WorldPackWizardDraft>) {
+    setDraft((current) => ({ ...current, ...patch }));
+    setPreview(null);
+  }
+
+  function toggleSystem(system: string) {
+    const systems = draft.enabled_systems.includes(system)
+      ? draft.enabled_systems.filter((item) => item !== system)
+      : [...draft.enabled_systems, system];
+    updateDraft({ enabled_systems: systems });
+  }
+
+  async function handlePreview() {
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await previewWorldPackWizard(draft);
+      setPreview(response);
+      setMessage(response.validation?.ok ? "World pack preview generated without writing files." : "Preview has validation issues.");
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleValidate() {
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await validateWorldPackWizard(draft);
+      setPreview(response);
+      setMessage(response.validation?.ok ? "World pack draft validates." : "World pack draft needs changes.");
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleApply() {
+    if (!confirmDangerousAction("Create this new local world pack after validation? Existing worlds are not overwritten.")) {
+      return;
+    }
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await applyWorldPackWizard(draft, true, true);
+      setPreview(response);
+      setMessage(response.applied ? "World pack created after validation gate approval." : "World pack apply was blocked.");
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  return (
+    <section className="mod-manager-panel authoring-zone">
+      <div className="authoring-pane-header">
+        <div>
+          <h2>World Pack Wizard</h2>
+          <p className="muted">Basic info, genre, starting region, systems, preview, validation, and explicit apply.</p>
+        </div>
+        <span className="badge">{preview?.draft.current_step ?? draft.current_step ?? "basic_info"}</span>
+      </div>
+      <div className="template-grid">
+        <TextInput label="World id" value={draft.world_id} onChange={(value) => updateDraft({ world_id: value })} />
+        <TextInput label="Name" value={draft.name} onChange={(value) => updateDraft({ name: value })} />
+        <TextInput label="Genre" value={draft.genre} onChange={(value) => updateDraft({ genre: value })} />
+        <TextInput label="Tone" value={draft.tone} onChange={(value) => updateDraft({ tone: value })} />
+        <TextInput label="Starting location" value={draft.starting_location} onChange={(value) => updateDraft({ starting_location: value })} />
+        <label>
+          Locations
+          <input
+            type="number"
+            min={1}
+            max={20}
+            value={draft.location_seed_count}
+            onChange={(event) => updateDraft({ location_seed_count: Number(event.target.value) })}
+            disabled={isBusy}
+          />
+        </label>
+        <label>
+          NPCs
+          <input
+            type="number"
+            min={0}
+            max={50}
+            value={draft.npc_seed_count}
+            onChange={(event) => updateDraft({ npc_seed_count: Number(event.target.value) })}
+            disabled={isBusy}
+          />
+        </label>
+        <label>
+          Quests
+          <input
+            type="number"
+            min={0}
+            max={50}
+            value={draft.quest_seed_count}
+            onChange={(event) => updateDraft({ quest_seed_count: Number(event.target.value) })}
+            disabled={isBusy}
+          />
+        </label>
+        <TextInput label="Prompt profile" value={draft.default_prompt_profile} onChange={(value) => updateDraft({ default_prompt_profile: value })} />
+        <TextInput label="Quality profile" value={draft.default_quality_profile} onChange={(value) => updateDraft({ default_quality_profile: value })} />
+      </div>
+      <label className="full-width-field">
+        Description
+        <textarea value={draft.description} onChange={(event) => updateDraft({ description: event.target.value })} disabled={isBusy} />
+      </label>
+      <div className="reference-picker-results">
+        {WORLD_PACK_WIZARD_SYSTEMS.map((system) => (
+          <label key={system}>
+            <input
+              type="checkbox"
+              checked={draft.enabled_systems.includes(system)}
+              onChange={() => toggleSystem(system)}
+              disabled={isBusy}
+            />
+            {system}
+          </label>
+        ))}
+      </div>
+      <div className="authoring-header-actions">
+        <button type="button" onClick={() => void handlePreview()} disabled={isBusy}>Preview</button>
+        <button type="button" onClick={() => void handleValidate()} disabled={isBusy}>Validate</button>
+        <button type="button" onClick={() => void handleApply()} disabled={isBusy}>Apply</button>
+      </div>
+      {preview?.validation && <ValidationPanel validation={preview.validation} onSelectIssue={() => undefined} />}
+      {preview && (
+        <div className="template-preview">
+          <h3>Generated World Pack Files</h3>
+          {preview.generated_files.map((file) => (
+            <details key={file.file_name} open>
+              <summary>{file.file_name}</summary>
+              <pre className="template-preview-code">{file.content}</pre>
+            </details>
+          ))}
+        </div>
+      )}
+      {message && <p className="muted">{message}</p>}
+      <ErrorPanel message={error} />
+    </section>
+  );
+}
+
+function defaultWorldPackWizardDraft(): WorldPackWizardDraft {
+  return {
+    world_id: "new_world",
+    name: "New World",
+    genre: "mystery",
+    tone: "grounded",
+    description: "A local world pack draft.",
+    starting_location: "start",
+    location_seed_count: 1,
+    npc_seed_count: 1,
+    quest_seed_count: 1,
+    enabled_systems: ["quests", "roleplay", "npc_simulation"],
+    default_prompt_profile: "default_safe",
+    default_quality_profile: "standard",
+    llm_assisted: false,
+    current_step: "basic_info"
+  };
+}
+
+function NPCPackGeneratorPanel({ worldId, onOpenEditor }: { worldId: string; onOpenEditor: (toolId: AuthoringToolId) => void }) {
+  const [draft, setDraft] = useState<NPCPackGeneratorDraft>(() => defaultNPCPackGeneratorDraft(worldId));
+  const [factionText, setFactionText] = useState<string>("village_council");
+  const [locationText, setLocationText] = useState<string>("village_square, blacksmith");
+  const [archetypeText, setArchetypeText] = useState<string>("guard, informant, merchant");
+  const [presetText, setPresetText] = useState<string>("guard");
+  const [preview, setPreview] = useState<NPCPackGeneratorPreviewResponse | null>(null);
+  const [message, setMessage] = useState<string>("");
+  const [error, setError] = useState<string>("");
+  const [isBusy, setIsBusy] = useState<boolean>(false);
+
+  useEffect(() => {
+    setDraft((current) => ({ ...current, target_world_id: worldId }));
+  }, [worldId]);
+
+  function buildDraft(): NPCPackGeneratorDraft {
+    return {
+      ...draft,
+      target_world_id: worldId,
+      faction_ids: parseCommaList(factionText),
+      location_ids: parseCommaList(locationText),
+      archetypes: parseCommaList(archetypeText),
+      simulation_preset_ids: parseCommaList(presetText)
+    };
+  }
+
+  function updateDraft(patch: Partial<NPCPackGeneratorDraft>) {
+    setDraft((current) => ({ ...current, ...patch }));
+    setPreview(null);
+  }
+
+  async function handlePreview() {
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await previewNPCPackGenerator(buildDraft());
+      setPreview(response);
+      setMessage(response.validation.ok ? "NPC pack preview generated without writing files." : "NPC pack preview has validation issues.");
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleValidate() {
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await validateNPCPackGenerator(buildDraft());
+      setPreview(response);
+      setMessage(response.validation.ok ? "NPC pack draft validates." : "NPC pack draft needs changes.");
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleApply() {
+    if (!confirmDangerousAction("Apply generated NPC draft to the local world pack after validation? Active GameState is not changed.")) {
+      return;
+    }
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await applyNPCPackGenerator(buildDraft(), true, true);
+      setPreview(response);
+      setMessage(response.applied ? "NPC pack applied to content files after validation." : "NPC pack apply was blocked.");
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleExport() {
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await exportNPCPackGenerator(buildDraft(), true);
+      setPreview(response);
+      setMessage(response.exported_pack ? "Safe character pack export preview is ready." : "Export was blocked by validation.");
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  return (
+    <section className="mod-manager-panel authoring-zone">
+      <div className="authoring-pane-header">
+        <div>
+          <h2>NPC Pack Generator</h2>
+          <p className="muted">Generate editable NPC candidates with RP profiles, voice, goals, schedules, and hidden-safe secrets.</p>
+        </div>
+        <button type="button" onClick={() => onOpenEditor("rp_characters")}>Open RP Editor</button>
+      </div>
+      <div className="template-grid">
+        <TextInput label="Pack id" value={draft.pack_id} onChange={(value) => updateDraft({ pack_id: value })} />
+        <TextInput label="Theme" value={draft.theme} onChange={(value) => updateDraft({ theme: value })} />
+        <TextInput label="RP style" value={draft.rp_style} onChange={(value) => updateDraft({ rp_style: value })} />
+        <label>
+          NPC count
+          <input type="number" min={1} max={50} value={draft.npc_count} onChange={(event) => updateDraft({ npc_count: Number(event.target.value) })} disabled={isBusy} />
+        </label>
+        <label>
+          Relationship density
+          <input type="number" min={0} max={1} step={0.05} value={draft.relationship_density} onChange={(event) => updateDraft({ relationship_density: Number(event.target.value) })} disabled={isBusy} />
+        </label>
+        <label>
+          Hidden secret ratio
+          <input type="number" min={0} max={1} step={0.05} value={draft.hidden_secret_ratio} onChange={(event) => updateDraft({ hidden_secret_ratio: Number(event.target.value) })} disabled={isBusy} />
+        </label>
+      </div>
+      <div className="template-grid">
+        <TextInput label="Faction ids" value={factionText} onChange={setFactionText} />
+        <TextInput label="Location ids" value={locationText} onChange={setLocationText} />
+        <TextInput label="Archetypes" value={archetypeText} onChange={setArchetypeText} />
+        <TextInput label="Simulation presets" value={presetText} onChange={setPresetText} />
+      </div>
+      <div className="authoring-header-actions">
+        <button type="button" onClick={() => void handlePreview()} disabled={isBusy}>Preview</button>
+        <button type="button" onClick={() => void handleValidate()} disabled={isBusy}>Validate</button>
+        <button type="button" onClick={() => void handleApply()} disabled={isBusy}>Apply</button>
+        <button type="button" onClick={() => void handleExport()} disabled={isBusy}>Safe Export</button>
+      </div>
+      {preview?.validation && <ValidationPanel validation={preview.validation} onSelectIssue={() => undefined} />}
+      {preview && (
+        <div className="template-preview">
+          <h3>NPC Candidates</h3>
+          <div className="card-grid">
+            {preview.generated.npc_candidates.map((npc) => (
+              <article className="summary-card" key={npc.id}>
+                <h4>{npc.name}</h4>
+                <p className="muted">{npc.id} · {npc.archetype} · {npc.location_id}</p>
+                <p>{npc.personality}</p>
+                {npc.hidden_secrets.length > 0 && <span className="badge">hidden secrets: {npc.hidden_secrets.length}</span>}
+              </article>
+            ))}
+          </div>
+          <h3>Generated YAML</h3>
+          {Object.entries(preview.yaml_contents).map(([fileName, content]) => (
+            <details key={fileName}>
+              <summary>{fileName}</summary>
+              <pre className="template-preview-code">{content}</pre>
+            </details>
+          ))}
+        </div>
+      )}
+      {message && <p className="muted">{message}</p>}
+      <ErrorPanel message={error} />
+    </section>
+  );
+}
+
+function defaultNPCPackGeneratorDraft(worldId: string): NPCPackGeneratorDraft {
+  return {
+    target_world_id: worldId,
+    pack_id: "npc_pack",
+    theme: "local ensemble",
+    faction_ids: [],
+    location_ids: [],
+    npc_count: 3,
+    archetypes: ["guard", "informant", "merchant"],
+    rp_style: "grounded",
+    simulation_preset_ids: [],
+    relationship_density: 0.25,
+    hidden_secret_ratio: 0,
+    llm_assisted: false
+  };
+}
+
+function QuestPackGeneratorPanel({ worldId }: { worldId: string }) {
+  const [draft, setDraft] = useState<QuestPackGeneratorDraft>(() => defaultQuestPackGeneratorDraft(worldId));
+  const [npcText, setNpcText] = useState<string>("harlan");
+  const [locationText, setLocationText] = useState<string>("village_square, old_bridge");
+  const [factionText, setFactionText] = useState<string>("village_council");
+  const [factText, setFactText] = useState<string>("");
+  const [preview, setPreview] = useState<QuestPackGeneratorPreviewResponse | null>(null);
+  const [message, setMessage] = useState<string>("");
+  const [error, setError] = useState<string>("");
+  const [isBusy, setIsBusy] = useState<boolean>(false);
+
+  useEffect(() => {
+    setDraft((current) => ({ ...current, target_world_id: worldId }));
+  }, [worldId]);
+
+  function updateDraft(patch: Partial<QuestPackGeneratorDraft>) {
+    setDraft((current) => ({ ...current, ...patch }));
+    setPreview(null);
+  }
+
+  function buildDraft(): QuestPackGeneratorDraft {
+    return {
+      ...draft,
+      target_world_id: worldId,
+      involved_npcs: parseCommaList(npcText),
+      involved_locations: parseCommaList(locationText),
+      involved_factions: parseCommaList(factionText),
+      required_facts: parseCommaList(factText)
+    };
+  }
+
+  async function handlePreview() {
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await previewQuestPackGenerator(buildDraft());
+      setPreview(response);
+      setMessage(response.validation.ok ? "Quest pack preview generated without writing files." : "Quest pack preview has validation issues.");
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleValidate() {
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await validateQuestPackGenerator(buildDraft());
+      setPreview(response);
+      setMessage(response.validation.ok ? "Quest pack draft validates." : "Quest pack draft needs changes.");
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleApply() {
+    if (!confirmDangerousAction("Apply generated quest draft to local content files after validation? Active saves are not changed.")) {
+      return;
+    }
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await applyQuestPackGenerator(buildDraft(), true, true);
+      setPreview(response);
+      setMessage(response.applied ? "Quest pack applied after validation." : "Quest pack apply was blocked.");
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  return (
+    <section className="mod-manager-panel authoring-zone">
+      <div className="authoring-pane-header">
+        <div>
+          <h2>Quest Pack Generator</h2>
+          <p className="muted">Generate structurally safe questline drafts, scenario regression candidates, and quest graph previews.</p>
+        </div>
+        <span className="badge">{preview?.generated.scenario_regression_candidates.length ?? 0} scenarios</span>
+      </div>
+      <div className="template-grid">
+        <TextInput label="Pack id" value={draft.pack_id} onChange={(value) => updateDraft({ pack_id: value })} />
+        <TextInput label="Theme" value={draft.theme} onChange={(value) => updateDraft({ theme: value })} />
+        <TextInput label="Reward policy" value={draft.reward_policy} onChange={(value) => updateDraft({ reward_policy: value })} />
+        <label>
+          Quest count
+          <input type="number" min={1} max={20} value={draft.quest_count} onChange={(event) => updateDraft({ quest_count: Number(event.target.value) })} disabled={isBusy} />
+        </label>
+      </div>
+      <div className="template-grid">
+        <TextInput label="NPC ids" value={npcText} onChange={setNpcText} />
+        <TextInput label="Location ids" value={locationText} onChange={setLocationText} />
+        <TextInput label="Faction ids" value={factionText} onChange={setFactionText} />
+        <TextInput label="Required facts" value={factText} onChange={setFactText} />
+      </div>
+      <div className="reference-picker-results">
+        <label>
+          <input type="checkbox" checked={draft.mystery_mode} onChange={(event) => updateDraft({ mystery_mode: event.target.checked })} disabled={isBusy} />
+          Mystery mode
+        </label>
+        <label>
+          <input type="checkbox" checked={draft.failure_paths_enabled} onChange={(event) => updateDraft({ failure_paths_enabled: event.target.checked })} disabled={isBusy} />
+          Failure paths
+        </label>
+      </div>
+      <div className="authoring-header-actions">
+        <button type="button" onClick={() => void handlePreview()} disabled={isBusy}>Preview</button>
+        <button type="button" onClick={() => void handleValidate()} disabled={isBusy}>Validate</button>
+        <button type="button" onClick={() => void handleApply()} disabled={isBusy}>Apply</button>
+      </div>
+      {preview?.validation && <ValidationPanel validation={preview.validation} onSelectIssue={() => undefined} />}
+      {preview?.generated.quality_checks && preview.generated.quality_checks.warnings.length > 0 && (
+        <ValidationPanel validation={preview.generated.quality_checks} onSelectIssue={() => undefined} />
+      )}
+      {preview && (
+        <div className="template-preview">
+          <h3>Quest Candidates</h3>
+          <div className="card-grid">
+            {preview.generated.quest_candidates.map((quest) => (
+              <article className="summary-card" key={String(quest.id)}>
+                <h4>{String(quest.title ?? quest.id)}</h4>
+                <p className="muted">{String(quest.id)} · {String(quest.initial_stage)}</p>
+                <p>{String(quest.description ?? "")}</p>
+              </article>
+            ))}
+          </div>
+          <h3>Scenario Regression Drafts</h3>
+          {preview.generated.scenario_regression_candidates.map((scenario) => (
+            <p className="muted" key={String(scenario.id)}>{String(scenario.id)} · {String(scenario.name)}</p>
+          ))}
+          <h3>Generated YAML</h3>
+          {Object.entries(preview.yaml_contents).map(([fileName, content]) => (
+            <details key={fileName}>
+              <summary>{fileName}</summary>
+              <pre className="template-preview-code">{content}</pre>
+            </details>
+          ))}
+        </div>
+      )}
+      {message && <p className="muted">{message}</p>}
+      <ErrorPanel message={error} />
+    </section>
+  );
+}
+
+function defaultQuestPackGeneratorDraft(worldId: string): QuestPackGeneratorDraft {
+  return {
+    target_world_id: worldId,
+    pack_id: "quest_pack",
+    theme: "local mystery",
+    quest_count: 1,
+    involved_npcs: [],
+    involved_locations: [],
+    involved_factions: [],
+    required_facts: [],
+    mystery_mode: false,
+    failure_paths_enabled: false,
+    reward_policy: "story",
+    llm_assisted: false
+  };
+}
+
+function LocationClusterTemplatePanel({ worldId }: { worldId: string }) {
+  const [templates, setTemplates] = useState<LocationClusterTemplate[]>([]);
+  const [templateId, setTemplateId] = useState<string>("");
+  const [variablesText, setVariablesText] = useState<string>("prefix=river\ndisplay_name=River Gate");
+  const [preview, setPreview] = useState<LocationClusterPreviewResponse | null>(null);
+  const [message, setMessage] = useState<string>("");
+  const [error, setError] = useState<string>("");
+  const [isBusy, setIsBusy] = useState<boolean>(false);
+
+  useEffect(() => {
+    void loadTemplates();
+  }, []);
+
+  async function loadTemplates() {
+    setError("");
+    try {
+      const response = await fetchLocationClusterTemplates();
+      setTemplates(response.templates);
+      setTemplateId((current) => current || response.templates[0]?.id || "");
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    }
+  }
+
+  async function handlePreview() {
+    if (!templateId) {
+      return;
+    }
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await previewLocationClusterTemplate(templateId, worldId, parseKeyValueLines(variablesText));
+      setPreview(response);
+      setMessage(response.validation.ok ? "Location cluster preview generated without writing files." : "Location cluster preview has validation issues.");
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleApply() {
+    if (!templateId || !confirmDangerousAction("Apply this location cluster draft to locations.yaml after validation? Active GameState is not changed.")) {
+      return;
+    }
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await applyLocationClusterTemplate(templateId, worldId, parseKeyValueLines(variablesText), true, true);
+      setPreview(response);
+      setMessage(response.applied ? "Location cluster applied after validation." : "Location cluster apply was blocked.");
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  const selected = templates.find((template) => template.id === templateId);
+  return (
+    <section className="mod-manager-panel authoring-zone">
+      <div className="authoring-pane-header">
+        <div>
+          <h2>Location Cluster Templates</h2>
+          <p className="muted">Create connected location groups with authoring-only hidden paths and map validation.</p>
+        </div>
+        <span className="badge">{selected?.cluster_type ?? "cluster"}</span>
+      </div>
+      <div className="template-grid">
+        <label>
+          Template
+          <select value={templateId} onChange={(event) => { setTemplateId(event.target.value); setPreview(null); }} disabled={isBusy}>
+            {templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
+          </select>
+        </label>
+        <label className="full-width-field">
+          Variables
+          <textarea value={variablesText} onChange={(event) => setVariablesText(event.target.value)} disabled={isBusy} />
+        </label>
+      </div>
+      {selected && (
+        <p className="muted">
+          Required: {selected.required_variables.join(", ") || "none"} · Nodes: {selected.location_nodes.length} · Hidden edges: {selected.optional_hidden_edges.length}
+        </p>
+      )}
+      <div className="authoring-header-actions">
+        <button type="button" onClick={() => void handlePreview()} disabled={isBusy || !templateId}>Preview</button>
+        <button type="button" onClick={() => void handleApply()} disabled={isBusy || !templateId}>Apply Draft</button>
+      </div>
+      {preview?.validation && <ValidationPanel validation={preview.validation} onSelectIssue={() => undefined} />}
+      {preview && (
+        <div className="template-preview">
+          <h3>Map Preview</h3>
+          <MapEditorSvg
+            graph={preview.graph}
+            selectedNodeId=""
+            selectedEdgeIndex={-1}
+            onSelectNode={() => undefined}
+            onSelectEdge={() => undefined}
+            draggingNodeId=""
+            onDragStart={() => undefined}
+            onDragEnd={() => undefined}
+            onMoveNode={() => undefined}
+          />
+          <h3>Generated locations.yaml</h3>
+          <pre className="template-preview-code">{preview.yaml_content}</pre>
+        </div>
+      )}
+      {message && <p className="muted">{message}</p>}
+      <ErrorPanel message={error} />
+    </section>
+  );
+}
+
+function parseCommaList(value: string): string[] {
+  return value.split(",").map((item) => item.trim()).filter(Boolean);
 }
 
 function parseKeyValueLines(value: string): Record<string, string> {
@@ -7117,27 +8608,65 @@ function ContentDiffReviewPanel({ worldId, fileName, content, onJump }: { worldI
   );
 }
 
-const LIBRARY_TYPES: Array<"all" | LocalContentType> = ["all", "world", "character_pack", "template_pack", "scenario_suite", "prompt_profile", "RP_profile", "mod"];
+const LIBRARY_TYPES: Array<"all" | LocalContentType> = [
+  "all",
+  "world",
+  "character_pack",
+  "quest_pack",
+  "NPC_pack",
+  "template_pack",
+  "scenario_suite",
+  "prompt_profile",
+  "RP_profile",
+  "mod",
+  "script_package",
+  "campaign_starter"
+];
 
 function LocalContentLibraryPanel({ onOpenEditor }: { onOpenEditor: (toolId: AuthoringToolId) => void }) {
   const [items, setItems] = useState<LocalContentLibraryItem[]>([]);
   const [filter, setFilter] = useState<"all" | LocalContentType>("all");
+  const [query, setQuery] = useState<string>("");
+  const [tagFilter, setTagFilter] = useState<string>("");
   const [selectedId, setSelectedId] = useState<string>("");
   const [validation, setValidation] = useState<AuthoringValidation | null>(null);
+  const [batchReport, setBatchReport] = useState<Record<string, unknown> | null>(null);
   const [archiveDraft, setArchiveDraft] = useState<string>("");
+  const [exportProfiles, setExportProfiles] = useState<ExportProfile[]>([]);
+  const [importProfiles, setImportProfiles] = useState<ImportProfile[]>([]);
+  const [selectedExportProfileId, setSelectedExportProfileId] = useState<string>("safe");
+  const [selectedImportProfileId, setSelectedImportProfileId] = useState<string>("safe");
   const [message, setMessage] = useState<string>("");
   const [error, setError] = useState<string>("");
   const [isBusy, setIsBusy] = useState<boolean>(false);
 
   useEffect(() => {
     void loadItems();
-  }, [filter]);
+  }, [filter, query, tagFilter]);
+
+  useEffect(() => {
+    void loadProfiles();
+  }, []);
+
+  async function loadProfiles() {
+    try {
+      const catalog = await fetchImportExportProfiles();
+      setExportProfiles(catalog.export_profiles);
+      setImportProfiles(catalog.import_profiles);
+    } catch {
+      setExportProfiles([]);
+      setImportProfiles([]);
+    }
+  }
 
   async function loadItems() {
     setIsBusy(true);
     setError("");
     try {
-      const response = await fetchLocalContentLibrary(filter);
+      const tags = tagFilter.trim() ? commaList(tagFilter) : [];
+      const response = query.trim() || tags.length
+        ? await searchLocalContentLibrary(query, filter === "all" ? [] : [filter], tags)
+        : await fetchLocalContentLibrary(filter);
       setItems(response.items);
       setSelectedId((current) => response.items.some((item) => item.id === current) ? current : response.items[0]?.id ?? "");
     } catch (err) {
@@ -7170,7 +8699,7 @@ function LocalContentLibraryPanel({ onOpenEditor }: { onOpenEditor: (toolId: Aut
     setIsBusy(true);
     setError("");
     try {
-      const response = await exportLocalContentLibraryItem(selected.content_type, selected.id);
+      const response = await exportLocalContentLibraryItem(selected.content_type, selected.id, selectedExportProfileId);
       setArchiveDraft(response.archive_base64);
       setMessage(`Export ready: ${response.file_name}`);
     } catch (err) {
@@ -7191,10 +8720,25 @@ function LocalContentLibraryPanel({ onOpenEditor }: { onOpenEditor: (toolId: Aut
     setIsBusy(true);
     setError("");
     try {
-      const response = await importLocalContentLibraryArchive(archiveDraft.trim(), false, confirmApply);
+      const response = await importLocalContentLibraryArchive(archiveDraft.trim(), false, confirmApply, selectedImportProfileId);
       setMessage(JSON.stringify(response));
       void loadItems();
     } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleBatchValidate() {
+    setIsBusy(true);
+    setError("");
+    try {
+      const response = await batchValidateLocalContentLibrary(items.map((item) => item.id), filter === "all" ? [] : [filter]);
+      setBatchReport(response);
+      setMessage("Batch validation complete.");
+    } catch (err) {
+      setBatchReport(null);
       setError(authoringErrorMessage(err));
     } finally {
       setIsBusy(false);
@@ -7212,7 +8756,23 @@ function LocalContentLibraryPanel({ onOpenEditor }: { onOpenEditor: (toolId: Aut
       </div>
       <div className="template-grid">
         <label>Type<select value={filter} onChange={(event) => setFilter(event.target.value as "all" | LocalContentType)}>{LIBRARY_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}</select></label>
+        <TextInput label="Search" value={query} onChange={setQuery} />
+        <TextInput label="Tags" value={tagFilter} onChange={setTagFilter} />
         <label>Item<select value={selected?.id ?? ""} onChange={(event) => setSelectedId(event.target.value)}>{items.map((item) => <option key={`${item.content_type}:${item.id}`} value={item.id}>{item.name}</option>)}</select></label>
+        <label>
+          Export profile
+          <select value={selectedExportProfileId} onChange={(event) => setSelectedExportProfileId(event.target.value)}>
+            {exportProfiles.length === 0 && <option value="safe">Safe Export</option>}
+            {exportProfiles.map((profile) => <option key={profile.profile_id} value={profile.profile_id}>{profile.name}</option>)}
+          </select>
+        </label>
+        <label>
+          Import profile
+          <select value={selectedImportProfileId} onChange={(event) => setSelectedImportProfileId(event.target.value)}>
+            {importProfiles.length === 0 && <option value="safe">Safe Import</option>}
+            {importProfiles.map((profile) => <option key={profile.profile_id} value={profile.profile_id}>{profile.name}</option>)}
+          </select>
+        </label>
       </div>
       {selected ? (
         <div className="diff-summary">
@@ -7220,15 +8780,20 @@ function LocalContentLibraryPanel({ onOpenEditor }: { onOpenEditor: (toolId: Aut
           <p>{selected.content_type} / {selected.id}</p>
           <p className="muted">{selected.description || "No description."}</p>
           <p>Path: {selected.path_label}</p>
+          <p>Tags: {selected.tags.length ? selected.tags.join(", ") : "none"}</p>
+          <p>Dependencies: {selected.dependencies.length ? selected.dependencies.join(", ") : "none"}</p>
+          <pre className="template-preview-code">{JSON.stringify(selected.quality_summary, null, 2)}</pre>
           <pre className="template-preview-code">{JSON.stringify(selected.metadata, null, 2)}</pre>
           <div className="authoring-header-actions">
             <button type="button" onClick={() => void handleValidate()} disabled={isBusy || !selected.capabilities.includes("validate")}>Validate</button>
             <button type="button" onClick={() => void handleExport()} disabled={isBusy || !selected.capabilities.includes("export")}>Export</button>
+            <button type="button" onClick={() => void handleBatchValidate()} disabled={isBusy || items.length === 0}>Batch Validate</button>
             <button type="button" onClick={() => onOpenEditor(libraryToolForItem(selected))}>Open Editor</button>
           </div>
         </div>
       ) : <EmptyState title="No content items." detail="The local library did not find matching items." />}
       {validation && <ValidationPanel validation={validation} onSelectIssue={() => undefined} />}
+      {batchReport && <pre className="template-preview-code">{JSON.stringify(batchReport, null, 2)}</pre>}
       <label className="full-width-field">Import archive payload<textarea value={archiveDraft} onChange={(event) => setArchiveDraft(event.target.value)} /></label>
       <div className="authoring-header-actions">
         <button type="button" onClick={() => void handleImport(false)} disabled={isBusy}>Import Dry-run</button>
@@ -7377,6 +8942,141 @@ function ProjectStatusCard({ title, status }: { title: string; status: Authoring
       {status.last_run_at && <p className="muted">{new Date(status.last_run_at).toLocaleString()}</p>}
     </div>
   );
+}
+
+function ProductionPipelineDashboardPanel({
+  worldId,
+  onOpenEditor
+}: {
+  worldId: string;
+  onOpenEditor: (toolId: AuthoringToolId) => void;
+}) {
+  const [summary, setSummary] = useState<ProductionPipelineSummary | null>(null);
+  const [error, setError] = useState("");
+  const [isBusy, setIsBusy] = useState(false);
+
+  useEffect(() => {
+    void loadSummary();
+  }, [worldId]);
+
+  async function loadSummary() {
+    setIsBusy(true);
+    setError("");
+    try {
+      setSummary(await fetchProductionPipelineSummary(worldId));
+    } catch (err) {
+      setSummary(null);
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  return (
+    <section className="mod-manager-panel authoring-zone">
+      <div className="authoring-pane-header">
+        <div>
+          <h2>Production Pipeline Dashboard</h2>
+          <p className="muted">Safe local summary for production drafts, packages, validation, coverage, and quality gates.</p>
+        </div>
+        <button type="button" onClick={() => void loadSummary()} disabled={isBusy}>Refresh</button>
+      </div>
+      {summary ? (
+        <>
+          <div className="template-grid">
+            <PipelineStatusCard title="Batch validation" status={summary.batch_validation_status} />
+            <PipelineStatusCard title="Quality gate" status={summary.quality_gate_summary} />
+            <PipelineStatusCard title="Import/export profiles" status={summary.import_export_profile_status} />
+            <PipelineStatusCard title="Script packages" status={summary.script_package_build_status} />
+            <PipelineStatusCard title="Campaign starters" status={summary.campaign_starter_status} />
+          </div>
+          <div className="template-grid">
+            <PipelineTaskList title="Production flows" tasks={summary.active_production_drafts} onOpenEditor={onOpenEditor} />
+            <PipelineTaskList title="Recent packages" tasks={summary.recent_generated_packages} onOpenEditor={onOpenEditor} />
+            <div className="diff-summary">
+              <h3>Coverage plan</h3>
+              {summary.content_coverage_plan ? (
+                <ul className="compact-list">
+                  <li>Location gaps: {summary.content_coverage_plan.missing_location_types.length}</li>
+                  <li>NPC gaps: {summary.content_coverage_plan.missing_npc_archetypes.length}</li>
+                  <li>Quest gaps: {summary.content_coverage_plan.missing_quest_types.length}</li>
+                  <li>Scenario gaps: {summary.content_coverage_plan.missing_scenario_regressions.length}</li>
+                </ul>
+              ) : <p className="muted">No coverage plan available.</p>}
+            </div>
+          </div>
+          <div className="authoring-header-actions">
+            {summary.quick_entries.map((entry) => (
+              <button key={entry.tool_id} type="button" onClick={() => onOpenEditor(pipelineToolId(entry.tool_id))}>
+                {entry.label}
+              </button>
+            ))}
+          </div>
+          {(summary.blockers.length > 0 || summary.warnings.length > 0) && (
+            <div className="diff-summary">
+              <h3>Warnings / blockers</h3>
+              <ul className="compact-list">
+                {summary.blockers.map((item) => <li key={`b-${item}`} className="error">{item}</li>)}
+                {summary.warnings.map((item) => <li key={`w-${item}`}>{item}</li>)}
+              </ul>
+            </div>
+          )}
+          <p className="muted">Hidden content, sensitive paths, API keys, and raw environment values are redacted.</p>
+        </>
+      ) : <EmptyState title="Production pipeline summary unavailable." detail="Refresh after selecting a local world pack." />}
+      <ErrorPanel message={error} />
+    </section>
+  );
+}
+
+function PipelineStatusCard({ title, status }: { title: string; status: ProductionPipelineSummary["batch_validation_status"] }) {
+  const tone = status.status === "passed" || status.status === "ready" ? "ok" : status.status === "not_run" ? "muted" : "warn";
+  return (
+    <div className="diff-summary">
+      <h3>{title}</h3>
+      <p><span className={`badge ${tone}`}>{status.status}</span> {status.summary}</p>
+      <p className="muted">Count: {status.count} / Blockers: {status.blockers.length} / Warnings: {status.warnings.length}</p>
+    </div>
+  );
+}
+
+function PipelineTaskList({
+  title,
+  tasks,
+  onOpenEditor
+}: {
+  title: string;
+  tasks: ProductionPipelineTask[];
+  onOpenEditor: (toolId: AuthoringToolId) => void;
+}) {
+  return (
+    <div className="diff-summary">
+      <h3>{title}</h3>
+      {tasks.length > 0 ? (
+        <ul className="compact-list">
+          {tasks.map((task) => (
+            <li key={`${task.tool_id}-${task.label}`}>
+              <button type="button" className="link-button" onClick={() => onOpenEditor(pipelineToolId(task.tool_id))}>
+                {task.label}
+              </button>
+              <span className="muted"> {task.summary}</span>
+            </li>
+          ))}
+        </ul>
+      ) : <p className="muted">No package artifacts indexed yet.</p>}
+    </div>
+  );
+}
+
+function pipelineToolId(toolId: string): AuthoringToolId {
+  if (toolId === "world_pack_wizard") return "world_pack_wizard";
+  if (toolId === "npc_pack_generator") return "npc_pack_generator";
+  if (toolId === "quest_pack_generator") return "quest_pack_generator";
+  if (toolId === "script_package_builder") return "template_wizard";
+  if (toolId === "campaign_starter") return "template_wizard";
+  if (toolId === "batch_validator") return "validation";
+  if (toolId === "scenarios") return "scenarios";
+  return "library";
 }
 
 function toolForFile(fileName: string): AuthoringToolId {

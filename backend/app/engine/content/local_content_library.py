@@ -9,6 +9,19 @@ import yaml
 from pydantic import BaseModel, Field
 
 from app.engine.content.character_pack_builder import CharacterPackExportRequest, export_character_pack
+from app.engine.content.content_batch_validator import (
+    BatchPackageType,
+    ContentBatchValidationRequest,
+    ContentBatchValidationReport,
+    ContentBatchValidationTarget,
+    validate_content_batch,
+)
+from app.engine.content.import_export_profiles import (
+    apply_export_profile_to_character_pack,
+    character_pack_export_request_for_profile,
+    get_export_profile,
+    get_import_profile,
+)
 from app.engine.content.import_export import ArchiveExport, ImportExportService, ImportResult, PackageDryRunResult
 from app.engine.content.mod_loader import ModLoader
 from app.engine.content.scenario_templates import ScenarioTemplateRenderer
@@ -25,11 +38,15 @@ class LocalContentLibraryError(ValueError):
 class LocalContentType(StrEnum):
     WORLD = "world"
     CHARACTER_PACK = "character_pack"
+    QUEST_PACK = "quest_pack"
+    NPC_PACK = "NPC_pack"
     TEMPLATE_PACK = "template_pack"
     SCENARIO_SUITE = "scenario_suite"
     PROMPT_PROFILE = "prompt_profile"
     RP_PROFILE = "RP_profile"
     MOD = "mod"
+    SCRIPT_PACKAGE = "script_package"
+    CAMPAIGN_STARTER = "campaign_starter"
 
 
 class LocalContentLibraryItem(BaseModel):
@@ -40,6 +57,9 @@ class LocalContentLibraryItem(BaseModel):
     description: str = ""
     path_label: str = ""
     metadata: dict[str, Any] = Field(default_factory=dict)
+    tags: list[str] = Field(default_factory=list)
+    dependencies: list[str] = Field(default_factory=list)
+    quality_summary: dict[str, Any] = Field(default_factory=dict)
     capabilities: list[str] = Field(default_factory=lambda: ["inspect", "validate", "export"])
 
 
@@ -52,11 +72,25 @@ class LocalContentLibraryImportRequest(BaseModel):
     archive_base64: str
     overwrite: bool = False
     confirm_apply: bool = False
+    import_profile_id: str | None = None
 
 
 class LocalContentLibraryExportRequest(BaseModel):
     content_type: LocalContentType
     item_id: str
+    export_profile_id: str | None = None
+
+
+class LocalContentLibrarySearchRequest(BaseModel):
+    query: str = ""
+    content_types: list[LocalContentType] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+
+
+class LocalContentLibraryBatchValidateRequest(BaseModel):
+    item_ids: list[str] = Field(default_factory=list)
+    content_types: list[LocalContentType] = Field(default_factory=list)
+    normal_report: bool = True
 
 
 class LocalContentLibraryDuplicateRequest(BaseModel):
@@ -84,6 +118,45 @@ class LocalContentLibraryService:
         if content_type:
             items = [item for item in items if item.content_type == content_type]
         return LocalContentLibrary(items=sorted(items, key=lambda item: (item.content_type.value, item.id)))
+
+    def search_items(self, request: LocalContentLibrarySearchRequest) -> LocalContentLibrary:
+        query = request.query.strip().lower()
+        tags = {tag.strip().lower() for tag in request.tags if tag.strip()}
+        types = set(request.content_types)
+        items = self.list_items().items
+        if types:
+            items = [item for item in items if item.content_type in types]
+        if query:
+            items = [
+                item for item in items
+                if query in item.id.lower()
+                or query in item.name.lower()
+                or query in item.description.lower()
+                or any(query in tag.lower() for tag in item.tags)
+            ]
+        if tags:
+            items = [item for item in items if tags.issubset({tag.lower() for tag in item.tags})]
+        return LocalContentLibrary(items=items)
+
+    def batch_validate(self, request: LocalContentLibraryBatchValidateRequest) -> ContentBatchValidationReport:
+        items = self.list_items().items
+        ids = {_safe_id(item_id) for item_id in request.item_ids}
+        types = set(request.content_types)
+        if ids:
+            items = [item for item in items if item.id in ids]
+        if types:
+            items = [item for item in items if item.content_type in types]
+        targets = [target for item in items if (target := self._batch_target_for_item(item)) is not None]
+        return validate_content_batch(
+            ContentBatchValidationRequest(
+                targets=targets,
+                worlds_root=str(self.worlds_root),
+                packages_root=str(self.templates_root.parent / "packages"),
+                templates_root=str(self.templates_root),
+                mods_root=str(self.mods_root),
+                normal_report=request.normal_report,
+            )
+        )
 
     def inspect_item(self, item_id: str) -> LocalContentLibraryItem:
         safe_id = _safe_id(item_id)
@@ -126,7 +199,12 @@ class LocalContentLibraryService:
         if request.content_type == LocalContentType.SCENARIO_SUITE:
             return self.import_export.export_scenario_suite(item_id)
         if request.content_type == LocalContentType.CHARACTER_PACK:
-            pack = export_character_pack(CharacterPackExportRequest(world_id=item_id), self._authoring_service())
+            profile = get_export_profile(request.export_profile_id or "safe")
+            pack_request = character_pack_export_request_for_profile(
+                CharacterPackExportRequest(world_id=item_id, export_profile_id=request.export_profile_id),
+                profile,
+            )
+            pack = apply_export_profile_to_character_pack(export_character_pack(pack_request, self._authoring_service()), profile)
             import json
             from io import BytesIO
             from zipfile import ZIP_DEFLATED, ZipFile
@@ -139,6 +217,9 @@ class LocalContentLibraryService:
         raise LocalContentLibraryError(f"Export is not supported for {request.content_type.value}")
 
     def import_archive(self, request: LocalContentLibraryImportRequest) -> PackageDryRunResult | ImportResult:
+        profile = get_import_profile(request.import_profile_id or "safe")
+        if request.import_profile_id and request.overwrite and not profile.allow_overwrite:
+            raise LocalContentLibraryError("Selected import profile does not allow overwrite.")
         if request.confirm_apply:
             return self.import_export.apply_import_package(
                 request.archive_base64,
@@ -203,6 +284,9 @@ class LocalContentLibraryService:
                     description=manifest.description if manifest else "",
                     path_label=f"worlds/{path.name}",
                     metadata={"start_location_id": manifest.start_location_id if manifest else None},
+                    tags=["world", "content_pack"],
+                    dependencies=[],
+                    quality_summary=_quality_summary_for_world(self.worlds_root, path.name),
                     capabilities=["inspect", "validate", "export", "duplicate"],
                 )
             )
@@ -222,6 +306,9 @@ class LocalContentLibraryService:
                 description=mod.manifest.description,
                 path_label=f"mods/{mod.manifest.id}",
                 metadata={"dependencies": mod.manifest.dependencies, "conflicts": mod.manifest.conflicts},
+                tags=["mod", *[str(tag) for tag in getattr(mod.manifest, "tags", [])]],
+                dependencies=mod.manifest.dependencies,
+                quality_summary={"validation": "available"},
                 capabilities=["inspect", "validate", "export"],
             )
             for mod in mods
@@ -238,6 +325,8 @@ class LocalContentLibraryService:
                 name="Local Templates",
                 path_label="templates",
                 metadata={"template_count": count},
+                tags=["template", "local"],
+                quality_summary={"template_count": count},
                 capabilities=["inspect", "validate", "export"],
             )
         ]
@@ -248,6 +337,8 @@ class LocalContentLibraryService:
             content_type=LocalContentType.SCENARIO_SUITE,
             name="Local Scenario Regression Suite",
             path_label="scenario_suite",
+            tags=["scenario", "regression"],
+            quality_summary={"validation": "available"},
             capabilities=["inspect", "validate", "export"],
         )
 
@@ -261,6 +352,8 @@ class LocalContentLibraryService:
                 description=profile.description,
                 path_label="prompt_profiles",
                 metadata={"tags": getattr(profile, "tags", []), "llm_scope": "profile_only"},
+                tags=["prompt_profile", *[str(tag) for tag in getattr(profile, "tags", [])]],
+                quality_summary={"llm_scope": "profile_only"},
                 capabilities=["inspect", "validate"],
             )
             for profile in profiles
@@ -283,10 +376,22 @@ class LocalContentLibraryService:
                             name=str(npc.get("name", npc_id)),
                             path_label=f"worlds/{world.id}/npcs",
                             metadata={"world_id": world.id, "npc_id": npc_id, "private_fields_redacted": True},
+                            tags=["RP_profile", f"world:{world.id}"],
+                            dependencies=[world.id],
+                            quality_summary={"private_fields_redacted": True},
                             capabilities=["inspect", "validate"],
                         )
                     )
         return items
+
+    def _batch_target_for_item(self, item: LocalContentLibraryItem) -> ContentBatchValidationTarget | None:
+        if item.content_type == LocalContentType.WORLD:
+            return ContentBatchValidationTarget(package_type=BatchPackageType.WORLD, id=item.id)
+        if item.content_type == LocalContentType.MOD:
+            return ContentBatchValidationTarget(package_type=BatchPackageType.MOD_PACKAGE, id=item.id)
+        if item.content_type == LocalContentType.TEMPLATE_PACK:
+            return ContentBatchValidationTarget(package_type=BatchPackageType.TEMPLATE_PACK, id=item.id)
+        return None
 
     def _authoring_service(self):
         from app.engine.content.authoring_service import ContentAuthoringService
@@ -300,6 +405,20 @@ def _read_manifest(path: Path) -> WorldManifest | None:
         return WorldManifest.model_validate(data) if isinstance(data, dict) else None
     except Exception:
         return None
+
+
+def _quality_summary_for_world(worlds_root: Path, world_id: str) -> dict[str, Any]:
+    try:
+        from app.engine.content.validator import validate_world_pack
+
+        report = validate_world_pack(world_id, worlds_root=worlds_root)
+        return {
+            "validation_ok": report.ok,
+            "errors": len(report.errors),
+            "warnings": len(report.warnings),
+        }
+    except Exception:
+        return {"validation_ok": False, "errors": 0, "warnings": 0}
 
 
 def _safe_id(item_id: str) -> str:

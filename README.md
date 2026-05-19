@@ -9,11 +9,12 @@ This project is for local personal use. It is not designed as a hosted service.
 
 ## Current Version Scope
 
-v1.3 is Advanced NPC Simulation on top of v1.2 Visual Authoring Pro, the v1.1
-Roleplay Immersion Layer, and the v1.0 Stable Local Studio Edition. v1.0
-freezes the local contracts built through the v0.x series, v1.1 adds character
-voice and RP-safe dialogue, v1.2 expands local visual authoring, and v1.3 adds
-bounded rule-driven NPC autonomy without changing world authority:
+v1.4 is Content Production Pipeline on top of v1.3 Advanced NPC Simulation,
+v1.2 Visual Authoring Pro, the v1.1 Roleplay Immersion Layer, and the v1.0
+Stable Local Studio Edition. v1.0 freezes the local contracts built through
+the v0.x series, v1.1 adds character voice and RP-safe dialogue, v1.2 expands
+local visual authoring, v1.3 adds bounded rule-driven NPC autonomy, and v1.4
+adds local batch content production without changing world authority:
 
 - Multi-world content packs.
 - Structured `GameState`, `StateDelta`, `EventLog`, and SQLite save/load.
@@ -120,12 +121,29 @@ bounded rule-driven NPC autonomy without changing world authority:
 - NPC Simulation Authoring Presets.
 - NPC Simulation Quality Evals.
 - NPC Simulation Regression Playtests.
+- Content Production Boundary Contract.
+- World Pack Wizard.
+- NPC Pack Generator and Quest Pack Generator.
+- Location Cluster Templates.
+- Mystery Template System and Faction Template System.
+- Content Batch Validator and Content Coverage Planner.
+- Export / Import Profiles.
+- Local Content Library Pro.
+- Batch Character Card Import.
+- Batch Lorebook Classification.
+- Script Package Builder.
+- Campaign Starter Kit Builder.
+- Production Pipeline Dashboard.
+- Content Production CLI.
+- Batch Quality Gate.
 
 The LLM is still not the world judge. Rule outcomes are decided by local code.
 NPC simulation is deterministic, finite, knowledge-scoped, and applied through
-`StateDelta` plus `Event`; it is not an LLM multi-agent simulator.
+`StateDelta` plus `Event`; it is not an LLM multi-agent simulator. v1.4
+production tools generate drafts, candidates, packages, previews, and reports;
+they do not directly modify active `GameState`.
 
-## v1.3 Documentation Map
+## v1.4 Documentation Map
 
 - `docs/SPEC.md`: project scope, boundaries, and known limitations.
 - `docs/WORLD_ENGINE.md`: engine behavior, rules, state, events, authoring,
@@ -137,7 +155,14 @@ NPC simulation is deterministic, finite, knowledge-scoped, and applied through
   boundary.
 - `docs/NPC_SIMULATION_BOUNDARY.md`: v1.3 NPC simulation knowledge,
   visibility, StateDelta, EventLog, and no-LLM-agent boundary.
+- `docs/CONTENT_PRODUCTION_BOUNDARY.md`: v1.4 production draft, batch import,
+  package, validation, quality, and active-GameState boundary.
 - `docs/CONTENT_PACKS.md`: content pack format and authoring notes.
+- `docs/V1_4_ROADMAP.md`: v1.4 Content Production Pipeline roadmap.
+- `docs/V1_4_LLM_BOUNDARY_AUDIT.md`: v1.4 LLM permission audit.
+- `docs/V1_4_VISIBILITY_CONTENT_PACKAGE_AUDIT.md`: v1.4 visibility/content
+  package audit.
+- `docs/V1_4_SECURITY_AUDIT.md`: v1.4 security/import/batch audit.
 - `docs/V1_3_ROADMAP.md`: v1.3 Advanced NPC Simulation roadmap.
 - `docs/V1_3_LLM_BOUNDARY_AUDIT.md`: v1.3 LLM permission audit.
 - `docs/V1_3_VISIBILITY_KNOWLEDGE_NPC_AUDIT.md`: v1.3 visibility,
@@ -204,6 +229,7 @@ AUTHORING_ROOT=worlds
 MODS_ROOT=mods
 TEMPLATE_ROOT=templates
 PACKAGE_IMPORT_ROOT=imports
+CONTENT_LIBRARY_ROOT=
 ```
 
 `LLM_PROVIDER=mock` is the local development default. `local_stub` is a
@@ -215,14 +241,17 @@ does not make the model a world judge. Use `openai` only when you explicitly
 want real API calls and have set the API key through the environment. API keys
 must never be committed, logged, or placed in frontend code.
 
-`AUTHORING_ROOT`, `MODS_ROOT`, `TEMPLATE_ROOT`, `PACKAGE_IMPORT_ROOT`, and
-`MEMORY_BACKEND` document the intended local configuration surface. Some
-runtime paths still use the current repository defaults.
+`AUTHORING_ROOT`, `MODS_ROOT`, `TEMPLATE_ROOT`, `PACKAGE_IMPORT_ROOT`,
+`CONTENT_LIBRARY_ROOT`, and `MEMORY_BACKEND` document the intended local
+configuration surface. Some runtime paths still use the current repository
+defaults; v1.4 Local Content Library Pro currently derives its roots from the
+local import/export service rather than a dedicated `CONTENT_LIBRARY_ROOT`
+runtime setting.
 
-There is currently no separate `ENABLE_QUALITY_API` setting. v0.9 quality
-tools reuse local-only debug/eval/playtest/performance gates where implemented;
-some analyzer endpoints are local-only and should not be exposed outside a
-trusted localhost setup.
+There is currently no separate `ENABLE_QUALITY_API` setting. v0.9-v1.4 quality
+tools reuse local-only debug/eval/playtest/performance/authoring gates where
+implemented; some analyzer endpoints are local-only and should not be exposed
+outside a trusted localhost setup.
 
 ## Start the Backend
 
@@ -1161,6 +1190,216 @@ preset returns an NPC draft preview and validation-gate result. It does not
 modify active `GameState`, does not execute scripts, and does not grant NPCs
 unknown facts.
 
+## v1.4 Content Production Pipeline
+
+v1.4 production tools are local studio tools. They create drafts, candidates,
+packages, previews, reports, and quality decisions. They do not directly modify
+active `GameState`, do not execute scripts, do not download remote content, and
+do not call a real LLM by default. Enable authoring APIs only on a trusted
+local machine:
+
+```powershell
+$env:ENABLE_AUTHORING_API = "true"
+```
+
+### World Pack Wizard
+
+```text
+POST /authoring/production/world-pack/create-draft
+POST /authoring/production/world-pack/preview
+POST /authoring/production/world-pack/validate
+POST /authoring/production/world-pack/apply
+```
+
+The wizard writes generated world-pack files only after validation and explicit
+apply.
+
+### NPC Pack Generator
+
+```text
+POST /production/npc-pack/preview
+POST /production/npc-pack/validate
+POST /production/npc-pack/apply
+POST /production/npc-pack/export
+```
+
+Generated NPCs, RP profiles, voice profiles, relationships, goals, and
+schedules are candidates. Hidden secrets stay hidden.
+
+### Quest Pack Generator
+
+```text
+POST /production/quest-pack/preview
+POST /production/quest-pack/validate
+POST /production/quest-pack/apply
+```
+
+Quest drafts include quest graph and scenario regression candidates. They do
+not publish quests to active saves.
+
+### Location Cluster Templates
+
+```text
+GET  /production/location-clusters
+POST /production/location-clusters/{id}/preview
+POST /production/location-clusters/{id}/apply-draft
+```
+
+Preview renders a `MapVisualGraph`; hidden edges stay hidden.
+
+### Mystery Template System
+
+```text
+GET  /production/mystery-templates
+POST /production/mystery-templates/{id}/preview
+POST /production/mystery-templates/{id}/apply-draft
+```
+
+Truth facts are hidden, red herrings are marked, and normal previews avoid
+revealing hidden truth text.
+
+### Faction Template System
+
+```text
+GET  /production/faction-templates
+POST /production/faction-templates/{id}/preview
+POST /production/faction-templates/{id}/apply-draft
+```
+
+Faction templates produce drafts for factions, relations, duties, and hooks;
+they are not a war simulator.
+
+### Batch Validator
+
+```text
+POST /production/batch-validate
+```
+
+CLI:
+
+```powershell
+python -m backend.app.tools.production batch-validate --target world:mist_valley
+```
+
+Batch validation aggregates pass/warning/fail/blocker status and does not
+execute package content.
+
+### Coverage Planner
+
+```text
+POST /production/content-coverage-plan
+```
+
+The planner recommends missing content coverage without writing content.
+
+### Export / Import Profiles
+
+```text
+GET /authoring/import-export-profiles
+```
+
+Safe export redacts hidden text and forbids API keys. Import profiles require
+validation and reject executables.
+
+### Local Content Library Pro
+
+```text
+GET  /library/items
+POST /library/items/search
+GET  /library/items/{id}
+POST /library/items/{id}/validate
+POST /library/items/batch-validate
+POST /library/import
+POST /library/items/{id}/export
+```
+
+Normal library views avoid sensitive absolute paths and hidden details.
+
+### Batch Character Card Import
+
+```text
+POST /production/characters/batch-import/preview
+POST /production/characters/batch-import/apply-draft
+POST /production/characters/batch-import/export-pack
+```
+
+Unsafe prompt text is flagged. Import does not automatically overwrite NPCs or
+write active worlds.
+
+### Batch Lorebook Classification
+
+```text
+POST /production/lorebooks/batch-classify/preview
+POST /production/lorebooks/batch-classify/apply-draft
+```
+
+Hidden entries stay redacted in normal reports and require explicit selection
+before apply.
+
+### Script Package Builder
+
+```text
+POST /production/script-packages/build-dry-run
+POST /production/script-packages/build
+POST /production/script-packages/validate
+POST /production/script-packages/export
+```
+
+Script packages are data packages. The builder rejects executables, `.env`,
+API keys, databases, and logs.
+
+### Campaign Starter Kit Builder
+
+```text
+POST /production/campaign-starter/preview
+POST /production/campaign-starter/build
+POST /production/campaign-starter/export-script
+```
+
+Starter kits compose world, NPC, quest, faction, optional mystery, scenario,
+quality, and package drafts. They are not automatic full campaign writers.
+
+### Production Pipeline Dashboard
+
+```text
+GET /production/pipeline-summary
+```
+
+The dashboard summarizes active drafts, generated packages, batch validation,
+coverage plans, quality status, profiles, script packages, and campaign
+starter status.
+
+### Production CLI
+
+```powershell
+python -m backend.app.tools.production world-wizard --world-id demo --name "Demo" --preview --json
+python -m backend.app.tools.production npc-pack --world-id mist_valley --pack-id villagers --preview
+python -m backend.app.tools.production quest-pack --world-id mist_valley --pack-id starter --preview
+python -m backend.app.tools.production batch-validate --target world:mist_valley
+python -m backend.app.tools.production build-script-package --package-id starter --name "Starter" --validate
+python -m backend.app.tools.production campaign-starter --campaign-id starter --name "Starter" --preview
+python -m backend.app.tools.production coverage-plan --world-id mist_valley
+python -m backend.app.tools.production batch-quality-gate --world mist_valley
+```
+
+Use `--apply` only when you intentionally want a write/build operation. The CLI
+redacts hidden/private/API-key-like output and can emit `--json`.
+
+### Batch Quality Gate
+
+```text
+POST /production/batch-quality-gate
+```
+
+CLI:
+
+```powershell
+python -m backend.app.tools.production batch-quality-gate --world mist_valley --profile standard
+```
+
+The gate reports pass/fail, blockers, warnings, per-item results, and
+recommended actions. It does not modify content or call a real LLM.
+
 ## v1.0 Quality Analysis APIs
 
 The quality analyzers provide safe local reports for authoring and regression:
@@ -1524,6 +1763,12 @@ playtest scenario, benchmark, health score, and coverage schemas.
 - Memory is not authoritative and cannot overwrite `GameState` or `EventLog`.
 - Procedural side quest generation produces drafts only.
 - NPC planning is deterministic and limited to predefined action types.
+- v1.4 content production generates drafts, candidates, packages, and reports
+  only; it does not directly edit active `GameState`.
+- Batch import/export/build tools do not execute scripts, download remote
+  content, or automatically overwrite worlds.
+- Production generators do not guarantee literary quality and do not call real
+  LLMs by default.
 - Economy is lightweight and does not model dynamic supply/demand.
 - Faction conflict does not simulate war or diplomacy AI.
 - Desktop packaging is currently a local launcher prototype and documentation,

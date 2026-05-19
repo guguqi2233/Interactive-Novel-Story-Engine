@@ -1,8 +1,8 @@
 # World Engine
 
-This document describes the local world engine as of v1.2 Visual Authoring Pro
-on top of the v1.1 Roleplay Immersion Layer and v1.0 Stable Local Studio
-Edition. The engine is the
+This document describes the local world engine as of v1.4 Content Production
+Pipeline on top of v1.3 Advanced NPC Simulation, v1.2 Visual Authoring Pro,
+the v1.1 Roleplay Immersion Layer, and v1.0 Stable Local Studio Edition. The engine is the
 only source of truth for world state, rules, consequences, persistence, and
 visibility. The LLM layer may parse intent, render narration, and summarize
 memory, but it does not decide rule outcomes or mutate `GameState`.
@@ -1734,6 +1734,229 @@ intents/events, forbidden intents/facts, plan failure limits, save/load
 continuity, and quality reports. They do not call real LLM APIs and do not
 modify real user saves.
 
+## v1.4 Content Production Pipeline
+
+v1.4 adds a local Content Production Pipeline for producing world packs, NPC
+packs, quest packs, location clusters, mystery cases, faction templates,
+script packages, campaign starter kits, batch imports, coverage plans, and
+batch quality reports. These tools operate on production drafts, candidates,
+packages, previews, and reports. They do not directly modify active
+`GameState`.
+
+### Content Production Boundary
+
+`docs/CONTENT_PRODUCTION_BOUNDARY.md` defines the v1.4 boundary terms:
+
+- `production_draft`
+- `generated_content_candidate`
+- `batch_import_candidate`
+- `production_package`
+- `package_manifest`
+- `explicit_apply`
+- `validation_required`
+- `quality_required`
+- `active_world_pack`
+- `active_game_state`
+
+Preview and validate operations do not write disk. Apply/build operations
+require explicit confirmation and must pass validation; release/package flows
+use the relevant Quality Gate or Batch Quality Gate. Batch import defaults to
+dry-run review. Packages are data only and must not execute scripts, fetch
+remote URLs, read `.env`/API keys/databases/logs/system files, or overwrite
+user worlds automatically.
+
+The shared policy module is
+`backend/app/engine/content/content_production_boundary.py`.
+
+### World Pack Wizard
+
+`WorldPackWizardDraft` creates a local world-pack draft from basic metadata,
+genre/tone, starting location, seed counts, enabled systems, prompt profile,
+and quality profile. It can preview generated files, validate them, and apply
+to the worlds directory only after confirmation and validation gate approval.
+
+Generated draft files include `manifest.yaml`, `locations.yaml`, `npcs.yaml`,
+`items.yaml`, `quests.yaml`, `facts.yaml`, and optional faction/rumor content.
+The wizard does not modify active sessions and defaults to deterministic local
+generation; `llm_assisted` is reserved metadata and is not a real-provider call
+path in the current implementation.
+
+### NPC Pack Generator
+
+`NPCPackGeneratorDraft` produces NPC candidates, RP profile drafts, voice
+profile drafts, relationship candidates, goal candidates, and schedule
+candidates for a target world. Inputs include pack id, theme, faction ids,
+location ids, NPC count, archetypes, RP style, simulation preset ids,
+relationship density, and hidden-secret ratio.
+
+Preview and validation are dry-run. Apply writes candidate content only through
+the authoring service after confirmation and validation. Hidden secrets are
+marked hidden and are not player-facing fields. Character pack export uses the
+safe package path and must not include API keys.
+
+### Quest Pack Generator
+
+`QuestPackGeneratorDraft` produces quest candidates, fact candidates, optional
+rumor/consequence candidates, scenario regression candidates, and a quest graph
+draft. It validates referenced NPCs, locations, factions, and facts before
+producing YAML. Hidden fact candidates remain hidden and player-facing quest
+text is checked for hidden leaks.
+
+The generator does not publish quests to active saves and does not call an LLM
+by default. Generated quest quality is structural rather than literary.
+
+### Location Cluster Templates
+
+`LocationClusterTemplate` defines reusable local map fragments with required
+variables, location nodes, exit edges, optional hidden edges, default visual
+layout, and tags. APIs list templates, preview a rendered `MapVisualGraph`,
+and apply the rendered cluster to a world draft after validation.
+
+Hidden edges are marked hidden and do not become player map exits unless later
+revealed by normal map/visibility rules. The system does not attempt complex
+automatic layout.
+
+### Mystery Template System
+
+`MysteryTemplate` produces structured mystery drafts: hidden truth fact,
+suspects, clues, red herrings, witness statements, reveal/failure conditions,
+required locations/NPCs, fact drafts, NPC knowledge drafts, questline drafts,
+rumor drafts, evidence item drafts, and scenario regression drafts.
+
+The truth fact must be hidden. Red herrings are explicitly marked. Normal
+preview/report fields avoid revealing hidden truth text. The implementation is
+deterministic and focuses on safe structure, not literary quality.
+
+### Faction Template System
+
+`FactionTemplate` produces faction drafts, relation drafts, NPC faction duty
+candidates, relationship candidates, and quest hook candidates. It supports
+default reputation, relations, duties, ranks, archetypes, rumor policies, crime
+policies, quest hooks, hidden flag, and tags.
+
+Hidden factions and hidden relations are authoring data and must not enter the
+player-visible faction graph until revealed by normal rules. The template
+system does not implement war simulation or diplomacy AI.
+
+### Content Batch Validator
+
+`ContentBatchValidationRequest` and `ContentBatchValidationReport` validate
+multiple local targets: world packs, character packs, quest packs, template
+packs, mod packages, and script packages. Reports aggregate total, passed,
+warning, failed, blockers, per-package reports, and aggregate issues.
+
+The validator does not execute package code, does not call LLMs, rejects path
+traversal, and keeps hidden details redacted in normal reports.
+
+### Content Coverage Planner
+
+`ContentCoveragePlan` is a rule-based planning report for missing location
+types, NPC archetypes, quest types, clue paths, faction hooks, RP scenes,
+scenario regressions, and playtest paths. It uses current coverage input and
+safe world summaries to recommend authoring work. It does not generate or
+write content.
+
+### Export / Import Profiles
+
+`ExportProfile` controls whether exports include worlds, characters,
+templates, scenarios, prompt profiles, hidden authoring data, quality reports,
+and test fixtures. Safe export defaults redact hidden text and forbid API
+keys.
+
+`ImportProfile` controls overwrite policy, hidden authoring data, validation,
+quality gate, migration check, executable rejection, and unknown schema
+rejection. Import profiles must require validation, reject executables, and
+forbid API keys.
+
+### Local Content Library Pro
+
+Local Content Library Pro extends local content management with search,
+filtering, tags, inspection, validation, batch validation, export/import with
+profiles, dependency summaries, quality summaries, duplicate/archive helpers,
+and editor links. Supported content types include worlds, character packs,
+quest packs, NPC packs, template packs, scenario suites, prompt profiles, RP
+profiles, mods, script packages, and campaign starters.
+
+Normal library responses avoid sensitive absolute paths and hidden details.
+The library does not download remote content or execute packages.
+
+### Batch Character Card Import
+
+Batch character card import accepts multiple local cards, safe zip inputs, or
+pasted JSON/YAML text. Each entry uses the existing Character Card Importer
+and reports parsed, failed, unsafe, duplicate names, candidate characters,
+unsafe entries, and a character pack draft.
+
+It rejects zip slip/path traversal, does not fetch remote URLs, does not
+execute card content, and does not write active worlds automatically.
+
+### Batch Lorebook Classification
+
+Batch lorebook classification accepts one or more local lorebooks or safe zip
+inputs and classifies entries as flavor lore, structured fact candidates,
+hidden fact candidates, or unsafe entries. It reports duplicate keys and
+prompt-injection warnings.
+
+Hidden fact text stays out of normal reports unless an explicitly local debug
+view is used. Applying entries requires explicit selection and validation.
+
+### Script Package Builder
+
+`ScriptPackageManifest` describes local script packages with package id, name,
+version, target engine/schema versions, included worlds/quests/characters/
+templates/scenarios, quality profile, dependencies, conflicts, checksums,
+created time, and normal-manifest mode.
+
+Despite the name, script packages are data packages. The builder supports
+dry-run, validation, build/apply, and zip export; it rejects executable files,
+`.env`, API keys, databases, logs, and hidden fact text in normal manifests.
+
+### Campaign Starter Kit Builder
+
+`CampaignStarterKitDraft` composes a small playable starter from a world-pack
+draft, NPC pack draft, quest pack draft, faction draft, optional mystery draft,
+scenario regression suite, quality gate config, and script package draft.
+
+Preview does not write disk. Build requires validation and quality dry-run.
+The builder does not create a complete long campaign, call a real LLM by
+default, execute scripts, or modify active `GameState`.
+
+### Production Pipeline Dashboard
+
+`ProductionPipelineSummary` powers the local dashboard for active production
+drafts, recent generated packages, batch validation status, content coverage
+plan, quality gate summary, import/export profile status, script package build
+status, and campaign starter status.
+
+The API is local authoring-only, guarded by `ENABLE_AUTHORING_API`, and returns
+redacted summaries rather than raw hidden facts or secrets.
+
+### Content Production CLI
+
+`python -m backend.app.tools.production` exposes local commands for:
+
+- `world-wizard`
+- `npc-pack`
+- `quest-pack`
+- `batch-validate`
+- `build-script-package`
+- `campaign-starter`
+- `coverage-plan`
+- `batch-quality-gate`
+
+The CLI reuses service-layer code. Preview is the default safe path. Apply/build
+requires explicit flags. Output can be human-readable or JSON and redacts API
+keys, raw environment values, hidden/private fields, and package archive
+payloads.
+
+### Batch Quality Gate
+
+`BatchQualityGateRequest` and `BatchQualityGateReport` run deterministic
+release/export checks across multiple worlds or packages. Reports include
+pass/fail, blockers, warnings, per-item results, aggregate summary, and
+recommended actions. The gate does not modify content, call real LLMs, upload
+reports, or expose hidden fact text in normal output.
+
 Known v1.0 implementation note: `ENABLE_PLAYTEST_API`, `ENABLE_EVAL_API`,
 `ENABLE_DEBUG_API`, and `ENABLE_PERF_LOGGING` gate the main playtest, eval,
 debug, benchmark, and quality-gate flows. There is currently no separate
@@ -1759,4 +1982,9 @@ and do not expose quality APIs as a hosted service.
   production or hosted-service endpoints.
 - NPC planning is limited to deterministic candidate actions.
 - Procedural side quests are drafts only.
+- Content production generators are drafts/packages only.
+- Batch import and package build require dry-run/validation/explicit apply
+  semantics and must not modify active runtime sessions.
+- v1.4 does not provide online marketplace, remote download, script execution,
+  background production jobs, or automatic long-form campaign writing.
 - Memory retrieval is context support, not canonical truth.

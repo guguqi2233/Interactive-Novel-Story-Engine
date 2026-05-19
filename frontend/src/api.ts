@@ -374,6 +374,41 @@ export type ArchiveImportResponse = {
   migration_warnings: string[];
 };
 
+export type ExportProfile = {
+  profile_id: string;
+  name: string;
+  kind: "safe" | "authoring" | "strict";
+  include_world: boolean;
+  include_characters: boolean;
+  include_templates: boolean;
+  include_scenarios: boolean;
+  include_prompt_profiles: boolean;
+  include_hidden_authoring_data: boolean;
+  redact_hidden_text: boolean;
+  include_quality_reports: boolean;
+  include_test_fixtures: boolean;
+  forbids_api_keys: boolean;
+};
+
+export type ImportProfile = {
+  profile_id: string;
+  name: string;
+  kind: "safe" | "authoring" | "strict";
+  allow_overwrite: boolean;
+  allow_hidden_authoring_data: boolean;
+  require_validation: boolean;
+  require_quality_gate: boolean;
+  require_migration_check: boolean;
+  reject_executables: boolean;
+  reject_unknown_schema: boolean;
+  forbids_api_keys: boolean;
+};
+
+export type ImportExportProfileCatalog = {
+  export_profiles: ExportProfile[];
+  import_profiles: ImportProfile[];
+};
+
 export type NarrativeEvalCaseResult = {
   case_id: string;
   category: string;
@@ -476,6 +511,38 @@ export type ContentCoverageReport = {
   shops_trade: ContentCoverageSummary;
   hidden_entities_redacted: Record<string, number>;
   quality_report: Record<string, unknown>;
+};
+
+export type ContentCoverageSuggestion = {
+  category: string;
+  summary: string;
+  recommended_tool: string;
+  priority: string;
+  safe_refs: string[];
+};
+
+export type ContentCoveragePlan = {
+  world_id: string;
+  genre: string;
+  desired_playtime: string;
+  desired_complexity: string;
+  missing_location_types: ContentCoverageSuggestion[];
+  missing_npc_archetypes: ContentCoverageSuggestion[];
+  missing_quest_types: ContentCoverageSuggestion[];
+  missing_clue_paths: ContentCoverageSuggestion[];
+  missing_faction_hooks: ContentCoverageSuggestion[];
+  missing_rp_scenes: ContentCoverageSuggestion[];
+  missing_scenario_regressions: ContentCoverageSuggestion[];
+  missing_playtest_paths: ContentCoverageSuggestion[];
+  normal_report: boolean;
+};
+
+export type ContentCoveragePlanRequest = {
+  target_world: string;
+  genre?: string;
+  desired_playtime?: string;
+  desired_complexity?: string;
+  current_content_coverage_report?: ContentCoverageReport | null;
 };
 
 export type PlaytestActionRecord = {
@@ -808,11 +875,15 @@ export type AuthoringWorkflowPresetList = {
 export type LocalContentType =
   | "world"
   | "character_pack"
+  | "quest_pack"
+  | "NPC_pack"
   | "template_pack"
   | "scenario_suite"
   | "prompt_profile"
   | "RP_profile"
-  | "mod";
+  | "mod"
+  | "script_package"
+  | "campaign_starter";
 
 export type LocalContentLibraryItem = {
   id: string;
@@ -822,6 +893,9 @@ export type LocalContentLibraryItem = {
   description: string;
   path_label: string;
   metadata: Record<string, unknown>;
+  tags: string[];
+  dependencies: string[];
+  quality_summary: Record<string, unknown>;
   capabilities: string[];
 };
 
@@ -1079,6 +1153,141 @@ export type TemplateWizardPreviewResponse = {
   writes_to_disk: boolean;
   applied: boolean;
   saved_template: boolean;
+};
+
+export type WorldPackWizardDraft = {
+  world_id: string;
+  name: string;
+  genre: string;
+  tone: string;
+  description: string;
+  starting_location: string;
+  location_seed_count: number;
+  npc_seed_count: number;
+  quest_seed_count: number;
+  enabled_systems: string[];
+  default_prompt_profile: string;
+  default_quality_profile: string;
+  llm_assisted?: boolean;
+  current_step?: string;
+};
+
+export type WorldPackWizardPreviewResponse = {
+  local_only: boolean;
+  draft: WorldPackWizardDraft;
+  generated_files: ScenarioTemplateOutputFile[];
+  validation?: AuthoringValidation | null;
+  writes_to_disk: boolean;
+  applied: boolean;
+  gate_allowed_to_save: boolean;
+  confirmation_required: boolean;
+};
+
+export type NPCPackGeneratorDraft = {
+  target_world_id: string;
+  pack_id: string;
+  theme: string;
+  faction_ids: string[];
+  location_ids: string[];
+  npc_count: number;
+  archetypes: string[];
+  rp_style: string;
+  simulation_preset_ids: string[];
+  relationship_density: number;
+  hidden_secret_ratio: number;
+  llm_assisted?: boolean;
+};
+
+export type NPCPackCandidate = {
+  id: string;
+  name: string;
+  location_id: string;
+  faction_id?: string | null;
+  archetype: string;
+  personality: string;
+  rp_profile: Record<string, unknown>;
+  voice_profile: Record<string, unknown>;
+  hidden_secrets: { id: string; text: string; visibility: string; hidden: boolean }[];
+};
+
+export type NPCPackGeneratorPreviewResponse = {
+  draft: NPCPackGeneratorDraft;
+  generated: {
+    npc_candidates: NPCPackCandidate[];
+    rp_profiles: Record<string, Record<string, unknown>>;
+    voice_profiles: Record<string, Record<string, unknown>>;
+    relationship_candidates: Record<string, unknown>[];
+    goal_candidates: Record<string, Record<string, unknown>[]>;
+    schedule_candidates: Record<string, Record<string, unknown>[]>;
+  };
+  yaml_contents: Record<string, string>;
+  validation: AuthoringValidation;
+  writes_to_disk: boolean;
+  applied: boolean;
+  exported_pack?: Record<string, unknown> | null;
+  confirmation_required: boolean;
+};
+
+export type QuestPackGeneratorDraft = {
+  target_world_id: string;
+  pack_id: string;
+  theme: string;
+  quest_count: number;
+  involved_npcs: string[];
+  involved_locations: string[];
+  involved_factions: string[];
+  required_facts: string[];
+  mystery_mode: boolean;
+  failure_paths_enabled: boolean;
+  reward_policy: string;
+  llm_assisted?: boolean;
+};
+
+export type QuestPackGeneratorPreviewResponse = {
+  draft: QuestPackGeneratorDraft;
+  generated: {
+    quest_candidates: Record<string, unknown>[];
+    fact_candidates: Record<string, unknown>[];
+    rumor_candidates: Record<string, unknown>[];
+    consequence_candidates: Record<string, unknown>[];
+    scenario_regression_candidates: Record<string, unknown>[];
+    quest_graph?: QuestGraphResponse | null;
+    quality_checks: AuthoringValidation;
+  };
+  yaml_contents: Record<string, string>;
+  validation: AuthoringValidation;
+  writes_to_disk: boolean;
+  applied: boolean;
+  confirmation_required: boolean;
+};
+
+export type LocationClusterTemplate = {
+  id: string;
+  name: string;
+  cluster_type: string;
+  required_variables: string[];
+  location_nodes: MapVisualNode[];
+  exit_edges: MapVisualEdge[];
+  optional_hidden_edges: MapVisualEdge[];
+  default_visual_layout: string;
+  tags: string[];
+};
+
+export type LocationClusterTemplateList = {
+  local_only: boolean;
+  templates: LocationClusterTemplate[];
+};
+
+export type LocationClusterPreviewResponse = {
+  template: LocationClusterTemplate;
+  target_world_id: string;
+  graph: MapVisualGraph;
+  validation: AuthoringValidation;
+  yaml_content: string;
+  writes_to_disk: boolean;
+  applied: boolean;
+  active_game_state_changed: boolean;
+  confirmation_required: boolean;
 };
 
 export type RPScenarioTemplate = {
@@ -2251,11 +2460,31 @@ export async function exportWorldArchive(worldId: string): Promise<ArchiveExport
   return requestJson<ArchiveExportResponse>(`/authoring/export/worlds/${encodeURIComponent(worldId)}`);
 }
 
-export async function importWorldArchive(archiveBase64: string, overwrite = false): Promise<ArchiveImportResponse> {
+export async function fetchImportExportProfiles(): Promise<ImportExportProfileCatalog> {
+  return requestJson<ImportExportProfileCatalog>("/authoring/import-export-profiles");
+}
+
+export async function exportCharacterPack(
+  worldId: string,
+  characterIds: string[],
+  exportProfileId = "safe"
+): Promise<Record<string, unknown>> {
+  return requestJson<Record<string, unknown>>("/authoring/character-packs/export", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      world_id: worldId,
+      character_ids: characterIds,
+      export_profile_id: exportProfileId
+    })
+  });
+}
+
+export async function importWorldArchive(archiveBase64: string, overwrite = false, importProfileId = "safe"): Promise<ArchiveImportResponse> {
   return requestJson<ArchiveImportResponse>("/authoring/import/worlds", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ archive_base64: archiveBase64, overwrite })
+    body: JSON.stringify({ archive_base64: archiveBase64, overwrite, import_profile_id: importProfileId })
   });
 }
 
@@ -2263,11 +2492,11 @@ export async function exportModArchive(modId: string): Promise<ArchiveExportResp
   return requestJson<ArchiveExportResponse>(`/authoring/export/mods/${encodeURIComponent(modId)}`);
 }
 
-export async function importModArchive(archiveBase64: string, overwrite = false): Promise<ArchiveImportResponse> {
+export async function importModArchive(archiveBase64: string, overwrite = false, importProfileId = "safe"): Promise<ArchiveImportResponse> {
   return requestJson<ArchiveImportResponse>("/authoring/import/mods", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ archive_base64: archiveBase64, overwrite })
+    body: JSON.stringify({ archive_base64: archiveBase64, overwrite, import_profile_id: importProfileId })
   });
 }
 
@@ -2275,11 +2504,11 @@ export async function exportSaveArchive(saveId: string): Promise<ArchiveExportRe
   return requestJson<ArchiveExportResponse>(`/authoring/export/saves/${encodeURIComponent(saveId)}`);
 }
 
-export async function importSaveArchive(archiveBase64: string, overwrite = false): Promise<ArchiveImportResponse> {
+export async function importSaveArchive(archiveBase64: string, overwrite = false, importProfileId = "safe"): Promise<ArchiveImportResponse> {
   return requestJson<ArchiveImportResponse>("/authoring/import/saves", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ archive_base64: archiveBase64, overwrite })
+    body: JSON.stringify({ archive_base64: archiveBase64, overwrite, import_profile_id: importProfileId })
   });
 }
 
@@ -2322,6 +2551,16 @@ export async function fetchContentCoverage(worldId: string): Promise<ContentCove
 export async function runContentCoverage(worldId: string): Promise<ContentCoverageReport> {
   return requestJson<ContentCoverageReport>(`/quality/worlds/${encodeURIComponent(worldId)}/coverage/run`, {
     method: "POST"
+  });
+}
+
+export async function planContentCoverage(request: ContentCoveragePlanRequest): Promise<ContentCoveragePlan> {
+  return requestJson<ContentCoveragePlan>("/production/content-coverage-plan", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(request)
   });
 }
 
@@ -2631,6 +2870,18 @@ export async function fetchLocalContentLibrary(contentType?: string): Promise<Lo
   return requestJson<LocalContentLibrary>(`/library/items${query}`);
 }
 
+export async function searchLocalContentLibrary(
+  query: string,
+  contentTypes: LocalContentType[] = [],
+  tags: string[] = []
+): Promise<LocalContentLibrary> {
+  return requestJson<LocalContentLibrary>("/library/items/search", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query, content_types: contentTypes, tags })
+  });
+}
+
 export async function fetchLocalContentLibraryItem(itemId: string): Promise<LocalContentLibraryItem> {
   return requestJson<LocalContentLibraryItem>(`/library/items/${encodeURIComponent(itemId)}`);
 }
@@ -2639,19 +2890,32 @@ export async function validateLocalContentLibraryItem(itemId: string): Promise<A
   return requestJson<AuthoringValidation>(`/library/items/${encodeURIComponent(itemId)}/validate`, { method: "POST" });
 }
 
-export async function exportLocalContentLibraryItem(contentType: LocalContentType, itemId: string): Promise<ArchiveExportResponse> {
-  return requestJson<ArchiveExportResponse>("/library/export", {
+export async function batchValidateLocalContentLibrary(itemIds: string[], contentTypes: LocalContentType[] = []): Promise<Record<string, unknown>> {
+  return requestJson<Record<string, unknown>>("/library/items/batch-validate", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ content_type: contentType, item_id: itemId })
+    body: JSON.stringify({ item_ids: itemIds, content_types: contentTypes, normal_report: true })
   });
 }
 
-export async function importLocalContentLibraryArchive(archiveBase64: string, overwrite = false, confirmApply = false): Promise<Record<string, unknown>> {
+export async function exportLocalContentLibraryItem(contentType: LocalContentType, itemId: string, exportProfileId = "safe"): Promise<ArchiveExportResponse> {
+  return requestJson<ArchiveExportResponse>("/library/export", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content_type: contentType, item_id: itemId, export_profile_id: exportProfileId })
+  });
+}
+
+export async function importLocalContentLibraryArchive(
+  archiveBase64: string,
+  overwrite = false,
+  confirmApply = false,
+  importProfileId = "safe"
+): Promise<Record<string, unknown>> {
   return requestJson<Record<string, unknown>>("/library/import", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ archive_base64: archiveBase64, overwrite, confirm_apply: confirmApply })
+    body: JSON.stringify({ archive_base64: archiveBase64, overwrite, confirm_apply: confirmApply, import_profile_id: importProfileId })
   });
 }
 
@@ -2740,6 +3004,202 @@ export async function applyTemplateWizard(
     },
     body: JSON.stringify({
       draft,
+      confirm_apply: confirmApply,
+      confirm_warnings: confirmWarnings
+    })
+  });
+}
+
+export async function createWorldPackWizardDraft(
+  draft: WorldPackWizardDraft
+): Promise<WorldPackWizardDraft> {
+  return requestJson<WorldPackWizardDraft>("/authoring/production/world-pack/create-draft", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(draft)
+  });
+}
+
+export async function previewWorldPackWizard(
+  draft: WorldPackWizardDraft
+): Promise<WorldPackWizardPreviewResponse> {
+  return requestJson<WorldPackWizardPreviewResponse>("/authoring/production/world-pack/preview", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(draft)
+  });
+}
+
+export async function validateWorldPackWizard(
+  draft: WorldPackWizardDraft
+): Promise<WorldPackWizardPreviewResponse> {
+  return requestJson<WorldPackWizardPreviewResponse>("/authoring/production/world-pack/validate", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(draft)
+  });
+}
+
+export async function applyWorldPackWizard(
+  draft: WorldPackWizardDraft,
+  confirmApply = true,
+  confirmWarnings = false
+): Promise<WorldPackWizardPreviewResponse> {
+  return requestJson<WorldPackWizardPreviewResponse>("/authoring/production/world-pack/apply", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      draft,
+      confirm_apply: confirmApply,
+      confirm_warnings: confirmWarnings
+    })
+  });
+}
+
+export async function previewNPCPackGenerator(
+  draft: NPCPackGeneratorDraft
+): Promise<NPCPackGeneratorPreviewResponse> {
+  return requestJson<NPCPackGeneratorPreviewResponse>("/production/npc-pack/preview", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(draft)
+  });
+}
+
+export async function validateNPCPackGenerator(
+  draft: NPCPackGeneratorDraft
+): Promise<NPCPackGeneratorPreviewResponse> {
+  return requestJson<NPCPackGeneratorPreviewResponse>("/production/npc-pack/validate", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(draft)
+  });
+}
+
+export async function applyNPCPackGenerator(
+  draft: NPCPackGeneratorDraft,
+  confirmApply = true,
+  confirmWarnings = false
+): Promise<NPCPackGeneratorPreviewResponse> {
+  return requestJson<NPCPackGeneratorPreviewResponse>("/production/npc-pack/apply", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      draft,
+      confirm_apply: confirmApply,
+      confirm_warnings: confirmWarnings
+    })
+  });
+}
+
+export async function exportNPCPackGenerator(
+  draft: NPCPackGeneratorDraft,
+  safeExport = true
+): Promise<NPCPackGeneratorPreviewResponse> {
+  return requestJson<NPCPackGeneratorPreviewResponse>("/production/npc-pack/export", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      draft,
+      safe_export: safeExport
+    })
+  });
+}
+
+export async function previewQuestPackGenerator(
+  draft: QuestPackGeneratorDraft
+): Promise<QuestPackGeneratorPreviewResponse> {
+  return requestJson<QuestPackGeneratorPreviewResponse>("/production/quest-pack/preview", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(draft)
+  });
+}
+
+export async function validateQuestPackGenerator(
+  draft: QuestPackGeneratorDraft
+): Promise<QuestPackGeneratorPreviewResponse> {
+  return requestJson<QuestPackGeneratorPreviewResponse>("/production/quest-pack/validate", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(draft)
+  });
+}
+
+export async function applyQuestPackGenerator(
+  draft: QuestPackGeneratorDraft,
+  confirmApply = true,
+  confirmWarnings = false
+): Promise<QuestPackGeneratorPreviewResponse> {
+  return requestJson<QuestPackGeneratorPreviewResponse>("/production/quest-pack/apply", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      draft,
+      confirm_apply: confirmApply,
+      confirm_warnings: confirmWarnings
+    })
+  });
+}
+
+export async function fetchLocationClusterTemplates(): Promise<LocationClusterTemplateList> {
+  return requestJson<LocationClusterTemplateList>("/production/location-clusters");
+}
+
+export async function previewLocationClusterTemplate(
+  templateId: string,
+  targetWorldId: string,
+  variables: Record<string, string>
+): Promise<LocationClusterPreviewResponse> {
+  return requestJson<LocationClusterPreviewResponse>(`/production/location-clusters/${encodeURIComponent(templateId)}/preview`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      target_world_id: targetWorldId,
+      variables
+    })
+  });
+}
+
+export async function applyLocationClusterTemplate(
+  templateId: string,
+  targetWorldId: string,
+  variables: Record<string, string>,
+  confirmApply = true,
+  confirmWarnings = false
+): Promise<LocationClusterPreviewResponse> {
+  return requestJson<LocationClusterPreviewResponse>(`/production/location-clusters/${encodeURIComponent(templateId)}/apply-draft`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      target_world_id: targetWorldId,
+      variables,
       confirm_apply: confirmApply,
       confirm_warnings: confirmWarnings
     })
@@ -3253,6 +3713,162 @@ export type CharacterCardImportReport = {
   warnings: string[];
 };
 
+export type BatchCharacterCardImportReport = {
+  target_world_id: string;
+  parsed_count: number;
+  failed_count: number;
+  unsafe_count: number;
+  duplicate_names: string[];
+  candidate_characters: Record<string, unknown>[];
+  rp_profiles: Record<string, Record<string, unknown>>;
+  voice_profiles: Record<string, Record<string, unknown>>;
+  example_dialogues: Record<string, unknown>[];
+  unsafe_entries: Record<string, unknown>[];
+  character_pack_draft: Record<string, unknown>;
+  writes_to_disk: boolean;
+  active_game_state_modified: boolean;
+};
+
+export type BatchLorebookClassificationReport = {
+  target_world_id: string;
+  total_entries: number;
+  flavor_lore: Record<string, unknown>[];
+  structured_fact_candidates: Record<string, unknown>[];
+  hidden_fact_candidates: Record<string, unknown>[];
+  unsafe_entries: Record<string, unknown>[];
+  duplicate_keys: string[];
+  prompt_injection_warnings: string[];
+  validation?: AuthoringValidation | null;
+  yaml_draft: string;
+  writes_to_disk: boolean;
+  normal_report: boolean;
+};
+
+export type ScriptPackageManifest = {
+  package_id: string;
+  name: string;
+  version: string;
+  target_engine_version: string;
+  target_schema_version: string;
+  included_worlds: string[];
+  included_quests: string[];
+  included_characters: string[];
+  included_templates: string[];
+  included_scenarios: string[];
+  included_quality_profile?: string | null;
+  dependencies: string[];
+  conflicts: string[];
+  checksums: Record<string, string>;
+  created_at?: string;
+  normal_manifest: boolean;
+};
+
+export type ScriptPackageFile = {
+  path: string;
+  content: string;
+  hidden: boolean;
+};
+
+export type ScriptPackageBuildRequest = {
+  manifest: ScriptPackageManifest;
+  files: ScriptPackageFile[];
+  available_dependency_ids: string[];
+  packages_root: string;
+  confirm_apply: boolean;
+  normal_report: boolean;
+};
+
+export type ScriptPackageBuildReport = {
+  manifest: ScriptPackageManifest;
+  validation: AuthoringValidation;
+  dry_run: boolean;
+  applied: boolean;
+  package_dir?: string | null;
+  archive_file_name?: string | null;
+  archive_base64?: string | null;
+  files: string[];
+  dependencies: string[];
+  conflicts: string[];
+  normal_manifest: Record<string, unknown>;
+};
+
+export type CampaignStarterKitDraft = {
+  campaign_id: string;
+  name: string;
+  genre: string;
+  tone: string;
+  starting_region: string;
+  core_conflict: string;
+  npc_count: number;
+  questline_count: number;
+  faction_count: number;
+  mystery_enabled: boolean;
+  RP_focus_level: string;
+  target_playtime_hours: number;
+  llm_assisted?: boolean;
+};
+
+export type CampaignStarterKitPreview = {
+  draft: CampaignStarterKitDraft;
+  world_pack_draft: WorldPackWizardDraft;
+  world_pack_preview: WorldPackWizardPreviewResponse;
+  npc_pack_draft: NPCPackGeneratorDraft;
+  quest_pack_draft: QuestPackGeneratorDraft;
+  faction_draft?: Record<string, unknown> | null;
+  mystery_draft?: Record<string, unknown> | null;
+  scenario_regression_suite: Record<string, unknown>[];
+  quality_gate_config: Record<string, unknown>;
+  quality_gate_dry_run: {
+    passed: boolean;
+    validation_ok: boolean;
+    quality_gate_dry_run: boolean;
+    blockers: string[];
+    warnings: string[];
+    summary: Record<string, unknown>;
+  };
+  script_package_draft: ScriptPackageBuildReport;
+  validation: AuthoringValidation;
+  writes_to_disk: boolean;
+  active_game_state_modified: boolean;
+  built: boolean;
+};
+
+export type ProductionPipelineStatus = {
+  status: string;
+  count: number;
+  warnings: string[];
+  blockers: string[];
+  summary: string;
+};
+
+export type ProductionPipelineTask = {
+  tool_id: string;
+  label: string;
+  status: string;
+  summary: string;
+  warnings: string[];
+  blockers: string[];
+};
+
+export type ProductionPipelineSummary = {
+  local_only: boolean;
+  generated_at: string;
+  active_world?: string | null;
+  active_production_drafts: ProductionPipelineTask[];
+  recent_generated_packages: ProductionPipelineTask[];
+  batch_validation_status: ProductionPipelineStatus;
+  content_coverage_plan?: ContentCoveragePlan | null;
+  quality_gate_summary: ProductionPipelineStatus;
+  import_export_profile_status: ProductionPipelineStatus;
+  script_package_build_status: ProductionPipelineStatus;
+  campaign_starter_status: ProductionPipelineStatus;
+  quick_entries: ProductionPipelineTask[];
+  warnings: string[];
+  blockers: string[];
+  hidden_details_redacted: boolean;
+  sensitive_details_redacted: boolean;
+};
+
 export type RPCharacterSafeExportResponse = {
   world_id: string;
   npc_id: string;
@@ -3418,6 +4034,152 @@ export async function previewRPCharacterImport(
       body: JSON.stringify({ raw_content: rawContent, input_format: inputFormat })
     }
   );
+}
+
+function batchCharacterCardPayload(worldId: string, rawContents: string[], selectedNames: string[] = []) {
+  return {
+    target_world_id: worldId,
+    pasted_texts: rawContents,
+    selected_names: selectedNames
+  };
+}
+
+export async function previewBatchCharacterCardImport(
+  worldId: string,
+  rawContents: string[]
+): Promise<BatchCharacterCardImportReport> {
+  return requestJson<BatchCharacterCardImportReport>("/production/characters/batch-import/preview", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(batchCharacterCardPayload(worldId, rawContents))
+  });
+}
+
+export async function applyBatchCharacterCardImportDraft(
+  worldId: string,
+  rawContents: string[],
+  selectedNames: string[]
+): Promise<BatchCharacterCardImportReport> {
+  return requestJson<BatchCharacterCardImportReport>("/production/characters/batch-import/apply-draft", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(batchCharacterCardPayload(worldId, rawContents, selectedNames))
+  });
+}
+
+export async function exportBatchCharacterCardPack(
+  worldId: string,
+  rawContents: string[],
+  selectedNames: string[]
+): Promise<Record<string, unknown>> {
+  return requestJson<Record<string, unknown>>("/production/characters/batch-import/export-pack", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(batchCharacterCardPayload(worldId, rawContents, selectedNames))
+  });
+}
+
+function batchLorebookPayload(worldId: string, rawContents: string[], selectedKeys: string[] = []) {
+  return {
+    target_world_id: worldId,
+    sources: rawContents.map((rawContent, index) => ({
+      source_name: `pasted_lorebook_${index + 1}`,
+      raw_content: rawContent,
+      input_format: "auto"
+    })),
+    selected_keys: selectedKeys
+  };
+}
+
+export async function previewBatchLorebookClassification(
+  worldId: string,
+  rawContents: string[]
+): Promise<BatchLorebookClassificationReport> {
+  return requestJson<BatchLorebookClassificationReport>("/production/lorebooks/batch-classify/preview", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(batchLorebookPayload(worldId, rawContents))
+  });
+}
+
+export async function applyBatchLorebookClassificationDraft(
+  worldId: string,
+  rawContents: string[],
+  selectedKeys: string[]
+): Promise<BatchLorebookClassificationReport> {
+  return requestJson<BatchLorebookClassificationReport>("/production/lorebooks/batch-classify/apply-draft", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(batchLorebookPayload(worldId, rawContents, selectedKeys))
+  });
+}
+
+export async function dryRunScriptPackageBuild(
+  request: ScriptPackageBuildRequest
+): Promise<ScriptPackageBuildReport> {
+  return requestJson<ScriptPackageBuildReport>("/production/script-packages/build-dry-run", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request)
+  });
+}
+
+export async function buildScriptPackage(request: ScriptPackageBuildRequest): Promise<ScriptPackageBuildReport> {
+  return requestJson<ScriptPackageBuildReport>("/production/script-packages/build", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request)
+  });
+}
+
+export async function validateScriptPackage(request: ScriptPackageBuildRequest): Promise<ScriptPackageBuildReport> {
+  return requestJson<ScriptPackageBuildReport>("/production/script-packages/validate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request)
+  });
+}
+
+export async function exportScriptPackage(request: ScriptPackageBuildRequest): Promise<ScriptPackageBuildReport> {
+  return requestJson<ScriptPackageBuildReport>("/production/script-packages/export", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request)
+  });
+}
+
+export async function previewCampaignStarterKit(draft: CampaignStarterKitDraft): Promise<CampaignStarterKitPreview> {
+  return requestJson<CampaignStarterKitPreview>("/production/campaign-starter/preview", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(draft)
+  });
+}
+
+export async function buildCampaignStarterKit(
+  draft: CampaignStarterKitDraft,
+  confirmBuild: boolean
+): Promise<CampaignStarterKitPreview> {
+  return requestJson<CampaignStarterKitPreview>("/production/campaign-starter/build", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ draft, confirm_build: confirmBuild })
+  });
+}
+
+export async function exportCampaignStarterScriptPackage(
+  draft: CampaignStarterKitDraft
+): Promise<ScriptPackageBuildReport> {
+  return requestJson<ScriptPackageBuildReport>("/production/campaign-starter/export-script", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(draft)
+  });
+}
+
+export async function fetchProductionPipelineSummary(worldId?: string): Promise<ProductionPipelineSummary> {
+  const query = worldId ? `?world_id=${encodeURIComponent(worldId)}` : "";
+  return requestJson<ProductionPipelineSummary>(`/production/pipeline-summary${query}`);
 }
 
 export async function previewRPCharacterAuthoring(
