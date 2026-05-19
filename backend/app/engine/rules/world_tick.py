@@ -9,6 +9,7 @@ from app.core.world_state import GameState
 from app.engine.actions.schemas import ActionResult, SuccessLevel
 from app.engine.rules.npc_planning import resolve_npc_planning_tick
 from app.engine.rules.npc_reactions import resolve_npc_reactions
+from app.engine.rules.npc_daily_replanning import should_run_daily_replanning_on_tick, run_daily_replanning
 from app.engine.rules.quests import resolve_quest_triggers
 from app.engine.rules.schedule import resolve_npc_schedules
 from app.engine.rules.social_tick import run_social_consequence_tick
@@ -32,6 +33,12 @@ def run_world_tick(
     for delta in resolve_npc_schedules(working_state):
         deltas.append(delta)
         working_state = apply_delta(working_state, delta)
+
+    if should_run_daily_replanning_on_tick(working_state):
+        replanning_result = run_daily_replanning(working_state)
+        for delta in replanning_result.state_deltas:
+            deltas.append(delta)
+            working_state = apply_delta(working_state, delta)
 
     quest_deltas = _resolve_quest_tick(before_tick_state, working_state)
     for delta in quest_deltas:

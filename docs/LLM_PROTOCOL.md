@@ -634,6 +634,54 @@ and RP expression settings only. They cannot add hidden facts, change NPC
 knowledge, bypass visibility, grant state-write authority, or change the
 provider construction path.
 
+## v1.3 NPC Simulation LLM Boundary
+
+v1.3 Advanced NPC Simulation does not add LLM authority. NPC behavior is
+selected by deterministic rule modules, not by model output. The LLM may later
+express an already selected behavior in narration or dialogue, but it cannot
+choose the behavior, generate authoritative plans, grant knowledge, create
+facts, or write `GameState`.
+
+The following v1.3 modules are rule-only paths and must not call
+`LLMProvider`, concrete provider classes, `generate_text`, or `generate_json`:
+
+- NPC Simulation Boundary / `NPCSimulationPolicy`
+- NPC Intent Queue
+- NPC Short-Term Plans
+- NPC Memory-Based Reactions
+- NPC Relationship-Driven Behavior
+- NPC Faction Duties
+- NPC Rumor Decisions
+- NPC Fear / Trust / Loyalty Models
+- NPC Conflict Avoidance
+- NPC Daily Goal Replanning
+- NPC Simulation Tick Orchestrator
+- NPC Simulation Debugger and Behavior Timeline
+- NPC Simulation Authoring Presets
+- NPC Simulation Quality Evals
+- NPC Simulation Regression Playtests
+
+NPC simulation may produce candidate intents, finite plans, `StateDelta`
+entries, and `Event` records. It must not:
+
+- ask an LLM to decide NPC actions
+- ask an LLM to generate free-form plans
+- use LLM output to decide rumor propagation, faction duties, fear/trust values,
+  conflict avoidance, or daily replanning
+- pass debug simulation traces to narrator prompts
+- let hidden facts enter NPC prompts or RP prompts unless normal visibility and
+  NPC knowledge rules allow them
+- apply model output directly to `GameState`
+
+NPC dialogue context remains scoped to `npc_known_facts`, player-visible facts,
+safe RP/voice fields, relationship tone, emotional summaries, scene mood, and
+filtered memory. Group RP builds a separate context for each participant. One
+NPC's hidden knowledge cannot be copied into another NPC's prompt.
+
+Prompt profiles, RP profiles, scene moods, social disposition, relationship
+tone, and simulation presets are expression/configuration inputs only. They
+cannot expand LLM permissions or make model text authoritative.
+
 ## Output Validation
 
 All LLM JSON outputs must validate against Pydantic schemas:

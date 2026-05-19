@@ -391,6 +391,149 @@ forbidden_actions:
 NPC goals are deterministic rule inputs. They do not call the LLM and do not
 allow NPCs to know unknown facts.
 
+## v1.3 NPC Simulation Content Fields
+
+v1.3 adds runtime schemas that can be saved/loaded through NPC state and can be
+configured by authoring drafts. They are rule inputs only. They do not call the
+LLM, execute scripts, grant unknown facts, or directly modify active
+`GameState`.
+
+### NPCIntent
+
+`NPCIntent` is a finite queued intention on `NPCState.intent_queue`:
+
+```yaml
+id: report-theft-intent
+npc_id: guard
+intent_type: report_crime
+priority: 70
+status: queued
+source_event_id: event-crime-1
+source_goal_id: keep_watch
+target_id: theft
+target_type: crime
+created_turn: 12
+expires_turn: 24
+preconditions:
+  - crime:theft
+debug_reason: faction_duty:report-theft
+```
+
+Supported statuses are `queued`, `active`, `completed`, `failed`,
+`cancelled`, and `blocked`. `debug_reason` is debug-only and must not enter
+player UI or narrator prompts. Intent preconditions are checked against NPC
+knowledge before selection or planning.
+
+### NPCPlan And NPCPlanStep
+
+`NPCPlan` is a bounded short-term plan on `NPCState.plans`:
+
+```yaml
+id: plan-report-theft
+npc_id: guard
+source_intent_id: report-theft-intent
+goal_id: keep_watch
+status: planned
+current_step_index: 0
+created_turn: 12
+expires_turn: 24
+steps:
+  - step_type: report
+    target_id: theft
+    preconditions:
+      - crime:theft
+    expected_result: crime_reported
+    status: planned
+```
+
+Plan statuses are `planned`, `active`, `completed`, `failed`, `cancelled`, and
+`blocked`. Step types are limited to move, talk, report, spread_rumor, rest,
+guard, avoid, and seek_item. Plans are validated before execution and produce
+`StateDelta` plus events through rule systems.
+
+### NPCFactionDuty
+
+`NPCFactionDuty` entries live on NPC records:
+
+```yaml
+faction_duties:
+  - id: guard-square
+    duty_type: guard_location
+    priority: 80
+    status: active
+    faction_id: watch
+    target_id: village_square
+    target_type: location
+    route_location_ids: []
+    required_fact_ids: []
+    required_rumor_ids: []
+    required_crime_ids: []
+    created_turn: 0
+    expires_turn:
+    debug_reason:
+```
+
+Supported duty types include guard location, patrol route, report crime to
+faction, protect faction member, refuse hostile actor, spread faction rumor,
+seek information, and enforce curfew. Duties can create intents/plans only
+when targets are valid and required information is known by the NPC.
+
+### NPCSocialDisposition
+
+`NPCSocialDisposition` stores lightweight social behavior weights:
+
+```yaml
+social_disposition:
+  trust_player: 10
+  fear_player: 0
+  loyalty_to_faction: 70
+  loyalty_to_npcs:
+    harlan: 30
+  moral_flexibility: 25
+  risk_tolerance: 45
+  conflict_tolerance: 65
+  secrecy_preference: 50
+```
+
+Disposition can influence behavior weights and dialogue tone summaries. It
+does not override `RelationshipState`, does not reveal hidden relationships,
+and does not imply unknown facts.
+
+### NPCSimulationPreset
+
+NPC simulation presets are authoring helpers, not active runtime authority:
+
+```yaml
+id: guard
+name: Guard
+description: Protect a location, report crimes, and avoid unnecessary risks.
+goals: []
+intent_priorities:
+  guard_location: 80
+  report_crime: 70
+faction_duties: []
+relationship_behavior_rules:
+  - behavior: report_actor
+    when: hostile_or_criminal
+rumor_decision_tendencies:
+  share_with_faction: 60
+social_disposition_defaults:
+  loyalty_to_faction: 70
+  risk_tolerance: 45
+conflict_avoidance_defaults:
+  call_for_help: 70
+```
+
+Presets are previewed/applied to authoring drafts through:
+
+- `GET /authoring/npc-simulation-presets`
+- `POST /authoring/worlds/{world_id}/npcs/{npc_id}/simulation-preset/preview`
+- `POST /authoring/worlds/{world_id}/npcs/{npc_id}/simulation-preset/apply-draft`
+
+Preset payloads reject script, command, remote URL, and executable fields. Save
+still goes through authoring validation and does not modify active
+`GameState`.
+
 ## Economy and Trade Fields
 
 Items:

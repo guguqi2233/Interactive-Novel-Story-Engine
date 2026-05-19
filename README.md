@@ -9,10 +9,11 @@ This project is for local personal use. It is not designed as a hosted service.
 
 ## Current Version Scope
 
-v1.2 is Visual Authoring Pro on top of the v1.1 Roleplay Immersion Layer and
-the v1.0 Stable Local Studio Edition. v1.0 freezes the local contracts built
-through the v0.x series, v1.1 adds character voice and RP-safe dialogue, and
-v1.2 expands local visual authoring without changing world authority:
+v1.3 is Advanced NPC Simulation on top of v1.2 Visual Authoring Pro, the v1.1
+Roleplay Immersion Layer, and the v1.0 Stable Local Studio Edition. v1.0
+freezes the local contracts built through the v0.x series, v1.1 adds character
+voice and RP-safe dialogue, v1.2 expands local visual authoring, and v1.3 adds
+bounded rule-driven NPC autonomy without changing world authority:
 
 - Multi-world content packs.
 - Structured `GameState`, `StateDelta`, `EventLog`, and SQLite save/load.
@@ -105,10 +106,26 @@ v1.2 expands local visual authoring without changing world authority:
 - Local Content Library.
 - Reference Picker / ReferenceIndex.
 - Authoring Draft History.
+- NPC Simulation Boundary Contract.
+- NPC Intent Queue and Short-Term Plans.
+- NPC Memory-Based Reactions.
+- NPC Relationship-Driven Behavior.
+- NPC Faction Duties.
+- NPC Rumor Decisions.
+- NPC Fear / Trust / Loyalty models.
+- NPC Conflict Avoidance.
+- NPC Daily Goal Replanning.
+- NPC Simulation Tick Orchestrator.
+- NPC Simulation Debugger and Behavior Timeline.
+- NPC Simulation Authoring Presets.
+- NPC Simulation Quality Evals.
+- NPC Simulation Regression Playtests.
 
 The LLM is still not the world judge. Rule outcomes are decided by local code.
+NPC simulation is deterministic, finite, knowledge-scoped, and applied through
+`StateDelta` plus `Event`; it is not an LLM multi-agent simulator.
 
-## v1.2 Documentation Map
+## v1.3 Documentation Map
 
 - `docs/SPEC.md`: project scope, boundaries, and known limitations.
 - `docs/WORLD_ENGINE.md`: engine behavior, rules, state, events, authoring,
@@ -118,7 +135,14 @@ The LLM is still not the world judge. Rule outcomes are decided by local code.
 - `docs/ROLEPLAY_BOUNDARY.md`: v1.1 RP expression/fact boundary.
 - `docs/AUTHORING_BOUNDARY.md`: v1.2 authoring draft/preview/validate/save
   boundary.
+- `docs/NPC_SIMULATION_BOUNDARY.md`: v1.3 NPC simulation knowledge,
+  visibility, StateDelta, EventLog, and no-LLM-agent boundary.
 - `docs/CONTENT_PACKS.md`: content pack format and authoring notes.
+- `docs/V1_3_ROADMAP.md`: v1.3 Advanced NPC Simulation roadmap.
+- `docs/V1_3_LLM_BOUNDARY_AUDIT.md`: v1.3 LLM permission audit.
+- `docs/V1_3_VISIBILITY_KNOWLEDGE_NPC_AUDIT.md`: v1.3 visibility,
+  NPC-knowledge, and simulation audit.
+- `docs/V1_3_SECURITY_AUDIT.md`: v1.3 security/debug audit.
 - `docs/V1_2_ROADMAP.md`: v1.2 Visual Authoring Pro roadmap.
 - `docs/V1_2_LLM_BOUNDARY_AUDIT.md`: v1.2 LLM permission audit.
 - `docs/V1_2_VISIBILITY_AUTHORING_RP_AUDIT.md`: v1.2 visibility/RP audit.
@@ -1049,6 +1073,93 @@ gate path:
 ```text
 POST /quality/worlds/{world_id}/gate/run
 ```
+
+## v1.3 NPC Simulation
+
+v1.3 adds bounded NPC simulation. It is part of the backend rule layer; there
+is no separate runtime feature flag for ordinary simulation helpers. Debug
+inspection still requires local debug mode:
+
+```powershell
+$env:ENABLE_DEBUG_API = "true"
+```
+
+NPC simulation remains deterministic local code. It can queue finite intents,
+build short plans, react to known memories, use relationships and faction
+duties, decide whether to spread known rumors, avoid conflict, and replan daily
+goals. It cannot call the LLM, cannot know unknown facts, cannot run forever,
+and cannot directly modify active `GameState`. State changes are returned as
+`StateDelta` and recorded as `Event`.
+
+### NPC Simulation Debugger
+
+Debug endpoints are available only when `ENABLE_DEBUG_API=true`:
+
+```text
+GET  /debug/sessions/{session_id}/npc-simulation
+GET  /debug/sessions/{session_id}/npcs/{npc_id}/simulation
+GET  /debug/sessions/{session_id}/npc-simulation/ticks
+POST /debug/sessions/{session_id}/npc-simulation/dry-run-tick
+GET  /debug/sessions/{session_id}/npcs/{npc_id}/behavior-timeline
+GET  /debug/saves/{save_id}/npcs/{npc_id}/behavior-timeline
+```
+
+The debugger shows intent counts, plan counts, known fact ids, hidden fact ids,
+goals, emotional/social state, faction duties, known rumors/crimes, redacted
+debug reasons, and dry-run tick results. Dry-run tick does not write the
+database or mutate active state. Hidden fact text and API keys are redacted by
+default.
+
+### NPC Simulation Quality Evals
+
+NPC simulation quality checks are integrated into the quality pipeline and
+World Health source reports. Run focused tests:
+
+```powershell
+python -m pytest backend/tests/test_npc_simulation_quality.py
+python -m pytest backend/tests/test_v13_npc_simulation_integration.py
+```
+
+The evals detect unknown fact usage, hidden fact leaks, repeated intent loops,
+blocked plan loops, dead NPC actions, invalid targets, missing events, too many
+intents, plan budget overruns, and low behavior coverage. Reports are local
+diagnostics and do not modify `GameState`.
+
+### NPC Simulation Regression Playtests
+
+Run deterministic v1.3 regression tests:
+
+```powershell
+python -m pytest backend/tests/test_npc_simulation_regression.py
+python -m pytest backend/tests/test_v13_npc_simulation_integration.py
+```
+
+Regression scenarios use temporary SQLite storage and synthetic fixtures for
+guard patrol, crime reporting, rumor spread, avoid-player behavior, seek-help,
+daily replanning, relationship response, faction duty, and injured-rest cases.
+They do not call real LLM APIs and do not modify real saves.
+
+### NPC Simulation Presets
+
+NPC simulation presets are authoring-draft helpers. Enable authoring locally:
+
+```powershell
+$env:ENABLE_AUTHORING_API = "true"
+```
+
+Available endpoints:
+
+```text
+GET  /authoring/npc-simulation-presets
+POST /authoring/worlds/{world_id}/npcs/{npc_id}/simulation-preset/preview
+POST /authoring/worlds/{world_id}/npcs/{npc_id}/simulation-preset/apply-draft
+```
+
+Built-in presets include guard, merchant, informant, hostile actor, timid
+villager, loyal subordinate, rumor spreader, and investigator. Applying a
+preset returns an NPC draft preview and validation-gate result. It does not
+modify active `GameState`, does not execute scripts, and does not grant NPCs
+unknown facts.
 
 ## v1.0 Quality Analysis APIs
 

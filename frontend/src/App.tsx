@@ -17,12 +17,18 @@ import {
   ArchiveImportResponse,
   balanceCheckItemEconomyAuthoring,
   DebugEvent,
+  DebugNPCSimulationDetail,
+  DebugNPCSimulationDryRunResponse,
+  DebugNPCSimulationSummary,
+  NPCBehaviorTimelineResponse,
   DebugPerformanceRecentResponse,
   DebugPerformanceSummaryResponse,
   applyScenarioTemplate,
   applyTemplateWizard,
+  applyNPCSimulationPresetDraft,
   applyRPScenarioTemplate,
   deleteSave,
+  dryRunNPCSimulationTick,
   dryRunSaveTimelineReplay,
   exportModArchive,
   exportSafeRPCharacterCard,
@@ -72,6 +78,11 @@ import {
   fetchNarrativeEvalRecent,
   fetchDebugPerformanceRecent,
   fetchDebugPerformanceSummary,
+  fetchNPCSimulationDebug,
+  fetchNPCSimulationDebugDetail,
+  fetchNPCSimulationDebugTicks,
+  fetchNPCBehaviorTimeline,
+  fetchNPCSimulationPresets,
   fetchPlaytest,
   fetchPlaytestRecent,
   fetchSaveDebugEvents,
@@ -149,6 +160,7 @@ import {
   NPCGoalAuthoringGraph,
   NPCGoalAuthoringNode,
   NPCGoalNode,
+  NPCSimulationPreset,
   ItemEconomyAuthoring,
   ItemEconomyItem,
   MerchantEconomyNode,
@@ -165,6 +177,7 @@ import {
   ExampleDialogue,
   fetchExampleDialogues,
   previewNPCGoalGraph,
+  previewNPCSimulationPreset,
   previewItemEconomyAuthoring,
   previewExampleDialogues,
   previewRPCharacterAuthoring,
@@ -408,6 +421,17 @@ export function App() {
   const [debugFactionGraph, setDebugFactionGraph] = useState<GraphResponse | null>(null);
   const [graphError, setGraphError] = useState<string>("");
   const [debugGraphError, setDebugGraphError] = useState<string>("");
+  const [npcSimulationSummaries, setNPCSimulationSummaries] = useState<DebugNPCSimulationSummary[]>([]);
+  const [selectedSimulationNPCId, setSelectedSimulationNPCId] = useState<string>("");
+  const [npcSimulationDetail, setNPCSimulationDetail] = useState<DebugNPCSimulationDetail | null>(null);
+  const [npcSimulationEvents, setNPCSimulationEvents] = useState<DebugEvent[]>([]);
+  const [npcSimulationDryRun, setNPCSimulationDryRun] = useState<DebugNPCSimulationDryRunResponse | null>(null);
+  const [npcSimulationError, setNPCSimulationError] = useState<string>("");
+  const [npcBehaviorTimeline, setNPCBehaviorTimeline] = useState<NPCBehaviorTimelineResponse | null>(null);
+  const [npcBehaviorTimelineError, setNPCBehaviorTimelineError] = useState<string>("");
+  const [npcBehaviorTurnFrom, setNPCBehaviorTurnFrom] = useState<string>("");
+  const [npcBehaviorTurnTo, setNPCBehaviorTurnTo] = useState<string>("");
+  const [npcBehaviorFilter, setNPCBehaviorFilter] = useState<string>("all");
   const [saves, setSaves] = useState<SaveSummary[]>([]);
   const [selectedSaveId, setSelectedSaveId] = useState<string>("");
   const [migrationStatusBySaveId, setMigrationStatusBySaveId] = useState<Record<string, SaveMigrationStatus>>({});
@@ -497,6 +521,7 @@ export function App() {
       void refreshTimelineReplay("session", { sessionId: response.session_id });
       void refreshPlayerGraphs(response.session_id);
       void refreshDebugGraphs(response.session_id);
+      void refreshNPCSimulationDebugger(response.session_id);
     } catch (err) {
       setError(toErrorMessage(err));
     } finally {
@@ -1025,6 +1050,7 @@ export function App() {
     void refreshTimelineReplay("session", { sessionId });
     void refreshPlayerGraphs(sessionId);
     void refreshDebugGraphs(sessionId);
+    void refreshNPCSimulationDebugger(sessionId);
   }
 
   function applyDialogueResponse(response: DialogueModeResponse) {
@@ -1044,6 +1070,7 @@ export function App() {
     void refreshTimelineReplay("session", { sessionId });
     void refreshPlayerGraphs(sessionId);
     void refreshDebugGraphs(sessionId);
+    void refreshNPCSimulationDebugger(sessionId);
   }
 
   function applyGroupSceneResponse(response: GroupDialogueSceneResponse) {
@@ -1174,6 +1201,87 @@ export function App() {
       setDebugRelationshipGraph(null);
       setDebugFactionGraph(null);
       setDebugGraphError(toErrorMessage(err));
+    }
+  }
+
+  async function refreshNPCSimulationDebugger(nextSessionId = sessionId, nextNPCId = selectedSimulationNPCId) {
+    if (!nextSessionId) {
+      return;
+    }
+    setNPCSimulationError("");
+    try {
+      const [summaryResponse, tickResponse] = await Promise.all([
+        fetchNPCSimulationDebug(nextSessionId),
+        fetchNPCSimulationDebugTicks(nextSessionId)
+      ]);
+      setNPCSimulationSummaries(summaryResponse.npcs);
+      setNPCSimulationEvents(tickResponse.ticks);
+      const selectedId = nextNPCId || summaryResponse.npcs[0]?.npc_id || "";
+      setSelectedSimulationNPCId(selectedId);
+      if (selectedId) {
+        const detail = await fetchNPCSimulationDebugDetail(nextSessionId, selectedId);
+        setNPCSimulationDetail(detail);
+        await refreshNPCBehaviorTimeline(nextSessionId, selectedId);
+      } else {
+        setNPCSimulationDetail(null);
+        setNPCBehaviorTimeline(null);
+      }
+    } catch (err) {
+      setNPCSimulationSummaries([]);
+      setNPCSimulationDetail(null);
+      setNPCSimulationEvents([]);
+      setNPCSimulationError(toErrorMessage(err));
+    }
+  }
+
+  async function handleSelectSimulationNPC(npcId: string) {
+    setSelectedSimulationNPCId(npcId);
+    setNPCSimulationError("");
+    setNPCSimulationDryRun(null);
+    if (!sessionId || !npcId) {
+      setNPCSimulationDetail(null);
+      return;
+    }
+    try {
+      const detail = await fetchNPCSimulationDebugDetail(sessionId, npcId);
+      setNPCSimulationDetail(detail);
+      await refreshNPCBehaviorTimeline(sessionId, npcId);
+    } catch (err) {
+      setNPCSimulationDetail(null);
+      setNPCSimulationError(toErrorMessage(err));
+    }
+  }
+
+  async function handleNPCSimulationDryRun() {
+    if (!sessionId) {
+      setNPCSimulationError("Start or load a session before running NPC simulation dry-run.");
+      return;
+    }
+    setNPCSimulationError("");
+    try {
+      const response = await dryRunNPCSimulationTick(sessionId);
+      setNPCSimulationDryRun(response);
+      await refreshNPCSimulationDebugger(sessionId, selectedSimulationNPCId);
+    } catch (err) {
+      setNPCSimulationDryRun(null);
+      setNPCSimulationError(toErrorMessage(err));
+    }
+  }
+
+  async function refreshNPCBehaviorTimeline(nextSessionId = sessionId, nextNPCId = selectedSimulationNPCId) {
+    if (!nextSessionId || !nextNPCId) {
+      setNPCBehaviorTimeline(null);
+      return;
+    }
+    setNPCBehaviorTimelineError("");
+    try {
+      const turnFrom = npcBehaviorTurnFrom.trim() ? Number(npcBehaviorTurnFrom) : null;
+      const turnTo = npcBehaviorTurnTo.trim() ? Number(npcBehaviorTurnTo) : null;
+      const response = await fetchNPCBehaviorTimeline(nextSessionId, nextNPCId, turnFrom, turnTo);
+      setNPCBehaviorTimeline(response);
+    } catch (err) {
+      setNPCBehaviorTimeline(null);
+      setNPCBehaviorTimelineError(toErrorMessage(err));
     }
   }
 
@@ -1459,6 +1567,9 @@ export function App() {
             <button type="button" onClick={() => void refreshDebugGraphs()} disabled={!sessionId || isLoading}>
               Refresh Graphs
             </button>
+            <button type="button" onClick={() => void refreshNPCSimulationDebugger()} disabled={!sessionId || isLoading}>
+              Refresh NPC Simulation
+            </button>
             <button
               type="button"
               onClick={() => void refreshSaveTimeline()}
@@ -1549,6 +1660,27 @@ export function App() {
                 showVisibility
               />
             </section>
+            <NPCSimulationDebugger
+              summaries={npcSimulationSummaries}
+              selectedNPCId={selectedSimulationNPCId}
+              detail={npcSimulationDetail}
+              events={npcSimulationEvents}
+              dryRun={npcSimulationDryRun}
+              behaviorTimeline={npcBehaviorTimeline}
+              behaviorTimelineError={npcBehaviorTimelineError}
+              behaviorTurnFrom={npcBehaviorTurnFrom}
+              behaviorTurnTo={npcBehaviorTurnTo}
+              behaviorFilter={npcBehaviorFilter}
+              error={npcSimulationError}
+              onSelectNPC={(npcId) => void handleSelectSimulationNPC(npcId)}
+              onRefresh={() => void refreshNPCSimulationDebugger()}
+              onDryRun={() => void handleNPCSimulationDryRun()}
+              onRefreshBehaviorTimeline={() => void refreshNPCBehaviorTimeline()}
+              onBehaviorTurnFromChange={setNPCBehaviorTurnFrom}
+              onBehaviorTurnToChange={setNPCBehaviorTurnTo}
+              onBehaviorFilterChange={setNPCBehaviorFilter}
+              disabled={!sessionId || isLoading}
+            />
             <section className="debug-group">
               <h2>Social Consequences</h2>
               <DebugEventSummary events={socialDebugEvents} emptyText="No social events." />
@@ -8546,9 +8678,13 @@ function NPCGoalEditorPanel({
   const [error, setError] = useState<string>("");
   const [message, setMessage] = useState<string>("");
   const [isBusy, setIsBusy] = useState<boolean>(false);
+  const [simulationPresets, setSimulationPresets] = useState<NPCSimulationPreset[]>([]);
+  const [selectedPresetId, setSelectedPresetId] = useState<string>("");
+  const [presetPreview, setPresetPreview] = useState<string>("");
 
   useEffect(() => {
     void loadGoalGraph();
+    void loadSimulationPresets();
   }, [worldId]);
 
   const selectedNpc = graph?.npcs.find((npc) => npc.npc_id === selectedNpcId) ?? graph?.npcs[0] ?? null;
@@ -8698,6 +8834,17 @@ function NPCGoalEditorPanel({
     }
   }
 
+  async function loadSimulationPresets() {
+    try {
+      const response = await fetchNPCSimulationPresets();
+      setSimulationPresets(response.presets);
+      setSelectedPresetId((current) => current || (response.presets[0]?.id ?? ""));
+    } catch {
+      setSimulationPresets([]);
+      setSelectedPresetId("");
+    }
+  }
+
   async function handleSave() {
     if (!graph) {
       return;
@@ -8725,6 +8872,53 @@ function NPCGoalEditorPanel({
       setValidation(response.validation);
       onPreviewYaml(response.yaml_content, response.validation);
       setMessage(response.saved ? "NPC goals saved to npcs.yaml." : "NPC goals were not saved.");
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handlePresetPreview() {
+    if (!selectedNpc || !selectedPresetId) {
+      return;
+    }
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await previewNPCSimulationPreset(worldId, selectedNpc.npc_id, selectedPresetId);
+      setValidation(response.validation);
+      setPresetPreview(response.applied_fields.join(", "));
+      onPreviewYaml(response.yaml_content, response.validation);
+      setMessage(response.validation.ok ? "Simulation preset preview is valid." : "Simulation preset preview has errors.");
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handlePresetApplyDraft() {
+    if (!selectedNpc || !selectedPresetId) {
+      return;
+    }
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await applyNPCSimulationPresetDraft(worldId, selectedNpc.npc_id, selectedPresetId);
+      setGraph(response.graph);
+      setValidation(response.validation);
+      const refreshedNpc = response.graph.npcs.find((npc) => npc.npc_id === selectedNpc.npc_id);
+      setSelectedGoalId(refreshedNpc?.goals[0]?.id ?? "");
+      setPresetPreview(response.applied_fields.join(", "));
+      onPreviewYaml(response.yaml_content, response.validation);
+      setMessage(
+        response.validation.ok
+          ? "Simulation preset applied to this authoring draft. Save NPC Goals to persist it."
+          : "Simulation preset draft has validation errors."
+      );
     } catch (err) {
       setError(authoringErrorMessage(err));
     } finally {
@@ -8772,6 +8966,37 @@ function NPCGoalEditorPanel({
           <section className="quest-graph-detail">
             {selectedNpc && (
               <>
+                <section className="authoring-card">
+                  <h3>Simulation Preset</h3>
+                  <div className="form-grid">
+                    <label>
+                      Preset
+                      <select
+                        value={selectedPresetId}
+                        onChange={(event) => setSelectedPresetId(event.target.value)}
+                        disabled={isBusy || simulationPresets.length === 0}
+                      >
+                        {simulationPresets.map((preset) => (
+                          <option key={preset.id} value={preset.id}>
+                            {preset.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Impact
+                      <input value={presetPreview || "goals, priorities, duties, disposition"} readOnly />
+                    </label>
+                  </div>
+                  <div className="authoring-actions">
+                    <button type="button" onClick={() => void handlePresetPreview()} disabled={isBusy || !selectedPresetId}>
+                      Preview Preset
+                    </button>
+                    <button type="button" onClick={() => void handlePresetApplyDraft()} disabled={isBusy || !selectedPresetId}>
+                      Apply to Draft
+                    </button>
+                  </div>
+                </section>
                 <div className="quest-stage-pills">
                   {selectedNpc.goals.map((goal) => (
                     <button
@@ -11087,6 +11312,191 @@ function DebugEventSummary({ events, emptyText }: { events: DebugEvent[]; emptyT
       ))}
     </div>
   );
+}
+
+function NPCSimulationDebugger({
+  summaries,
+  selectedNPCId,
+  detail,
+  events,
+  dryRun,
+  behaviorTimeline,
+  behaviorTimelineError,
+  behaviorTurnFrom,
+  behaviorTurnTo,
+  behaviorFilter,
+  error,
+  onSelectNPC,
+  onRefresh,
+  onDryRun,
+  onRefreshBehaviorTimeline,
+  onBehaviorTurnFromChange,
+  onBehaviorTurnToChange,
+  onBehaviorFilterChange,
+  disabled
+}: {
+  summaries: DebugNPCSimulationSummary[];
+  selectedNPCId: string;
+  detail: DebugNPCSimulationDetail | null;
+  events: DebugEvent[];
+  dryRun: DebugNPCSimulationDryRunResponse | null;
+  behaviorTimeline: NPCBehaviorTimelineResponse | null;
+  behaviorTimelineError: string;
+  behaviorTurnFrom: string;
+  behaviorTurnTo: string;
+  behaviorFilter: string;
+  error: string;
+  onSelectNPC: (npcId: string) => void;
+  onRefresh: () => void;
+  onDryRun: () => void;
+  onRefreshBehaviorTimeline: () => void;
+  onBehaviorTurnFromChange: (value: string) => void;
+  onBehaviorTurnToChange: (value: string) => void;
+  onBehaviorFilterChange: (value: string) => void;
+  disabled: boolean;
+}) {
+  const activePlan = detail?.plans.find((plan) => String(plan.status ?? "") === "active") ?? detail?.plans[0] ?? null;
+  const currentStep = activePlan && Array.isArray(activePlan.steps)
+    ? activePlan.steps[Number(activePlan.current_step_index ?? 0)] ?? null
+    : null;
+  const behaviorTypes = Array.from(new Set(behaviorTimeline?.entries.map((entry) => entry.behavior_type) ?? [])).sort();
+  const visibleBehaviorEntries = behaviorTimeline?.entries.filter((entry) => behaviorFilter === "all" || entry.behavior_type === behaviorFilter) ?? [];
+  return (
+    <section className="debug-group npc-simulation-debugger">
+      <h2>NPC Simulation</h2>
+      <div className="timeline-controls">
+        <label>
+          NPC
+          <select value={selectedNPCId} onChange={(event) => onSelectNPC(event.target.value)} disabled={disabled || summaries.length === 0}>
+            <option value="">Select NPC</option>
+            {summaries.map((npc) => (
+              <option key={npc.npc_id} value={npc.npc_id}>
+                {npc.npc_id}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button type="button" onClick={onRefresh} disabled={disabled}>Refresh</button>
+        <button type="button" onClick={onDryRun} disabled={disabled}>Dry-run Tick</button>
+      </div>
+      {error && <p className="error">{sanitizeDisplayError(error)}</p>}
+      {error.toLowerCase().includes("debug") && <p className="muted">debug disabled</p>}
+      {summaries.length === 0 && !error && (
+        <EmptyState title="No NPC simulation state." detail="Start a session, then refresh this local debug panel." />
+      )}
+      {detail && (
+        <div className="npc-sim-grid">
+          <DashboardCard title="Condition" value={`${detail.condition}${detail.alive ? "" : " / inactive"}`}>
+            <p>Location: {detail.location_id}</p>
+          </DashboardCard>
+          <DashboardCard title="Goals" value={detail.active_goal_id ?? "none"}>
+            <SafeJSON value={detail.goals} />
+          </DashboardCard>
+          <DashboardCard title="Intent queue" value={String(detail.intent_count)}>
+            <SafeJSON value={detail.intent_queue} />
+          </DashboardCard>
+          <DashboardCard title="Active plan" value={activePlan ? String(activePlan.id ?? "plan") : "none"}>
+            <SafeJSON value={{ plan: activePlan, current_step: currentStep }} />
+          </DashboardCard>
+          <DashboardCard title="Known facts" value={String(detail.known_fact_ids.length)}>
+            <p>{detail.known_fact_ids.length ? detail.known_fact_ids.join(", ") : "None"}</p>
+            {detail.hidden_fact_ids.length > 0 && <p className="muted">Hidden ids: {detail.hidden_fact_ids.join(", ")}</p>}
+          </DashboardCard>
+          <DashboardCard title="Disposition" value="debug">
+            <SafeJSON value={{
+              emotional_state: detail.emotional_state,
+              social_disposition: detail.social_disposition,
+              faction_duties: detail.faction_duties,
+              relationship_behavior_summary: detail.relationship_behavior_summary
+            }} />
+          </DashboardCard>
+          <DashboardCard title="Decision reasons" value={String(detail.debug_reason_count)}>
+            <SafeJSON value={detail.debug_decision_reasons} />
+          </DashboardCard>
+          <DashboardCard title="Rumors / crimes" value={`${detail.known_rumor_ids.length} / ${detail.known_crime_ids.length}`}>
+            <p>Rumors: {detail.known_rumor_ids.join(", ") || "None"}</p>
+            <p>Crimes: {detail.known_crime_ids.join(", ") || "None"}</p>
+          </DashboardCard>
+        </div>
+      )}
+      <h3>Recent Simulation Events</h3>
+      <DebugEventSummary events={events.slice(0, 8)} emptyText="No NPC simulation events yet." />
+      <h3>Behavior Timeline</h3>
+      <div className="timeline-controls">
+        <label>
+          From
+          <input type="number" value={behaviorTurnFrom} onChange={(event) => onBehaviorTurnFromChange(event.target.value)} disabled={disabled} />
+        </label>
+        <label>
+          To
+          <input type="number" value={behaviorTurnTo} onChange={(event) => onBehaviorTurnToChange(event.target.value)} disabled={disabled} />
+        </label>
+        <label>
+          Type
+          <select value={behaviorFilter} onChange={(event) => onBehaviorFilterChange(event.target.value)} disabled={disabled}>
+            <option value="all">All</option>
+            {behaviorTypes.map((type) => <option key={type} value={type}>{type}</option>)}
+          </select>
+        </label>
+        <button type="button" onClick={onRefreshBehaviorTimeline} disabled={disabled || !selectedNPCId}>Load Timeline</button>
+      </div>
+      {behaviorTimelineError && <p className="error">{sanitizeDisplayError(behaviorTimelineError)}</p>}
+      {behaviorTimelineError.toLowerCase().includes("debug") && <p className="muted">debug disabled</p>}
+      {visibleBehaviorEntries.length === 0 ? (
+        <p className="muted">No NPC behavior timeline entries.</p>
+      ) : (
+        <div className="debug-event-list">
+          {visibleBehaviorEntries.map((entry) => (
+            <details className="timeline-event" key={`${entry.event_id}-${entry.behavior_type}`}>
+              <summary>
+                <span>Turn {entry.turn}</span>
+                <span>{entry.behavior_type}</span>
+                <span>{entry.safe_summary}</span>
+              </summary>
+              <SafeJSON value={entry} />
+            </details>
+          ))}
+        </div>
+      )}
+      {dryRun && (
+        <details className="timeline-event">
+          <summary>
+            <span>Dry-run</span>
+            <span>{dryRun.state_unchanged ? "state unchanged" : "changed"}</span>
+          </summary>
+          <SafeJSON value={dryRun.result} />
+        </details>
+      )}
+    </section>
+  );
+}
+
+function SafeJSON({ value }: { value: unknown }) {
+  return <pre>{JSON.stringify(redactDebugText(value), null, 2)}</pre>;
+}
+
+function redactDebugText(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => redactDebugText(item));
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, item]) => {
+        const lower = key.toLowerCase();
+        if (lower.includes("api_key") || lower.includes("raw_env") || lower.includes("secret")) {
+          return [key, "[redacted]"];
+        }
+        if (lower === "text" || lower === "content" || lower === "narrative_text") {
+          return [key, "[redacted text]"];
+        }
+        return [key, redactDebugText(item)];
+      })
+    );
+  }
+  if (typeof value === "string" && /sk-[A-Za-z0-9_-]+/.test(value)) {
+    return "sk-[redacted]";
+  }
+  return value;
 }
 
 function TimelineReplayPanel({

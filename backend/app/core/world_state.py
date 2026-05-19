@@ -88,6 +88,128 @@ class NPCGoalState(BaseModel):
     forbidden_actions: list[str] = Field(default_factory=list)
 
 
+class NPCIntentStatus(StrEnum):
+    QUEUED = "queued"
+    ACTIVE = "active"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    BLOCKED = "blocked"
+
+
+class NPCIntent(BaseModel):
+    id: str
+    npc_id: str
+    intent_type: str
+    priority: int = 0
+    status: NPCIntentStatus = NPCIntentStatus.QUEUED
+    source_event_id: str | None = None
+    source_goal_id: str | None = None
+    target_id: str | None = None
+    target_type: str | None = None
+    created_turn: int = Field(default=0, ge=0)
+    expires_turn: int | None = Field(default=None, ge=0)
+    preconditions: list[str] = Field(default_factory=list)
+    debug_reason: str | None = None
+
+
+class NPCPlanStatus(StrEnum):
+    PLANNED = "planned"
+    ACTIVE = "active"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    BLOCKED = "blocked"
+
+
+class NPCPlanStepType(StrEnum):
+    MOVE = "move"
+    TALK = "talk"
+    REPORT = "report"
+    SPREAD_RUMOR = "spread_rumor"
+    REST = "rest"
+    GUARD = "guard"
+    AVOID = "avoid"
+    SEEK_ITEM = "seek_item"
+
+
+class NPCPlanStepStatus(StrEnum):
+    PLANNED = "planned"
+    ACTIVE = "active"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    BLOCKED = "blocked"
+
+
+class NPCPlanStep(BaseModel):
+    step_type: NPCPlanStepType
+    target_id: str | None = None
+    preconditions: list[str] = Field(default_factory=list)
+    expected_result: str = ""
+    status: NPCPlanStepStatus = NPCPlanStepStatus.PLANNED
+
+
+class NPCPlan(BaseModel):
+    id: str
+    npc_id: str
+    source_intent_id: str
+    goal_id: str | None = None
+    status: NPCPlanStatus = NPCPlanStatus.PLANNED
+    steps: list[NPCPlanStep] = Field(default_factory=list)
+    current_step_index: int = Field(default=0, ge=0)
+    created_turn: int = Field(default=0, ge=0)
+    expires_turn: int | None = Field(default=None, ge=0)
+
+
+class NPCFactionDutyStatus(StrEnum):
+    ACTIVE = "active"
+    PAUSED = "paused"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    BLOCKED = "blocked"
+
+
+class NPCFactionDutyType(StrEnum):
+    GUARD_LOCATION = "guard_location"
+    PATROL_ROUTE = "patrol_route"
+    REPORT_CRIME_TO_FACTION = "report_crime_to_faction"
+    PROTECT_FACTION_MEMBER = "protect_faction_member"
+    REFUSE_HOSTILE_ACTOR = "refuse_hostile_actor"
+    SPREAD_FACTION_RUMOR = "spread_faction_rumor"
+    SEEK_INFORMATION = "seek_information"
+    ENFORCE_CURFEW = "enforce_curfew"
+
+
+class NPCFactionDuty(BaseModel):
+    id: str
+    duty_type: NPCFactionDutyType
+    priority: int = 0
+    status: NPCFactionDutyStatus = NPCFactionDutyStatus.ACTIVE
+    faction_id: str | None = None
+    target_id: str | None = None
+    target_type: str | None = None
+    route_location_ids: list[str] = Field(default_factory=list)
+    required_fact_ids: list[str] = Field(default_factory=list)
+    required_rumor_ids: list[str] = Field(default_factory=list)
+    required_crime_ids: list[str] = Field(default_factory=list)
+    created_turn: int = Field(default=0, ge=0)
+    expires_turn: int | None = Field(default=None, ge=0)
+    debug_reason: str | None = None
+
+
+class NPCSocialDisposition(BaseModel):
+    trust_player: int = Field(default=0, ge=-100, le=100)
+    fear_player: int = Field(default=0, ge=0, le=100)
+    loyalty_to_faction: int = Field(default=0, ge=0, le=100)
+    loyalty_to_npcs: dict[str, int] = Field(default_factory=dict)
+    moral_flexibility: int = Field(default=50, ge=0, le=100)
+    risk_tolerance: int = Field(default=50, ge=0, le=100)
+    conflict_tolerance: int = Field(default=50, ge=0, le=100)
+    secrecy_preference: int = Field(default=50, ge=0, le=100)
+
+
 class RPProfile(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -231,6 +353,10 @@ class NPCState(BaseModel):
     hostile_to: list[str] = Field(default_factory=list)
     knowledge: list[str] = Field(default_factory=list)
     goals: list[str | NPCGoalState] = Field(default_factory=list)
+    intent_queue: list[NPCIntent] = Field(default_factory=list)
+    plans: list[NPCPlan] = Field(default_factory=list)
+    faction_duties: list[NPCFactionDuty] = Field(default_factory=list)
+    social_disposition: NPCSocialDisposition = Field(default_factory=NPCSocialDisposition)
     priorities: dict[str, int] = Field(default_factory=dict)
     constraints: list[str] = Field(default_factory=list)
     current_goal_id: str | None = None

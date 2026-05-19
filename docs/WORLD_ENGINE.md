@@ -1531,6 +1531,209 @@ mood, suggested dialogue mode, opening context, allowed/forbidden topics,
 required visible facts, and safety notes. They do not call the LLM, do not
 modify active saves, and cannot expand NPC knowledge or hidden fact access.
 
+## v1.3 Advanced NPC Simulation
+
+v1.3 adds bounded NPC autonomy under the same local world-engine authority
+model. NPC simulation is deterministic rule code, not LLM multi-agent
+simulation. NPCs can choose from finite rule-defined behavior, but they cannot
+read unknown facts, cannot directly mutate `GameState`, cannot call external
+network services, and cannot bypass `StateDelta` or `EventLog`.
+
+### NPC Simulation Boundary
+
+`docs/NPC_SIMULATION_BOUNDARY.md` defines the contract and
+`backend/app/engine/rules/npc_simulation_boundary.py` implements
+`NPCSimulationPolicy`. The main concepts are:
+
+- `npc_known_context`: public facts plus facts, rumors, and crimes actually
+  known by that NPC.
+- `npc_visible_context`: local visible entities from visibility rules, not raw
+  state.
+- `npc_private_state`: mood, condition, current goal/activity, and plan-state
+  keys.
+- `simulation_candidate_action`, `simulation_intent`, `simulation_plan`, and
+  `simulation_event`.
+- `debug_only_simulation_data`: local diagnostics that must stay behind debug
+  APIs.
+
+The policy checks inactive/dead NPCs, allowed action types, unknown required
+facts, finite plan size, and event/delta requirements. It is read-only: it
+does not apply deltas, write disk, or call the LLM.
+
+### NPC Intent Queue
+
+`NPCIntent` entries live on `NPCState.intent_queue`. They contain id, NPC id,
+intent type, priority, status, optional source event/goal, optional target,
+created/expiry turn, preconditions, and a debug-only reason.
+
+`npc_intents` provides enqueue, cancel, complete, fail, select, and prune
+helpers. Queue changes return `StateDelta` entries and system events.
+Selection is deterministic by priority and turn, and ordinary selection returns
+no intent for dead, incapacitated, or stunned NPCs. Fact, rumor, and crime
+preconditions are checked against the NPC's scoped knowledge.
+
+### NPC Short-Term Plans
+
+`NPCPlan` entries live on `NPCState.plans`. A plan links to a source intent,
+has a status, finite `NPCPlanStep` list, current step index, creation turn, and
+optional expiry turn.
+
+`npc_plans` converts intents into whitelisted steps such as move, talk, report,
+spread rumor, rest, guard, avoid, and seek item. Plans are validated against
+targets and NPC knowledge. Advancing a plan delegates executable effects to the
+existing rule/action resolver and returns `StateDelta` plus events; plans do
+not directly write state.
+
+### NPC Memory-Based Reactions
+
+`npc_memory_reactions` accepts candidate `MemoryRecord` values and
+`NPCMemoryReactionRule` rules. It can remember events, avoid/seek actors,
+report known crimes, spread known rumors, increase suspicion, soften tone,
+refuse talk, or enqueue an intent.
+
+Hidden and debug-only memory is filtered out. Memories tied to facts, rumors,
+or crimes unknown to the NPC are skipped. Reactions produce finite deltas and
+events, and dedupe markers in `social_flags` prevent infinite repeat firing.
+
+### NPC Relationship-Driven Behavior
+
+`npc_relationship_behavior` uses `RelationshipState`, relationship tone,
+known facts, known rumors, emotional state, and faction-duty inputs to produce
+bounded behavior such as help, warn, avoid, report, lie, withhold information,
+share known rumor, or seek reconciliation.
+
+Outputs are intents, plan candidates, `StateDelta`, and events. Hidden
+relationships remain filtered from player graphs, and unknown facts/rumors do
+not become behavior inputs.
+
+### NPC Faction Duties
+
+`NPCFactionDuty` entries live on `NPCState.faction_duties`. Supported duty
+types include guard location, patrol route, report crime to faction, protect
+faction member, refuse hostile actor, spread faction rumor, seek information,
+and enforce curfew.
+
+`npc_faction_duties` filters duties by life state, faction membership, target
+validity, known facts, known rumors, and known/witnessed crimes. Duties produce
+intents or plan candidates through existing systems and record events; they do
+not run large-scale war or diplomacy simulation.
+
+### NPC Rumor Decisions
+
+`npc_rumor_decisions` defines `NPCRumorDecision` and deterministic decisions:
+keep secret, share with actor, share with faction, distort, ignore, report, or
+enqueue a spread-rumor intent.
+
+The NPC must already know the rumor. Decision inputs include relationship
+trust, faction alignment, secrecy tags, source credibility, and emotional
+intensity. The system does not call the LLM to rewrite rumors and does not
+expose hidden fact truth text as player-facing rumor text.
+
+### NPC Fear / Trust / Loyalty Models
+
+`NPCSocialDisposition` lives on `NPCState` and tracks lightweight values such
+as `trust_player`, `fear_player`, `loyalty_to_faction`,
+`loyalty_to_npcs`, `moral_flexibility`, `risk_tolerance`,
+`conflict_tolerance`, and `secrecy_preference`.
+
+`npc_social_disposition` can derive values from relationships, update from
+events through `StateDelta`, convert disposition into behavior weights, and
+summarize it for dialogue tone. Disposition does not grant knowledge, override
+relationship authority, or let LLMs write NPC psychology.
+
+### NPC Conflict Avoidance
+
+`npc_conflict_avoidance` creates finite avoid/flee/rest/help/hide/refuse
+behavior based on emotional state, social disposition, combat/life state,
+known crimes, visible hostile actors, location safety tags, and duties.
+
+Hidden NPC avoidance stays system/debug-only unless the NPC is visible by
+normal rules. Avoidance outputs intents or plans and relies on later rule
+resolution for actual state changes.
+
+### NPC Daily Goal Replanning
+
+`npc_daily_replanning` runs bounded replanning on new day, major event, goal
+completion/failure, schedule change, faction duty update, or injury/recovery.
+It can reevaluate goals, clear expired intents, enqueue daily duties, adjust
+priorities, and cancel impossible plans.
+
+Replanning is deterministic, uses `StateDelta` and events, and skips ordinary
+replanning for inactive NPCs.
+
+### NPC Simulation Tick Orchestrator
+
+`npc_simulation_tick` centralizes tick order:
+
+1. prune expired intents
+2. daily replanning
+3. memory reactions
+4. relationship behavior
+5. faction duties
+6. rumor decisions
+7. conflict avoidance
+8. select intent
+9. build or advance plan
+
+`NPCSimulationTickBudget` limits NPCs per tick, intents per NPC, plan steps,
+and event count. `run_npc_simulation_tick` applies returned deltas only to an
+internal working copy during orchestration, returns the final deltas/events to
+the caller, and prevents unbounded loops.
+
+### NPC Simulation Debugger And Behavior Timeline
+
+Debug APIs are local-only and gated by `ENABLE_DEBUG_API`:
+
+- `GET /debug/sessions/{session_id}/npc-simulation`
+- `GET /debug/sessions/{session_id}/npcs/{npc_id}/simulation`
+- `GET /debug/sessions/{session_id}/npc-simulation/ticks`
+- `POST /debug/sessions/{session_id}/npc-simulation/dry-run-tick`
+- `GET /debug/sessions/{session_id}/npcs/{npc_id}/behavior-timeline`
+- `GET /debug/saves/{save_id}/npcs/{npc_id}/behavior-timeline`
+
+The debugger can show intent/plan counts, known ids, hidden fact ids, goals,
+emotional/social state, faction duties, known rumors/crimes, and redacted
+debug reasons. Dry-run tick does not write the database or mutate active
+state. Behavior timeline is debug-only and returns safe summaries plus
+redacted debug reasons; it must not be used as narrator input.
+
+### NPC Simulation Authoring Presets
+
+NPC simulation presets are authoring-draft helpers. APIs:
+
+- `GET /authoring/npc-simulation-presets`
+- `POST /authoring/worlds/{world_id}/npcs/{npc_id}/simulation-preset/preview`
+- `POST /authoring/worlds/{world_id}/npcs/{npc_id}/simulation-preset/apply-draft`
+
+Built-in presets include guard, merchant, informant, hostile actor, timid
+villager, loyal subordinate, rumor spreader, and investigator. Presets can
+apply goals, intent priorities, faction duties, relationship behavior metadata,
+rumor tendencies, social disposition defaults, and conflict avoidance defaults
+to an NPC authoring draft. They go through validation and do not modify active
+`GameState`, execute scripts, or grant unknown facts.
+
+### NPC Simulation Quality Evals
+
+`npc_simulation_quality` produces `NPCSimulationQualityReport` and integrates
+with the Quality Gate / World Health source report path. It checks unknown
+fact usage, hidden fact leaks, repeated intent loops, blocked plan loops, dead
+NPC actions, invalid targets, missing events, too many intents, plan budget
+overruns, and low behavior coverage.
+
+Reports are deterministic diagnostics. They do not modify saves, do not call
+LLMs, and normal report dumps strip debug-only hidden details.
+
+### NPC Simulation Regression Playtests
+
+`npc_simulation_regression` defines deterministic regression scenarios such as
+guard patrol, report crime, spread rumor, avoid player, seek help, daily
+replan, relationship response, faction duty, and injured rest.
+
+Runs use temporary SQLite storage and synthetic fixtures. They check expected
+intents/events, forbidden intents/facts, plan failure limits, save/load
+continuity, and quality reports. They do not call real LLM APIs and do not
+modify real user saves.
+
 Known v1.0 implementation note: `ENABLE_PLAYTEST_API`, `ENABLE_EVAL_API`,
 `ENABLE_DEBUG_API`, and `ENABLE_PERF_LOGGING` gate the main playtest, eval,
 debug, benchmark, and quality-gate flows. There is currently no separate

@@ -296,6 +296,43 @@ prices, dialogue scene facts, hidden facts, merge resolutions, diff summaries,
 or templates. RP authoring does not allow imported prompt text, prompt profiles,
 or RP profiles to widen hidden-fact or state-write permissions.
 
+## v1.3 Advanced NPC Simulation Scope
+
+v1.3 adds bounded NPC simulation on top of the existing world engine. The goal
+is to make NPCs appear more autonomous while preserving deterministic rule
+authority.
+
+Included:
+
+- NPC Simulation Boundary Contract.
+- NPC Intent Queue.
+- NPC Short-Term Plans.
+- NPC Memory-Based Reactions.
+- NPC Relationship-Driven Behavior.
+- NPC Faction Duties.
+- NPC Rumor Decisions.
+- NPC Fear / Trust / Loyalty models.
+- NPC Conflict Avoidance.
+- NPC Daily Goal Replanning.
+- NPC Simulation Tick Orchestrator.
+- NPC Simulation Debugger and NPC Behavior Timeline.
+- NPC Simulation Authoring Presets.
+- NPC Simulation Quality Evals.
+- NPC Simulation Regression Playtests.
+
+NPC simulation is not a second world authority. It can produce finite
+candidate actions, intents, plans, `StateDelta` entries, and `Event` records.
+It cannot directly mutate `GameState`, cannot know unknown facts, cannot call
+the LLM or external tools, and cannot run unbounded background thinking loops.
+
+NPC behavior outcomes are decided by local rules. The LLM may express selected
+behavior or dialogue in safe prose, but it cannot choose actions, create
+authoritative plans, decide rumor/faction/social outcomes, or write NPC state.
+
+Debug simulation APIs are local tools behind `ENABLE_DEBUG_API`. Debug traces,
+hidden fact ids, intent queues, plans, and behavior timelines must not enter
+player APIs or narrator prompts.
+
 ## RP And World Engine Boundary
 
 The RP layer is above the world engine. It reads safe context from structured
@@ -568,6 +605,23 @@ event logging, provider abstraction, or content-only mod restrictions.
   files.
 - Complex automatic layout, full Git replacement, full conflict auto-resolution,
   large-scale social/war simulation, or automatic content repair.
+
+## Not In v1.3
+
+- LLM multi-agent free simulation.
+- LLM-decided NPC behavior, plans, rumor decisions, social decisions, faction
+  duties, fear/trust/loyalty values, or conflict avoidance.
+- NPC omniscience or NPC access to hidden facts outside `npc_knowledge`.
+- NPC direct `GameState` mutation.
+- NPC bypass of Visibility, Knowledge, `StateDelta`, or `EventLog`.
+- Large-scale city simulation, war simulation, or economy simulation.
+- Background infinite NPC thinking loops.
+- NPC calls to external networks, tools, scripts, or arbitrary code plugins.
+- Player or narrator access to simulation debug traces, raw state deltas,
+  hidden NPC actions, hidden fact text, or behavior timeline debug reasons.
+- Debugger frontend editing of NPC runtime state.
+- Simulation presets that directly modify active NPC state or grant unknown
+  facts.
 
 ## v1.0 Known Limitations
 

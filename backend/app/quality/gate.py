@@ -20,6 +20,7 @@ from app.quality.economy_balance import analyze_economy_balance
 from app.quality.health_score import build_world_health_score
 from app.quality.mod_compat_stress import ModCompatibilityStressRequest, run_mod_compatibility_stress
 from app.quality.npc_behavior_coverage import analyze_npc_behavior_coverage
+from app.quality.npc_simulation_quality import analyze_npc_simulation_quality_for_world
 from app.quality.quest_analysis import analyze_quest_completion
 from app.quality.reports import (
     QualityIssue,
@@ -94,6 +95,12 @@ def run_quality_gate(
     _append_report(reports, links, "quest_completion", analyze_quest_completion(world_id, worlds_root=worlds_root).quality_report)
     _append_report(reports, links, "dead_ends", analyze_dead_ends(world_id, worlds_root=worlds_root).quality_report)
     _append_report(reports, links, "npc_coverage", analyze_npc_behavior_coverage(world_id, worlds_root=worlds_root).quality_report)
+    _append_report(
+        reports,
+        links,
+        "npc_simulation_quality",
+        analyze_npc_simulation_quality_for_world(world_id, worlds_root=worlds_root).quality_report,
+    )
     _append_report(reports, links, "schedule_conflict", analyze_schedule_conflicts(world_id, worlds_root=worlds_root).quality_report)
     _append_report(reports, links, "economy_balance", analyze_economy_balance(world_id, worlds_root=worlds_root).quality_report)
     _append_report(reports, links, "combat_balance", analyze_combat_balance(world_id, worlds_root=worlds_root).quality_report)
@@ -185,6 +192,7 @@ def run_quality_gate(
                 "quest_completion_analysis",
                 "dead_end_detector",
                 "npc_coverage",
+                "npc_simulation_quality",
                 "schedule_conflict_detector",
                 "economy_balance",
                 "combat_balance",

@@ -133,6 +133,68 @@ export type DebugEventListResponse = {
   events: DebugEvent[];
 };
 
+export type DebugNPCSimulationSummary = {
+  npc_id: string;
+  location_id: string;
+  alive: boolean;
+  condition: string;
+  intent_count: number;
+  plan_count: number;
+  active_goal_id?: string | null;
+  known_fact_ids: string[];
+  hidden_fact_ids: string[];
+  debug_reason_count: number;
+};
+
+export type DebugNPCSimulationDetail = DebugNPCSimulationSummary & {
+  intent_queue: Record<string, unknown>[];
+  plans: Record<string, unknown>[];
+  goals: Record<string, unknown>[];
+  emotional_state: Record<string, unknown>;
+  social_disposition: Record<string, unknown>;
+  faction_duties: Record<string, unknown>[];
+  relationship_behavior_summary: Record<string, unknown>;
+  known_rumor_ids: string[];
+  known_crime_ids: string[];
+  debug_decision_reasons: { intent_id: string; debug_only_reason: string }[];
+};
+
+export type DebugNPCSimulationListResponse = {
+  local_only: boolean;
+  npcs: DebugNPCSimulationSummary[];
+};
+
+export type DebugNPCSimulationTickListResponse = {
+  local_only: boolean;
+  ticks: DebugEvent[];
+};
+
+export type DebugNPCSimulationDryRunResponse = {
+  local_only: boolean;
+  dry_run: boolean;
+  result: Record<string, unknown>;
+  state_unchanged: boolean;
+};
+
+export type NPCBehaviorTimelineEntry = {
+  turn: number;
+  event_id: string;
+  behavior_type: string;
+  intent_id?: string | null;
+  plan_id?: string | null;
+  location_id?: string | null;
+  safe_summary: string;
+  debug_reason_redacted?: string | null;
+};
+
+export type NPCBehaviorTimelineResponse = {
+  local_only: boolean;
+  source_type: string;
+  source_id: string;
+  npc_id: string;
+  entries: NPCBehaviorTimelineEntry[];
+};
+
 export type TimelineStateDiff = {
   path: string;
   operation: string;
@@ -1223,6 +1285,37 @@ export type NPCGoalAuthoringSaveResponse = NPCGoalAuthoringPreviewResponse & {
   saved: boolean;
 };
 
+export type NPCSimulationPreset = {
+  id: string;
+  name: string;
+  description: string;
+  goals: NPCGoalNode[];
+  intent_priorities: Record<string, number>;
+  faction_duties: Record<string, unknown>[];
+  relationship_behavior_rules: Record<string, unknown>[];
+  rumor_decision_tendencies: Record<string, unknown>;
+  social_disposition_defaults: Record<string, unknown>;
+  conflict_avoidance_defaults: Record<string, unknown>;
+};
+
+export type NPCSimulationPresetListResponse = {
+  local_only: boolean;
+  presets: NPCSimulationPreset[];
+};
+
+export type NPCSimulationPresetPreviewResponse = {
+  local_only: boolean;
+  world_id: string;
+  npc_id: string;
+  preset: NPCSimulationPreset;
+  graph: NPCGoalAuthoringGraph;
+  yaml_content: string;
+  validation: AuthoringValidation;
+  gate_allowed_to_save: boolean;
+  confirmation_required: boolean;
+  applied_fields: string[];
+};
+
 export type FactionAuthoringNode = {
   id: string;
   name: string;
@@ -2081,6 +2174,57 @@ export async function fetchDebugFactionGraph(sessionId: string): Promise<GraphRe
   );
 }
 
+export async function fetchNPCSimulationDebug(sessionId: string): Promise<DebugNPCSimulationListResponse> {
+  return requestJson<DebugNPCSimulationListResponse>(
+    `/debug/sessions/${encodeURIComponent(sessionId)}/npc-simulation`
+  );
+}
+
+export async function fetchNPCSimulationDebugDetail(
+  sessionId: string,
+  npcId: string
+): Promise<DebugNPCSimulationDetail> {
+  return requestJson<DebugNPCSimulationDetail>(
+    `/debug/sessions/${encodeURIComponent(sessionId)}/npcs/${encodeURIComponent(npcId)}/simulation`
+  );
+}
+
+export async function fetchNPCSimulationDebugTicks(sessionId: string): Promise<DebugNPCSimulationTickListResponse> {
+  return requestJson<DebugNPCSimulationTickListResponse>(
+    `/debug/sessions/${encodeURIComponent(sessionId)}/npc-simulation/ticks`
+  );
+}
+
+export async function dryRunNPCSimulationTick(sessionId: string): Promise<DebugNPCSimulationDryRunResponse> {
+  return requestJson<DebugNPCSimulationDryRunResponse>(
+    `/debug/sessions/${encodeURIComponent(sessionId)}/npc-simulation/dry-run-tick`,
+    { method: "POST" }
+  );
+}
+
+function behaviorTimelineQuery(turnFrom?: number | null, turnTo?: number | null): string {
+  const query = new URLSearchParams();
+  if (turnFrom !== undefined && turnFrom !== null) {
+    query.set("turn_from", String(turnFrom));
+  }
+  if (turnTo !== undefined && turnTo !== null) {
+    query.set("turn_to", String(turnTo));
+  }
+  const encoded = query.toString();
+  return encoded ? `?${encoded}` : "";
+}
+
+export async function fetchNPCBehaviorTimeline(
+  sessionId: string,
+  npcId: string,
+  turnFrom?: number | null,
+  turnTo?: number | null
+): Promise<NPCBehaviorTimelineResponse> {
+  return requestJson<NPCBehaviorTimelineResponse>(
+    `/debug/sessions/${encodeURIComponent(sessionId)}/npcs/${encodeURIComponent(npcId)}/behavior-timeline${behaviorTimelineQuery(turnFrom, turnTo)}`
+  );
+}
+
 export async function fetchAuthoringWorlds(): Promise<AuthoringWorldListResponse> {
   return requestJson<AuthoringWorldListResponse>("/authoring/worlds");
 }
@@ -2721,6 +2865,46 @@ export async function generateQuestGraphScenarioDraft(
 export async function fetchNPCGoalGraph(worldId: string): Promise<NPCGoalAuthoringGraph> {
   return requestJson<NPCGoalAuthoringGraph>(
     `/authoring/worlds/${encodeURIComponent(worldId)}/npcs/goals`
+  );
+}
+
+export async function fetchNPCSimulationPresets(): Promise<NPCSimulationPresetListResponse> {
+  return requestJson<NPCSimulationPresetListResponse>("/authoring/npc-simulation-presets");
+}
+
+export async function previewNPCSimulationPreset(
+  worldId: string,
+  npcId: string,
+  presetId: string,
+  confirmWarnings = false
+): Promise<NPCSimulationPresetPreviewResponse> {
+  return requestJson<NPCSimulationPresetPreviewResponse>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/npcs/${encodeURIComponent(npcId)}/simulation-preset/preview`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ preset_id: presetId, confirm_warnings: confirmWarnings })
+    }
+  );
+}
+
+export async function applyNPCSimulationPresetDraft(
+  worldId: string,
+  npcId: string,
+  presetId: string,
+  confirmWarnings = false
+): Promise<NPCSimulationPresetPreviewResponse> {
+  return requestJson<NPCSimulationPresetPreviewResponse>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/npcs/${encodeURIComponent(npcId)}/simulation-preset/apply-draft`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ preset_id: presetId, confirm_warnings: confirmWarnings })
+    }
   );
 }
 

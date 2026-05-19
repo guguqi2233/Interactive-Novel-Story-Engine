@@ -68,6 +68,13 @@ from app.api import (
     GameStateResponse,
     DebugEventListResponse,
     DebugEventResponse,
+    DebugNPCSimulationDetailResponse,
+    DebugNPCSimulationDryRunResponse,
+    DebugNPCSimulationListResponse,
+    DebugNPCSimulationSummaryResponse,
+    DebugNPCSimulationTickListResponse,
+    NPCBehaviorTimelineEntryResponse,
+    NPCBehaviorTimelineResponse,
     TimelineReplayResponse,
     DebugPerformanceRecentResponse,
     DebugPerformanceSampleResponse,
@@ -96,6 +103,10 @@ from app.api import (
     NPCGoalAuthoringGraphResponse,
     NPCGoalAuthoringPreviewResponse,
     NPCGoalAuthoringSaveResponse,
+    NPCSimulationPresetApplyRequest,
+    NPCSimulationPresetListResponse,
+    NPCSimulationPresetPreviewResponse,
+    NPCSimulationPresetResponse,
     PlaytestRecentResponse,
     PlaytestReportResponse,
     PlaytestRunRequest,
@@ -127,6 +138,7 @@ from app.api import (
 )
 from app.config import get_settings
 from app.core.event_log import Event
+from app.core.state_delta import StateDelta
 from app.core.instrumentation import (
     get_performance_recorder,
     performance_logging_enabled,
@@ -260,6 +272,14 @@ from app.engine.content.npc_goal_authoring import (
     save_npc_goal_graph,
     validate_npc_goal_graph,
 )
+from app.engine.content.npc_simulation_presets import (
+    NPCSimulationPresetError,
+    NPCSimulationPresetApplyRequest as NPCSimulationPresetServiceApplyRequest,
+    NPCSimulationPresetPreview,
+    apply_npc_simulation_preset_to_draft,
+    list_npc_simulation_presets,
+    preview_npc_simulation_preset,
+)
 from app.engine.content.scenario_templates import (
     RenderedTemplate,
     ScenarioTemplate,
@@ -298,6 +318,7 @@ from app.engine.content.validation_graph import ValidationGraph, build_validatio
 from app.engine.content.world_loader import WorldLoaderError
 from app.engine.content.world_loader import WorldLoader
 from app.engine.rules.time import format_game_time
+from app.engine.rules.npc_simulation_tick import run_npc_simulation_tick
 from app.evals.narrative_quality import (
     NarrativeQualityReport,
     run_narrative_quality_evals,
@@ -365,6 +386,7 @@ from app.quality.npc_behavior_coverage import (
     NPCBehaviorCoverageRequest,
     analyze_npc_behavior_coverage,
 )
+from app.quality.npc_simulation_quality import analyze_npc_simulation_quality_for_world
 from app.quality.quest_analysis import (
     QuestCompletionAnalysis,
     QuestCompletionAnalysisRequest,
@@ -1574,6 +1596,119 @@ def get_debug_faction_graph(session_id: str) -> FactionGraph:
     return build_faction_graph(game_loop.state, debug=True)
 
 
+@app.get("/debug/sessions/{session_id}/npc-simulation", response_model=DebugNPCSimulationListResponse)
+def get_debug_npc_simulation(session_id: str) -> DebugNPCSimulationListResponse:
+    require_debug_api()
+    game_loop = get_session_store().get_session(session_id)
+    if game_loop is None:
+        raise HTTPException(status_code=404, detail=f"Unknown game session: {session_id}")
+    return DebugNPCSimulationListResponse(
+        npcs=[
+            _debug_npc_simulation_summary(game_loop.state, npc_id)
+            for npc_id in sorted(game_loop.state.npcs)
+        ]
+    )
+
+
+@app.get("/debug/sessions/{session_id}/npcs/{npc_id}/simulation", response_model=DebugNPCSimulationDetailResponse)
+def get_debug_npc_simulation_detail(session_id: str, npc_id: str) -> DebugNPCSimulationDetailResponse:
+    require_debug_api()
+    game_loop = get_session_store().get_session(session_id)
+    if game_loop is None:
+        raise HTTPException(status_code=404, detail=f"Unknown game session: {session_id}")
+    if npc_id not in game_loop.state.npcs:
+        raise HTTPException(status_code=404, detail=f"Unknown NPC: {npc_id}")
+    return _debug_npc_simulation_detail(game_loop.state, npc_id)
+
+
+@app.get("/debug/sessions/{session_id}/npc-simulation/ticks", response_model=DebugNPCSimulationTickListResponse)
+def get_debug_npc_simulation_ticks(session_id: str) -> DebugNPCSimulationTickListResponse:
+    require_debug_api()
+    game_loop = get_session_store().get_session(session_id)
+    if game_loop is None:
+        raise HTTPException(status_code=404, detail=f"Unknown game session: {session_id}")
+    events = [
+        event
+        for event in game_loop.event_log.list_events()
+        if event.action_type
+        in {
+            "npc_daily_replanning",
+            "npc_memory_reaction",
+            "npc_relationship_behavior",
+            "npc_faction_duty",
+            "npc_rumor_decision",
+            "npc_conflict_avoidance",
+            "npc_plan_built",
+            "npc_plan_advanced",
+            "npc_intent_enqueued",
+            "npc_intents_pruned",
+        }
+    ]
+    return DebugNPCSimulationTickListResponse(
+        ticks=[_debug_event_response(event) for event in events]
+    )
+
+
+@app.post("/debug/sessions/{session_id}/npc-simulation/dry-run-tick", response_model=DebugNPCSimulationDryRunResponse)
+def dry_run_debug_npc_simulation_tick(session_id: str) -> DebugNPCSimulationDryRunResponse:
+    require_debug_api()
+    game_loop = get_session_store().get_session(session_id)
+    if game_loop is None:
+        raise HTTPException(status_code=404, detail=f"Unknown game session: {session_id}")
+    before = game_loop.state.model_dump(mode="json")
+    result = run_npc_simulation_tick(game_loop.state)
+    after = game_loop.state.model_dump(mode="json")
+    return DebugNPCSimulationDryRunResponse(
+        result=_redact_debug_payload(result.model_dump(mode="json")),
+        state_unchanged=before == after,
+    )
+
+
+@app.get("/debug/sessions/{session_id}/npcs/{npc_id}/behavior-timeline", response_model=NPCBehaviorTimelineResponse)
+def get_debug_session_npc_behavior_timeline(
+    session_id: str,
+    npc_id: str,
+    turn_from: int | None = None,
+    turn_to: int | None = None,
+) -> NPCBehaviorTimelineResponse:
+    require_debug_api()
+    game_loop = get_session_store().get_session(session_id)
+    if game_loop is None:
+        raise HTTPException(status_code=404, detail=f"Unknown game session: {session_id}")
+    if npc_id not in game_loop.state.npcs:
+        raise HTTPException(status_code=404, detail=f"Unknown NPC: {npc_id}")
+    return _npc_behavior_timeline_response(
+        game_loop.event_log.list_events(),
+        source_type="session",
+        source_id=session_id,
+        npc_id=npc_id,
+        turn_from=turn_from,
+        turn_to=turn_to,
+    )
+
+
+@app.get("/debug/saves/{save_id}/npcs/{npc_id}/behavior-timeline", response_model=NPCBehaviorTimelineResponse)
+def get_debug_save_npc_behavior_timeline(
+    save_id: str,
+    npc_id: str,
+    turn_from: int | None = None,
+    turn_to: int | None = None,
+) -> NPCBehaviorTimelineResponse:
+    require_debug_api()
+    try:
+        events = get_save_repository().list_events(save_id)
+    except SaveRepositoryError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return _npc_behavior_timeline_response(
+        events,
+        source_type="save",
+        source_id=save_id,
+        npc_id=npc_id,
+        turn_from=turn_from,
+        turn_to=turn_to,
+    )
+
+
 @app.get("/debug/saves/{save_id}/events", response_model=DebugEventListResponse)
 def get_debug_save_events(save_id: str) -> DebugEventListResponse:
     require_debug_api()
@@ -1888,6 +2023,7 @@ def _build_world_health_source_reports(world_id: str) -> list[WorldQualityReport
         analyze_quest_completion(world_id, worlds_root=worlds_root).quality_report,
         analyze_dead_ends(world_id, worlds_root=worlds_root).quality_report,
         analyze_npc_behavior_coverage(world_id, worlds_root=worlds_root).quality_report,
+        analyze_npc_simulation_quality_for_world(world_id, worlds_root=worlds_root).quality_report,
         analyze_economy_balance(world_id, worlds_root=worlds_root).quality_report,
         analyze_combat_balance(world_id, worlds_root=worlds_root).quality_report,
         analyze_social_consequence_coverage(world_id, worlds_root=worlds_root).quality_report,
@@ -2489,6 +2625,220 @@ def _debug_event_response(event: Event) -> DebugEventResponse:
         visible_to_player=event.visible_to_player,
         created_at=event.created_at.isoformat(),
     )
+
+
+def _npc_behavior_timeline_response(
+    events: list[Event],
+    *,
+    source_type: str,
+    source_id: str,
+    npc_id: str,
+    turn_from: int | None = None,
+    turn_to: int | None = None,
+) -> NPCBehaviorTimelineResponse:
+    entries = [
+        entry
+        for event in sorted(events, key=lambda item: (item.turn, item.created_at.isoformat(), item.event_id))
+        if _event_turn_in_range(event, turn_from, turn_to)
+        for entry in [_npc_behavior_entry(event, npc_id)]
+        if entry is not None
+    ]
+    return NPCBehaviorTimelineResponse(
+        source_type=source_type,
+        source_id=source_id,
+        npc_id=npc_id,
+        entries=entries,
+    )
+
+
+def _npc_behavior_entry(event: Event, npc_id: str) -> NPCBehaviorTimelineEntryResponse | None:
+    related_deltas = [
+        delta
+        for delta in event.state_deltas
+        if delta.path.startswith(f"npcs.{npc_id}.") or delta.metadata.get("npc_id") == npc_id
+    ]
+    if event.target_id != npc_id and not related_deltas:
+        return None
+    behavior_type = _behavior_type_for_event(event, related_deltas)
+    if behavior_type is None:
+        return None
+    intent_id = _first_delta_metadata(related_deltas, "intent_id") or _extract_id_from_event(event.event_id, "intent")
+    plan_id = _first_delta_metadata(related_deltas, "plan_id") or _extract_id_from_event(event.event_id, "plan")
+    location_id = _location_from_deltas(related_deltas)
+    debug_reason = _first_delta_metadata(related_deltas, "reason_code") or _first_delta_metadata(related_deltas, "debug_reason")
+    return NPCBehaviorTimelineEntryResponse(
+        turn=event.turn,
+        event_id=event.event_id,
+        behavior_type=behavior_type,
+        intent_id=intent_id,
+        plan_id=plan_id,
+        location_id=location_id,
+        safe_summary=_safe_behavior_summary(event, behavior_type, location_id),
+        debug_reason_redacted=_redact_behavior_reason(debug_reason),
+    )
+
+
+def _behavior_type_for_event(event: Event, deltas: list[StateDelta]) -> str | None:
+    action = event.action_type
+    if action.startswith("npc_"):
+        return action.removeprefix("npc_")
+    for delta in deltas:
+        if delta.path.endswith(".location_id"):
+            return "location"
+        if ".intent_queue" in delta.path:
+            return "intent"
+        if ".plans" in delta.path:
+            return "plan"
+        if ".current_goal_id" in delta.path or ".goals" in delta.path:
+            return "goal"
+        if "rumor" in delta.path or "rumor" in delta.metadata.get("source", ""):
+            return "rumor"
+        if "crime" in delta.path or "crime" in delta.metadata.get("source", ""):
+            return "crime_report"
+    return None
+
+
+def _safe_behavior_summary(event: Event, behavior_type: str, location_id: str | None) -> str:
+    parts = [behavior_type.replace("_", " ")]
+    if location_id:
+        parts.append(f"location {location_id}")
+    if event.result:
+        parts.append(str(_redact_sensitive_text(event.result)))
+    return " / ".join(parts)
+
+
+def _redact_behavior_reason(value: str | None) -> str | None:
+    if value is None:
+        return None
+    redacted = str(_redact_sensitive_text(value))
+    if len(redacted) > 120:
+        return f"{redacted[:117]}..."
+    return redacted
+
+
+def _first_delta_metadata(deltas: list[StateDelta], key: str) -> str | None:
+    for delta in deltas:
+        value = delta.metadata.get(key)
+        if value:
+            return str(value)
+    return None
+
+
+def _location_from_deltas(deltas: list[StateDelta]) -> str | None:
+    for delta in deltas:
+        if delta.path.endswith(".location_id") and isinstance(delta.value, str):
+            return delta.value
+    return None
+
+
+def _extract_id_from_event(event_id: str, prefix: str) -> str | None:
+    marker = f"{prefix}-"
+    if marker not in event_id:
+        return None
+    return event_id.split(marker, 1)[-1] or None
+
+
+def _event_turn_in_range(event: Event, turn_from: int | None, turn_to: int | None) -> bool:
+    if turn_from is not None and event.turn < turn_from:
+        return False
+    if turn_to is not None and event.turn > turn_to:
+        return False
+    return True
+
+
+def _debug_npc_simulation_summary(state: GameState, npc_id: str) -> DebugNPCSimulationSummaryResponse:
+    npc = state.npcs[npc_id]
+    known_fact_ids = sorted(set(npc.knowledge) | set(state.npc_knowledge.get(npc_id, set())))
+    hidden_fact_ids = [
+        fact_id
+        for fact_id in known_fact_ids
+        if fact_id in state.facts and not state.facts[fact_id].public and fact_id not in state.player_visible_facts
+    ]
+    return DebugNPCSimulationSummaryResponse(
+        npc_id=npc.id,
+        location_id=npc.location_id,
+        alive=npc.alive,
+        condition=npc.condition.value,
+        intent_count=len(npc.intent_queue),
+        plan_count=len(npc.plans),
+        active_goal_id=npc.current_goal_id,
+        known_fact_ids=known_fact_ids,
+        hidden_fact_ids=hidden_fact_ids,
+        debug_reason_count=sum(1 for intent in npc.intent_queue if intent.debug_reason),
+    )
+
+
+def _debug_npc_simulation_detail(state: GameState, npc_id: str) -> DebugNPCSimulationDetailResponse:
+    npc = state.npcs[npc_id]
+    summary = _debug_npc_simulation_summary(state, npc_id)
+    return DebugNPCSimulationDetailResponse(
+        **summary.model_dump(mode="json"),
+        intent_queue=[
+            _redact_debug_payload(intent.model_dump(mode="json"))
+            for intent in npc.intent_queue
+        ],
+        plans=[
+            _redact_debug_payload(plan.model_dump(mode="json"))
+            for plan in npc.plans
+        ],
+        goals=[
+            _redact_debug_payload(goal.model_dump(mode="json") if hasattr(goal, "model_dump") else {"id": str(goal)})
+            for goal in npc.goals
+        ],
+        emotional_state=_redact_debug_payload(npc.emotional_state.model_dump(mode="json")),
+        social_disposition=_redact_debug_payload(npc.social_disposition.model_dump(mode="json")),
+        faction_duties=[
+            _redact_debug_payload(duty.model_dump(mode="json"))
+            for duty in npc.faction_duties
+        ],
+        relationship_behavior_summary={
+            "visible_relationship_ids": sorted(
+                relationship.id
+                for relationship in state.relationships.values()
+                if relationship.source_id == npc_id or relationship.target_id == npc_id
+            ),
+            "current_goal_id": npc.current_goal_id,
+        },
+        known_rumor_ids=sorted(rumor.id for rumor in state.rumors.values() if npc_id in rumor.known_by_npcs),
+        known_crime_ids=sorted(
+            crime.id
+            for crime in state.crimes.values()
+            if npc_id in crime.witnessed_by or f"crime:{crime.id}" in npc.knowledge
+        ),
+        debug_decision_reasons=[
+            {"intent_id": intent.id, "debug_only_reason": intent.debug_reason}
+            for intent in npc.intent_queue
+            if intent.debug_reason
+        ],
+    )
+
+
+def _redact_debug_payload(value: Any) -> Any:
+    if isinstance(value, dict):
+        redacted: dict[str, Any] = {}
+        for key, item in value.items():
+            key_text = str(key)
+            lowered = key_text.lower()
+            if lowered in {"llm_api_key", "api_key", "raw_env", "env"} or "secret" in lowered:
+                redacted[key_text] = "[redacted]"
+            elif lowered in {"text", "content", "narrative_text"}:
+                redacted[key_text] = _redact_sensitive_text(item)
+            else:
+                redacted[key_text] = _redact_debug_payload(item)
+        return redacted
+    if isinstance(value, list):
+        return [_redact_debug_payload(item) for item in value]
+    if isinstance(value, str):
+        return _redact_sensitive_text(value)
+    return value
+
+
+def _redact_sensitive_text(value: object) -> object:
+    if not isinstance(value, str):
+        return value
+    if "sk-" in value.lower():
+        return "[redacted]"
+    return value
 
 
 def _migration_response(report: object) -> SaveMigrationResponse:
@@ -3288,6 +3638,67 @@ def save_authoring_npc_goal_graph(
     )
 
 
+@app.get("/authoring/npc-simulation-presets", response_model=NPCSimulationPresetListResponse)
+def get_authoring_npc_simulation_presets() -> NPCSimulationPresetListResponse:
+    require_authoring_api()
+    return NPCSimulationPresetListResponse(
+        presets=[
+            NPCSimulationPresetResponse.model_validate(preset.model_dump(mode="json"))
+            for preset in list_npc_simulation_presets()
+        ]
+    )
+
+
+@app.post(
+    "/authoring/worlds/{world_id}/npcs/{npc_id}/simulation-preset/preview",
+    response_model=NPCSimulationPresetPreviewResponse,
+)
+def preview_authoring_npc_simulation_preset(
+    world_id: str,
+    npc_id: str,
+    request: NPCSimulationPresetApplyRequest,
+) -> NPCSimulationPresetPreviewResponse:
+    require_authoring_api()
+    try:
+        service_request = NPCSimulationPresetServiceApplyRequest.model_validate(
+            request.model_dump(mode="json")
+        )
+        preview = preview_npc_simulation_preset(
+            world_id,
+            npc_id,
+            service_request,
+            get_authoring_service(),
+        )
+    except (AuthoringError, NPCGoalAuthoringError, NPCSimulationPresetError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _npc_simulation_preset_preview_response(preview)
+
+
+@app.post(
+    "/authoring/worlds/{world_id}/npcs/{npc_id}/simulation-preset/apply-draft",
+    response_model=NPCSimulationPresetPreviewResponse,
+)
+def apply_authoring_npc_simulation_preset_to_draft(
+    world_id: str,
+    npc_id: str,
+    request: NPCSimulationPresetApplyRequest,
+) -> NPCSimulationPresetPreviewResponse:
+    require_authoring_api()
+    try:
+        service_request = NPCSimulationPresetServiceApplyRequest.model_validate(
+            request.model_dump(mode="json")
+        )
+        preview = apply_npc_simulation_preset_to_draft(
+            world_id,
+            npc_id,
+            service_request,
+            get_authoring_service(),
+        )
+    except (AuthoringError, NPCGoalAuthoringError, NPCSimulationPresetError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _npc_simulation_preset_preview_response(preview)
+
+
 @app.get("/authoring/worlds/{world_id}/social/graph", response_model=SocialAuthoringGraphResponse)
 def get_authoring_social_graph(world_id: str) -> SocialAuthoringGraphResponse:
     require_authoring_api()
@@ -3916,6 +4327,22 @@ def _quest_graph_response(graph: QuestGraph) -> QuestGraphResponse:
 
 def _npc_goal_graph_response(graph: NPCGoalAuthoringGraph) -> NPCGoalAuthoringGraphResponse:
     return NPCGoalAuthoringGraphResponse.model_validate(graph.model_dump(mode="json"))
+
+
+def _npc_simulation_preset_preview_response(
+    preview: NPCSimulationPresetPreview,
+) -> NPCSimulationPresetPreviewResponse:
+    return NPCSimulationPresetPreviewResponse(
+        world_id=preview.world_id,
+        npc_id=preview.npc_id,
+        preset=NPCSimulationPresetResponse.model_validate(preview.preset.model_dump(mode="json")),
+        graph=_npc_goal_graph_response(preview.graph),
+        yaml_content=preview.yaml_content,
+        validation=_authoring_validation_response(preview.validation),
+        gate_allowed_to_save=preview.validation_gate.allowed_to_save,
+        confirmation_required=preview.validation_gate.confirmation_required,
+        applied_fields=preview.applied_fields,
+    )
 
 
 def _social_authoring_graph_response(graph: SocialAuthoringGraph) -> SocialAuthoringGraphResponse:

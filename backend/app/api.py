@@ -477,6 +477,68 @@ class DebugEventListResponse(BaseModel):
     events: list[DebugEventResponse] = Field(default_factory=list)
 
 
+class DebugNPCSimulationSummaryResponse(BaseModel):
+    npc_id: str
+    location_id: str
+    alive: bool
+    condition: str
+    intent_count: int = 0
+    plan_count: int = 0
+    active_goal_id: str | None = None
+    known_fact_ids: list[str] = Field(default_factory=list)
+    hidden_fact_ids: list[str] = Field(default_factory=list)
+    debug_reason_count: int = 0
+
+
+class DebugNPCSimulationDetailResponse(DebugNPCSimulationSummaryResponse):
+    intent_queue: list[dict[str, Any]] = Field(default_factory=list)
+    plans: list[dict[str, Any]] = Field(default_factory=list)
+    goals: list[dict[str, Any]] = Field(default_factory=list)
+    emotional_state: dict[str, Any] = Field(default_factory=dict)
+    social_disposition: dict[str, Any] = Field(default_factory=dict)
+    faction_duties: list[dict[str, Any]] = Field(default_factory=list)
+    relationship_behavior_summary: dict[str, Any] = Field(default_factory=dict)
+    known_rumor_ids: list[str] = Field(default_factory=list)
+    known_crime_ids: list[str] = Field(default_factory=list)
+    debug_decision_reasons: list[dict[str, str]] = Field(default_factory=list)
+
+
+class DebugNPCSimulationListResponse(BaseModel):
+    local_only: bool = True
+    npcs: list[DebugNPCSimulationSummaryResponse] = Field(default_factory=list)
+
+
+class DebugNPCSimulationTickListResponse(BaseModel):
+    local_only: bool = True
+    ticks: list[DebugEventResponse] = Field(default_factory=list)
+
+
+class DebugNPCSimulationDryRunResponse(BaseModel):
+    local_only: bool = True
+    dry_run: bool = True
+    result: dict[str, Any]
+    state_unchanged: bool = True
+
+
+class NPCBehaviorTimelineEntryResponse(BaseModel):
+    turn: int
+    event_id: str
+    behavior_type: str
+    intent_id: str | None = None
+    plan_id: str | None = None
+    location_id: str | None = None
+    safe_summary: str = ""
+    debug_reason_redacted: str | None = None
+
+
+class NPCBehaviorTimelineResponse(BaseModel):
+    local_only: bool = True
+    source_type: str
+    source_id: str
+    npc_id: str
+    entries: list[NPCBehaviorTimelineEntryResponse] = Field(default_factory=list)
+
+
 class TimelineStateDiffResponse(BaseModel):
     path: str
     operation: str
@@ -998,6 +1060,43 @@ class NPCGoalAuthoringPreviewResponse(BaseModel):
 
 class NPCGoalAuthoringSaveResponse(NPCGoalAuthoringPreviewResponse):
     saved: bool = False
+
+
+class NPCSimulationPresetResponse(BaseModel):
+    id: str
+    name: str
+    description: str = ""
+    goals: list[NPCGoalNodeResponse] = Field(default_factory=list)
+    intent_priorities: dict[str, int] = Field(default_factory=dict)
+    faction_duties: list[dict[str, object]] = Field(default_factory=list)
+    relationship_behavior_rules: list[dict[str, object]] = Field(default_factory=list)
+    rumor_decision_tendencies: dict[str, object] = Field(default_factory=dict)
+    social_disposition_defaults: dict[str, object] = Field(default_factory=dict)
+    conflict_avoidance_defaults: dict[str, object] = Field(default_factory=dict)
+
+
+class NPCSimulationPresetListResponse(BaseModel):
+    local_only: bool = True
+    presets: list[NPCSimulationPresetResponse] = Field(default_factory=list)
+
+
+class NPCSimulationPresetApplyRequest(BaseModel):
+    preset_id: str | None = None
+    preset: NPCSimulationPresetResponse | None = None
+    confirm_warnings: bool = False
+
+
+class NPCSimulationPresetPreviewResponse(BaseModel):
+    local_only: bool = True
+    world_id: str
+    npc_id: str
+    preset: NPCSimulationPresetResponse
+    graph: NPCGoalAuthoringGraphResponse
+    yaml_content: str
+    validation: AuthoringValidationResponse
+    gate_allowed_to_save: bool = False
+    confirmation_required: bool = False
+    applied_fields: list[str] = Field(default_factory=list)
 
 
 class FactionAuthoringNodeResponse(BaseModel):

@@ -14,7 +14,9 @@ from app.core.world_state import (
     FactionState,
     GameState,
     LocationState,
+    NPCFactionDuty,
     NPCGoalState,
+    NPCSocialDisposition,
     NPCState,
     NPCScheduleEntry,
     PlayerState,
@@ -157,6 +159,8 @@ class NPCDef(BaseModel):
     constraints: list[str] = Field(default_factory=list)
     current_goal_id: str | None = None
     plan_state: dict[str, Any] = Field(default_factory=dict)
+    faction_duties: list[NPCFactionDuty] = Field(default_factory=list)
+    social_disposition: NPCSocialDisposition = Field(default_factory=NPCSocialDisposition)
     visible: bool = True
     hidden: bool = False
     discovered_by: list[str] = Field(default_factory=list)
@@ -499,6 +503,8 @@ class WorldPack(BaseModel):
                     constraints=npc.constraints,
                     current_goal_id=npc.current_goal_id,
                     plan_state=npc.plan_state,
+                    faction_duties=npc.faction_duties,
+                    social_disposition=npc.social_disposition,
                     schedule=npc.schedule,
                     merchant=npc.merchant,
                     shop_inventory=npc.shop_inventory,
