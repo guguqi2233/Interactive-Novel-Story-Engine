@@ -8,12 +8,15 @@ from app.llm.prompt_profiles import (
     PromptProfile,
     PromptProfileStore,
     PromptProfileTemperatureOverrides,
+    RPPromptProfile,
     default_prompt_profiles,
     set_default_prompt_profile_store,
 )
 from app.llm.provider_factory import create_llm_provider
 from app.llm.schemas import NarrativeResult
 from app.main import app
+from app.roleplay.dialogue import DialogueManager
+from app.core.world_state import GameState, LocationState, NPCState, PlayerState, FactState, FactVisibility
 
 
 def test_list_profiles_returns_defaults() -> None:
@@ -43,6 +46,54 @@ def test_invalid_profile_is_rejected() -> None:
         assert "visibility or GameState boundaries" in str(exc)
     else:
         raise AssertionError("Expected invalid prompt profile to be rejected")
+
+
+def test_valid_rp_profile_loads() -> None:
+    rp_profile = RPPromptProfile(
+        id="noir",
+        name="Noir",
+        dialogue_depth="immersive",
+        emotional_intensity="restrained",
+        prose_density="lean",
+        response_length_policy="medium",
+        perspective="close_third",
+        inner_thought_policy="observable_only",
+        sensuality_policy="subtle",
+    )
+
+    assert rp_profile.hidden_fact_policy == "deny"
+    assert rp_profile.state_modification_policy == "deny"
+    assert "hidden_fact_policy=deny" in rp_profile.style_summary()
+
+
+def test_rp_profile_rejects_hidden_fact_policy_override() -> None:
+    try:
+        RPPromptProfile.model_validate(
+            {
+                "id": "unsafe_rp",
+                "name": "Unsafe",
+                "hidden_fact_policy": "allow",
+            }
+        )
+    except ValueError as exc:
+        assert "hidden_fact_policy" in str(exc)
+    else:
+        raise AssertionError("Expected RP profile hidden_fact_policy override to be rejected")
+
+
+def test_rp_profile_rejects_state_modification_policy_override() -> None:
+    try:
+        RPPromptProfile.model_validate(
+            {
+                "id": "unsafe_rp",
+                "name": "Unsafe",
+                "state_modification_policy": "allow",
+            }
+        )
+    except ValueError as exc:
+        assert "state_modification_policy" in str(exc)
+    else:
+        raise AssertionError("Expected RP profile state_modification_policy override to be rejected")
 
 
 def test_selected_profile_changes_narrator_style_without_changing_visible_facts() -> None:
@@ -77,6 +128,43 @@ def test_selected_profile_changes_narrator_style_without_changing_visible_facts(
     assert "visible_well" in prompt_text
     assert "hidden_cellar" not in prompt_text
     assert provider.temperature == 0.4
+
+
+def test_selected_rp_profile_affects_dialogue_style_without_changing_state_or_facts() -> None:
+    state = GameState(
+        world_id="rp-profile-test",
+        player=PlayerState(location_id="square"),
+        locations={"square": LocationState(id="square", name="Square")},
+        facts={
+            "visible_well": FactState(id="visible_well", visibility=FactVisibility.PUBLIC, public=True),
+            "hidden_cellar": FactState(id="hidden_cellar", visibility=FactVisibility.HIDDEN),
+        },
+        player_visible_facts={"visible_well"},
+        npcs={"mira": NPCState(id="mira", location_id="square", knowledge=["visible_well", "hidden_cellar"])},
+    )
+    before = state.model_dump(mode="json")
+    profile = PromptProfile(
+        id="rp_noir",
+        name="RP Noir",
+        rp_profile=RPPromptProfile(
+            id="noir",
+            name="Noir",
+            dialogue_depth="immersive",
+            emotional_intensity="restrained",
+            prose_density="lean",
+            response_length_policy="medium",
+            perspective="close_third",
+            inner_thought_policy="observable_only",
+        ),
+    )
+
+    context = DialogueManager(prompt_profile=profile).build_dialogue_context(state, focus_npc_id="mira")
+
+    assert "rp_profile=noir" in context.rp_prompt_style_summary
+    assert "hidden_fact_policy=deny" in context.rp_prompt_style_summary
+    assert "visible_well" in context.npc_known_facts
+    assert "hidden_cellar" not in context.npc_known_facts
+    assert state.model_dump(mode="json") == before
 
 
 def test_prompt_profile_api_selects_profile_without_api_key() -> None:

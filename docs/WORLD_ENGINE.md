@@ -1,7 +1,7 @@
 # World Engine
 
-This document describes the local world engine as of v1.0 Stable Local Studio
-Edition. The engine is the
+This document describes the local world engine as of v1.1 Roleplay Immersion
+Layer on top of v1.0 Stable Local Studio Edition. The engine is the
 only source of truth for world state, rules, consequences, persistence, and
 visibility. The LLM layer may parse intent, render narration, and summarize
 memory, but it does not decide rule outcomes or mutate `GameState`.
@@ -1048,6 +1048,260 @@ Quality tools are local development tools. They must not call real LLM APIs by
 default, must use mock/local-stub providers in tests, and must not make the LLM
 the pass/fail judge. The quality gate uses deterministic code, thresholds, and
 report severities.
+
+## v1.1 Roleplay Immersion Layer
+
+v1.1 adds a Roleplay Immersion Layer for character voice, dialogue continuity,
+group scenes, local Tavern-like imports, and RP-specific regression checks. It
+does not change the core authority model: `GameState`, `StateDelta`, `EventLog`,
+visibility, NPC knowledge, and deterministic rules remain the fact layer. RP
+features may change expression style, tone, scene mood, and safe dialogue
+context; they must not create facts, complete quests, decide combat, reveal
+hidden information, or let model output directly mutate state.
+
+### Roleplay Boundary
+
+`docs/ROLEPLAY_BOUNDARY.md` defines the v1.1 RP boundary terms:
+
+- `authoritative_fact`
+- `visible_fact`
+- `npc_known_fact`
+- `narrator_safe_memory`
+- `rp_flavor`
+- `emotional_expression`
+- `prohibited_fact_creation`
+- `debug_only_context`
+
+`RoleplayContextPolicy` is the shared policy object used by RP context builders
+and consistency checks. It permits voice, sentence style, emotional expression,
+relationship atmosphere, and scene mood. It prohibits critical item/NPC/location
+creation, task completion, knowledge changes, relationship-value changes,
+dead-character contradiction, hidden fact leakage, and `ActionResult` override.
+
+### Character Card Importer
+
+Character card import is local authoring only. APIs:
+
+- `POST /authoring/characters/import/preview`
+- `POST /authoring/characters/import/validate`
+- `POST /authoring/characters/import/apply`
+
+The importer accepts JSON, YAML, simple text cards, and Tavern-like fields such
+as `name`, `description`, `personality`, `scenario`, `first_message`,
+`example_dialogue`, `creator_notes`, and `system_prompt`. It returns candidates:
+
+- `rp_profile_candidate`
+- `voice_profile_candidate`
+- `example_dialogue_candidate`
+- `flavor_lore_candidate`
+- `structured_fact_candidate`
+- `hidden_fact_candidate`
+- `unsafe_or_unsupported_entries`
+
+Preview and validation do not write disk. Apply requires `confirm_save=true`,
+uses authoring validation, and writes content only through the authoring
+service. The importer rejects remote URLs and script-like payloads. External
+`system_prompt` and `creator_notes` are treated as untrusted and unsafe when
+they attempt to override world or prompt authority.
+
+### RP Profile And Voice Profile
+
+NPCs may now include `rp_profile`, `voice_profile`, `dialogue_style`,
+`speech_habits`, `taboo_topics`, `emotional_mask`, and
+`example_dialogue_refs`. Safe voice fields can enter dialogue context. Hidden or
+authoring-only profile fields, especially `private_self_summary`, do not enter
+player-facing prompts by default.
+
+`RPProfile` controls persona and expression preferences. `VoiceProfile` controls
+tone, sentence length, vocabulary style, catchphrases, speech habits, silence
+style, and emotional tells. These profiles are expression data only. They do
+not change NPC knowledge, relationship values, `ActionResult`, quest state, or
+visibility.
+
+### NPC Emotional State
+
+`EmotionalState` tracks a small structured emotional layer on NPC state:
+
+- `primary_emotion`
+- `intensity`
+- `stability`
+- `stress`
+- `trust_tone`
+- `fear_tone`
+- `affection_tone`
+- `last_emotional_event_id`
+- optional `expires_turn`
+
+Emotion rule helpers can derive shifts from events, apply shifts, decay emotion,
+and summarize emotion for dialogue. Emotional changes are rule outcomes and
+must go through `StateDelta` and events. The LLM may express emotion in text but
+cannot write `emotional_state`.
+
+### Relationship Tone
+
+`RelationshipTone` derives an expression layer from existing relationship
+values, faction reputation, emotional state, and recent event tags. It includes
+address style, formality, warmth, tension, intimacy, respect, resentment, fear,
+avoidance, and trust expression.
+
+Relationship tone only affects prompt style summaries. It does not directly
+modify `RelationshipState`; relationship value changes still require normal
+rules and `StateDelta`. Hidden relationships must not enter player-visible
+graphs or dialogue prompts.
+
+### Dialogue Mode
+
+Dialogue Mode adds structured `DialogueSession` records and a `DialogueManager`.
+APIs:
+
+- `POST /game/dialogue/start`
+- `POST /game/dialogue/continue`
+- `POST /game/dialogue/end`
+
+A dialogue session stores participants, focus NPC, turn range, dialogue mode,
+active topics, safe context summary, and status. Dialogue context is built from
+player-visible facts, NPC-known facts, safe voice/profile fields, relationship
+tone, emotional state, prompt-safe example dialogue, scene mood, and safe RP
+memory. NPCs cannot receive facts they do not know.
+
+Dialogue may produce rule-authorized consequences such as relationship deltas,
+emotional shifts, quest triggers, fact reveals, or rumor hearing. Those changes
+are decided by code, emitted as `StateDelta`, and recorded as events. LLM text
+cannot directly decide them.
+
+### Multi-NPC Scene / Group RP
+
+Group RP uses `GroupDialogueScene` and `GroupDialogueManager`. APIs:
+
+- `POST /game/group-dialogue/start`
+- `POST /game/group-dialogue/next-speaker`
+- `POST /game/group-dialogue/end`
+
+Each participant gets an independent context based on that NPC's knowledge,
+emotion, relationship tone, and visibility. Group scenes record events and use a
+deterministic next-speaker rule. Dead or incapacitated NPCs do not participate
+in ordinary group chat. Group RP is not an autonomous multi-agent simulator and
+does not let NPC contexts share hidden facts.
+
+### Scene Mood Presets
+
+Content packs may define `scene_moods.yaml` with `SceneMoodPreset` entries.
+Mood presets can influence tone, pacing, sensory focus, metaphor style,
+dialogue pressure, and intensity range. They are style controls only: they do
+not modify `GameState`, `ActionResult`, hidden fact filtering, or prompt safety.
+
+Dialogue Mode and Group RP can select a mood preset, and prompt profiles may
+reference safe mood settings. Invalid presets are caught by validation.
+
+### Lorebook Import / Classification
+
+Lorebook import is local authoring only. APIs:
+
+- `POST /authoring/lorebook/import/preview`
+- `POST /authoring/lorebook/import/validate`
+- `POST /authoring/lorebook/import/apply`
+
+`LorebookClassifier` parses JSON, YAML, or text entries and classifies them as:
+
+- `flavor_lore`
+- `structured_fact_candidate`
+- `hidden_fact_candidate`
+- `unsafe_entry`
+
+Flavor lore can become safe style/context. Structured facts must be written to
+content packs before becoming authoritative. Hidden fact candidates remain under
+visibility control. Unsafe prompt/control entries are quarantined and cannot
+enter prompts. The importer does not execute instructions, read remote URLs, or
+modify active `GameState`.
+
+### Example Dialogue Manager
+
+Example dialogue entries are authoring content used to guide voice. They do not
+become `GameState` facts and do not add NPC knowledge. APIs:
+
+- `GET /authoring/worlds/{world_id}/example-dialogue`
+- `POST /authoring/worlds/{world_id}/example-dialogue/preview`
+- `POST /authoring/worlds/{world_id}/example-dialogue/validate`
+- `PUT /authoring/worlds/{world_id}/example-dialogue`
+
+Only `prompt_safe` entries with safe fact policy can enter dialogue context.
+Entries marked `authoring_only`, `debug_only`, or `unsafe` stay out of runtime
+prompts. Hidden fact references are filtered unless the relevant facts are
+visible and known according to normal rules.
+
+### RP Memory Context Builder
+
+`RPMemoryContextBuilder` builds RP-safe memory lists for a speaker and player:
+
+- `speaker_safe_memories`
+- `player_visible_shared_memories`
+- `relationship_memories`
+- `recent_dialogue_memories`
+- debug-only `excluded_memory_reasons`
+
+It filters hidden memory, debug-only memory, memory tied to unknown facts, and
+memory tied to currently invisible hidden facts. Memory remains non-authoritative
+and cannot override `GameState`.
+
+### RP Prompt Profile Manager
+
+v1.1 extends `PromptProfile` with `RPPromptProfile` fields for RP style:
+dialogue depth, emotional intensity, prose density, response length,
+perspective, inner thought policy, and optional sensuality style policy. The
+boundary fields are fixed:
+
+- `hidden_fact_policy=deny`
+- `state_modification_policy=deny`
+
+Validation rejects profiles that try to widen authority. RP prompt profiles may
+change style only; they cannot change visible facts, NPC knowledge,
+`ActionResult`, `StateDelta`, or quest state.
+
+### RP Output Consistency Checker
+
+`RPOutputConsistencyChecker` checks generated RP text against the safe dialogue
+context. It can flag hidden fact leakage, NPC unknown-fact mentions, invented
+key items/NPCs/locations, dead NPCs speaking, contradictions with
+`ActionResult`, unauthorized relationship change, unauthorized quest completion,
+and raw debug/state-delta leakage.
+
+The checker does not use an external LLM judge and does not modify state. On
+serious violations it can reject output, request retry, or fall back to a safe
+summary.
+
+### Tavern Compatibility Import / Export
+
+Tavern-like compatibility APIs:
+
+- `POST /authoring/tavern/import/preview`
+- `POST /authoring/tavern/import/apply`
+- `POST /authoring/tavern/export`
+
+Supported import resources are character cards, lorebook/world info, example
+dialogue, and prompt presets. Import always goes through parse, classification,
+unsafe detection, preview, explicit apply, and validation. It rejects path
+traversal in source names, remote URL references, and script-like payloads.
+
+Safe export supports character-like cards, safe lorebook export, and prompt
+profile export. Safe mode excludes API keys, raw `GameState`, save data, and
+hidden facts. Authoring/debug export modes must remain local and warned.
+Compatibility is practical and best-effort; it is not a promise that every
+external Tavern format is fully supported.
+
+### RP Scenario Templates
+
+RP scenario templates live under `templates/rp/` and create dialogue or group
+scene drafts. APIs:
+
+- `GET /authoring/rp-scenario-templates`
+- `GET /authoring/rp-scenario-templates/{template_id}`
+- `POST /authoring/rp-scenario-templates/{template_id}/preview`
+- `POST /authoring/rp-scenario-templates/{template_id}/apply`
+
+Templates can specify scene type, required/optional participants, suggested
+mood, suggested dialogue mode, opening context, allowed/forbidden topics,
+required visible facts, and safety notes. They do not call the LLM, do not
+modify active saves, and cannot expand NPC knowledge or hidden fact access.
 
 Known v1.0 implementation note: `ENABLE_PLAYTEST_API`, `ENABLE_EVAL_API`,
 `ENABLE_DEBUG_API`, and `ENABLE_PERF_LOGGING` gate the main playtest, eval,

@@ -1,0 +1,53 @@
+scene_mood_presets:
+  - id: mist_tension
+    name: Mist Tension
+    description: Low, tense pacing for uncertain investigations in the valley.
+    tone: tense
+    pacing: clipped
+    sensory_focus:
+      - fog
+      - footfalls
+      - cold metal
+    metaphor_style: restrained noir
+    dialogue_pressure: high
+    allowed_intensity_range: [25, 75]
+    forbidden_content_rules:
+      - Do not reveal hidden facts, witnesses, or NPC secrets.
+      - Do not change ActionResult outcomes.
+    compatible_genres:
+      - mystery
+      - noir
+  - id: quiet_warmth
+    name: Quiet Warmth
+    description: Gentle local-color dialogue for friendly conversations.
+    tone: warm
+    pacing: unhurried
+    sensory_focus:
+      - hearthlight
+      - rain
+      - hand tools
+    metaphor_style: plainspoken
+    dialogue_pressure: low
+    allowed_intensity_range: [0, 45]
+    forbidden_content_rules:
+      - Do not invent relationship changes or quest completion.
+    compatible_genres:
+      - village
+      - slice_of_life
+  - id: solemn_wuxia
+    name: Solemn Wuxia
+    description: Formal, restrained phrasing for vows, duels, and old obligations.
+    tone: solemn
+    pacing: measured
+    sensory_focus:
+      - wind
+      - steel
+      - old pine
+    metaphor_style: wuxia
+    dialogue_pressure: medium
+    allowed_intensity_range: [10, 65]
+    forbidden_content_rules:
+      - Do not let mood decide combat, death, or victory.
+    compatible_genres:
+      - wuxia
+      - drama

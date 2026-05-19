@@ -17,7 +17,9 @@ class Narrator:
         visible_facts: list[str],
         current_location: str,
         tone: str,
+        scene_mood_summary: str = "",
     ) -> NarrativeResult:
+        prompt_tone = f"{tone}; {scene_mood_summary}" if scene_mood_summary else tone
         safe_action_result = {
             "success_level": action_result.success_level.value,
             "reason": action_result.reason,
@@ -28,7 +30,7 @@ class Narrator:
             action_result_payload=safe_action_result,
             visible_facts=visible_facts,
             current_location=current_location,
-            tone=tone,
+            tone=prompt_tone,
             narrator_style=self._prompt_profile.narrator_style if self._prompt_profile else "",
             prompt_variant=self._prompt_profile.narrator_prompt_variant if self._prompt_profile else "default",
         )
@@ -42,4 +44,8 @@ class Narrator:
             schema=NarrativeResult,
             temperature=temperature,
         )
+
+    def scene_mood_preset_id(self) -> str | None:
+        prompt_profile = getattr(self, "_prompt_profile", None)
+        return prompt_profile.scene_mood_preset_id if prompt_profile else None
 

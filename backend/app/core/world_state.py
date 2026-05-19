@@ -1,7 +1,7 @@
 from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel, Field, field_serializer, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_validator
 
 CURRENT_GAME_STATE_SCHEMA_VERSION = "0.6"
 
@@ -23,6 +23,31 @@ class ActorCondition(StrEnum):
     CRITICAL = "critical"
     INCAPACITATED = "incapacitated"
     DEAD = "dead"
+
+
+class PrimaryEmotion(StrEnum):
+    CALM = "calm"
+    ANGRY = "angry"
+    AFRAID = "afraid"
+    SAD = "sad"
+    JOYFUL = "joyful"
+    SUSPICIOUS = "suspicious"
+    DEFENSIVE = "defensive"
+    AFFECTIONATE = "affectionate"
+    ASHAMED = "ashamed"
+    EXCITED = "excited"
+
+
+class EmotionalState(BaseModel):
+    primary_emotion: PrimaryEmotion = PrimaryEmotion.CALM
+    intensity: int = Field(default=0, ge=0, le=100)
+    stability: int = Field(default=70, ge=0, le=100)
+    stress: int = Field(default=0, ge=0, le=100)
+    trust_tone: str = "neutral"
+    fear_tone: str = "steady"
+    affection_tone: str = "reserved"
+    last_emotional_event_id: str | None = None
+    expires_turn: int | None = Field(default=None, ge=0)
 
 
 class PlayerState(BaseModel):
@@ -63,6 +88,125 @@ class NPCGoalState(BaseModel):
     forbidden_actions: list[str] = Field(default_factory=list)
 
 
+class RPProfile(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    public_persona: str = ""
+    private_self_summary: str | None = None
+    attachment_style: str = ""
+    trust_expression_style: str = ""
+    conflict_expression_style: str = ""
+    intimacy_expression_style: str = ""
+    deception_style: str = ""
+    boundaries: list[str] = Field(default_factory=list)
+
+
+class VoiceProfile(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    tone: str = ""
+    sentence_length: str = "mixed"
+    vocabulary_style: str = ""
+    catchphrases: list[str] = Field(default_factory=list)
+    speech_habits: list[str] = Field(default_factory=list)
+    silence_style: str = ""
+    emotional_tells: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_sentence_length(self) -> "VoiceProfile":
+        allowed = {"short", "medium", "long", "mixed"}
+        if self.sentence_length not in allowed:
+            raise ValueError(f"sentence_length must be one of {sorted(allowed)}")
+        return self
+
+
+class SceneMoodPreset(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(pattern=r"^[A-Za-z0-9_-]+$")
+    name: str
+    description: str = ""
+    tone: str = "neutral"
+    pacing: str = "steady"
+    sensory_focus: list[str] = Field(default_factory=list)
+    metaphor_style: str = ""
+    dialogue_pressure: str = "medium"
+    allowed_intensity_range: list[int] = Field(default_factory=lambda: [0, 100])
+    forbidden_content_rules: list[str] = Field(default_factory=list)
+    compatible_genres: list[str] = Field(default_factory=list)
+
+    @field_validator("dialogue_pressure")
+    @classmethod
+    def validate_dialogue_pressure(cls, value: str) -> str:
+        allowed = {"low", "medium", "high", "volatile"}
+        if value not in allowed:
+            raise ValueError(f"dialogue_pressure must be one of {sorted(allowed)}")
+        return value
+
+    @field_validator("allowed_intensity_range")
+    @classmethod
+    def validate_intensity_range(cls, value: list[int]) -> list[int]:
+        if len(value) != 2:
+            raise ValueError("allowed_intensity_range must contain [min, max]")
+        minimum, maximum = value
+        if minimum < 0 or maximum > 100 or minimum > maximum:
+            raise ValueError("allowed_intensity_range must satisfy 0 <= min <= max <= 100")
+        return value
+
+
+class ExampleDialogueVisibility(StrEnum):
+    PROMPT_SAFE = "prompt_safe"
+    AUTHORING_ONLY = "authoring_only"
+    DEBUG_ONLY = "debug_only"
+    UNSAFE = "unsafe"
+
+
+class ExampleDialogueFactPolicy(StrEnum):
+    FLAVOR_ONLY = "flavor_only"
+    MAY_REFERENCE_KNOWN_FACTS = "may_reference_known_facts"
+    UNSAFE = "unsafe"
+
+
+class ExampleDialogueMessage(BaseModel):
+    speaker: str = ""
+    text: str
+
+    @model_validator(mode="before")
+    @classmethod
+    def accept_string_message(cls, data: Any) -> Any:
+        if isinstance(data, str):
+            return {"speaker": "", "text": data}
+        return data
+
+
+class ExampleDialogue(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(pattern=r"^[A-Za-z0-9_-]+$")
+    character_id: str
+    source: str = "authoring"
+    messages: list[ExampleDialogueMessage] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+    style_notes: list[str] = Field(default_factory=list)
+    visibility: ExampleDialogueVisibility = ExampleDialogueVisibility.AUTHORING_ONLY
+    fact_policy: ExampleDialogueFactPolicy = ExampleDialogueFactPolicy.FLAVOR_ONLY
+
+    @field_validator("messages", mode="before")
+    @classmethod
+    def coerce_messages(cls, value: object) -> object:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            return [{"speaker": "", "text": line.strip()} for line in value.splitlines() if line.strip()]
+        return value
+
+    @model_validator(mode="after")
+    def validate_prompt_safe_policy(self) -> "ExampleDialogue":
+        if self.visibility == ExampleDialogueVisibility.PROMPT_SAFE and self.fact_policy == ExampleDialogueFactPolicy.UNSAFE:
+            raise ValueError("prompt_safe example dialogue cannot use unsafe fact_policy")
+        return self
+
+
 class NPCState(BaseModel):
     id: str
     location_id: str
@@ -98,6 +242,14 @@ class NPCState(BaseModel):
     shop_inventory: list[str] = Field(default_factory=list)
     buy_price_modifier: float = Field(default=1.0, ge=0.0)
     sell_price_modifier: float = Field(default=0.5, ge=0.0)
+    rp_profile: RPProfile = Field(default_factory=RPProfile)
+    voice_profile: VoiceProfile = Field(default_factory=VoiceProfile)
+    dialogue_style: str = ""
+    speech_habits: list[str] = Field(default_factory=list)
+    taboo_topics: list[str] = Field(default_factory=list)
+    emotional_mask: str = ""
+    example_dialogue_refs: list[str] = Field(default_factory=list)
+    emotional_state: EmotionalState = Field(default_factory=EmotionalState)
 
 
 class NPCScheduleEntry(BaseModel):
@@ -464,6 +616,8 @@ class GameState(BaseModel):
     social_flags: dict[str, bool | int | float | str] = Field(default_factory=dict)
     relationships: dict[str, RelationshipState] = Field(default_factory=dict)
     combats: dict[str, CombatState] = Field(default_factory=dict)
+    scene_mood_presets: dict[str, SceneMoodPreset] = Field(default_factory=dict)
+    example_dialogues: dict[str, ExampleDialogue] = Field(default_factory=dict)
 
     @field_serializer("player_visible_facts", when_used="json")
     def serialize_player_visible_facts(self, player_visible_facts: set[str]) -> list[str]:
@@ -486,6 +640,8 @@ def migrate_game_state_payload(payload: dict[str, Any]) -> dict[str, Any]:
     migrated.setdefault("social_flags", {})
     migrated.setdefault("relationships", {})
     migrated.setdefault("combats", {})
+    migrated.setdefault("scene_mood_presets", {})
+    migrated.setdefault("example_dialogues", {})
     return migrated
 
 

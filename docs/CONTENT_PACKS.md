@@ -735,6 +735,196 @@ Profiles cannot include API keys, hidden fact text, raw `GameState`, raw
 Provider selection remains controlled by runtime configuration and
 `LLMProvider`.
 
+## v1.1 RP Content Fields
+
+v1.1 adds optional roleplay authoring fields. These fields are local content
+and style/context data. They do not let RP output become authoritative world
+state and do not expand NPC knowledge or visibility.
+
+### RPProfile Schema
+
+NPCs may include:
+
+```yaml
+rp_profile:
+  public_persona: "A careful archivist who chooses words precisely."
+  private_self_summary: "Authoring-only private summary; hidden by default."
+  attachment_style: "slow trust"
+  trust_expression_style: "small practical favors"
+  conflict_expression_style: "quietly firm"
+  intimacy_expression_style: "restrained warmth"
+  deception_style: "changes the subject"
+  boundaries:
+    - "Do not discuss sealed cases unless revealed by rules."
+```
+
+`public_persona` can support safe dialogue prompts. `private_self_summary` is
+hidden/authoring-only by default and must not enter player-facing prompts unless
+made visible through normal rules. `RPProfile` does not change relationship
+values, facts, quest state, or NPC knowledge.
+
+### VoiceProfile Schema
+
+NPCs may include:
+
+```yaml
+voice_profile:
+  tone: "measured"
+  sentence_length: "mixed"
+  vocabulary_style: "plain but exact"
+  catchphrases:
+    - "Carefully, now."
+  speech_habits:
+    - "pauses before risky statements"
+  silence_style: "lets silence do some work"
+  emotional_tells:
+    - "taps the ledger when anxious"
+```
+
+`sentence_length` accepts `short`, `medium`, `long`, or `mixed`. Voice profile
+fields influence style only and cannot override `ActionResult`, visibility, or
+NPC knowledge.
+
+### EmotionalState Schema
+
+Runtime NPC state includes:
+
+```yaml
+emotional_state:
+  primary_emotion: calm
+  intensity: 0
+  stability: 70
+  stress: 0
+  trust_tone: neutral
+  fear_tone: steady
+  affection_tone: reserved
+  last_emotional_event_id:
+  expires_turn:
+```
+
+`primary_emotion` values include `calm`, `angry`, `afraid`, `sad`, `joyful`,
+`suspicious`, `defensive`, `affectionate`, `ashamed`, and `excited`.
+Intensity, stability, and stress are 0-100. Emotional changes are runtime rule
+outcomes and must go through `StateDelta`; LLM output cannot directly write
+them.
+
+### RelationshipTone Schema
+
+`RelationshipTone` is derived for prompts, not stored as authoritative
+relationship value:
+
+```yaml
+relationship_tone:
+  address_style: neutral
+  formality: medium
+  warmth: 45
+  tension: 20
+  intimacy: 0
+  respect: 50
+  resentment: 0
+  fear: 0
+  avoidance: 0
+  trust_expression: reserved
+```
+
+Tone can summarize how an NPC speaks to another actor. It must not modify
+`relationships.yaml` or runtime relationship values. Hidden relationships must
+remain filtered from player prompts and player graph APIs.
+
+### SceneMoodPreset Schema
+
+Content packs may define `scene_moods.yaml`:
+
+```yaml
+- id: noir_rain
+  name: Noir Rain
+  description: Low light, restrained tension, and sensory detail.
+  tone: somber
+  pacing: slow
+  sensory_focus:
+    - rain
+    - reflected light
+  metaphor_style: noir
+  dialogue_pressure: medium
+  allowed_intensity_range: [10, 70]
+  forbidden_content_rules:
+    - no hidden fact revelation
+  compatible_genres:
+    - mystery
+```
+
+`dialogue_pressure` accepts `low`, `medium`, `high`, or `volatile`.
+`allowed_intensity_range` must be `[min, max]` with `0 <= min <= max <= 100`.
+Mood presets alter expression only; they do not change facts or action results.
+
+### ExampleDialogue Schema
+
+Example dialogue entries are local authoring data:
+
+```yaml
+example_dialogue:
+  - id: harlan_measured_warning
+    character_id: harlan
+    source: authoring
+    messages:
+      - speaker: player
+        text: "Can I ask about the old road?"
+      - speaker: harlan
+        text: "You can ask. I may not answer quickly."
+    tags:
+      - cautious
+    style_notes:
+      - measured pacing
+    visibility: prompt_safe
+    fact_policy: may_reference_known_facts
+```
+
+`visibility` values are `prompt_safe`, `authoring_only`, `debug_only`, and
+`unsafe`. `fact_policy` values are `flavor_only`,
+`may_reference_known_facts`, and `unsafe`. Example dialogue is style guidance,
+not fact storage, NPC knowledge, or memory.
+
+### RPScenarioTemplate Schema
+
+RP scenario templates live under `templates/rp/`:
+
+```yaml
+id: first_meeting
+name: First Meeting
+description: A focused introductory dialogue draft.
+scene_type: dialogue
+required_participants:
+  - harlan
+optional_participants: []
+suggested_mood: quiet_tension
+suggested_dialogue_mode: focused
+opening_context: "The player approaches for a careful first exchange."
+allowed_topics:
+  - public introductions
+forbidden_topics:
+  - hidden facts
+required_visible_facts: []
+safety_notes:
+  - "Do not reveal secrets unless already visible."
+```
+
+Templates create `DialogueSession` or `GroupDialogueScene` drafts only. Preview
+does not modify `GameState`; apply requires explicit authoring action and must
+not expand NPC knowledge or hidden fact access.
+
+### Import Classification Schemas
+
+Character cards and lorebooks are imported as candidates:
+
+- character card entries become RP profile, voice profile, example dialogue,
+  flavor lore, structured fact, hidden fact, or unsafe candidates.
+- lorebook entries become `flavor_lore`, `structured_fact_candidate`,
+  `hidden_fact_candidate`, or `unsafe_entry`.
+
+Structured and hidden fact candidates are not prompt text by default. They must
+be reviewed and saved through authoring validation before becoming content-pack
+facts. Unsafe entries are quarantined.
+
 ## Mod Manager Fields
 
 The Mod Manager UI displays content-only mod metadata from `mod.yaml`:

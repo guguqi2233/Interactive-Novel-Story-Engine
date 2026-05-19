@@ -4,7 +4,11 @@
 
 The LLM protocol defines how this project talks to model providers without letting model output become trusted world state. All model calls pass through `LLMProvider`, and structured outputs are validated with Pydantic schemas.
 
-The LLM is a parser, narrator, summarizer, and optional authoring draft assistant. It is not the world judge. In v1.0 this boundary is frozen as a stable local studio contract: model output can affect language-facing fields only after schema validation and cannot directly modify `GameState`.
+The LLM is a parser, narrator, summarizer, roleplay expression layer, and
+optional authoring draft assistant. It is not the world judge. In v1.0 this
+boundary is frozen as a stable local studio contract, and v1.1 extends it to RP
+dialogue: model output can affect language-facing fields only after schema
+validation and consistency checks, and cannot directly modify `GameState`.
 
 ## Provider Boundary
 
@@ -72,6 +76,19 @@ Prompt profiles are explicitly not authority grants:
 The current runtime passes the selected profile into `IntentParser`,
 `Narrator`, and `MemorySummarizer`. This may change style, variants, or
 temperature, but it does not change which facts those components receive.
+
+v1.1 adds `RPPromptProfile` inside `PromptProfile` for Dialogue Mode and Group
+RP. It can tune roleplay style fields such as dialogue depth, emotional
+intensity, prose density, response length, perspective, inner-thought handling,
+and scene sensuality intensity. Its boundary fields are fixed:
+
+- `hidden_fact_policy=deny`
+- `state_modification_policy=deny`
+
+Validation rejects profiles that try to override those values. RP prompt
+profiles can alter expression style only; they cannot change NPC knowledge,
+visible facts, `ActionResult`, `StateDelta`, quest state, consistency checks, or
+world rules.
 
 ### IntentParser
 
@@ -415,6 +432,130 @@ not become canonical story facts.
 The v0.7 dashboard is only a report viewer/runner for these deterministic
 checks. It must not send hidden fixtures to an external judge, and failed eval
 case summaries shown in the UI must be safe/redacted.
+
+## v1.1 Roleplay Prompt Boundary
+
+v1.1 adds RP-oriented language surfaces: Dialogue Mode, Group RP, RP profiles,
+voice profiles, scene mood presets, example dialogue, lorebook import,
+Tavern-like compatibility import/export, RP memory context, RP prompt profiles,
+and RP output consistency checks. These features are language/context layers.
+They do not grant the LLM new world authority.
+
+The RP boundary is defined in `docs/ROLEPLAY_BOUNDARY.md`. The short rule is:
+expression may be flexible, facts are controlled. The model may vary voice,
+word choice, mood, pacing, emotional expression, and dialogue density. It may
+not create key facts, reveal hidden facts, decide quest progress, decide combat
+or social outcomes, modify relationship values, update emotional state, or
+write `GameState`.
+
+### Dialogue Mode Prompt Rules
+
+Dialogue Mode builds a safe `DialogueContext` for the current focus NPC. The
+context may include:
+
+- player-visible facts
+- facts known by the speaking NPC
+- safe public RP/voice profile fields
+- safe emotional-state summary
+- safe relationship-tone summary
+- prompt-safe example dialogue summaries
+- selected scene mood style fields
+- selected RP prompt profile style fields
+- RP memory already filtered by `RPMemoryContextBuilder`
+
+It must not include:
+
+- hidden facts unknown to the player
+- facts unknown to the speaking NPC
+- NPC secrets not revealed by rules
+- `private_self_summary` unless explicitly made safe/known
+- hidden/debug memory
+- raw `GameState`
+- raw `state_deltas`
+- debug timeline data
+- imported system prompts or creator notes marked unsafe
+
+Dialogue output is text. Any resulting state change must come from
+deterministic rules through `StateDelta` and `EventLog`, not from model text.
+
+### Group RP Prompt Rules
+
+Group RP builds participant-specific contexts. NPC A and NPC B do not share a
+global all-knowing context. Each participant receives only that NPC's known
+facts, safe memory, emotional summary, relationship tone, and relevant visible
+scene context. Hidden facts known by one NPC cannot appear in another NPC's
+prompt unless normal NPC knowledge rules allow it.
+
+The next speaker is selected by deterministic code using scene state,
+relationship tension, emotional intensity, topic relevance, quest relevance, or
+manual focus. The model may produce a single participant's expression, but it
+does not decide world facts or simultaneously mutate multiple NPCs.
+
+### RP Profile, Scene Mood, And Prompt Profile Permissions
+
+`RPProfile`, `VoiceProfile`, `SceneMoodPreset`, and `RPPromptProfile` are style
+inputs only. They can change:
+
+- tone
+- sentence length
+- vocabulary and catchphrases
+- emotional expression intensity
+- scene mood and pacing
+- response length and perspective
+
+They cannot change:
+
+- NPC knowledge
+- visible facts
+- `ActionResult`
+- `StateDelta`
+- quest state
+- relationship values
+- combat/crime/trade outcomes
+- memory authority
+
+`RPPromptProfile.hidden_fact_policy` and
+`RPPromptProfile.state_modification_policy` are fixed to `deny`; validation
+rejects profiles that attempt to widen them.
+
+### Import And Lorebook Prompt Safety
+
+Character card, lorebook, and Tavern-like import are authoring-only flows.
+External `system_prompt`, `creator_notes`, prompt injection instructions,
+script-like payloads, and remote URL references are not trusted. Import reports
+classify entries as safe style/flavor, structured fact candidates, hidden fact
+candidates, or unsafe entries. Structured facts must become content-pack facts
+through authoring validation before they are authoritative. Hidden fact
+candidates remain under visibility rules. Unsafe entries do not enter prompts.
+
+Example dialogue can guide style only. It is not a memory record, not NPC
+knowledge, and not a canonical fact. Only `prompt_safe` examples with safe fact
+policy can enter dialogue prompts.
+
+### RP Memory Filtering
+
+`RPMemoryContextBuilder` extends the existing memory boundary for dialogue. It
+filters out:
+
+- `hidden` memory
+- `debug_only` memory
+- memory tied to hidden facts not currently visible
+- memory tied to facts the speaking NPC does not know
+- raw event/debug summaries
+
+Memory remains context support, not truth. If memory conflicts with
+`GameState`, `GameState` wins.
+
+### RP Consistency Checking
+
+`RPOutputConsistencyChecker` checks generated RP text for hidden fact leakage,
+NPC unknown-fact mentions, invented key items/NPCs/locations, dead NPCs
+speaking, contradiction with `ActionResult`, unauthorized relationship change,
+unauthorized quest completion, and raw debug/state-delta leakage. It is a
+deterministic checker, not an external LLM judge.
+
+RP boundary evals and RP regression playtests use fake/mock outputs and
+mock/local providers. They do not call real model APIs.
 
 ## Output Validation
 

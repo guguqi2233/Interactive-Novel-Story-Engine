@@ -6,8 +6,11 @@ import yaml
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from app.core.world_state import (
+    ExampleDialogue,
+    ExampleDialogueVisibility,
     FactState,
     FactVisibility,
+    EmotionalState,
     FactionState,
     GameState,
     LocationState,
@@ -24,8 +27,11 @@ from app.core.world_state import (
     QuestVisibility,
     ReputationState,
     RelationshipState,
+    RPProfile,
     RumorState,
     RumorTruthStatus,
+    SceneMoodPreset,
+    VoiceProfile,
     WorldObjectState,
 )
 
@@ -126,6 +132,14 @@ class NPCDef(BaseModel):
     shop_inventory: list[str] = Field(default_factory=list)
     buy_price_modifier: float = Field(default=1.0, ge=0.0)
     sell_price_modifier: float = Field(default=0.5, ge=0.0)
+    rp_profile: RPProfile = Field(default_factory=RPProfile)
+    voice_profile: VoiceProfile = Field(default_factory=VoiceProfile)
+    dialogue_style: str = ""
+    speech_habits: list[str] = Field(default_factory=list)
+    taboo_topics: list[str] = Field(default_factory=list)
+    emotional_mask: str = ""
+    example_dialogue_refs: list[str] = Field(default_factory=list)
+    emotional_state: EmotionalState = Field(default_factory=EmotionalState)
 
 
 class ItemDef(BaseModel):
@@ -281,6 +295,8 @@ class WorldPack(BaseModel):
     factions: list[FactionDef] = Field(default_factory=list)
     rumors: list[RumorDef] = Field(default_factory=list)
     relationships: list[RelationshipDef] = Field(default_factory=list)
+    scene_mood_presets: list[SceneMoodPreset] = Field(default_factory=list)
+    example_dialogues: list[ExampleDialogue] = Field(default_factory=list)
 
     def to_game_state(self) -> GameState:
         factions = {
@@ -442,6 +458,14 @@ class WorldPack(BaseModel):
                     shop_inventory=npc.shop_inventory,
                     buy_price_modifier=npc.buy_price_modifier,
                     sell_price_modifier=npc.sell_price_modifier,
+                    rp_profile=npc.rp_profile,
+                    voice_profile=npc.voice_profile,
+                    dialogue_style=npc.dialogue_style,
+                    speech_habits=npc.speech_habits,
+                    taboo_topics=npc.taboo_topics,
+                    emotional_mask=npc.emotional_mask,
+                    example_dialogue_refs=npc.example_dialogue_refs,
+                    emotional_state=npc.emotional_state,
                 )
                 for npc in self.npcs
             },
@@ -454,6 +478,8 @@ class WorldPack(BaseModel):
             factions=factions,
             rumors=rumors,
             relationships=relationships,
+            scene_mood_presets={preset.id: preset for preset in self.scene_mood_presets},
+            example_dialogues={example.id: example for example in self.example_dialogues},
         )
 
 
@@ -517,6 +543,14 @@ class WorldLoader:
                 relationships=[
                     RelationshipDef.model_validate(item)
                     for item in _read_yaml_list(world_path / "relationships.yaml", "relationships", required=False)
+                ],
+                scene_mood_presets=[
+                    SceneMoodPreset.model_validate(item)
+                    for item in _read_yaml_list(world_path / "scene_moods.yaml", "scene_mood_presets", required=False)
+                ],
+                example_dialogues=[
+                    ExampleDialogue.model_validate(item)
+                    for item in _read_yaml_list(world_path / "example_dialogues.yaml", "example_dialogues", required=False)
                 ],
             )
         except ValidationError as exc:
@@ -681,6 +715,38 @@ class WorldLoader:
                         f"{trigger.next_stage}"
                     )
 
+        mood_preset_ids: set[str] = set()
+        for preset in pack.scene_mood_presets:
+            if preset.id in mood_preset_ids:
+                raise WorldLoaderError(f"Duplicate scene mood preset id: {preset.id}")
+            mood_preset_ids.add(preset.id)
+
+        example_ids: set[str] = set()
+        facts_by_id = {fact.id: fact for fact in pack.facts}
+        for example in pack.example_dialogues:
+            if example.id in example_ids:
+                raise WorldLoaderError(f"Duplicate example dialogue id: {example.id}")
+            example_ids.add(example.id)
+            if example.character_id not in npc_ids:
+                raise WorldLoaderError(
+                    f"Example dialogue {example.id} references missing character_id: {example.character_id}"
+                )
+            if example.visibility == ExampleDialogueVisibility.PROMPT_SAFE:
+                unsafe_fact_id = _prompt_unsafe_example_fact_id(example, facts_by_id)
+                if unsafe_fact_id is not None:
+                    raise WorldLoaderError(
+                        f"Example dialogue {example.id} references hidden or unknown fact in prompt_safe content: "
+                        f"{unsafe_fact_id}"
+                    )
+
+        if example_ids:
+            for npc in pack.npcs:
+                for example_id in npc.example_dialogue_refs:
+                    if example_id not in example_ids:
+                        raise WorldLoaderError(
+                            f"NPC {npc.id} example_dialogue_refs references missing example dialogue id: {example_id}"
+                        )
+
 
 def _read_yaml_file(path: Path) -> dict[str, Any]:
     if not path.exists():
@@ -708,3 +774,21 @@ def _ensure_mapping(item: Any, filename: str) -> dict[str, Any]:
     if not isinstance(item, dict):
         raise WorldLoaderError(f"Expected mapping items in file: {filename}")
     return item
+
+
+def _prompt_unsafe_example_fact_id(example: ExampleDialogue, facts_by_id: dict[str, FactDef]) -> str | None:
+    text = " ".join(message.text for message in example.messages).lower()
+    for fact in facts_by_id.values():
+        if not _example_mentions_fact(text, fact):
+            continue
+        player_knows = fact.visibility == FactVisibility.PUBLIC or "player" in fact.known_by
+        npc_knows_fact = example.character_id in fact.known_by
+        if not (player_knows and npc_knows_fact):
+            return fact.id
+    return None
+
+
+def _example_mentions_fact(example_text: str, fact: FactDef) -> bool:
+    if fact.id.lower() in example_text:
+        return True
+    return bool(fact.text and fact.text.lower() in example_text)

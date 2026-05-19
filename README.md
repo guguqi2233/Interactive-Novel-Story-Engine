@@ -9,9 +9,10 @@ This project is for local personal use. It is not designed as a hosted service.
 
 ## Current Version Scope
 
-v1.0 is the Stable Local Studio Edition. It freezes the local contracts built
-through the v0.x series and keeps the focus on reliable local play, authoring,
-validation, save migration, quality checks, and documentation:
+v1.1 is the Roleplay Immersion Layer on top of the v1.0 Stable Local Studio
+Edition. v1.0 freezes the local contracts built through the v0.x series, and
+v1.1 adds character voice, dialogue, group RP, roleplay imports, RP-safe memory,
+and RP regression checks without changing world authority:
 
 - Multi-world content packs.
 - Structured `GameState`, `StateDelta`, `EventLog`, and SQLite save/load.
@@ -74,6 +75,21 @@ validation, save migration, quality checks, and documentation:
 - World Health Score Dashboard and Content Coverage Dashboard.
 - Branch diff regression and mod compatibility stress testing.
 - Quality Gate CLI/API.
+- Roleplay Boundary Contract.
+- Character Card Importer.
+- RP Profile / Voice Profile support.
+- NPC Emotional State and Relationship Tone.
+- Dialogue Mode and Multi-NPC Group RP.
+- Scene Mood Presets.
+- Lorebook Import / Classification.
+- Example Dialogue Manager.
+- RP Memory Context Builder.
+- RP Prompt Profile Manager.
+- RP Output Consistency Checker.
+- Tavern Compatibility Import / Export.
+- RP Scenario Templates.
+- RP Boundary Evals and RP Regression Playtests.
+- Frontend RP / Dialogue panels.
 
 The LLM is still not the world judge. Rule outcomes are decided by local code.
 
@@ -84,6 +100,7 @@ The LLM is still not the world judge. Rule outcomes are decided by local code.
   quality, migration, and local studio architecture.
 - `docs/LLM_PROTOCOL.md`: provider boundary, prompt/profile rules, and why LLM
   output cannot directly change `GameState`.
+- `docs/ROLEPLAY_BOUNDARY.md`: v1.1 RP expression/fact boundary.
 - `docs/CONTENT_PACKS.md`: content pack format and authoring notes.
 - `docs/V1_0_CONTENT_SCHEMA_CONTRACT.md`: frozen v1.0 content schema contract.
 - `docs/V1_0_API_CONTRACT.md`: frozen v1.0 API contract.
@@ -908,6 +925,194 @@ Profiles can adjust narrator style, prompt variant, temperature overrides, and
 optional token preferences. They cannot add hidden facts, raw `GameState`, raw
 `state_deltas`, NPC secrets, or direct state-write authority. Provider
 selection still goes through `LLMProvider`.
+
+## v1.1 Roleplay / Dialogue Layer
+
+v1.1 adds a local Roleplay Immersion Layer. It is built for character voice and
+continuous dialogue, not for changing world authority. The LLM remains a
+language layer. Dialogue, group scenes, imported character cards, lorebooks,
+example dialogue, scene moods, and RP prompt profiles cannot directly modify
+`GameState`, reveal hidden facts, or make NPCs know unknown information.
+
+See `docs/ROLEPLAY_BOUNDARY.md` for the formal boundary contract.
+
+### Import Character Cards
+
+Character card import is authoring-only and disabled unless
+`ENABLE_AUTHORING_API=true`.
+
+```powershell
+Invoke-RestMethod -Method Post http://127.0.0.1:8000/authoring/characters/import/preview `
+  -ContentType "application/json" `
+  -Body '{"raw_content":"name: Mira\ndescription: A careful speaker.","input_format":"yaml"}'
+```
+
+Preview parses JSON, YAML, or simple text cards and returns candidates for RP
+profile, voice profile, example dialogue, flavor lore, structured facts, hidden
+facts, and unsafe entries. Apply requires explicit confirmation and validation:
+
+```text
+POST /authoring/characters/import/apply
+```
+
+External `system_prompt` and `creator_notes` are not trusted. Remote URLs and
+script-like payloads are rejected. Import does not modify active `GameState`.
+
+### Import Lorebook / World Info
+
+Lorebook import classifies entries instead of pushing them straight into
+prompts:
+
+- `flavor_lore`
+- `structured_fact_candidate`
+- `hidden_fact_candidate`
+- `unsafe_entry`
+
+APIs:
+
+```text
+POST /authoring/lorebook/import/preview
+POST /authoring/lorebook/import/validate
+POST /authoring/lorebook/import/apply
+```
+
+Hidden fact candidates stay under visibility control. Structured fact
+candidates must be saved as content-pack facts before becoming authoritative.
+Unsafe prompt/control entries are quarantined.
+
+### Configure RP Profile / Voice Profile
+
+NPCs can define roleplay and voice fields in `npcs.yaml`:
+
+```yaml
+rp_profile:
+  public_persona: "A careful archivist."
+  private_self_summary: "Hidden by default."
+  attachment_style: "slow trust"
+voice_profile:
+  tone: "measured"
+  sentence_length: "mixed"
+  vocabulary_style: "plain but exact"
+  catchphrases:
+    - "Carefully, now."
+```
+
+Safe public voice/profile fields can enter dialogue context. Private summaries,
+taboo topics, secrets, and hidden facts do not enter player-facing prompts by
+default.
+
+### Dialogue Mode
+
+Dialogue Mode creates a focused `DialogueSession` through the game API:
+
+```text
+POST /game/dialogue/start
+POST /game/dialogue/continue
+POST /game/dialogue/end
+```
+
+The frontend RP / Dialogue panel can start, continue, and end dialogue; choose
+focus NPC, dialogue mode, scene mood, and RP prompt profile; and display safe
+emotion/tone/topic summaries. Dialogue context includes only player-visible and
+NPC-known information. If dialogue produces state changes, they must be
+rule-authorized `StateDelta` entries and recorded events.
+
+### Group RP
+
+Group scenes use:
+
+```text
+POST /game/group-dialogue/start
+POST /game/group-dialogue/next-speaker
+POST /game/group-dialogue/end
+```
+
+Each NPC receives a separate context. One NPC's hidden knowledge does not leak
+into another NPC's prompt. Dead or incapacitated NPCs do not join ordinary group
+scenes.
+
+### Scene Mood
+
+Scene mood presets can be authored in `scene_moods.yaml` and selected in
+Dialogue Mode or Group RP. A mood changes tone, pacing, sensory focus, metaphor
+style, and dialogue pressure. It does not change facts, `ActionResult`, hidden
+fact filtering, or rule outcomes.
+
+### RP Prompt Profiles
+
+Prompt profiles now include an optional RP style section. It can tune dialogue
+depth, emotional intensity, prose density, response length, perspective, and
+inner-thought policy. It cannot enable hidden facts or state writes:
+
+```text
+hidden_fact_policy = deny
+state_modification_policy = deny
+```
+
+Use the Settings / Privacy panel or prompt profile APIs:
+
+```text
+GET /studio/prompt-profiles
+POST /studio/prompt-profiles/select
+```
+
+### Example Dialogue
+
+Example dialogue helps voice consistency but is not a fact source:
+
+```text
+GET  /authoring/worlds/{world_id}/example-dialogue
+POST /authoring/worlds/{world_id}/example-dialogue/preview
+POST /authoring/worlds/{world_id}/example-dialogue/validate
+PUT  /authoring/worlds/{world_id}/example-dialogue
+```
+
+Only `prompt_safe` examples with safe fact policy can enter dialogue context.
+Unsafe, debug-only, or hidden-fact examples stay out of runtime prompts.
+
+### Tavern-like Import / Export
+
+Tavern compatibility is local and best-effort. It supports preview/apply for
+character cards, lorebooks/world info, example dialogue, and prompt presets,
+plus safe export of NPC RP profiles, lorebook-style public facts, and prompt
+profiles:
+
+```text
+POST /authoring/tavern/import/preview
+POST /authoring/tavern/import/apply
+POST /authoring/tavern/export
+```
+
+Import requires parse, classification, unsafe detection, preview, explicit
+apply, and validation. It does not fetch remote URLs, execute scripts, trust
+external system prompts, or automatically modify active worlds/saves. Safe
+export does not include API keys, raw `GameState`, save data, or hidden facts.
+It does not claim full compatibility with every external Tavern format.
+
+### RP Boundary Evals
+
+Run RP boundary evals:
+
+```powershell
+python -m pytest backend/tests/evals/rp_boundary
+```
+
+These tests use fake outputs and do not call real LLM APIs. They cover hidden
+fact leakage, unknown fact mentions, example-dialogue-as-fact mistakes, group
+context crossover, and scene mood fact override.
+
+### RP Regression Playtests
+
+RP regression playtests exercise friendly talk, interrogation, negotiation,
+conflict, trust-building, group meeting, secret probing, and rumor discussion
+through the dialogue manager/test harness with mock/local providers:
+
+```powershell
+python -m pytest backend/tests/test_rp_regression_playtests.py
+```
+
+Reports are safe summaries. They should not print hidden text and should not be
+treated as canonical story events.
 
 ## Import / Export
 

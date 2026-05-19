@@ -147,6 +147,84 @@ textarea {
   line-height: 1.4;
 }
 
+.dialogue-mode-panel {
+  display: grid;
+  gap: 8px;
+}
+
+.rp-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.rp-panel-header p {
+  margin: 4px 0 0;
+}
+
+.rp-control-grid,
+.rp-summary-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.rp-control-grid label,
+.rp-group-controls label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.rp-summary-grid {
+  border: 1px solid #c7cdd3;
+  border-radius: 6px;
+  background: #f8fafc;
+  padding: 8px;
+}
+
+.rp-summary-grid p,
+.rp-safe-summary p {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.rp-safe-summary {
+  display: grid;
+  gap: 6px;
+}
+
+.rp-participant-row {
+  display: grid;
+  gap: 2px;
+}
+
+.rp-group-controls {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid #c7cdd3;
+  padding-top: 8px;
+}
+
+.rp-checkbox-list {
+  display: grid;
+  gap: 4px;
+}
+
+.rp-warning {
+  display: grid;
+  gap: 6px;
+}
+
+.button-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .compact-error {
   margin: 0;
   font-size: 12px;

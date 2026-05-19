@@ -41,6 +41,9 @@ from app.api import (
     ScenarioTemplatePreviewResponse,
     ScenarioTemplateRenderRequest,
     ScenarioTemplateResponse,
+    RPScenarioTemplateListResponse,
+    RPScenarioTemplatePreviewResponse,
+    RPScenarioTemplateRenderRequest,
     RenderedScenarioTemplateFileResponse,
     RenderedScenarioTemplateResponse,
     AuthoringDiffSummaryResponse,
@@ -70,6 +73,18 @@ from app.api import (
     DebugPerformanceSampleResponse,
     DebugPerformanceSummaryEntryResponse,
     DebugPerformanceSummaryResponse,
+    DialogueContinueRequest,
+    DialogueContextResponse,
+    DialogueEndRequest,
+    DialogueModeResponse,
+    DialogueSessionResponse,
+    DialogueStartRequest,
+    GroupDialogueEndRequest,
+    GroupDialogueNextSpeakerRequest,
+    GroupDialogueSceneModeResponse,
+    GroupDialogueSceneResponse,
+    GroupDialogueStartRequest,
+    GroupParticipantContextResponse,
     LoadGameResponse,
     MigrationHistoryEntryResponse,
     MigrationInfoResponse,
@@ -86,6 +101,7 @@ from app.api import (
     PlaytestRunRequest,
     PromptProfileListResponse,
     PromptProfileResponse,
+    RPPromptProfileResponse,
     PromptProfileSelectRequest,
     PromptProfileTemperatureOverridesResponse,
     QuestGraphPreviewRequest,
@@ -262,6 +278,62 @@ from app.quality.social_consequence_coverage import (
     analyze_social_consequence_coverage,
 )
 from app.quality.reports import WorldQualityReport, world_quality_report_from_validation_report
+from app.roleplay.character_cards import (
+    CharacterCardApplyReport,
+    CharacterCardApplyRequest,
+    CharacterCardImport,
+    CharacterCardImportError,
+    CharacterCardImportReport,
+    apply_character_card_import,
+    preview_character_card_import,
+    validate_character_card_import,
+)
+from app.roleplay.lorebooks import (
+    LorebookApplyReport,
+    LorebookApplyRequest,
+    LorebookImport,
+    LorebookImportError,
+    LorebookImportReport,
+    apply_lorebook_import,
+    preview_lorebook_import,
+    validate_lorebook_import,
+)
+from app.roleplay.tavern_compat import (
+    TavernCompatibilityApplyReport,
+    TavernCompatibilityApplyRequest,
+    TavernCompatibilityError,
+    TavernCompatibilityExportRequest,
+    TavernCompatibilityImportRequest,
+    TavernCompatibilityReport,
+    apply_tavern_import,
+    export_tavern_resource,
+    preview_tavern_import,
+)
+from app.roleplay.example_dialogues import (
+    ExampleDialogueDraftRequest,
+    ExampleDialogueListResponse,
+    ExampleDialoguePreviewResponse,
+    ExampleDialogueSaveResponse,
+    list_example_dialogues,
+    preview_example_dialogues,
+    save_example_dialogues,
+    validate_example_dialogues,
+)
+from app.roleplay.rp_scenario_templates import (
+    RPScenarioTemplate,
+    RPScenarioTemplateError,
+    RPScenarioTemplatePreview,
+    RPScenarioTemplateRenderer,
+)
+from app.roleplay.dialogue import (
+    DialogueManager,
+    DialogueMode,
+    DialogueSession,
+    DialogueContext,
+    GroupDialogueManager,
+    GroupDialogueScene,
+    GroupParticipantContext,
+)
 from app.scenarios.regression import (
     ScenarioRegressionListResponse,
     ScenarioRegressionRun,
@@ -306,6 +378,8 @@ app.state.mod_compat_stress_reports = []
 app.state.quality_gate_results = []
 app.state.scenario_template_renderer = ScenarioTemplateRenderer()
 app.state.prompt_profile_store = get_default_prompt_profile_store()
+app.state.dialogue_manager = DialogueManager()
+app.state.group_dialogue_manager = GroupDialogueManager()
 
 
 @app.get("/health")
@@ -489,6 +563,21 @@ def _prompt_profile_response(profile: PromptProfile, active_settings: object) ->
             memory=profile.temperature_overrides.memory,
         ),
         max_output_tokens=profile.max_output_tokens,
+        scene_mood_preset_id=profile.scene_mood_preset_id,
+        rp_profile=RPPromptProfileResponse(
+            id=profile.rp_profile.id,
+            name=profile.rp_profile.name,
+            description=profile.rp_profile.description,
+            dialogue_depth=profile.rp_profile.dialogue_depth,
+            emotional_intensity=profile.rp_profile.emotional_intensity,
+            prose_density=profile.rp_profile.prose_density,
+            response_length_policy=profile.rp_profile.response_length_policy,
+            perspective=profile.rp_profile.perspective,
+            inner_thought_policy=profile.rp_profile.inner_thought_policy,
+            sensuality_policy=profile.rp_profile.sensuality_policy,
+            hidden_fact_policy=profile.rp_profile.hidden_fact_policy,
+            state_modification_policy=profile.rp_profile.state_modification_policy,
+        ),
         enabled=profile.enabled,
         matches_current_provider=profile_matches_settings(profile, active_settings),
     )
@@ -723,6 +812,15 @@ def get_scenario_template_renderer() -> ScenarioTemplateRenderer:
     return renderer
 
 
+def get_rp_scenario_template_renderer() -> RPScenarioTemplateRenderer:
+    renderer = getattr(app.state, "rp_scenario_template_renderer", None)
+    if isinstance(renderer, RPScenarioTemplateRenderer):
+        return renderer
+    renderer = RPScenarioTemplateRenderer()
+    app.state.rp_scenario_template_renderer = renderer
+    return renderer
+
+
 def get_scenario_authoring_service() -> ScenarioAuthoringService:
     scenarios_root = getattr(app.state, "scenarios_root", "scenarios")
     return ScenarioAuthoringService(scenarios_root, get_worlds_root())
@@ -735,6 +833,26 @@ def get_prompt_profile_store() -> PromptProfileStore:
     store = get_default_prompt_profile_store()
     app.state.prompt_profile_store = store
     return store
+
+
+def get_dialogue_manager() -> DialogueManager:
+    manager = getattr(app.state, "dialogue_manager", None)
+    if isinstance(manager, DialogueManager):
+        manager.set_prompt_profile(get_prompt_profile_store().get_selected_profile())
+        return manager
+    manager = DialogueManager(prompt_profile=get_prompt_profile_store().get_selected_profile())
+    app.state.dialogue_manager = manager
+    return manager
+
+
+def get_group_dialogue_manager() -> GroupDialogueManager:
+    manager = getattr(app.state, "group_dialogue_manager", None)
+    if isinstance(manager, GroupDialogueManager):
+        manager.set_prompt_profile(get_prompt_profile_store().get_selected_profile())
+        return manager
+    manager = GroupDialogueManager(prompt_profile=get_prompt_profile_store().get_selected_profile())
+    app.state.group_dialogue_manager = manager
+    return manager
 
 
 def get_mod_loader() -> ModLoader:
@@ -800,6 +918,169 @@ def get_game_state(session_id: str) -> GameStateResponse:
     )
 
 
+@app.post("/game/dialogue/start", response_model=DialogueModeResponse)
+def start_dialogue_mode(request: DialogueStartRequest) -> DialogueModeResponse:
+    game_loop = get_session_store().get_session(request.game_session_id)
+    if game_loop is None:
+        raise HTTPException(status_code=404, detail=f"Unknown game session: {request.game_session_id}")
+    try:
+        mode = DialogueMode(request.dialogue_mode)
+        session = get_dialogue_manager().start_dialogue(
+            game_loop.state,
+            game_session_id=request.game_session_id,
+            focus_npc_id=request.focus_npc_id,
+            dialogue_mode=mode,
+            active_topics=request.active_topics,
+            scene_mood_preset_id=request.scene_mood_preset_id,
+            event_log=game_loop.event_log,
+        )
+        context = get_dialogue_manager().build_dialogue_context(
+            game_loop.state,
+            focus_npc_id=session.focus_npc_id,
+            session=session,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _dialogue_mode_response(
+        session=session,
+        context=context,
+        state=game_loop.state,
+        narrative_text=f"Dialogue started with {session.focus_npc_id}.",
+    )
+
+
+@app.post("/game/dialogue/continue", response_model=DialogueModeResponse)
+def continue_dialogue_mode(request: DialogueContinueRequest) -> DialogueModeResponse:
+    session = get_dialogue_manager().get_session(request.dialogue_session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail=f"Unknown dialogue session: {request.dialogue_session_id}")
+    if session.game_session_id is None:
+        raise HTTPException(status_code=400, detail="Dialogue session is not attached to a game session")
+    game_loop = get_session_store().get_session(session.game_session_id)
+    if game_loop is None:
+        raise HTTPException(status_code=404, detail=f"Unknown game session: {session.game_session_id}")
+    try:
+        result = get_dialogue_manager().continue_dialogue(
+            game_loop.state,
+            game_loop.event_log,
+            dialogue_session_id=request.dialogue_session_id,
+            player_input=request.player_input,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    game_loop.state = result.state
+    return _dialogue_mode_response(
+        session=result.session,
+        context=result.context,
+        state=result.state,
+        narrative_text=f"{result.session.focus_npc_id} responds within the current dialogue constraints.",
+        output_ok=result.output_check.ok,
+        output_issues=[issue.code for issue in result.output_check.issues],
+    )
+
+
+@app.post("/game/dialogue/end", response_model=DialogueModeResponse)
+def end_dialogue_mode(request: DialogueEndRequest) -> DialogueModeResponse:
+    session = get_dialogue_manager().get_session(request.dialogue_session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail=f"Unknown dialogue session: {request.dialogue_session_id}")
+    game_loop = get_session_store().get_session(session.game_session_id) if session.game_session_id else None
+    if game_loop is None:
+        raise HTTPException(status_code=404, detail=f"Unknown game session: {session.game_session_id}")
+    ended = get_dialogue_manager().end_dialogue(request.dialogue_session_id, game_loop.state.turn)
+    game_loop.event_log.append(
+        Event(
+            event_id=str(uuid4()),
+            turn=game_loop.state.turn,
+            actor_id="player",
+            action_type="dialogue_end",
+            target_id=ended.focus_npc_id,
+            result="success",
+            state_deltas=[],
+            allow_empty_delta=True,
+            visible_to_player=True,
+            narrative_text="Dialogue ended.",
+        )
+    )
+    context = get_dialogue_manager().build_dialogue_context(game_loop.state, focus_npc_id=ended.focus_npc_id, session=ended)
+    return _dialogue_mode_response(
+        session=ended,
+        context=context,
+        state=game_loop.state,
+        narrative_text=f"Dialogue ended with {ended.focus_npc_id}.",
+    )
+
+
+@app.post("/game/group-dialogue/start", response_model=GroupDialogueSceneModeResponse)
+def start_group_dialogue_scene(request: GroupDialogueStartRequest) -> GroupDialogueSceneModeResponse:
+    game_loop = get_session_store().get_session(request.game_session_id)
+    if game_loop is None:
+        raise HTTPException(status_code=404, detail=f"Unknown game session: {request.game_session_id}")
+    try:
+        scene = get_group_dialogue_manager().start_group_scene(
+            game_loop.state,
+            participant_ids=request.participant_ids,
+            game_session_id=request.game_session_id,
+            scene_topic=request.scene_topic,
+            scene_mood=request.scene_mood,
+            scene_mood_preset_id=request.scene_mood_preset_id,
+            active_speaker_id=request.active_speaker_id,
+            event_log=game_loop.event_log,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _group_dialogue_response(
+        scene=scene,
+        state=game_loop.state,
+        narrative_text=f"Group scene started at {scene.location_id}.",
+    )
+
+
+@app.post("/game/group-dialogue/next-speaker", response_model=GroupDialogueSceneModeResponse)
+def select_group_dialogue_next_speaker(request: GroupDialogueNextSpeakerRequest) -> GroupDialogueSceneModeResponse:
+    scene = get_group_dialogue_manager().get_scene(request.scene_id)
+    if scene is None:
+        raise HTTPException(status_code=404, detail=f"Unknown group dialogue scene: {request.scene_id}")
+    # Group scenes are tied to live in-memory state by location and participants;
+    # the active game loop is found by matching a participant location.
+    game_loop = _find_group_scene_game_loop(scene)
+    if game_loop is None:
+        raise HTTPException(status_code=404, detail=f"Game session not found for group dialogue scene: {scene.scene_id}")
+    try:
+        get_group_dialogue_manager().select_next_speaker(
+            game_loop.state,
+            scene.scene_id,
+            manual_focus_id=request.manual_focus_id,
+            event_log=game_loop.event_log,
+        )
+        updated = get_group_dialogue_manager().get_scene(scene.scene_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if updated is None:
+        raise HTTPException(status_code=404, detail=f"Unknown group dialogue scene: {scene.scene_id}")
+    return _group_dialogue_response(
+        scene=updated,
+        state=game_loop.state,
+        narrative_text=f"{updated.active_speaker_id} is ready to speak.",
+    )
+
+
+@app.post("/game/group-dialogue/end", response_model=GroupDialogueSceneModeResponse)
+def end_group_dialogue_scene(request: GroupDialogueEndRequest) -> GroupDialogueSceneModeResponse:
+    scene = get_group_dialogue_manager().get_scene(request.scene_id)
+    if scene is None:
+        raise HTTPException(status_code=404, detail=f"Unknown group dialogue scene: {request.scene_id}")
+    game_loop = _find_group_scene_game_loop(scene)
+    if game_loop is None:
+        raise HTTPException(status_code=404, detail=f"Game session not found for group dialogue scene: {scene.scene_id}")
+    ended = get_group_dialogue_manager().end_group_scene(scene.scene_id, event_log=game_loop.event_log, state=game_loop.state)
+    return _group_dialogue_response(
+        scene=ended,
+        state=game_loop.state,
+        narrative_text=f"Group scene ended at {ended.location_id}.",
+    )
+
+
 @app.get("/game/{session_id}/graphs/relationships", response_model=RelationshipGraph)
 def get_player_relationship_graph(session_id: str) -> RelationshipGraph:
     game_loop = get_session_store().get_session(session_id)
@@ -859,6 +1140,98 @@ def _enabled_mods_from_save(save: SaveGame) -> dict[str, str]:
         if isinstance(item, dict) and isinstance(item.get("id"), str):
             result[item["id"]] = str(item.get("version", "unknown"))
     return result
+
+
+def _dialogue_mode_response(
+    *,
+    session: DialogueSession,
+    context: DialogueContext,
+    state: GameState,
+    narrative_text: str,
+    output_ok: bool = True,
+    output_issues: list[str] | None = None,
+) -> DialogueModeResponse:
+    return DialogueModeResponse(
+        dialogue_session=DialogueSessionResponse(
+            session_id=session.session_id,
+            save_id=session.save_id,
+            game_session_id=session.game_session_id,
+            participant_ids=session.participant_ids,
+            focus_npc_id=session.focus_npc_id,
+            started_turn=session.started_turn,
+            last_turn=session.last_turn,
+            dialogue_mode=session.dialogue_mode.value,
+            active_topics=session.active_topics,
+            scene_mood_preset_id=session.scene_mood_preset_id,
+            safe_context_summary=session.safe_context_summary,
+            status=session.status.value,
+        ),
+        dialogue_context=DialogueContextResponse(
+            npc_known_facts=context.npc_known_facts,
+            emotional_summary=context.emotional_summary,
+            relationship_tone_summary=context.relationship_tone_summary,
+            scene_mood_summary=context.scene_mood_summary,
+            example_dialogue_summaries=context.example_dialogue_summaries,
+            rp_memory_summaries=context.rp_memory_summaries,
+            rp_prompt_style_summary=context.rp_prompt_style_summary,
+            safe_context_summary=context.safe_context_summary,
+        ),
+        narrative_text=narrative_text,
+        visible_state=build_visible_state(state),
+        turn=state.turn,
+        output_ok=output_ok,
+        output_issues=output_issues or [],
+    )
+
+
+def _group_dialogue_response(
+    *,
+    scene: GroupDialogueScene,
+    state: GameState,
+    narrative_text: str,
+) -> GroupDialogueSceneModeResponse:
+    contexts = [
+        _group_participant_context_response(get_group_dialogue_manager().build_participant_context(state, scene.scene_id, npc_id))
+        for npc_id in scene.participant_ids
+        if npc_id in state.npcs
+    ]
+    return GroupDialogueSceneModeResponse(
+        scene=GroupDialogueSceneResponse(
+            scene_id=scene.scene_id,
+            game_session_id=scene.game_session_id,
+            participant_ids=scene.participant_ids,
+            location_id=scene.location_id,
+            active_speaker_id=scene.active_speaker_id,
+            turn_order=scene.turn_order,
+            scene_topic=scene.scene_topic,
+            scene_mood=scene.scene_mood,
+            scene_mood_preset_id=scene.scene_mood_preset_id,
+            visibility_scope=scene.visibility_scope,
+            status=scene.status.value,
+        ),
+        participant_contexts=contexts,
+        narrative_text=narrative_text,
+        visible_state=build_visible_state(state),
+        turn=state.turn,
+    )
+
+
+def _group_participant_context_response(context: GroupParticipantContext) -> GroupParticipantContextResponse:
+    return GroupParticipantContextResponse(
+        npc_id=context.npc_id,
+        emotional_summary=context.emotional_summary,
+        relationship_tone_summary=context.relationship_tone_summary,
+        scene_mood_summary=context.scene_mood_summary,
+        example_dialogue_summaries=context.example_dialogue_summaries,
+        rp_prompt_style_summary=context.rp_prompt_style_summary,
+        safe_context_summary=context.safe_context_summary,
+    )
+
+
+def _find_group_scene_game_loop(scene: GroupDialogueScene) -> object | None:
+    if scene.game_session_id:
+        return get_session_store().get_session(scene.game_session_id)
+    return None
 
 
 def _world_name_for_state(state: GameState) -> str:
@@ -1579,6 +1952,132 @@ def validate_authoring_scenario(
     return get_scenario_authoring_service().preview_scenario(request.scenario)
 
 
+@app.post("/authoring/characters/import/preview", response_model=CharacterCardImportReport)
+def preview_authoring_character_card_import(request: CharacterCardImport) -> CharacterCardImportReport:
+    require_authoring_api()
+    try:
+        return preview_character_card_import(request)
+    except CharacterCardImportError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/authoring/characters/import/validate", response_model=CharacterCardImportReport)
+def validate_authoring_character_card_import(request: CharacterCardImport) -> CharacterCardImportReport:
+    require_authoring_api()
+    try:
+        return validate_character_card_import(request)
+    except CharacterCardImportError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/authoring/characters/import/apply", response_model=CharacterCardApplyReport)
+def apply_authoring_character_card_import(request: CharacterCardApplyRequest) -> CharacterCardApplyReport:
+    require_authoring_api()
+    try:
+        return apply_character_card_import(request, get_authoring_service())
+    except (CharacterCardImportError, AuthoringError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/authoring/lorebook/import/preview", response_model=LorebookImportReport)
+def preview_authoring_lorebook_import(request: LorebookImport) -> LorebookImportReport:
+    require_authoring_api()
+    try:
+        return preview_lorebook_import(request)
+    except LorebookImportError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/authoring/lorebook/import/validate", response_model=LorebookImportReport)
+def validate_authoring_lorebook_import(request: LorebookImport) -> LorebookImportReport:
+    require_authoring_api()
+    try:
+        return validate_lorebook_import(request)
+    except LorebookImportError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/authoring/lorebook/import/apply", response_model=LorebookApplyReport)
+def apply_authoring_lorebook_import(request: LorebookApplyRequest) -> LorebookApplyReport:
+    require_authoring_api()
+    try:
+        return apply_lorebook_import(request, get_authoring_service())
+    except (LorebookImportError, AuthoringError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/authoring/tavern/import/preview", response_model=TavernCompatibilityReport)
+def preview_authoring_tavern_import(request: TavernCompatibilityImportRequest) -> TavernCompatibilityReport:
+    require_authoring_api()
+    try:
+        return preview_tavern_import(request)
+    except (TavernCompatibilityError, CharacterCardImportError, LorebookImportError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/authoring/tavern/import/apply", response_model=TavernCompatibilityApplyReport)
+def apply_authoring_tavern_import(request: TavernCompatibilityApplyRequest) -> TavernCompatibilityApplyReport:
+    require_authoring_api()
+    try:
+        return apply_tavern_import(request, get_authoring_service())
+    except (TavernCompatibilityError, CharacterCardImportError, LorebookImportError, AuthoringError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/authoring/tavern/export", response_model=TavernCompatibilityReport)
+def export_authoring_tavern_resource(request: TavernCompatibilityExportRequest) -> TavernCompatibilityReport:
+    require_authoring_api()
+    try:
+        return export_tavern_resource(request, get_authoring_service(), get_prompt_profile_store().list_profiles())
+    except (TavernCompatibilityError, AuthoringError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/authoring/worlds/{world_id}/example-dialogue", response_model=ExampleDialogueListResponse)
+def get_authoring_example_dialogues(world_id: str) -> ExampleDialogueListResponse:
+    require_authoring_api()
+    try:
+        return list_example_dialogues(world_id, get_authoring_service())
+    except AuthoringError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/authoring/worlds/{world_id}/example-dialogue/preview", response_model=ExampleDialoguePreviewResponse)
+def preview_authoring_example_dialogues(
+    world_id: str,
+    request: ExampleDialogueDraftRequest,
+) -> ExampleDialoguePreviewResponse:
+    require_authoring_api()
+    try:
+        return preview_example_dialogues(world_id, request, get_authoring_service())
+    except (AuthoringError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/authoring/worlds/{world_id}/example-dialogue/validate", response_model=ExampleDialoguePreviewResponse)
+def validate_authoring_example_dialogues(
+    world_id: str,
+    request: ExampleDialogueDraftRequest,
+) -> ExampleDialoguePreviewResponse:
+    require_authoring_api()
+    try:
+        return validate_example_dialogues(world_id, request, get_authoring_service())
+    except (AuthoringError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.put("/authoring/worlds/{world_id}/example-dialogue", response_model=ExampleDialogueSaveResponse)
+def save_authoring_example_dialogues(
+    world_id: str,
+    request: ExampleDialogueDraftRequest,
+) -> ExampleDialogueSaveResponse:
+    require_authoring_api()
+    try:
+        return save_example_dialogues(world_id, request, get_authoring_service())
+    except (AuthoringError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.put("/authoring/scenarios/{scenario_id}", response_model=ScenarioAuthoringSaveResponse)
 def save_authoring_scenario(
     scenario_id: str,
@@ -2042,6 +2541,64 @@ def render_authoring_template(
     except ScenarioTemplateError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return _rendered_template_response(rendered)
+
+
+@app.get("/authoring/rp-scenario-templates", response_model=RPScenarioTemplateListResponse)
+def list_authoring_rp_scenario_templates() -> RPScenarioTemplateListResponse:
+    require_authoring_api()
+    try:
+        templates = get_rp_scenario_template_renderer().list_templates()
+    except RPScenarioTemplateError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return RPScenarioTemplateListResponse(templates=templates)
+
+
+@app.get("/authoring/rp-scenario-templates/{template_id}", response_model=RPScenarioTemplate)
+def get_authoring_rp_scenario_template(template_id: str) -> RPScenarioTemplate:
+    require_authoring_api()
+    try:
+        return get_rp_scenario_template_renderer().get_template(template_id)
+    except RPScenarioTemplateError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/authoring/rp-scenario-templates/{template_id}/preview", response_model=RPScenarioTemplatePreviewResponse)
+def preview_authoring_rp_scenario_template(
+    template_id: str,
+    request: RPScenarioTemplateRenderRequest,
+) -> RPScenarioTemplatePreviewResponse:
+    require_authoring_api()
+    state = _state_for_optional_game_session(request.game_session_id)
+    try:
+        preview = get_rp_scenario_template_renderer().preview_template(
+            template_id,
+            participant_ids=request.participant_ids,
+            game_session_id=request.game_session_id,
+            state=state,
+        )
+    except RPScenarioTemplateError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _rp_scenario_template_preview_response(preview)
+
+
+@app.post("/authoring/rp-scenario-templates/{template_id}/apply", response_model=RPScenarioTemplatePreviewResponse)
+def apply_authoring_rp_scenario_template(
+    template_id: str,
+    request: RPScenarioTemplateRenderRequest,
+) -> RPScenarioTemplatePreviewResponse:
+    require_authoring_api()
+    state = _state_for_optional_game_session(request.game_session_id)
+    try:
+        preview = get_rp_scenario_template_renderer().apply_template(
+            template_id,
+            participant_ids=request.participant_ids,
+            game_session_id=request.game_session_id,
+            state=state,
+            confirm_apply=request.confirm_apply,
+        )
+    except RPScenarioTemplateError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _rp_scenario_template_preview_response(preview)
 
 
 @app.get("/authoring/worlds/{world_id}/quests/graph", response_model=QuestGraphResponse)
@@ -2587,6 +3144,15 @@ def import_authoring_save(request: ArchiveImportRequest) -> ArchiveImportRespons
     return ArchiveImportResponse(**result.model_dump(mode="json"))
 
 
+def _state_for_optional_game_session(game_session_id: str | None) -> GameState | None:
+    if not game_session_id:
+        return None
+    game_loop = get_session_store().get_session(game_session_id)
+    if game_loop is None:
+        raise HTTPException(status_code=404, detail=f"Unknown game session: {game_session_id}")
+    return game_loop.state
+
+
 def _authoring_world_response(world: object) -> AuthoringWorldSummaryResponse:
     return AuthoringWorldSummaryResponse(
         world_id=getattr(world, "world_id"),
@@ -2709,6 +3275,10 @@ def _scenario_template_preview_response(preview: ScenarioTemplatePreview) -> Sce
         writes_to_disk=preview.writes_to_disk,
         target_world_id=preview.target_world_id,
     )
+
+
+def _rp_scenario_template_preview_response(preview: RPScenarioTemplatePreview) -> RPScenarioTemplatePreviewResponse:
+    return RPScenarioTemplatePreviewResponse.model_validate(preview.model_dump(mode="json"))
 
 
 def _quest_graph_response(graph: QuestGraph) -> QuestGraphResponse:

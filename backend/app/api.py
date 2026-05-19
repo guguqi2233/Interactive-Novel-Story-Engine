@@ -3,6 +3,7 @@ from pydantic import BaseModel, Field
 from app.core.state_delta import StateDelta
 from app.engine.content.world_branching import WorldBranch, WorldBranchCreateRequest, WorldDiff, WorldDiffDraftRequest
 from app.engine.content.world_loader import MapVisualGraph
+from app.roleplay.rp_scenario_templates import RPScenarioDraft, RPScenarioTemplate
 
 
 class VisibleTimeResponse(BaseModel):
@@ -142,6 +143,109 @@ class GameInputRequest(BaseModel):
     player_input: str = Field(min_length=1)
 
 
+class DialogueSessionResponse(BaseModel):
+    session_id: str
+    save_id: str | None = None
+    game_session_id: str | None = None
+    participant_ids: list[str] = Field(default_factory=list)
+    focus_npc_id: str
+    started_turn: int
+    last_turn: int
+    dialogue_mode: str
+    active_topics: list[str] = Field(default_factory=list)
+    scene_mood_preset_id: str | None = None
+    safe_context_summary: str = ""
+    status: str
+
+
+class DialogueContextResponse(BaseModel):
+    npc_known_facts: list[str] = Field(default_factory=list)
+    emotional_summary: str = ""
+    relationship_tone_summary: str = ""
+    scene_mood_summary: str = ""
+    example_dialogue_summaries: list[str] = Field(default_factory=list)
+    rp_memory_summaries: list[str] = Field(default_factory=list)
+    rp_prompt_style_summary: str = ""
+    safe_context_summary: str = ""
+
+
+class DialogueStartRequest(BaseModel):
+    game_session_id: str
+    focus_npc_id: str
+    dialogue_mode: str = "focused"
+    active_topics: list[str] = Field(default_factory=list)
+    scene_mood_preset_id: str | None = None
+
+
+class DialogueContinueRequest(BaseModel):
+    dialogue_session_id: str
+    player_input: str = Field(min_length=1)
+
+
+class DialogueEndRequest(BaseModel):
+    dialogue_session_id: str
+
+
+class DialogueModeResponse(BaseModel):
+    dialogue_session: DialogueSessionResponse
+    dialogue_context: DialogueContextResponse
+    narrative_text: str = ""
+    visible_state: VisibleStateResponse
+    turn: int
+    output_ok: bool = True
+    output_issues: list[str] = Field(default_factory=list)
+
+
+class GroupDialogueSceneResponse(BaseModel):
+    scene_id: str
+    game_session_id: str | None = None
+    participant_ids: list[str] = Field(default_factory=list)
+    location_id: str
+    active_speaker_id: str
+    turn_order: list[str] = Field(default_factory=list)
+    scene_topic: str = ""
+    scene_mood: str = "neutral"
+    scene_mood_preset_id: str | None = None
+    visibility_scope: str = "player_visible"
+    status: str
+
+
+class GroupParticipantContextResponse(BaseModel):
+    npc_id: str
+    emotional_summary: str = ""
+    relationship_tone_summary: str = ""
+    scene_mood_summary: str = ""
+    example_dialogue_summaries: list[str] = Field(default_factory=list)
+    rp_prompt_style_summary: str = ""
+    safe_context_summary: str = ""
+
+
+class GroupDialogueStartRequest(BaseModel):
+    game_session_id: str
+    participant_ids: list[str] = Field(min_length=2)
+    scene_topic: str = ""
+    scene_mood: str = "neutral"
+    scene_mood_preset_id: str | None = None
+    active_speaker_id: str | None = None
+
+
+class GroupDialogueNextSpeakerRequest(BaseModel):
+    scene_id: str
+    manual_focus_id: str | None = None
+
+
+class GroupDialogueEndRequest(BaseModel):
+    scene_id: str
+
+
+class GroupDialogueSceneModeResponse(BaseModel):
+    scene: GroupDialogueSceneResponse
+    participant_contexts: list[GroupParticipantContextResponse] = Field(default_factory=list)
+    narrative_text: str = ""
+    visible_state: VisibleStateResponse
+    turn: int
+
+
 class GameInputResponse(BaseModel):
     narrative_text: str
     suggested_actions: list[str]
@@ -225,6 +329,21 @@ class PromptProfileTemperatureOverridesResponse(BaseModel):
     memory: float | None = None
 
 
+class RPPromptProfileResponse(BaseModel):
+    id: str
+    name: str
+    description: str = ""
+    dialogue_depth: str
+    emotional_intensity: str
+    prose_density: str
+    response_length_policy: str
+    perspective: str
+    inner_thought_policy: str
+    sensuality_policy: str
+    hidden_fact_policy: str = "deny"
+    state_modification_policy: str = "deny"
+
+
 class PromptProfileResponse(BaseModel):
     id: str
     name: str
@@ -237,6 +356,8 @@ class PromptProfileResponse(BaseModel):
     memory_prompt_variant: str
     temperature_overrides: PromptProfileTemperatureOverridesResponse
     max_output_tokens: int | None = None
+    scene_mood_preset_id: str | None = None
+    rp_profile: RPPromptProfileResponse
     enabled: bool
     matches_current_provider: bool = False
 
@@ -682,6 +803,29 @@ class ScenarioTemplatePreviewResponse(BaseModel):
 
 class ScenarioTemplateApplyResponse(ScenarioTemplatePreviewResponse):
     applied: bool = True
+
+
+class RPScenarioTemplateListResponse(BaseModel):
+    local_only: bool = True
+    templates: list[RPScenarioTemplate] = Field(default_factory=list)
+
+
+class RPScenarioTemplateRenderRequest(BaseModel):
+    game_session_id: str | None = None
+    participant_ids: list[str] = Field(default_factory=list)
+    confirm_apply: bool = False
+
+
+class RPScenarioTemplatePreviewResponse(BaseModel):
+    local_only: bool = True
+    template: RPScenarioTemplate
+    draft: RPScenarioDraft
+    warnings: list[str] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
+    writes_to_disk: bool = False
+    modifies_game_state: bool = False
+    requires_confirmation: bool = True
+    applied: bool = False
 
 
 class QuestObjectiveNodeResponse(BaseModel):

@@ -1,0 +1,24 @@
+id: first_meeting
+name: First Meeting
+description: A cautious first conversation with a visible NPC.
+scene_type: first_meeting
+required_participants:
+  - harlan
+optional_participants: []
+suggested_mood: cautious
+suggested_mood_preset_id: quiet_warmth
+suggested_dialogue_mode: focused
+opening_context: The player approaches respectfully and leaves space for the NPC to respond.
+allowed_topics:
+  - introductions
+  - local atmosphere
+  - immediate needs
+forbidden_topics:
+  - sealed_letter_under_stone
+required_visible_facts: []
+safety_notes:
+  - Use only visible facts and NPC-known facts.
+  - Do not treat the template as a source of world truth.
+tags:
+  - starter
+  - dialogue

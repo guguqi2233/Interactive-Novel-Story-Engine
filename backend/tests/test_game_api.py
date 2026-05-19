@@ -8,6 +8,8 @@ from app.config import Settings
 from app.db.repository import SQLiteSaveRepository
 from app.evals.narrative_quality import NarrativeQualityCaseResult, NarrativeQualityReport
 from app.main import app
+from app.roleplay.dialogue import DialogueManager
+from app.roleplay.dialogue import GroupDialogueManager
 from app.session_store import InMemorySessionStore
 
 
@@ -21,6 +23,8 @@ def reset_app_overrides() -> None:
 
 def make_client(tmp_path: Path | None = None) -> TestClient:
     app.state.session_store = InMemorySessionStore()
+    app.state.dialogue_manager = DialogueManager()
+    app.state.group_dialogue_manager = GroupDialogueManager()
     if tmp_path is not None:
         app.state.save_repository = SQLiteSaveRepository(tmp_path / "api_save.db")
     if hasattr(app.state, "settings"):
@@ -285,6 +289,34 @@ def test_game_input_can_move_session_state() -> None:
     payload = response.json()
     assert payload["visible_state"]["location"]["id"] == "blacksmith"
     assert payload["turn"] == 1
+
+
+def test_dialogue_mode_api_uses_safe_context_and_rule_delta() -> None:
+    client = make_client()
+    session_id = client.post("/game/start").json()["session_id"]
+    client.post("/game/input", json={"session_id": session_id, "player_input": "smithy"})
+
+    start_response = client.post(
+        "/game/dialogue/start",
+        json={"game_session_id": session_id, "focus_npc_id": "harlan", "dialogue_mode": "focused"},
+    )
+    assert start_response.status_code == 200
+    start_payload = start_response.json()
+    dialogue_session_id = start_payload["dialogue_session"]["session_id"]
+    assert start_payload["dialogue_session"]["focus_npc_id"] == "harlan"
+    assert "sealed_letter_under_stone" not in str(start_payload)
+    assert "state_deltas" not in str(start_payload)
+
+    continue_response = client.post(
+        "/game/dialogue/continue",
+        json={"dialogue_session_id": dialogue_session_id, "player_input": "thank you for helping"},
+    )
+
+    assert continue_response.status_code == 200
+    payload = continue_response.json()
+    assert payload["dialogue_session"]["status"] == "active"
+    assert "relationship_tone_summary" in payload["dialogue_context"]
+    assert "hidden_facts" not in str(payload)
 
 
 def test_get_game_state_returns_current_visible_state() -> None:

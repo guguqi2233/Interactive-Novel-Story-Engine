@@ -1,0 +1,27 @@
+id: group_meeting
+name: Group Meeting
+description: A small multi-NPC meeting template for group RP drafts.
+scene_type: group_meeting
+required_participants:
+  - harlan
+optional_participants:
+  - mira
+suggested_mood: serious
+suggested_mood_preset_id: solemn_wuxia
+suggested_dialogue_mode: negotiation
+opening_context: The scene opens as a structured meeting where each participant keeps their own knowledge boundary.
+allowed_topics:
+  - village safety
+  - trade
+  - next steps
+forbidden_topics:
+  - hidden_witness
+  - sealed_letter_under_stone
+required_visible_facts:
+  - village_square_is_misty
+safety_notes:
+  - Each NPC context must be built independently.
+  - Hidden topics remain excluded from prompt drafts.
+tags:
+  - group
+  - meeting

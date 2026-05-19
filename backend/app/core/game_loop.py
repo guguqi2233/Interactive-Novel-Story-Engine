@@ -15,6 +15,7 @@ from app.engine.rules.world_tick import run_world_tick
 from app.llm.intent_parser import IntentParser
 from app.llm.narrator import Narrator
 from app.llm.schemas import NarrativeResult, PlayerActionType, PlayerIntent
+from app.roleplay.scene_moods import scene_mood_summary_for_prompt
 
 
 class GameLoopResult(BaseModel):
@@ -132,13 +133,24 @@ class GameLoop:
                     system_events.append(tick_result.event)
 
         with perf_span.stage("narrator"):
-            narrative = self.narrator.render(
-                player_input=player_input,
-                action_result=action_result,
-                visible_facts=action_result.visible_facts,
-                current_location=next_state.player.location_id,
-                tone=tone,
-            )
+            scene_mood_summary = scene_mood_summary_for_prompt(next_state, self.narrator.scene_mood_preset_id())
+            if scene_mood_summary:
+                narrative = self.narrator.render(
+                    player_input=player_input,
+                    action_result=action_result,
+                    visible_facts=action_result.visible_facts,
+                    current_location=next_state.player.location_id,
+                    tone=tone,
+                    scene_mood_summary=scene_mood_summary,
+                )
+            else:
+                narrative = self.narrator.render(
+                    player_input=player_input,
+                    action_result=action_result,
+                    visible_facts=action_result.visible_facts,
+                    current_location=next_state.player.location_id,
+                    tone=tone,
+                )
         event = Event(
             event_id=str(uuid4()),
             turn=next_state.turn,

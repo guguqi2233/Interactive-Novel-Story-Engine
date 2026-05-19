@@ -28,6 +28,7 @@ ALLOWED_AUTHORING_FILES: tuple[str, ...] = (
     "factions.yaml",
     "rumors.yaml",
     "relationships.yaml",
+    "example_dialogues.yaml",
 )
 
 LIST_FILE_KEYS: dict[str, str] = {
@@ -39,6 +40,7 @@ LIST_FILE_KEYS: dict[str, str] = {
     "factions.yaml": "factions",
     "rumors.yaml": "rumors",
     "relationships.yaml": "relationships",
+    "example_dialogues.yaml": "example_dialogues",
 }
 
 

@@ -209,6 +209,61 @@ separate `ENABLE_QUALITY_API` setting yet, and some analyzer endpoints remain
 local-only without an independent quality flag. The backend should remain
 bound to localhost for local studio use.
 
+## v1.1 Roleplay Immersion Scope
+
+v1.1 is the Roleplay Immersion Layer. It brings Tavern-style roleplay
+convenience into the local studio while preserving the v1.0 fact boundary.
+
+Included scope:
+
+- Roleplay boundary contract and policy objects.
+- Character card import preview/validate/apply as authoring candidates.
+- Lorebook/world-info import with deterministic classification.
+- Tavern-like local import/export for character cards, lorebooks, example
+  dialogue, and prompt presets.
+- NPC `RPProfile` and `VoiceProfile`.
+- NPC `EmotionalState` as structured rule-managed state.
+- `RelationshipTone` as an expression layer derived from relationships,
+  faction reputation, emotion, and recent events.
+- Dialogue Mode for focused continuous NPC conversation.
+- Multi-NPC scene / Group RP with participant-specific context.
+- Scene mood presets loaded from content packs.
+- Example dialogue management for prompt-safe style examples.
+- RP memory context builder with hidden/debug filtering.
+- RP prompt profile settings that can adjust style but cannot widen authority.
+- RP output consistency checker.
+- RP scenario templates, RP boundary evals, and RP regression playtests.
+- Frontend RP / Dialogue panels for safe dialogue controls and summaries.
+
+RP features are allowed to change expression, voice, mood, pacing, safe memory
+selection, and prompt style. They are not allowed to change authoritative
+facts, bypass visibility, grant NPCs unknown knowledge, decide quest/combat
+outcomes, or write `GameState` from model text.
+
+Principle: expression is flexible; facts are controlled.
+
+## RP And World Engine Boundary
+
+The RP layer is above the world engine. It reads safe context from structured
+state and can request rule-mediated actions, but it is not itself the fact
+source.
+
+Dialogue and group-scene consequences that affect the world must still follow:
+
+1. deterministic rule decision
+2. `StateDelta`
+3. `Event`
+4. filtered player-visible response
+
+LLM output may be rejected, retried, or replaced with a safe summary by the RP
+consistency checker. It cannot be applied as a state patch.
+
+Character card import, lorebook import, Tavern compatibility, example dialogue,
+scene mood presets, RP profiles, and prompt profiles are authoring/style data.
+They can produce candidates or drafts. They do not directly modify active
+session `GameState` and do not become authoritative facts until explicitly
+saved as validated content-pack data.
+
 ## Persistence Model
 
 SQLite stores:
@@ -369,6 +424,15 @@ event logging, provider abstraction, or content-only mod restrictions.
 - Do not let advanced packages skip checksum validation before apply.
 - Do not expose provider secrets, raw env, raw `GameState`, or raw
   `state_deltas` through Studio Home, Settings, dashboards, or player APIs.
+- Do not let RP profile, voice profile, scene mood, example dialogue, lorebook
+  text, or imported Tavern prompts expand LLM authority.
+- Do not let Dialogue Mode or Group RP give NPCs hidden facts outside their
+  `npc_knowledge`.
+- Do not let RP model output directly update emotional state, relationship
+  values, quest state, inventory, combat state, or facts.
+- Do not treat example dialogue or memory as authoritative world fact.
+- Do not execute scripts, links, or remote content from character cards,
+  lorebooks, Tavern resources, templates, or mods.
 
 ## Not In v1.0
 
@@ -401,6 +465,22 @@ event logging, provider abstraction, or content-only mod restrictions.
 - Writing eval/playtest/quality results into active `GameState` or active
   saves.
 - Hosted quality service, telemetry upload, or cloud report storage.
+
+## Not In v1.1
+
+- LLM world judge or LLM-decided rule outcomes.
+- LLM direct `GameState` mutation.
+- LLM-decided combat, quest completion, trade, crime, or relationship values.
+- NPC omniscience or RP prompts containing hidden facts outside visibility and
+  NPC knowledge rules.
+- Online character/lorebook marketplace.
+- Remote URL import for character cards or lorebooks.
+- Arbitrary script execution from imported roleplay resources.
+- Automatic trust of external `system_prompt` or creator prompt text.
+- Full compatibility with every Tavern ecosystem variant.
+- Cloud sync, accounts, multiplayer roleplay, or hosted RP service.
+- Automatic application of untrusted external content to active worlds or
+  active saves.
 
 ## v1.0 Known Limitations
 

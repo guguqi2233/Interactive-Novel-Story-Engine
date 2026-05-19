@@ -11,6 +11,7 @@ import {
   DebugPerformanceRecentResponse,
   DebugPerformanceSummaryResponse,
   applyScenarioTemplate,
+  applyRPScenarioTemplate,
   deleteSave,
   dryRunSaveTimelineReplay,
   exportModArchive,
@@ -35,6 +36,7 @@ import {
   fetchAuthoringWorld,
   fetchAuthoringWorlds,
   fetchScenarioTemplates,
+  fetchRPScenarioTemplates,
   fetchScenarioRegression,
   fetchScenarioRegressionCases,
   fetchAuthoringScenarios,
@@ -70,6 +72,7 @@ import {
   previewAuthoringScenario,
   previewQuestGraph,
   previewScenarioTemplate,
+  previewRPScenarioTemplate,
   runNarrativeEval,
   runContentCoverage,
   runPlaytest,
@@ -85,6 +88,8 @@ import {
   SaveMigrationStatus,
   ScenarioTemplate,
   ScenarioTemplatePreviewResponse,
+  RPScenarioTemplate,
+  RPScenarioTemplatePreviewResponse,
   ScenarioAuthoringPreviewResponse,
   ScenarioRegressionCase,
   ScenarioRegressionRun,
@@ -116,24 +121,37 @@ import {
   MerchantEconomyNode,
   RumorAuthoringNode,
   RumorCrimeConsequenceAuthoring,
+  ExampleDialogue,
+  fetchExampleDialogues,
   previewNPCGoalGraph,
   previewItemEconomyAuthoring,
+  previewExampleDialogues,
   previewRumorCrimeAuthoring,
   previewSocialAuthoringGraph,
   saveNPCGoalGraph,
   saveItemEconomyAuthoring,
+  saveExampleDialogues,
   saveRumorCrimeAuthoring,
   saveSocialAuthoringGraph,
   selectPromptProfile,
   SocialAuthoringGraph,
   validateItemEconomyAuthoring,
   validateNPCGoalGraph,
+  validateExampleDialogues,
   validateRumorCrimeAuthoring,
   validateSocialAuthoringGraph,
   fetchWorldHealth,
   runWorldHealth,
+  continueDialogue,
+  ContentCoverageReport,
+  DialogueModeResponse,
+  endDialogue,
+  endGroupDialogue,
+  GroupDialogueSceneResponse,
+  selectGroupDialogueNextSpeaker,
   WorldHealthScore,
-  ContentCoverageReport
+  startGroupDialogue,
+  startDialogue
 } from "./api";
 
 type StoryEntry = {
@@ -151,7 +169,8 @@ const AUTHORING_FILES = [
   "facts.yaml",
   "factions.yaml",
   "rumors.yaml",
-  "relationships.yaml"
+  "relationships.yaml",
+  "example_dialogues.yaml"
 ];
 
 const AUTHORING_FILE_GROUPS = [
@@ -162,6 +181,10 @@ const AUTHORING_FILE_GROUPS = [
   {
     title: "Social",
     files: ["factions.yaml", "rumors.yaml", "relationships.yaml"]
+  },
+  {
+    title: "Roleplay",
+    files: ["npcs.yaml", "example_dialogues.yaml"]
   },
   {
     title: "Economy / Mods",
@@ -185,7 +208,8 @@ const ROOT_KEYS: Record<string, string> = {
   "quests.yaml": "quests",
   "factions.yaml": "factions",
   "rumors.yaml": "rumors",
-  "relationships.yaml": "relationships"
+  "relationships.yaml": "relationships",
+  "example_dialogues.yaml": "example_dialogues"
 };
 
 const MAP_EDGE_TYPES: MapVisualEdgeType[] = ["exit", "one_way", "locked", "hidden", "conditional"];
@@ -199,6 +223,7 @@ type AuthoringToolId =
   | "social"
   | "economy"
   | "rumor_crime"
+  | "example_dialogue"
   | "scenarios"
   | "templates"
   | "validation";
@@ -210,6 +235,7 @@ const AUTHORING_TOOL_NAV: { id: AuthoringToolId; label: string; description: str
   { id: "social", label: "Factions / Relationships", description: "factions, trust, conflict, visibility", preferredFile: "factions.yaml" },
   { id: "economy", label: "Items / Economy", description: "items, prices, merchants, shops", preferredFile: "items.yaml" },
   { id: "rumor_crime", label: "Rumors / Crime", description: "rumors and social consequence chains", preferredFile: "rumors.yaml" },
+  { id: "example_dialogue", label: "Example Dialogue", description: "style-only dialogue samples", preferredFile: "example_dialogues.yaml" },
   { id: "scenarios", label: "Scenarios", description: "regression case authoring" },
   { id: "templates", label: "Templates", description: "local scenario templates" },
   { id: "validation", label: "Validation", description: "validation graph and issue routing" }
@@ -275,6 +301,15 @@ type ParsedAuthoringEntity = {
   fields: Record<string, string>;
 };
 
+const SCENE_MOOD_PRESETS = [
+  { id: "", label: "Default" },
+  { id: "mist_tension", label: "Mist tension" },
+  { id: "quiet_warmth", label: "Quiet warmth" },
+  { id: "solemn_wuxia", label: "Solemn wuxia" }
+];
+
+const DIALOGUE_MODES = ["focused", "casual", "interrogation", "negotiation", "intimate", "conflict"];
+
 export function App() {
   const [sessionId, setSessionId] = useState<string>("");
   const [selectedWorldId, setSelectedWorldId] = useState<string>("mist_valley");
@@ -282,6 +317,10 @@ export function App() {
   const [turn, setTurn] = useState<number>(0);
   const [story, setStory] = useState<StoryEntry[]>([]);
   const [suggestedActions, setSuggestedActions] = useState<string[]>([]);
+  const [dialogue, setDialogue] = useState<DialogueModeResponse | null>(null);
+  const [groupScene, setGroupScene] = useState<GroupDialogueSceneResponse | null>(null);
+  const [sceneMoodPresetId, setSceneMoodPresetId] = useState<string>("");
+  const [selectedDialogueMode, setSelectedDialogueMode] = useState<string>("focused");
   const [input, setInput] = useState<string>("");
   const [debugOpen, setDebugOpen] = useState<boolean>(true);
   const [lastResponse, setLastResponse] = useState<unknown>(null);
@@ -379,6 +418,8 @@ export function App() {
       setSessionId(response.session_id);
       setVisibleState(response.visible_state);
       setTurn(response.turn);
+      setDialogue(null);
+      setGroupScene(null);
       setSuggestedActions(["observe", "smithy", "wait"]);
       setStory([{ id: Date.now(), text: "A new local story session has started." }]);
       setLastResponse(response);
@@ -641,9 +682,94 @@ export function App() {
     setIsLoading(true);
     setError("");
     try {
-      const response = await submitPlayerInput(sessionId, trimmedInput);
-      applyGameInputResponse(response);
+      if (dialogue?.dialogue_session.status === "active") {
+        const response = await continueDialogue(dialogue.dialogue_session.session_id, trimmedInput);
+        applyDialogueResponse(response);
+      } else {
+        const response = await submitPlayerInput(sessionId, trimmedInput);
+        applyGameInputResponse(response);
+      }
       setInput("");
+    } catch (err) {
+      setError(toErrorMessage(err));
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function handleStartDialogue(focusNpcId: string, dialogueMode = selectedDialogueMode) {
+    if (!sessionId || isLoading) {
+      return;
+    }
+    setIsLoading(true);
+    setError("");
+    try {
+      const response = await startDialogue(sessionId, focusNpcId, dialogueMode, sceneMoodPresetId);
+      applyDialogueResponse(response);
+    } catch (err) {
+      setError(toErrorMessage(err));
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function handleEndDialogue() {
+    if (!dialogue || isLoading) {
+      return;
+    }
+    setIsLoading(true);
+    setError("");
+    try {
+      const response = await endDialogue(dialogue.dialogue_session.session_id);
+      applyDialogueResponse(response);
+    } catch (err) {
+      setError(toErrorMessage(err));
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function handleStartGroupScene(participantIds: string[], sceneTopic = "local scene", sceneMood = "neutral") {
+    if (!sessionId || isLoading) {
+      return;
+    }
+    setIsLoading(true);
+    setError("");
+    try {
+      const response = await startGroupDialogue(sessionId, participantIds, sceneTopic, sceneMood, sceneMoodPresetId);
+      applyGroupSceneResponse(response);
+    } catch (err) {
+      setError(toErrorMessage(err));
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function handleNextGroupSpeaker() {
+    if (!groupScene || isLoading) {
+      return;
+    }
+    setIsLoading(true);
+    setError("");
+    try {
+      const response = await selectGroupDialogueNextSpeaker(groupScene.scene.scene_id);
+      applyGroupSceneResponse(response);
+    } catch (err) {
+      setError(toErrorMessage(err));
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function handleEndGroupScene() {
+    if (!groupScene || isLoading) {
+      return;
+    }
+    setIsLoading(true);
+    setError("");
+    try {
+      const response = await endGroupDialogue(groupScene.scene.scene_id);
+      applyGroupSceneResponse(response);
     } catch (err) {
       setError(toErrorMessage(err));
     } finally {
@@ -706,6 +832,8 @@ export function App() {
       setSessionId(response.session_id);
       setVisibleState(response.visible_state);
       setTurn(response.turn);
+      setDialogue(null);
+      setGroupScene(null);
       setSuggestedActions(["observe", "smithy", "wait"]);
       setStory([{ id: Date.now(), text: `Loaded save ${response.save_id}.` }]);
       setLastResponse(response);
@@ -820,6 +948,43 @@ export function App() {
       }
     ]);
     setSuggestedActions(response.suggested_actions);
+    setVisibleState(response.visible_state);
+    setTurn(response.turn);
+    setLastResponse(response);
+    void refreshTimeline(sessionId);
+    void refreshTimelineReplay("session", { sessionId });
+    void refreshPlayerGraphs(sessionId);
+    void refreshDebugGraphs(sessionId);
+  }
+
+  function applyDialogueResponse(response: DialogueModeResponse) {
+    setDialogue(response);
+    setStory((entries) => [
+      ...entries,
+      {
+        id: Date.now(),
+        text: response.narrative_text
+      }
+    ]);
+    setVisibleState(response.visible_state);
+    setTurn(response.turn);
+    setSuggestedActions(response.dialogue_session.status === "active" ? ["ask about rumors", "thank you", "goodbye"] : []);
+    setLastResponse(response);
+    void refreshTimeline(sessionId);
+    void refreshTimelineReplay("session", { sessionId });
+    void refreshPlayerGraphs(sessionId);
+    void refreshDebugGraphs(sessionId);
+  }
+
+  function applyGroupSceneResponse(response: GroupDialogueSceneResponse) {
+    setGroupScene(response);
+    setStory((entries) => [
+      ...entries,
+      {
+        id: Date.now(),
+        text: response.narrative_text
+      }
+    ]);
     setVisibleState(response.visible_state);
     setTurn(response.turn);
     setLastResponse(response);
@@ -1026,6 +1191,28 @@ export function App() {
         </section>
 
         <section>
+          <h2>Dialogue</h2>
+          <DialogueModePanel
+            dialogue={dialogue}
+            groupScene={groupScene}
+            visibleState={visibleState}
+            configSummary={studioConfigSummary}
+            configError={studioConfigError}
+            isLoading={isLoading}
+            selectedMoodPresetId={sceneMoodPresetId}
+            onSelectMoodPreset={setSceneMoodPresetId}
+            selectedDialogueMode={selectedDialogueMode}
+            onSelectDialogueMode={setSelectedDialogueMode}
+            onSelectPromptProfile={(profileId) => void handleSelectPromptProfile(profileId)}
+            onStart={(npcId, dialogueMode) => void handleStartDialogue(npcId, dialogueMode)}
+            onEnd={() => void handleEndDialogue()}
+            onStartGroup={(npcIds, sceneTopic, sceneMood) => void handleStartGroupScene(npcIds, sceneTopic, sceneMood)}
+            onNextGroupSpeaker={() => void handleNextGroupSpeaker()}
+            onEndGroup={() => void handleEndGroupScene()}
+          />
+        </section>
+
+        <section>
           <h2>Time</h2>
           <p>{visibleState?.time.formatted ?? "Not started"}</p>
           <p className="muted">Turn {turn}</p>
@@ -1160,7 +1347,7 @@ export function App() {
           <input
             value={input}
             onChange={(event) => setInput(event.target.value)}
-            placeholder="Enter your action..."
+            placeholder={dialogue?.dialogue_session.status === "active" ? "Say something in dialogue..." : "Enter your action..."}
             disabled={isLoading || !sessionId}
           />
           <button type="submit" disabled={isLoading || !input.trim()}>
@@ -2524,8 +2711,14 @@ function SettingsPrivacyPanel({
                     <div key={profile.id}>
                       <p className="muted">{profile.description}</p>
                       <span className="badge">{profile.narrator_prompt_variant}</span>
+                      <span className="badge">{profile.rp_profile.name}</span>
                       <span className="chip">narrator {profile.temperature_overrides.narrator ?? "default"}</span>
                       <span className="chip">providers {profile.provider_filter.join(", ")}</span>
+                      <p className="muted">
+                        RP: {profile.rp_profile.dialogue_depth}, {profile.rp_profile.emotional_intensity},{" "}
+                        {profile.rp_profile.prose_density}; hidden facts {profile.rp_profile.hidden_fact_policy},
+                        state changes {profile.rp_profile.state_modification_policy}.
+                      </p>
                     </div>
                   ))}
               </div>
@@ -3011,6 +3204,245 @@ function StatusPanel({ visibleState }: { visibleState: VisibleState | null }) {
             : "None"}
         </p>
       </div>
+    </div>
+  );
+}
+
+function DialogueModePanel({
+  dialogue,
+  groupScene,
+  visibleState,
+  configSummary,
+  configError,
+  isLoading,
+  selectedMoodPresetId,
+  onSelectMoodPreset,
+  selectedDialogueMode,
+  onSelectDialogueMode,
+  onSelectPromptProfile,
+  onStart,
+  onEnd,
+  onStartGroup,
+  onNextGroupSpeaker,
+  onEndGroup
+}: {
+  dialogue: DialogueModeResponse | null;
+  groupScene: GroupDialogueSceneResponse | null;
+  visibleState: VisibleState | null;
+  configSummary: StudioConfigSummary | null;
+  configError: string;
+  isLoading: boolean;
+  selectedMoodPresetId: string;
+  onSelectMoodPreset: (presetId: string) => void;
+  selectedDialogueMode: string;
+  onSelectDialogueMode: (mode: string) => void;
+  onSelectPromptProfile: (profileId: string) => void;
+  onStart: (npcId: string, dialogueMode: string) => void;
+  onEnd: () => void;
+  onStartGroup: (npcIds: string[], sceneTopic: string, sceneMood: string) => void;
+  onNextGroupSpeaker: () => void;
+  onEndGroup: () => void;
+}) {
+  const activeDialogue = dialogue?.dialogue_session.status === "active" ? dialogue : null;
+  const activeGroup = groupScene?.scene.status === "active" ? groupScene : null;
+  const npcs = visibleState?.visible_npcs ?? [];
+  const [selectedFocusNpcId, setSelectedFocusNpcId] = useState<string>("");
+  const [selectedGroupNpcIds, setSelectedGroupNpcIds] = useState<string[]>([]);
+  const [groupTopic, setGroupTopic] = useState<string>("local scene");
+  const [groupMood, setGroupMood] = useState<string>("neutral");
+  const selectedProfileId = configSummary?.selected_prompt_profile_id ?? "";
+  const activeProfile = configSummary?.prompt_profiles.find((profile) => profile.id === selectedProfileId) ?? null;
+  const focusNpcId = selectedFocusNpcId || npcs[0]?.id || "";
+  const effectiveGroupIds = selectedGroupNpcIds.length > 0 ? selectedGroupNpcIds : npcs.slice(0, 2).map((npc) => npc.id);
+  const toggleGroupNpc = (npcId: string) => {
+    setSelectedGroupNpcIds((previous) => {
+      const current = previous.length > 0 ? previous : npcs.slice(0, 2).map((npc) => npc.id);
+      return current.includes(npcId) ? current.filter((id) => id !== npcId) : [...current, npcId];
+    });
+  };
+
+  if (activeGroup) {
+    return (
+      <div className="dialogue-mode-panel">
+        <div className="rp-panel-header">
+          <div>
+            <strong>Group RP scene</strong>
+            <p className="muted">Local-only dialogue context. Debug and authoring data stay outside this panel.</p>
+          </div>
+          <span className="badge">{activeGroup.scene.scene_mood}</span>
+        </div>
+        <div className="rp-summary-grid">
+          <p><span className="muted">Speaker</span>{activeGroup.scene.active_speaker_id || "none"}</p>
+          <p><span className="muted">Topic</span>{activeGroup.scene.scene_topic || "open"}</p>
+          <p><span className="muted">Mood preset</span>{activeGroup.scene.scene_mood_preset_id || "default"}</p>
+          <p><span className="muted">Participants</span>{activeGroup.scene.participant_ids.length}</p>
+        </div>
+        <ItemList
+          emptyText="No participant summaries."
+          items={activeGroup.participant_contexts.map((context) => (
+            <span className="rp-participant-row" key={context.npc_id}>
+              <strong>{context.npc_id}</strong>
+              <span>{context.emotional_summary || "neutral"}</span>
+              <span>{context.relationship_tone_summary || "neutral tone"}</span>
+              <span className="badge">safe summary</span>
+            </span>
+          ))}
+        />
+        <div className="button-list">
+          <button type="button" onClick={onNextGroupSpeaker} disabled={isLoading}>
+            Next speaker
+          </button>
+          <button type="button" onClick={onEndGroup} disabled={isLoading}>
+            End group scene
+          </button>
+        </div>
+      </div>
+    );
+  }
+  if (activeDialogue) {
+    return (
+      <div className="dialogue-mode-panel">
+        <div className="rp-panel-header">
+          <div>
+            <strong>{activeDialogue.dialogue_session.focus_npc_id}</strong>
+            <p className="muted">Dialogue Mode uses visible facts, NPC knowledge, and safe RP memory only.</p>
+          </div>
+          <span className="badge">{activeDialogue.dialogue_session.dialogue_mode}</span>
+        </div>
+        <div className="rp-summary-grid">
+          <p><span className="muted">Emotion</span>{activeDialogue.dialogue_context.emotional_summary || "neutral"}</p>
+          <p><span className="muted">Tone</span>{activeDialogue.dialogue_context.relationship_tone_summary || "neutral"}</p>
+          <p><span className="muted">Mood</span>{activeDialogue.dialogue_context.scene_mood_summary || activeDialogue.dialogue_session.scene_mood_preset_id || "default"}</p>
+          <p><span className="muted">Safe memories</span>{activeDialogue.dialogue_context.rp_memory_summaries.length}</p>
+        </div>
+        {activeDialogue.dialogue_context.rp_prompt_style_summary && (
+          <p className="muted">RP style: {activeDialogue.dialogue_context.rp_prompt_style_summary}</p>
+        )}
+        <p className="muted">
+          Topics: {activeDialogue.dialogue_session.active_topics.length
+            ? activeDialogue.dialogue_session.active_topics.join(", ")
+            : "open"}
+        </p>
+        {!activeDialogue.output_ok && (
+          <div className="notice rp-warning">
+            <strong>Consistency warning</strong>
+            <ItemList
+              emptyText="No safe warning details."
+              items={activeDialogue.output_issues.map((issue) => <span key={issue}>{issue}</span>)}
+            />
+          </div>
+        )}
+        <button type="button" onClick={onEnd} disabled={isLoading}>
+          Exit dialogue
+        </button>
+      </div>
+    );
+  }
+  if (npcs.length === 0) {
+    return (
+      <div className="dialogue-mode-panel">
+        <p className="muted">No visible NPC is available for dialogue.</p>
+        <p className="muted">RP controls will appear when a player-visible NPC is present.</p>
+      </div>
+    );
+  }
+  return (
+    <div className="dialogue-mode-panel">
+      <div className="rp-panel-header">
+        <div>
+          <strong>RP / Dialogue</strong>
+          <p className="muted">Start constrained RP with player-visible NPCs. No hidden or debug fields are shown.</p>
+        </div>
+        <span className="badge">player safe</span>
+      </div>
+      <div className="rp-control-grid">
+        <label>
+          Focus NPC
+          <select value={focusNpcId} onChange={(event) => setSelectedFocusNpcId(event.target.value)} disabled={isLoading}>
+            {npcs.map((npc) => (
+              <option key={npc.id} value={npc.id}>
+                {npc.id}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Dialogue mode
+          <select value={selectedDialogueMode} onChange={(event) => onSelectDialogueMode(event.target.value)} disabled={isLoading}>
+            {DIALOGUE_MODES.map((mode) => (
+              <option key={mode} value={mode}>
+                {mode}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Scene mood
+          <select value={selectedMoodPresetId} onChange={(event) => onSelectMoodPreset(event.target.value)} disabled={isLoading}>
+            {SCENE_MOOD_PRESETS.map((preset) => (
+              <option key={preset.id || "default"} value={preset.id}>
+                {preset.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          RP prompt profile
+          <select
+            value={selectedProfileId}
+            onChange={(event) => onSelectPromptProfile(event.target.value)}
+            disabled={isLoading || !configSummary}
+          >
+            {configSummary?.prompt_profiles.map((profile) => (
+              <option key={profile.id} value={profile.id}>
+                {profile.name}
+              </option>
+            )) ?? <option value="">Unavailable</option>}
+          </select>
+        </label>
+      </div>
+      <div className="rp-safe-summary">
+        <p><span className="muted">Active profile</span>{activeProfile?.rp_profile.name ?? (selectedProfileId || "default")}</p>
+        <p><span className="muted">Provider boundary</span>{configSummary ? "safe summary only" : "config unavailable"}</p>
+        {configError && <p className="compact-error">{configError}</p>}
+      </div>
+      <div className="button-list">
+        <button type="button" onClick={() => onStart(focusNpcId, selectedDialogueMode)} disabled={isLoading || !focusNpcId}>
+          Start dialogue
+        </button>
+      </div>
+      {npcs.length >= 2 && (
+        <div className="rp-group-controls">
+          <label>
+            Group topic
+            <input value={groupTopic} onChange={(event) => setGroupTopic(event.target.value)} disabled={isLoading} />
+          </label>
+          <label>
+            Group mood
+            <input value={groupMood} onChange={(event) => setGroupMood(event.target.value)} disabled={isLoading} />
+          </label>
+          <div className="rp-checkbox-list">
+            {npcs.map((npc) => (
+              <label className="checkbox-field" key={npc.id}>
+                <input
+                  type="checkbox"
+                  checked={effectiveGroupIds.includes(npc.id)}
+                  onChange={() => toggleGroupNpc(npc.id)}
+                  disabled={isLoading}
+                />
+                {npc.id}
+              </label>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => onStartGroup(effectiveGroupIds, groupTopic, groupMood)}
+            disabled={isLoading || effectiveGroupIds.length < 2}
+          >
+            Start group scene
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -3908,6 +4340,28 @@ function AuthoringPanel() {
           </AuthoringSection>
 
           <AuthoringSection
+            toolId="example_dialogue"
+            activeTool={activeAuthoringTool}
+            title="Example Dialogue"
+            description="Style-only dialogue samples for RP prompts. They never become facts or NPC knowledge."
+          >
+            <ExampleDialogueManagerPanel
+              worldId={selectedWorldId}
+              onPreviewYaml={(yamlContent, validationResult) => {
+                setSelectedFile("example_dialogues.yaml");
+                setContent(yamlContent);
+                setPreview(null);
+                setValidation(validationResult);
+                setMessage(
+                  validationResult.ok
+                    ? "Example dialogue preview converted to YAML. Use Preview/Save to persist."
+                    : "Example dialogue preview has validation errors."
+                );
+              }}
+            />
+          </AuthoringSection>
+
+          <AuthoringSection
             toolId="social"
             activeTool={activeAuthoringTool}
             title="Factions / Relationships"
@@ -3981,6 +4435,202 @@ function AuthoringPanel() {
         </p>
       )}
       <ModManagerPanel />
+    </section>
+  );
+}
+
+function ExampleDialogueManagerPanel({
+  worldId,
+  onPreviewYaml
+}: {
+  worldId: string;
+  onPreviewYaml: (yamlContent: string, validation: AuthoringValidation) => void;
+}) {
+  const [entries, setEntries] = useState<ExampleDialogue[]>([]);
+  const [draftText, setDraftText] = useState<string>("[]");
+  const [validation, setValidation] = useState<AuthoringValidation | null>(null);
+  const [previewYaml, setPreviewYaml] = useState<string>("");
+  const [message, setMessage] = useState<string>("");
+  const [error, setError] = useState<string>("");
+  const [isBusy, setIsBusy] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (worldId) {
+      void loadExamples();
+    }
+  }, [worldId]);
+
+  async function loadExamples() {
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await fetchExampleDialogues(worldId);
+      setEntries(response.entries);
+      setDraftText(JSON.stringify(response.entries, null, 2));
+      setValidation(null);
+      setPreviewYaml("");
+    } catch (err) {
+      setEntries([]);
+      setDraftText("[]");
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  function parseDraft(): ExampleDialogue[] | null {
+    try {
+      const parsed = JSON.parse(draftText) as ExampleDialogue[];
+      if (!Array.isArray(parsed)) {
+        setError("Example dialogue draft must be a JSON array.");
+        return null;
+      }
+      return parsed;
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+      return null;
+    }
+  }
+
+  async function handlePreview() {
+    const draft = parseDraft();
+    if (!draft) {
+      return;
+    }
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await previewExampleDialogues(worldId, draft);
+      setValidation(response.validation);
+      setPreviewYaml(response.yaml_content);
+      onPreviewYaml(response.yaml_content, response.validation);
+      setMessage(response.validation.ok ? "Example dialogue preview is valid." : "Example dialogue preview found validation errors.");
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleValidate() {
+    const draft = parseDraft();
+    if (!draft) {
+      return;
+    }
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await validateExampleDialogues(worldId, draft);
+      setValidation(response.validation);
+      setPreviewYaml(response.yaml_content);
+      setMessage(response.validation.ok ? "Example dialogue validation passed." : "Example dialogue validation found errors.");
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleSave() {
+    const draft = parseDraft();
+    if (!draft) {
+      return;
+    }
+    const validationResponse = await validateExampleDialogues(worldId, draft);
+    setValidation(validationResponse.validation);
+    if (!validationResponse.validation.ok) {
+      setMessage("Example dialogue has validation errors. Fix them before saving.");
+      return;
+    }
+    if (!confirmDangerousAction(DANGEROUS_ACTION_COPY.saveGraphChanges)) {
+      return;
+    }
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await saveExampleDialogues(worldId, draft);
+      setValidation(response.validation);
+      setPreviewYaml(response.yaml_content);
+      setEntries(response.entries);
+      setDraftText(JSON.stringify(response.entries, null, 2));
+      setMessage(response.saved ? "Example dialogue saved to example_dialogues.yaml." : "Example dialogue was not saved.");
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  return (
+    <section className="mod-manager-panel authoring-zone">
+      <div className="authoring-pane-header">
+        <div>
+          <h2>Example Dialogue Manager</h2>
+          <p>Manage prompt-safe style examples. Samples are never facts and never grant NPC knowledge.</p>
+        </div>
+        <button type="button" onClick={() => void loadExamples()} disabled={isBusy}>
+          Reload
+        </button>
+      </div>
+      {error.toLowerCase().includes("authoring api is disabled") && (
+        <div className="notice api-disabled-notice">Example dialogue authoring requires the local authoring API.</div>
+      )}
+      <div className="dashboard-grid compact">
+        <DashboardCard title="Examples" value={String(entries.length)}>
+          <p>Only <code>prompt_safe</code> entries can reach dialogue prompts after visibility filtering.</p>
+        </DashboardCard>
+        <DashboardCard title="Prompt-safe" value={String(entries.filter((entry) => entry.visibility === "prompt_safe").length)}>
+          <p>Unsafe, debug-only, and authoring-only examples stay out of player/narrator contexts.</p>
+        </DashboardCard>
+      </div>
+      {entries.length > 0 ? (
+        <div className="authoring-preview-box">
+          {entries.slice(0, 6).map((entry) => (
+            <div key={entry.id} className="timeline-event-row">
+              <strong>{entry.id}</strong>
+              <span className="badge">{entry.character_id}</span>
+              <span className="badge">{entry.visibility}</span>
+              <span className="badge">{entry.fact_policy}</span>
+              <p className="muted">{entry.messages.map((item) => item.text).join(" / ")}</p>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <EmptyState title="No example dialogue found." detail="Create a JSON draft below, then preview and save to example_dialogues.yaml." />
+      )}
+      <label className="field-block">
+        Example dialogue JSON draft
+        <textarea
+          value={draftText}
+          onChange={(event) => setDraftText(event.target.value)}
+          spellCheck={false}
+          disabled={isBusy}
+        />
+      </label>
+      <div className="authoring-header-actions">
+        <button type="button" onClick={() => void handlePreview()} disabled={isBusy}>
+          Preview
+        </button>
+        <button type="button" onClick={() => void handleValidate()} disabled={isBusy}>
+          Validate
+        </button>
+        <button type="button" onClick={() => void handleSave()} disabled={isBusy}>
+          Save Example Dialogue
+        </button>
+      </div>
+      <PreviewResultPanel title="Example Dialogue Validation" validation={validation} />
+      {previewYaml && (
+        <details className="authoring-preview-box">
+          <summary>Generated example_dialogues.yaml</summary>
+          <pre>{previewYaml}</pre>
+        </details>
+      )}
+      <SuccessPanel message={message} />
+      <ErrorPanel message={error} />
     </section>
   );
 }
@@ -4778,11 +5428,15 @@ function defaultScenarioDraft(worldId: string): ScenarioRegressionCase {
 
 function ScenarioTemplatePanel() {
   const [templates, setTemplates] = useState<ScenarioTemplate[]>([]);
+  const [rpTemplates, setRPTemplates] = useState<RPScenarioTemplate[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
+  const [selectedRPTemplateId, setSelectedRPTemplateId] = useState<string>("");
   const [templateTypeFilter, setTemplateTypeFilter] = useState<string>("all");
   const [targetWorldId, setTargetWorldId] = useState<string>("mist_valley");
   const [variables, setVariables] = useState<Record<string, string>>({});
   const [preview, setPreview] = useState<ScenarioTemplatePreviewResponse | null>(null);
+  const [rpPreview, setRPPreview] = useState<RPScenarioTemplatePreviewResponse | null>(null);
+  const [rpParticipantText, setRPParticipantText] = useState<string>("");
   const [error, setError] = useState<string>("");
   const [message, setMessage] = useState<string>("");
   const [isBusy, setIsBusy] = useState<boolean>(false);
@@ -4797,6 +5451,7 @@ function ScenarioTemplatePanel() {
       : templates.filter((template) => template.template_type === templateTypeFilter);
   const selectedTemplate =
     filteredTemplates.find((template) => template.id === selectedTemplateId) ?? filteredTemplates[0] ?? null;
+  const selectedRPTemplate = rpTemplates.find((template) => template.id === selectedRPTemplateId) ?? rpTemplates[0] ?? null;
 
   useEffect(() => {
     if (!selectedTemplate) {
@@ -4822,10 +5477,14 @@ function ScenarioTemplatePanel() {
     setError("");
     try {
       const response = await fetchScenarioTemplates();
+      const rpResponse = await fetchRPScenarioTemplates();
       setTemplates(response.templates);
+      setRPTemplates(rpResponse.templates);
       setSelectedTemplateId((current) => current || response.templates[0]?.id || "");
+      setSelectedRPTemplateId((current) => current || rpResponse.templates[0]?.id || "");
     } catch (err) {
       setTemplates([]);
+      setRPTemplates([]);
       setError(authoringErrorMessage(err));
     } finally {
       setIsBusy(false);
@@ -4891,6 +5550,50 @@ function ScenarioTemplatePanel() {
   const variableNames = selectedTemplate
     ? Array.from(new Set([...selectedTemplate.required_variables, ...Object.keys(selectedTemplate.optional_variables)]))
     : [];
+  const rpParticipants = rpParticipantText
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  async function handlePreviewRPTemplate() {
+    if (!selectedRPTemplate) {
+      return;
+    }
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await previewRPScenarioTemplate(selectedRPTemplate.id, undefined, rpParticipants);
+      setRPPreview(response);
+      setMessage(response.errors.length ? "RP template preview found blocking issues." : "RP template preview created a safe dialogue draft.");
+    } catch (err) {
+      setRPPreview(null);
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleApplyRPTemplate() {
+    if (!selectedRPTemplate) {
+      return;
+    }
+    if (!confirmDangerousAction(`Apply '${selectedRPTemplate.name}' as an RP dialogue draft? This does not modify GameState.`)) {
+      return;
+    }
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await applyRPScenarioTemplate(selectedRPTemplate.id, undefined, rpParticipants);
+      setRPPreview(response);
+      setMessage("RP scenario draft created. Start the actual scene through Dialogue Mode.");
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
 
   return (
     <section className="mod-manager-panel authoring-zone">
@@ -5041,6 +5744,70 @@ function ScenarioTemplatePanel() {
 
       {message && <p className="muted">{message}</p>}
       <ErrorPanel message={error} />
+      <div className="template-preview">
+        <h3>RP Scenario Templates</h3>
+        <p className="muted">Preview roleplay dialogue drafts. These templates do not write files or modify active saves.</p>
+        {rpTemplates.length > 0 ? (
+          <div className="template-grid">
+            <label>
+              RP template
+              <select value={selectedRPTemplate?.id ?? ""} onChange={(event) => setSelectedRPTemplateId(event.target.value)} disabled={isBusy}>
+                {rpTemplates.map((template) => (
+                  <option key={template.id} value={template.id}>{template.name}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Participant override
+              <input
+                value={rpParticipantText}
+                onChange={(event) => setRPParticipantText(event.target.value)}
+                placeholder={selectedRPTemplate?.required_participants.join(", ") || "npc ids"}
+                disabled={isBusy}
+              />
+            </label>
+            <div>
+              <p className="muted">{selectedRPTemplate?.description}</p>
+              <span className="badge">{selectedRPTemplate?.scene_type}</span>
+              <span className="badge">{selectedRPTemplate?.suggested_dialogue_mode}</span>
+              <span className="badge">{selectedRPTemplate?.suggested_mood}</span>
+            </div>
+          </div>
+        ) : (
+          <EmptyState title="No RP templates available." detail="Add local RP scenario templates under templates/rp." />
+        )}
+        {selectedRPTemplate && (
+          <div className="notice">
+            <strong>Safety notes</strong>
+            <ul>
+              {selectedRPTemplate.safety_notes.map((note) => <li key={note}>{note}</li>)}
+            </ul>
+          </div>
+        )}
+        <div className="authoring-header-actions">
+          <button type="button" onClick={() => void handlePreviewRPTemplate()} disabled={!selectedRPTemplate || isBusy}>
+            Preview RP Draft
+          </button>
+          <button type="button" onClick={() => void handleApplyRPTemplate()} disabled={!selectedRPTemplate || isBusy}>
+            Apply RP Draft
+          </button>
+        </div>
+        {rpPreview && (
+          <div className="authoring-preview-box">
+            <h4>Dialogue draft</h4>
+            <p><span className="muted">Type</span> {rpPreview.draft.scene_type}</p>
+            <p><span className="muted">Participants</span> {rpPreview.draft.participant_ids.join(", ") || "none"}</p>
+            <p><span className="muted">Mode</span> {rpPreview.draft.dialogue_mode}</p>
+            <p><span className="muted">Mood</span> {rpPreview.draft.scene_mood_preset_id || rpPreview.draft.scene_mood}</p>
+            <p><span className="muted">Topics</span> {rpPreview.draft.active_topics.join(", ") || "open"}</p>
+            <p className="muted">{rpPreview.draft.opening_context_summary}</p>
+            <span className="badge">{rpPreview.writes_to_disk ? "writes disk" : "no disk write"}</span>
+            <span className="badge">{rpPreview.modifies_game_state ? "modifies GameState" : "no GameState change"}</span>
+            {rpPreview.warnings.length > 0 && <ItemList emptyText="No warnings." items={rpPreview.warnings.map((warning) => <span key={warning}>{warning}</span>)} />}
+            {rpPreview.errors.length > 0 && <ItemList emptyText="No errors." items={rpPreview.errors.map((item) => <span key={item}>{item}</span>)} />}
+          </div>
+        )}
+      </div>
     </section>
   );
 }

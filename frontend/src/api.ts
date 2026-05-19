@@ -766,6 +766,56 @@ export type ScenarioTemplateApplyResponse = ScenarioTemplatePreviewResponse & {
   applied: boolean;
 };
 
+export type RPScenarioTemplate = {
+  id: string;
+  name: string;
+  description: string;
+  scene_type: string;
+  required_participants: string[];
+  optional_participants: string[];
+  suggested_mood: string;
+  suggested_mood_preset_id?: string | null;
+  suggested_dialogue_mode: string;
+  opening_context: string;
+  allowed_topics: string[];
+  forbidden_topics: string[];
+  required_visible_facts: string[];
+  safety_notes: string[];
+  tags: string[];
+};
+
+export type RPScenarioDraft = {
+  draft_id: string;
+  template_id: string;
+  scene_type: string;
+  participant_ids: string[];
+  focus_npc_id?: string | null;
+  dialogue_mode: string;
+  scene_mood: string;
+  scene_mood_preset_id?: string | null;
+  active_topics: string[];
+  opening_context_summary: string;
+  dialogue_session_draft?: DialogueSession | null;
+  group_scene_draft?: GroupDialogueScene | null;
+};
+
+export type RPScenarioTemplateListResponse = {
+  local_only: boolean;
+  templates: RPScenarioTemplate[];
+};
+
+export type RPScenarioTemplatePreviewResponse = {
+  local_only: boolean;
+  template: RPScenarioTemplate;
+  draft: RPScenarioDraft;
+  warnings: string[];
+  errors: string[];
+  writes_to_disk: boolean;
+  modifies_game_state: boolean;
+  requires_confirmation: boolean;
+  applied: boolean;
+};
+
 export type QuestObjectiveNode = {
   id: string;
   text: string;
@@ -1121,6 +1171,74 @@ export type GameInputResponse = {
   turn: number;
 };
 
+export type DialogueSession = {
+  session_id: string;
+  save_id?: string | null;
+  game_session_id?: string | null;
+  participant_ids: string[];
+  focus_npc_id: string;
+  started_turn: number;
+  last_turn: number;
+  dialogue_mode: string;
+  active_topics: string[];
+  scene_mood_preset_id?: string | null;
+  safe_context_summary: string;
+  status: string;
+};
+
+export type DialogueContext = {
+  npc_known_facts: string[];
+  emotional_summary: string;
+  relationship_tone_summary: string;
+  scene_mood_summary: string;
+  example_dialogue_summaries: string[];
+  rp_memory_summaries: string[];
+  rp_prompt_style_summary: string;
+  safe_context_summary: string;
+};
+
+export type DialogueModeResponse = {
+  dialogue_session: DialogueSession;
+  dialogue_context: DialogueContext;
+  narrative_text: string;
+  visible_state: VisibleState;
+  turn: number;
+  output_ok: boolean;
+  output_issues: string[];
+};
+
+export type GroupDialogueScene = {
+  scene_id: string;
+  game_session_id?: string | null;
+  participant_ids: string[];
+  location_id: string;
+  active_speaker_id: string;
+  turn_order: string[];
+  scene_topic: string;
+  scene_mood: string;
+  scene_mood_preset_id?: string | null;
+  visibility_scope: string;
+  status: string;
+};
+
+export type GroupParticipantContext = {
+  npc_id: string;
+  emotional_summary: string;
+  relationship_tone_summary: string;
+  scene_mood_summary: string;
+  example_dialogue_summaries: string[];
+  rp_prompt_style_summary: string;
+  safe_context_summary: string;
+};
+
+export type GroupDialogueSceneResponse = {
+  scene: GroupDialogueScene;
+  participant_contexts: GroupParticipantContext[];
+  narrative_text: string;
+  visible_state: VisibleState;
+  turn: number;
+};
+
 export type GameStateResponse = {
   session_id: string;
   visible_state: VisibleState;
@@ -1197,6 +1315,21 @@ export type PromptProfileTemperatureOverrides = {
   memory?: number | null;
 };
 
+export type RPPromptProfile = {
+  id: string;
+  name: string;
+  description: string;
+  dialogue_depth: string;
+  emotional_intensity: string;
+  prose_density: string;
+  response_length_policy: string;
+  perspective: string;
+  inner_thought_policy: string;
+  sensuality_policy: string;
+  hidden_fact_policy: string;
+  state_modification_policy: string;
+};
+
 export type PromptProfile = {
   id: string;
   name: string;
@@ -1209,6 +1342,8 @@ export type PromptProfile = {
   memory_prompt_variant: string;
   temperature_overrides: PromptProfileTemperatureOverrides;
   max_output_tokens?: number | null;
+  scene_mood_preset_id?: string | null;
+  rp_profile: RPPromptProfile;
   enabled: boolean;
   matches_current_provider: boolean;
 };
@@ -1317,6 +1452,96 @@ export async function submitPlayerInput(
       session_id: sessionId,
       player_input: playerInput
     })
+  });
+}
+
+export async function startDialogue(
+  gameSessionId: string,
+  focusNpcId: string,
+  dialogueMode = "focused",
+  sceneMoodPresetId?: string
+): Promise<DialogueModeResponse> {
+  return requestJson<DialogueModeResponse>("/game/dialogue/start", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      game_session_id: gameSessionId,
+      focus_npc_id: focusNpcId,
+      dialogue_mode: dialogueMode,
+      scene_mood_preset_id: sceneMoodPresetId || null
+    })
+  });
+}
+
+export async function continueDialogue(
+  dialogueSessionId: string,
+  playerInput: string
+): Promise<DialogueModeResponse> {
+  return requestJson<DialogueModeResponse>("/game/dialogue/continue", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      dialogue_session_id: dialogueSessionId,
+      player_input: playerInput
+    })
+  });
+}
+
+export async function endDialogue(dialogueSessionId: string): Promise<DialogueModeResponse> {
+  return requestJson<DialogueModeResponse>("/game/dialogue/end", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      dialogue_session_id: dialogueSessionId
+    })
+  });
+}
+
+export async function startGroupDialogue(
+  gameSessionId: string,
+  participantIds: string[],
+  sceneTopic = "",
+  sceneMood = "neutral",
+  sceneMoodPresetId?: string
+): Promise<GroupDialogueSceneResponse> {
+  return requestJson<GroupDialogueSceneResponse>("/game/group-dialogue/start", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      game_session_id: gameSessionId,
+      participant_ids: participantIds,
+      scene_topic: sceneTopic,
+      scene_mood: sceneMood,
+      scene_mood_preset_id: sceneMoodPresetId || null
+    })
+  });
+}
+
+export async function selectGroupDialogueNextSpeaker(sceneId: string): Promise<GroupDialogueSceneResponse> {
+  return requestJson<GroupDialogueSceneResponse>("/game/group-dialogue/next-speaker", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ scene_id: sceneId })
+  });
+}
+
+export async function endGroupDialogue(sceneId: string): Promise<GroupDialogueSceneResponse> {
+  return requestJson<GroupDialogueSceneResponse>("/game/group-dialogue/end", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ scene_id: sceneId })
   });
 }
 
@@ -1819,6 +2044,51 @@ export async function applyScenarioTemplate(
   );
 }
 
+export async function fetchRPScenarioTemplates(): Promise<RPScenarioTemplateListResponse> {
+  return requestJson<RPScenarioTemplateListResponse>("/authoring/rp-scenario-templates");
+}
+
+export async function previewRPScenarioTemplate(
+  templateId: string,
+  gameSessionId?: string,
+  participantIds: string[] = []
+): Promise<RPScenarioTemplatePreviewResponse> {
+  return requestJson<RPScenarioTemplatePreviewResponse>(
+    `/authoring/rp-scenario-templates/${encodeURIComponent(templateId)}/preview`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        game_session_id: gameSessionId || null,
+        participant_ids: participantIds
+      })
+    }
+  );
+}
+
+export async function applyRPScenarioTemplate(
+  templateId: string,
+  gameSessionId?: string,
+  participantIds: string[] = []
+): Promise<RPScenarioTemplatePreviewResponse> {
+  return requestJson<RPScenarioTemplatePreviewResponse>(
+    `/authoring/rp-scenario-templates/${encodeURIComponent(templateId)}/apply`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        game_session_id: gameSessionId || null,
+        participant_ids: participantIds,
+        confirm_apply: true
+      })
+    }
+  );
+}
+
 export async function fetchQuestGraph(worldId: string): Promise<QuestGraphResponse> {
   return requestJson<QuestGraphResponse>(
     `/authoring/worlds/${encodeURIComponent(worldId)}/quests/graph`
@@ -2085,6 +2355,95 @@ export async function saveRumorCrimeAuthoring(
         "Content-Type": "application/json"
       },
       body: JSON.stringify({ graph })
+    }
+  );
+}
+
+export type ExampleDialogueVisibility = "prompt_safe" | "authoring_only" | "debug_only" | "unsafe";
+export type ExampleDialogueFactPolicy = "flavor_only" | "may_reference_known_facts" | "unsafe";
+
+export type ExampleDialogueMessage = {
+  speaker: string;
+  text: string;
+};
+
+export type ExampleDialogue = {
+  id: string;
+  character_id: string;
+  source: string;
+  messages: ExampleDialogueMessage[];
+  tags: string[];
+  style_notes: string[];
+  visibility: ExampleDialogueVisibility;
+  fact_policy: ExampleDialogueFactPolicy;
+};
+
+export type ExampleDialogueListResponse = {
+  world_id: string;
+  entries: ExampleDialogue[];
+};
+
+export type ExampleDialoguePreviewResponse = {
+  world_id: string;
+  entries: ExampleDialogue[];
+  yaml_content: string;
+  validation: AuthoringValidation;
+};
+
+export type ExampleDialogueSaveResponse = ExampleDialoguePreviewResponse & {
+  saved: boolean;
+};
+
+export async function fetchExampleDialogues(worldId: string): Promise<ExampleDialogueListResponse> {
+  return requestJson<ExampleDialogueListResponse>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/example-dialogue`
+  );
+}
+
+export async function previewExampleDialogues(
+  worldId: string,
+  entries: ExampleDialogue[]
+): Promise<ExampleDialoguePreviewResponse> {
+  return requestJson<ExampleDialoguePreviewResponse>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/example-dialogue/preview`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ entries })
+    }
+  );
+}
+
+export async function validateExampleDialogues(
+  worldId: string,
+  entries: ExampleDialogue[]
+): Promise<ExampleDialoguePreviewResponse> {
+  return requestJson<ExampleDialoguePreviewResponse>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/example-dialogue/validate`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ entries })
+    }
+  );
+}
+
+export async function saveExampleDialogues(
+  worldId: string,
+  entries: ExampleDialogue[]
+): Promise<ExampleDialogueSaveResponse> {
+  return requestJson<ExampleDialogueSaveResponse>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/example-dialogue`,
+    {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ entries })
     }
   );
 }

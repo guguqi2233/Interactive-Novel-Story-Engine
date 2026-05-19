@@ -7,12 +7,51 @@ from pydantic import BaseModel, Field, ValidationError, field_validator, model_v
 from app.config import Settings, get_settings
 
 PromptVariant = Literal["default", "compact", "structured", "local_model"]
+DialogueDepth = Literal["terse", "balanced", "immersive"]
+EmotionalIntensity = Literal["restrained", "moderate", "heightened"]
+ProseDensity = Literal["lean", "balanced", "lush"]
+ResponseLengthPolicy = Literal["short", "medium", "long", "adaptive"]
+RPPerspective = Literal["second_person", "close_third", "script"]
+InnerThoughtPolicy = Literal["none", "observable_only", "character_limited"]
+SensualityPolicy = Literal["none", "subtle", "moderate"]
+BoundaryPolicy = Literal["deny"]
 
 
 class PromptProfileTemperatureOverrides(BaseModel):
     narrator: float | None = Field(default=None, ge=0.0, le=2.0)
     intent_parser: float | None = Field(default=None, ge=0.0, le=2.0)
     memory: float | None = Field(default=None, ge=0.0, le=2.0)
+
+
+class RPPromptProfile(BaseModel):
+    id: str = Field(default="default_rp", pattern=r"^[A-Za-z0-9_-]+$")
+    name: str = "Default RP"
+    description: str = "Grounded roleplay style that preserves world boundaries."
+    dialogue_depth: DialogueDepth = "balanced"
+    emotional_intensity: EmotionalIntensity = "moderate"
+    prose_density: ProseDensity = "balanced"
+    response_length_policy: ResponseLengthPolicy = "adaptive"
+    perspective: RPPerspective = "second_person"
+    inner_thought_policy: InnerThoughtPolicy = "observable_only"
+    sensuality_policy: SensualityPolicy = "none"
+    hidden_fact_policy: BoundaryPolicy = "deny"
+    state_modification_policy: BoundaryPolicy = "deny"
+
+    @model_validator(mode="after")
+    def validate_rp_boundary(self) -> "RPPromptProfile":
+        if self.hidden_fact_policy != "deny":
+            raise ValueError("RPPromptProfile hidden_fact_policy must be deny")
+        if self.state_modification_policy != "deny":
+            raise ValueError("RPPromptProfile state_modification_policy must be deny")
+        return self
+
+    def style_summary(self) -> str:
+        return (
+            f"rp_profile={self.id}; depth={self.dialogue_depth}; emotion={self.emotional_intensity}; "
+            f"prose={self.prose_density}; length={self.response_length_policy}; perspective={self.perspective}; "
+            f"inner_thought={self.inner_thought_policy}; sensuality={self.sensuality_policy}; "
+            "hidden_fact_policy=deny; state_modification_policy=deny"
+        )
 
 
 class PromptProfile(BaseModel):
@@ -29,6 +68,8 @@ class PromptProfile(BaseModel):
         default_factory=PromptProfileTemperatureOverrides
     )
     max_output_tokens: int | None = Field(default=None, ge=1, le=8192)
+    scene_mood_preset_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_-]+$")
+    rp_profile: RPPromptProfile = Field(default_factory=RPPromptProfile)
     enabled: bool = True
 
     @field_validator("provider_filter", "model_filter")
@@ -49,6 +90,7 @@ class PromptProfile(BaseModel):
                 self.intent_parser_prompt_variant,
                 self.narrator_prompt_variant,
                 self.memory_prompt_variant,
+                self.rp_profile.style_summary(),
             ]
         ).lower()
         forbidden_terms = [
@@ -126,6 +168,17 @@ def default_prompt_profiles() -> list[PromptProfile]:
                 intent_parser=0.0,
                 memory=0.2,
             ),
+            rp_profile=RPPromptProfile(
+                id="grounded_studio",
+                name="Grounded Studio RP",
+                description="Restrained roleplay grounded in visible facts.",
+                dialogue_depth="balanced",
+                emotional_intensity="restrained",
+                prose_density="lean",
+                response_length_policy="adaptive",
+                perspective="second_person",
+                inner_thought_policy="observable_only",
+            ),
         ),
         PromptProfile(
             id="local_story",
@@ -136,6 +189,18 @@ def default_prompt_profiles() -> list[PromptProfile]:
             narrator_style="warm, sensory, concise, never adding facts beyond visible inputs",
             narrator_prompt_variant="local_model",
             temperature_overrides=PromptProfileTemperatureOverrides(narrator=0.6),
+            rp_profile=RPPromptProfile(
+                id="tavern_lite",
+                name="Tavern Lite",
+                description="Warmer character-forward roleplay without relaxing boundaries.",
+                dialogue_depth="immersive",
+                emotional_intensity="moderate",
+                prose_density="balanced",
+                response_length_policy="medium",
+                perspective="second_person",
+                inner_thought_policy="character_limited",
+                sensuality_policy="subtle",
+            ),
         ),
     ]
 

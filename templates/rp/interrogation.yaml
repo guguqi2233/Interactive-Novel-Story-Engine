@@ -1,0 +1,25 @@
+id: interrogation
+name: Interrogation
+description: A tense but bounded interrogation scene.
+scene_type: interrogation
+required_participants:
+  - harlan
+optional_participants: []
+suggested_mood: tense
+suggested_mood_preset_id: mist_tension
+suggested_dialogue_mode: interrogation
+opening_context: The player presses for answers without inventing evidence or forcing a confession.
+allowed_topics:
+  - whereabouts
+  - rumors
+  - contradictions
+forbidden_topics:
+  - mayor_hides_missing_tools
+  - sealed_letter_under_stone
+required_visible_facts: []
+safety_notes:
+  - Do not reveal hidden facts unless the game state has made them visible.
+  - Relationship or quest changes require rule-produced StateDelta.
+tags:
+  - tension
+  - dialogue
