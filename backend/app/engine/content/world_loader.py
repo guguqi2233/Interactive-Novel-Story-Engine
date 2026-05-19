@@ -66,12 +66,26 @@ class LocationVisualDef(BaseModel):
     x: float = Field(default=0.0, allow_inf_nan=False)
     y: float = Field(default=0.0, allow_inf_nan=False)
     region_id: str | None = None
+    layer_id: str | None = None
     icon: str | None = None
     color_tag: str | None = None
     display_group: str | None = None
     notes: str | None = None
     visibility: MapVisibility = MapVisibility.PUBLIC
     tags: list[str] = Field(default_factory=list)
+
+
+class MapVisualRegion(BaseModel):
+    id: str
+    name: str = ""
+    layer_id: str | None = None
+    color_tag: str | None = None
+
+
+class MapVisualLayer(BaseModel):
+    id: str
+    name: str = ""
+    order: int = 0
 
 
 class MapVisualNode(BaseModel):
@@ -81,6 +95,7 @@ class MapVisualNode(BaseModel):
     x: float = Field(default=0.0, allow_inf_nan=False)
     y: float = Field(default=0.0, allow_inf_nan=False)
     region_id: str | None = None
+    layer_id: str | None = None
     tags: list[str] = Field(default_factory=list)
     visibility: MapVisibility = MapVisibility.PUBLIC
     icon: str | None = None
@@ -94,11 +109,28 @@ class MapVisualEdge(BaseModel):
     edge_type: MapVisualEdgeType = MapVisualEdgeType.EXIT
     label: str
     visibility: MapVisibility = MapVisibility.PUBLIC
+    travel_cost: int = Field(default=1, ge=0)
+    discovery_rules: list[str] = Field(default_factory=list)
+    unlock_condition: str | None = None
+
+
+class LocationExitVisualDef(BaseModel):
+    target_location_id: str | None = None
+    edge_type: MapVisualEdgeType = MapVisualEdgeType.EXIT
+    visibility: MapVisibility = MapVisibility.PUBLIC
+    travel_cost: int = Field(default=1, ge=0)
+    discovery_rules: list[str] = Field(default_factory=list)
+    unlock_condition: str | None = None
 
 
 class MapVisualGraph(BaseModel):
     nodes: list[MapVisualNode] = Field(default_factory=list)
     edges: list[MapVisualEdge] = Field(default_factory=list)
+    regions: list[MapVisualRegion] = Field(default_factory=list)
+    layers: list[MapVisualLayer] = Field(default_factory=list)
+    conditional_edges: list[MapVisualEdge] = Field(default_factory=list)
+    locked_edges: list[MapVisualEdge] = Field(default_factory=list)
+    hidden_edges: list[MapVisualEdge] = Field(default_factory=list)
 
 
 class LocationDef(BaseModel):
@@ -110,6 +142,7 @@ class LocationDef(BaseModel):
     cover_level: int = Field(default=0, ge=0)
     light_level: int = Field(default=5, ge=0)
     visual: LocationVisualDef | None = None
+    exit_metadata: dict[str, LocationExitVisualDef] = Field(default_factory=dict)
 
 
 class NPCDef(BaseModel):
@@ -176,11 +209,21 @@ class ItemDef(BaseModel):
         return self
 
 
+class QuestObjectiveDef(BaseModel):
+    id: str
+    text: str | None = None
+    visibility: QuestVisibility = QuestVisibility.PUBLIC
+    hidden_authoring_note: str | None = None
+
+
+QuestObjectiveEntry = QuestObjectiveDef | str
+
+
 class QuestStageDef(BaseModel):
     id: str
     title: str
     description: str = ""
-    objectives: list[str] = Field(default_factory=list)
+    objectives: list[QuestObjectiveEntry] = Field(default_factory=list)
     next_stages: list[str] = Field(default_factory=list)
     failure_stages: list[str] = Field(default_factory=list)
     alternate_stages: list[str] = Field(default_factory=list)
@@ -280,6 +323,9 @@ class RelationshipDef(BaseModel):
     obligation: int = 0
     tags: list[str] = Field(default_factory=list)
     known_by_player: bool = False
+    hidden_relationship: bool = False
+    hidden_authoring_note: str | None = None
+    tone_preset: str | None = None
 
     def relationship_id(self) -> str:
         return self.id or f"{self.source_id}:{self.relation_type}:{self.target_id}"
@@ -342,7 +388,7 @@ class WorldPack(BaseModel):
                         id=stage.id,
                         title=stage.title,
                         description=stage.description,
-                        objectives=stage.objectives,
+                        objectives=_runtime_visible_quest_objectives(stage.objectives),
                         next_stages=stage.next_stages,
                     )
                     for stage in quest.stages
@@ -498,6 +544,18 @@ def _runtime_visible_exits(location: LocationDef, locations: list[LocationDef]) 
             continue
         visible_exits[label] = target_id
     return visible_exits
+
+
+def _runtime_visible_quest_objectives(objectives: list[QuestObjectiveEntry]) -> list[str]:
+    visible: list[str] = []
+    for objective in objectives:
+        if isinstance(objective, str):
+            visible.append(objective)
+            continue
+        if objective.visibility == QuestVisibility.HIDDEN:
+            continue
+        visible.append(objective.id)
+    return visible
 
 
 class WorldLoader:
@@ -679,9 +737,9 @@ class WorldLoader:
                             f"{alternate_stage}"
                         )
             objective_ids = {
-                objective_id
+                objective if isinstance(objective, str) else objective.id
                 for stage in quest.stages
-                for objective_id in stage.objectives
+                for objective in stage.objectives
             }
             for trigger in quest.triggers:
                 if trigger.type == QuestTriggerType.FACT_DISCOVERED and trigger.id not in fact_ids:

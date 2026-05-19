@@ -242,6 +242,60 @@ outcomes, or write `GameState` from model text.
 
 Principle: expression is flexible; facts are controlled.
 
+## v1.2 Visual Authoring Pro Scope
+
+v1.2 is Visual Authoring Pro. It expands the local studio from individual
+authoring panels into a broader visual content workflow while preserving the
+same world authority boundary.
+
+Included scope:
+
+- Authoring Pro Boundary Contract and policy checks.
+- Shared Authoring Validation Gate for save/import/merge/export/apply flows.
+- Visual Map Editor Pro with regions, layers, locked/hidden/conditional edges,
+  travel cost, discovery rules, validation, impact, and diff preview.
+- Quest Graph Editor Pro with quest/stage/objective/trigger/reward/consequence
+  nodes, optional/failure paths, hidden objective fields, and deterministic
+  scenario regression draft generation.
+- NPC Relationship Graph Editing with trust, fear, affinity, obligation,
+  hidden relationships, relationship type, and RP tone preview fields.
+- Faction Conflict Editor with faction nodes, alliance/hostility/conflict
+  edges, alert levels, visibility fields, and conflict tags.
+- Rumor / Crime Consequence Graph Pro with trigger, witness, crime, rumor,
+  reputation effect, NPC reaction, quest effect, delay/cooldown, and dedupe
+  fields.
+- Item / Economy Editor Pro with item nodes, merchants, shop inventory edges,
+  price modifier fields, stolen item policy, quest reward links, and balance
+  warnings.
+- RP Character Authoring UI Pro with character-card import preview,
+  RP/voice/profile editing, default emotion, example dialogue management, safe
+  export, and hidden/private field checks.
+- Dialogue Scene Editor and Group RP Scene Authoring for reusable scene
+  templates.
+- Character Pack Builder with safe local export, dry-run import, explicit
+  apply, validation, path traversal rejection, script rejection, and hidden fact
+  exclusion by default.
+- Template Wizard for deterministic world/location/quest/NPC/RP/faction/mystery
+  template drafts.
+- World Branch Merge Assistant and Content Diff Review.
+- Authoring Workflow Presets.
+- Local Content Library.
+- Reference Picker / ReferenceIndex.
+- Authoring Undo / Draft History.
+- v1.2 integration regression tests and boundary/security audit docs.
+
+v1.2 authoring tools are content-pack editors. Preview and validate do not write
+disk. Save writes world-pack or package files only after validation and explicit
+save. Restore from draft history returns draft content and still requires
+validation before save. None of these tools modifies active `GameState`, active
+dialogue sessions, or active saves.
+
+v1.2 does not add LLM authority. Visual editors do not call an LLM to generate
+maps, quests, relationships, faction conflict, rumors, crime consequences,
+prices, dialogue scene facts, hidden facts, merge resolutions, diff summaries,
+or templates. RP authoring does not allow imported prompt text, prompt profiles,
+or RP profiles to widen hidden-fact or state-write permissions.
+
 ## RP And World Engine Boundary
 
 The RP layer is above the world engine. It reads safe context from structured
@@ -383,6 +437,12 @@ compatibility checks, dry-run, and explicit apply. Supported package types are
 world, mod, save bundle, template pack, and scenario suite. Package import
 must not execute code, auto-overwrite content, or bypass validation/migration.
 
+v1.2 adds character-pack import/export and local library import/export surfaces.
+These remain local authoring flows. They must reject path traversal, executable
+files, remote URLs, API keys, secret configuration, and arbitrary code. They do
+not automatically write imported character cards, templates, or packages into
+the active world without dry-run/validation/explicit apply.
+
 ## Save Migration Model
 
 Saves carry engine/schema/world/content metadata and migration history. The
@@ -419,6 +479,12 @@ event logging, provider abstraction, or content-only mod restrictions.
 - Do not let quest graph editing bypass `quests.yaml` validation.
 - Do not let visual map, NPC goal, social graph, item/economy, rumor/crime, or
   validation graph tools bypass content validation.
+- Do not let v1.2 visual editors bypass the Authoring Validation Gate.
+- Do not treat an authoring draft, restored draft history snapshot, merge draft,
+  diff review, template preview, or character-pack dry run as active
+  `GameState`.
+- Do not let ReferenceIndex or authoring normal views leak hidden details into
+  player UI or ordinary RP/narrator prompts.
 - Do not let import/export install archives without path, type, manifest, and
   validation checks.
 - Do not let advanced packages skip checksum validation before apply.
@@ -481,6 +547,27 @@ event logging, provider abstraction, or content-only mod restrictions.
 - Cloud sync, accounts, multiplayer roleplay, or hosted RP service.
 - Automatic application of untrusted external content to active worlds or
   active saves.
+
+## Not In v1.2
+
+- LLM world judge or LLM-generated authoritative content for maps, quests,
+  relationships, factions, economy, consequences, templates, merge decisions, or
+  diffs.
+- LLM direct `GameState` mutation.
+- Visual editor direct edits to active `GameState`, active dialogue sessions,
+  or active saves.
+- Visual editor save that bypasses validation or the Authoring Validation Gate.
+- Arbitrary code plugins, template scripts, package scripts, or executable
+  imported content.
+- Online marketplace, cloud sync, accounts, remote publishing, or multiplayer
+  collaboration.
+- Automatic overwrite of user world packs or active worlds.
+- Automatic import of external character cards/templates into active worlds.
+- Prompt Profile or RP Profile expansion of LLM authority.
+- Editor access to `.env`, API keys, databases, logs, or arbitrary system
+  files.
+- Complex automatic layout, full Git replacement, full conflict auto-resolution,
+  large-scale social/war simulation, or automatic content repair.
 
 ## v1.0 Known Limitations
 

@@ -9,10 +9,10 @@ This project is for local personal use. It is not designed as a hosted service.
 
 ## Current Version Scope
 
-v1.1 is the Roleplay Immersion Layer on top of the v1.0 Stable Local Studio
-Edition. v1.0 freezes the local contracts built through the v0.x series, and
-v1.1 adds character voice, dialogue, group RP, roleplay imports, RP-safe memory,
-and RP regression checks without changing world authority:
+v1.2 is Visual Authoring Pro on top of the v1.1 Roleplay Immersion Layer and
+the v1.0 Stable Local Studio Edition. v1.0 freezes the local contracts built
+through the v0.x series, v1.1 adds character voice and RP-safe dialogue, and
+v1.2 expands local visual authoring without changing world authority:
 
 - Multi-world content packs.
 - Structured `GameState`, `StateDelta`, `EventLog`, and SQLite save/load.
@@ -90,10 +90,25 @@ and RP regression checks without changing world authority:
 - RP Scenario Templates.
 - RP Boundary Evals and RP Regression Playtests.
 - Frontend RP / Dialogue panels.
+- Authoring Pro Boundary Contract.
+- Authoring Validation Gate.
+- Visual Map Editor Pro and Quest Graph Editor Pro.
+- NPC Relationship Graph Editing and Faction Conflict Editor.
+- Rumor / Crime Consequence Graph Pro.
+- Item / Economy Editor Pro.
+- RP Character Authoring UI Pro.
+- Dialogue Scene Editor and Group RP Scene Authoring.
+- Character Pack Builder.
+- Template Wizard.
+- World Branch Merge Assistant and Content Diff Review.
+- Authoring Workflow Presets.
+- Local Content Library.
+- Reference Picker / ReferenceIndex.
+- Authoring Draft History.
 
 The LLM is still not the world judge. Rule outcomes are decided by local code.
 
-## v1.0 Documentation Map
+## v1.2 Documentation Map
 
 - `docs/SPEC.md`: project scope, boundaries, and known limitations.
 - `docs/WORLD_ENGINE.md`: engine behavior, rules, state, events, authoring,
@@ -101,7 +116,13 @@ The LLM is still not the world judge. Rule outcomes are decided by local code.
 - `docs/LLM_PROTOCOL.md`: provider boundary, prompt/profile rules, and why LLM
   output cannot directly change `GameState`.
 - `docs/ROLEPLAY_BOUNDARY.md`: v1.1 RP expression/fact boundary.
+- `docs/AUTHORING_BOUNDARY.md`: v1.2 authoring draft/preview/validate/save
+  boundary.
 - `docs/CONTENT_PACKS.md`: content pack format and authoring notes.
+- `docs/V1_2_ROADMAP.md`: v1.2 Visual Authoring Pro roadmap.
+- `docs/V1_2_LLM_BOUNDARY_AUDIT.md`: v1.2 LLM permission audit.
+- `docs/V1_2_VISIBILITY_AUTHORING_RP_AUDIT.md`: v1.2 visibility/RP audit.
+- `docs/V1_2_SECURITY_AUDIT.md`: v1.2 security/import/package audit.
 - `docs/V1_0_CONTENT_SCHEMA_CONTRACT.md`: frozen v1.0 content schema contract.
 - `docs/V1_0_API_CONTRACT.md`: frozen v1.0 API contract.
 - `docs/V1_0_SAVE_MIGRATION_GUARANTEE.md`: migration guarantees and matrix.
@@ -429,6 +450,204 @@ v0.8 adds lightweight local world branches and structured diff:
 Branches copy only whitelisted world YAML under `worlds/.branches/...`.
 Diff reports added/removed/changed entities, broken references, migration
 impacts, and visibility risks. It does not modify active sessions or saves.
+
+## v1.2 Visual Authoring Pro Workflow
+
+Enable authoring locally:
+
+```powershell
+$env:ENABLE_AUTHORING_API = "true"
+```
+
+All v1.2 editors are local content-pack tools. Preview and validate do not
+write disk. Save writes YAML/package files only after validation and explicit
+save. Editors do not modify active `GameState`, active sessions, active saves,
+or prompt permissions.
+
+### Visual Map Editor Pro
+
+Use the frontend Authoring workspace Map Editor, or call:
+
+```text
+GET  /authoring/worlds/{world_id}/map
+POST /authoring/worlds/{world_id}/map/preview
+POST /authoring/worlds/{world_id}/map/validate
+PUT  /authoring/worlds/{world_id}/map
+```
+
+It supports regions, layers, node coordinates, location nodes, exits, locked,
+hidden, conditional, one-way edges, travel cost, discovery rules, validation
+issues, and diff/impact preview. Hidden path data stays out of player maps.
+
+### Quest Graph Editor Pro
+
+Use the frontend Quest Graph panel, or call:
+
+```text
+GET  /authoring/worlds/{world_id}/quests/graph
+POST /authoring/worlds/{world_id}/quests/graph/preview
+POST /authoring/worlds/{world_id}/quests/graph/validate
+PUT  /authoring/worlds/{world_id}/quests/graph
+POST /authoring/worlds/{world_id}/quests/graph/scenario-draft
+```
+
+It edits quest, stage, objective, trigger, reward, consequence, optional path,
+failure path, and hidden objective data. Scenario drafts are deterministic
+testing drafts, not active quest state.
+
+### NPC Relationship Editor And Faction Conflict Editor
+
+Use the Social Graph editor:
+
+```text
+GET  /authoring/worlds/{world_id}/social/graph
+POST /authoring/worlds/{world_id}/social/graph/preview
+POST /authoring/worlds/{world_id}/social/graph/validate
+PUT  /authoring/worlds/{world_id}/social/graph
+```
+
+It edits NPC relationship values, hidden relationships, relation type, RP tone
+presets, faction visibility, alert levels, conflict levels, relation edges, and
+conflict tags. Player social graphs remain filtered.
+
+### RP Character Authoring UI Pro
+
+Use the RP Character Editor panel, or call:
+
+```text
+GET  /authoring/worlds/{world_id}/rp/characters/pro
+POST /authoring/worlds/{world_id}/rp/characters/pro/import-preview
+POST /authoring/worlds/{world_id}/rp/characters/pro/preview
+POST /authoring/worlds/{world_id}/rp/characters/pro/validate
+PUT  /authoring/worlds/{world_id}/rp/characters/pro
+POST /authoring/worlds/{world_id}/rp/characters/pro/safe-export
+```
+
+It edits NPC base fields, RP Profile, Voice Profile, default emotional state,
+example dialogue refs, lorebook links, scene mood preferences, import reports,
+and safe exports. Unsafe external prompt text is rejected or quarantined.
+
+### Dialogue Scene Editor And Group RP Scene Authoring
+
+Use the scene authoring panels, or call:
+
+```text
+GET  /authoring/worlds/{world_id}/dialogue-scenes
+POST /authoring/worlds/{world_id}/dialogue-scenes/preview
+POST /authoring/worlds/{world_id}/dialogue-scenes/validate
+PUT  /authoring/worlds/{world_id}/dialogue-scenes
+GET  /authoring/worlds/{world_id}/group-rp-scenes
+POST /authoring/worlds/{world_id}/group-rp-scenes/preview
+POST /authoring/worlds/{world_id}/group-rp-scenes/validate
+PUT  /authoring/worlds/{world_id}/group-rp-scenes
+```
+
+These save reusable templates. They do not start active dialogue/group sessions
+and do not call the LLM to generate scene facts.
+
+### Character Pack Builder
+
+Character packs bundle reusable NPC/RP/voice/example/dialogue/group-scene/lore
+content:
+
+```text
+POST /authoring/character-packs/export
+POST /authoring/character-packs/import-dry-run
+POST /authoring/character-packs/import-apply
+```
+
+Import apply requires explicit confirmation and validation. Packs reject path
+traversal, executable files, API keys, remote URLs, and script-like payloads.
+
+### Template Wizard
+
+Template Wizard creates deterministic drafts:
+
+```text
+POST /authoring/template-wizard/preview
+POST /authoring/template-wizard/validate
+POST /authoring/template-wizard/apply
+```
+
+Supported draft types include world, location cluster, questline, NPC set,
+character pack, dialogue scene, group RP scene, faction conflict, and mystery
+case. Templates are data only; they do not execute scripts.
+
+### Merge Assistant / Diff Review
+
+Use Merge Assistant for local branch conflict review:
+
+```text
+POST /authoring/worlds/{world_id}/merge/preview
+POST /authoring/worlds/{world_id}/merge/validate
+POST /authoring/worlds/{world_id}/merge/save
+```
+
+Use Diff Review for unified content diff summaries:
+
+```text
+POST /authoring/diff/review
+```
+
+These tools do not auto-resolve conflicts with an LLM. Save requires explicit
+confirmation and validation.
+
+### Local Content Library
+
+Use the Local Content Library page, or call:
+
+```text
+GET  /library/items
+GET  /library/items/{id}
+POST /library/items/{id}/validate
+POST /library/import
+POST /library/export
+POST /library/duplicate
+```
+
+It manages local worlds, character packs, template packs, scenario suites,
+prompt profiles, RP profiles, and mods. It rejects path traversal and does not
+execute package code.
+
+### Reference Picker
+
+The common Reference Picker is backed by:
+
+```text
+GET /authoring/worlds/{world_id}/references
+```
+
+It returns authoring-safe metadata for locations, NPCs, items, facts, quests,
+quest stages, factions, relationships, rumors, crime types, RP profiles, scene
+moods, and prompt profiles. Hidden refs are marked and are not exposed through
+player APIs.
+
+### Draft History
+
+Draft History stores local authoring snapshots only:
+
+```text
+GET    /authoring/drafts
+POST   /authoring/drafts/snapshot
+POST   /authoring/drafts/compare
+POST   /authoring/drafts/{draft_id}/restore
+DELETE /authoring/drafts/{draft_id}
+```
+
+Restored drafts still require validation before save. Draft history rejects API
+keys and raw env/config-like content.
+
+### Authoring Validation Gate
+
+The Authoring Validation Gate is a backend service used by visual editor saves,
+world export/import, package apply, and merge save flows. There is no separate
+manual CLI command for the gate; run it through normal authoring save/import
+paths, or use validation-oriented tests:
+
+```powershell
+python -m pytest backend/tests/test_authoring_validation_gate.py
+python -m pytest backend/tests/test_v12_visual_authoring_pro_integration.py
+```
 
 ## Choose a World
 

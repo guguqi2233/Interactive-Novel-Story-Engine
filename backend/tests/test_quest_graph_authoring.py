@@ -8,7 +8,10 @@ from app.core.world_state import QuestVisibility
 from app.db.repository import SQLiteSaveRepository
 from app.engine.content.authoring_service import ContentAuthoringService
 from app.engine.content.quest_graph import (
+    QuestConsequenceNode,
+    QuestObjectiveNode,
     QuestRewardNode,
+    generate_scenario_regression_draft,
     parse_quest_graph,
     preview_quest_graph,
     quest_graph_to_yaml,
@@ -63,6 +66,31 @@ def test_quest_graph_roundtrip_preserves_rewards_and_failure_paths(tmp_path: Pat
     assert reparsed_quest.stages[0].failure_stages == [quest.stages[1].id]
     assert reparsed_quest.stages[0].alternate_stages == [quest.stages[1].id]
     assert any(edge.type == "failure_path" for edge in reparsed.edges)
+
+
+def test_quest_graph_roundtrip_preserves_hidden_objective_and_consequences(tmp_path: Path) -> None:
+    worlds_root = _copy_world(tmp_path)
+    service = ContentAuthoringService(worlds_root)
+    graph = parse_quest_graph("mist_valley", service)
+    graph.quests[0].stages[0].objectives.append(
+        QuestObjectiveNode(
+            id="secret_objective",
+            text="Secret Objective",
+            visibility="hidden",
+            hidden_authoring_note="Authoring-only clue.",
+        )
+    )
+    graph.quests[0].consequences.append(
+        QuestConsequenceNode(id="bad_ending", text="The culprit escapes.", consequence_type="failure")
+    )
+
+    reparsed = quest_yaml_to_graph("mist_valley", quest_graph_to_yaml(graph))
+    objective = reparsed.quests[0].stages[0].objectives[-1]
+
+    assert objective.id == "secret_objective"
+    assert objective.visibility == "hidden"
+    assert objective.hidden_authoring_note == "Authoring-only clue."
+    assert reparsed.quests[0].consequences[0].id == "bad_ending"
 
 
 def test_invalid_edge_is_caught_by_validation(tmp_path: Path) -> None:
@@ -120,6 +148,63 @@ def test_hidden_quest_not_in_player_visible_state(tmp_path: Path) -> None:
     visible = build_visible_state(state)
 
     assert [quest.id for quest in visible.quests] == ["missing_tools"]
+
+
+def test_hidden_objective_not_in_player_visible_quest(tmp_path: Path) -> None:
+    worlds_root = _copy_world(tmp_path)
+    quests_path = worlds_root / "mist_valley" / "quests.yaml"
+    content = quests_path.read_text(encoding="utf-8")
+    content = content.replace(
+        "          - talk_to_harlan",
+        "          - talk_to_harlan\n"
+        "          - id: secret_followup\n"
+        "            text: Secret Followup\n"
+        "            visibility: hidden\n"
+        "            hidden_authoring_note: Do not show this objective.",
+    )
+    quests_path.write_text(content, encoding="utf-8")
+    from app.engine.content.world_loader import WorldLoader
+
+    state = WorldLoader(worlds_root).load("mist_valley").to_game_state()
+    visible = build_visible_state(state)
+    missing_tools = next(quest for quest in visible.quests if quest.id == "missing_tools")
+
+    assert [objective.id for objective in missing_tools.objectives] == ["talk_to_harlan"]
+    assert "secret_followup" not in visible.model_dump_json()
+
+
+def test_generated_scenario_regression_draft_is_valid(tmp_path: Path) -> None:
+    worlds_root = _copy_world(tmp_path)
+    service = ContentAuthoringService(worlds_root)
+    graph = parse_quest_graph("mist_valley", service)
+    scenario = generate_scenario_regression_draft("mist_valley", graph)
+    from app.scenarios.authoring import ScenarioAuthoringService
+
+    report = ScenarioAuthoringService(tmp_path / "scenarios", worlds_root).validate_scenario(scenario)
+
+    assert scenario.world_id == "mist_valley"
+    assert scenario.expected_quest_states == {"missing_tools": "active"}
+    assert report.ok
+
+
+def test_quest_graph_authoring_does_not_modify_active_game_state(tmp_path: Path) -> None:
+    worlds_root = _copy_world(tmp_path)
+    app.state.session_store = InMemorySessionStore()
+    app.state.save_repository = SQLiteSaveRepository(tmp_path / "quest_graph_state.db")
+    app.state.worlds_root = worlds_root
+    app.state.settings = Settings(enable_authoring_api=True, llm_provider="mock")
+    client = TestClient(app)
+
+    session = client.post("/game/start", json={"world_id": "mist_valley"}).json()
+    before = client.get(f"/game/state/{session['session_id']}").json()["visible_state"]
+    graph_payload = client.get("/authoring/worlds/mist_valley/quests/graph").json()
+    graph_payload["quests"][0]["stages"][0]["title"] = "Draft Only Stage Title"
+
+    preview = client.post("/authoring/worlds/mist_valley/quests/graph/preview", json={"graph": graph_payload})
+    after = client.get(f"/game/state/{session['session_id']}").json()["visible_state"]
+
+    assert preview.status_code == 200
+    assert after == before
 
 
 def test_quest_graph_preview_api_does_not_write_disk(tmp_path: Path) -> None:

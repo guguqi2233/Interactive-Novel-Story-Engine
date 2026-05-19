@@ -7,6 +7,7 @@ from app.config import Settings
 from app.db.repository import SQLiteSaveRepository
 from app.engine.content.authoring_service import ContentAuthoringService
 from app.engine.content.item_economy_authoring import (
+    balance_check_item_economy_authoring,
     item_economy_to_yaml,
     parse_item_economy_authoring,
     preview_item_economy_authoring,
@@ -39,6 +40,12 @@ def test_items_yaml_parses_to_item_economy_authoring_graph(tmp_path: Path) -> No
     assert [item.id for item in graph.items] == ["notice_board", "anvil", "sealed_letter", "iron_nails"]
     assert graph.merchants[0].npc_id == "harlan"
     assert graph.merchants[0].shop_inventory == ["iron_nails"]
+    assert graph.item_nodes[0].id == "notice_board"
+    assert graph.merchant_nodes[0].npc_id == "harlan"
+    assert graph.shop_inventory_edges[0].merchant_id == "harlan"
+    assert graph.shop_inventory_edges[0].item_id == "iron_nails"
+    assert graph.shop_inventory_edges[0].buy_price == 2
+    assert graph.shop_inventory_edges[0].sell_price == 1
 
 
 def test_item_economy_roundtrip_preserves_price_fields(tmp_path: Path) -> None:
@@ -52,6 +59,22 @@ def test_item_economy_roundtrip_preserves_price_fields(tmp_path: Path) -> None:
 
     assert "base_price: 17" in yaml_contents["items.yaml"]
     assert "rarity: rare" in yaml_contents["items.yaml"]
+
+
+def test_item_economy_graph_roundtrip_preserves_shop_edges(tmp_path: Path) -> None:
+    worlds_root = _copy_world(tmp_path)
+    service = ContentAuthoringService(worlds_root)
+    graph = parse_item_economy_authoring("mist_valley", service)
+    graph.merchants[0].shop_inventory.append("sealed_letter")
+    graph.items[2].hidden = False
+    graph.items[2].discovered_by = ["player"]
+
+    yaml_contents = item_economy_to_yaml("mist_valley", graph, service)
+    service.write_files("mist_valley", yaml_contents, confirm_warnings=True)
+    reparsed = parse_item_economy_authoring("mist_valley", service)
+
+    assert any(edge.item_id == "sealed_letter" for edge in reparsed.shop_inventory_edges)
+    assert reparsed.price_modifier_fields["harlan"]["buy_price_modifier"] == 1.0
 
 
 def test_invalid_item_ownership_conflict_is_caught(tmp_path: Path) -> None:
@@ -91,6 +114,20 @@ def test_negative_price_is_caught(tmp_path: Path) -> None:
     assert any(issue.code == "item_negative_base_price" or "base_price" in issue.path for issue in preview.validation.errors)
 
 
+def test_arbitrage_warning_is_available_for_authoring_balance_check(tmp_path: Path) -> None:
+    worlds_root = _copy_world(tmp_path)
+    service = ContentAuthoringService(worlds_root)
+    graph = parse_item_economy_authoring("mist_valley", service)
+    graph.merchants[0].buy_price_modifier = 0.5
+    graph.merchants[0].sell_price_modifier = 1.0
+
+    preview = balance_check_item_economy_authoring("mist_valley", graph, service)
+
+    assert preview.validation.ok
+    assert any(issue.code == "economy_arbitrage_risk" for issue in preview.validation.warnings)
+    assert any(warning.code == "economy_arbitrage_risk" for warning in preview.graph.balance_warnings)
+
+
 def test_hidden_item_does_not_enter_player_shop_ui(tmp_path: Path) -> None:
     worlds_root = _copy_world(tmp_path)
     state = WorldLoader(worlds_root).load("mist_valley").to_game_state()
@@ -98,6 +135,18 @@ def test_hidden_item_does_not_enter_player_shop_ui(tmp_path: Path) -> None:
     inventory = get_shop_inventory(state, "harlan")
 
     assert all(item.id != "sealed_letter" for item in inventory)
+
+
+def test_hidden_item_in_authoring_shop_is_blocked(tmp_path: Path) -> None:
+    worlds_root = _copy_world(tmp_path)
+    service = ContentAuthoringService(worlds_root)
+    graph = parse_item_economy_authoring("mist_valley", service)
+    graph.merchants[0].shop_inventory.append("sealed_letter")
+
+    preview = preview_item_economy_authoring("mist_valley", graph, service)
+
+    assert not preview.validation.ok
+    assert any(issue.code == "hidden_item_in_player_shop" for issue in preview.validation.errors)
 
 
 def test_item_economy_preview_api_does_not_write_files(tmp_path: Path) -> None:
@@ -114,6 +163,36 @@ def test_item_economy_preview_api_does_not_write_files(tmp_path: Path) -> None:
     assert response.json()["validation"]["ok"] is True
     assert (worlds_root / "mist_valley" / "items.yaml").read_text(encoding="utf-8") == items_before
     assert (worlds_root / "mist_valley" / "npcs.yaml").read_text(encoding="utf-8") == npcs_before
+
+
+def test_item_economy_draft_does_not_modify_active_game_state(tmp_path: Path) -> None:
+    worlds_root = _copy_world(tmp_path)
+    service = ContentAuthoringService(worlds_root)
+    active_state = WorldLoader(worlds_root).load("mist_valley").to_game_state()
+    graph = parse_item_economy_authoring("mist_valley", service)
+    graph.items[3].base_price = 99
+    graph.merchants[0].shop_inventory = []
+
+    preview = preview_item_economy_authoring("mist_valley", graph, service)
+
+    assert preview.validation.ok
+    assert active_state.objects["iron_nails"].base_price == 2
+    assert active_state.npcs["harlan"].shop_inventory == ["iron_nails"]
+
+
+def test_item_economy_balance_check_api_reports_arbitrage_warning(tmp_path: Path) -> None:
+    worlds_root = _copy_world(tmp_path)
+    client = _client(tmp_path, worlds_root)
+    graph_payload = client.get("/authoring/worlds/mist_valley/economy").json()
+    graph_payload["merchants"][0]["buy_price_modifier"] = 0.5
+    graph_payload["merchants"][0]["sell_price_modifier"] = 1.0
+
+    response = client.post("/authoring/worlds/mist_valley/economy/balance-check", json={"graph": graph_payload})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert any(issue["code"] == "economy_arbitrage_risk" for issue in payload["validation"]["warnings"])
+    assert any(warning["code"] == "economy_arbitrage_risk" for warning in payload["graph"]["balance_warnings"])
 
 
 def test_item_economy_save_uses_validation(tmp_path: Path) -> None:

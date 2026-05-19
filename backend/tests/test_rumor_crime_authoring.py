@@ -49,6 +49,10 @@ def test_consequence_graph_can_be_generated(tmp_path: Path) -> None:
 
     assert preview.validation.ok
     assert "rumors.yaml" in preview.yaml_contents
+    assert preview.graph.trigger_nodes
+    assert preview.graph.witness_nodes
+    assert preview.graph.npc_reaction_nodes
+    assert preview.graph.impact_summary["rumors"] >= 1
 
 
 def test_invalid_fact_id_is_caught(tmp_path: Path) -> None:
@@ -61,6 +65,30 @@ def test_invalid_fact_id_is_caught(tmp_path: Path) -> None:
 
     assert not preview.validation.ok
     assert any(issue.code == "rumor_missing_fact" for issue in preview.validation.errors)
+
+
+def test_missing_faction_ref_is_caught(tmp_path: Path) -> None:
+    worlds_root = _copy_world(tmp_path)
+    service = ContentAuthoringService(worlds_root)
+    graph = parse_rumor_crime_authoring("mist_valley", service)
+    graph.reputation_effects[0].faction_id = "missing_faction"
+
+    preview = preview_rumor_crime_authoring("mist_valley", graph, service)
+
+    assert not preview.validation.ok
+    assert any(issue.code == "reputation_effect_missing_faction" for issue in preview.validation.errors)
+
+
+def test_missing_dedupe_key_warning(tmp_path: Path) -> None:
+    worlds_root = _copy_world(tmp_path)
+    service = ContentAuthoringService(worlds_root)
+    graph = parse_rumor_crime_authoring("mist_valley", service)
+    graph.rumors[0].dedupe_key = None
+
+    preview = preview_rumor_crime_authoring("mist_valley", graph, service)
+
+    assert preview.validation.ok
+    assert any(issue.code == "consequence_missing_dedupe_key" for issue in preview.validation.warnings)
 
 
 def test_hidden_fact_text_leakage_is_warned(tmp_path: Path) -> None:
@@ -121,6 +149,21 @@ def test_rumor_crime_preview_api_does_not_write_files(tmp_path: Path) -> None:
     assert response.status_code == 200
     assert response.json()["validation"]["ok"] is True
     assert (worlds_root / "mist_valley" / "rumors.yaml").read_text(encoding="utf-8") == rumors_before
+
+
+def test_rumor_crime_authoring_does_not_modify_active_game_state(tmp_path: Path) -> None:
+    worlds_root = _copy_world(tmp_path)
+    client = _client(tmp_path, worlds_root)
+    session = client.post("/game/start", json={"world_id": "mist_valley"}).json()
+    before = client.get(f"/game/state/{session['session_id']}").json()["visible_state"]
+    graph_payload = client.get("/authoring/worlds/mist_valley/rumor-crime").json()
+    graph_payload["rumors"][0]["spread_level"] = 99
+
+    preview = client.post("/authoring/worlds/mist_valley/rumor-crime/preview", json={"graph": graph_payload})
+    after = client.get(f"/game/state/{session['session_id']}").json()["visible_state"]
+
+    assert preview.status_code == 200
+    assert after == before
 
 
 def test_rumor_crime_save_uses_validation(tmp_path: Path) -> None:

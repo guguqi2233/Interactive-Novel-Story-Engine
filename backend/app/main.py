@@ -107,6 +107,7 @@ from app.api import (
     QuestGraphPreviewRequest,
     QuestGraphPreviewResponse,
     QuestGraphResponse,
+    QuestGraphScenarioDraftResponse,
     QuestGraphSaveResponse,
     SaveGameResponse,
     SaveListResponse,
@@ -140,15 +141,91 @@ from app.db.migration_service import MigrationService
 from app.db.repository import SaveRepositoryError, SQLiteSaveRepository
 from app.db.save_service import SaveService
 from app.engine.content.authoring_service import AuthoringError, ContentAuthoringService
+from app.engine.content.authoring_boundary import (
+    AuthoringBoundaryCheckRequest,
+    AuthoringBoundaryCheckResponse,
+    check_authoring_boundary,
+    default_authoring_boundary_policy,
+)
+from app.engine.content.authoring_workflows import (
+    AuthoringWorkflowError,
+    AuthoringWorkflowPresetList,
+    list_authoring_workflow_presets,
+)
+from app.engine.content.authoring_project_dashboard import (
+    AuthoringProjectSummary,
+    build_authoring_project_summary,
+)
+from app.engine.content.character_pack_builder import (
+    CharacterPack,
+    CharacterPackError,
+    CharacterPackExportRequest,
+    CharacterPackImportPreview,
+    CharacterPackImportRequest,
+    apply_character_pack_import,
+    export_character_pack,
+    import_character_pack_dry_run,
+)
+from app.engine.content.content_diff_review import (
+    ContentDiffReview,
+    ContentDiffReviewRequest,
+    ContentDiffReviewService,
+)
+from app.engine.content.draft_history import (
+    AuthoringDraftCompareRequest,
+    AuthoringDraftHistory,
+    AuthoringDraftHistoryError,
+    AuthoringDraftHistoryService,
+    AuthoringDraftRestoreResponse,
+    AuthoringDraftSnapshot,
+    AuthoringDraftSnapshotRequest,
+)
 from app.engine.content.world_branching import WorldBranchService
+from app.engine.content.world_merge import (
+    WorldMergeDraft,
+    WorldMergePreviewRequest,
+    WorldMergeSaveRequest,
+    WorldMergeService,
+)
 from app.engine.content.import_export import ImportExportError, ImportExportService
+from app.engine.content.local_content_library import (
+    LocalContentLibrary,
+    LocalContentLibraryError,
+    LocalContentLibraryExportRequest,
+    LocalContentLibraryImportRequest,
+    LocalContentLibraryItem,
+    LocalContentLibraryService,
+    LocalContentLibraryDuplicateRequest,
+    LocalContentType,
+)
 from app.engine.content.item_economy_authoring import (
     ItemEconomyAuthoring,
     ItemEconomyAuthoringError,
+    balance_check_item_economy_authoring,
     parse_item_economy_authoring,
     preview_item_economy_authoring,
     save_item_economy_authoring,
     validate_item_economy_authoring,
+)
+from app.engine.content.dialogue_scene_authoring import (
+    DialogueSceneAuthoring,
+    DialogueSceneAuthoringError,
+    DialogueScenePreview,
+    DialogueSceneSaveResponse,
+    parse_dialogue_scene_authoring,
+    preview_dialogue_scene_authoring,
+    save_dialogue_scene_authoring,
+    validate_dialogue_scene_authoring,
+)
+from app.engine.content.group_rp_scene_authoring import (
+    GroupRPSceneAuthoring,
+    GroupRPSceneAuthoringError,
+    GroupRPScenePreview,
+    GroupRPSceneSaveResponse,
+    parse_group_rp_scene_authoring,
+    preview_group_rp_scene_authoring,
+    save_group_rp_scene_authoring,
+    validate_group_rp_scene_authoring,
 )
 from app.engine.content.rumor_crime_authoring import (
     RumorCrimeAuthoringError,
@@ -158,6 +235,22 @@ from app.engine.content.rumor_crime_authoring import (
     save_rumor_crime_authoring,
     validate_rumor_crime_authoring,
 )
+from app.engine.content.rp_character_authoring import (
+    RPCharacterAuthoring,
+    RPCharacterAuthoringError,
+    RPCharacterAuthoringPreview,
+    RPCharacterAuthoringSaveResponse,
+    RPCharacterImportPreviewRequest,
+    RPCharacterSafeExportRequest,
+    RPCharacterSafeExportResponse,
+    export_safe_character_card,
+    parse_rp_character_authoring,
+    preview_rp_character_authoring,
+    preview_rp_character_import,
+    save_rp_character_authoring,
+    validate_rp_character_authoring,
+)
+from app.engine.content.reference_index import ReferenceIndex, build_reference_index
 from app.engine.content.mod_loader import ModInfo, ModLoader, ModLoaderError, ModValidationReport
 from app.engine.content.npc_goal_authoring import (
     NPCGoalAuthoringError,
@@ -174,9 +267,19 @@ from app.engine.content.scenario_templates import (
     ScenarioTemplatePreview,
     ScenarioTemplateRenderer,
 )
+from app.engine.content.template_wizard import (
+    TemplateWizardApplyRequest,
+    TemplateWizardDraft,
+    TemplateWizardError,
+    TemplateWizardPreview,
+    apply_template_wizard_draft,
+    preview_template_wizard_draft,
+    validate_template_wizard_draft,
+)
 from app.engine.content.quest_graph import (
     QuestGraph,
     QuestGraphError,
+    generate_scenario_regression_draft,
     parse_quest_graph,
     preview_quest_graph,
     save_quest_graph,
@@ -529,6 +632,20 @@ def select_prompt_profile(request: PromptProfileSelectRequest) -> PromptProfileL
     )
 
 
+@app.get("/authoring/pro/boundary")
+def get_authoring_pro_boundary() -> dict[str, object]:
+    require_authoring_api()
+    return default_authoring_boundary_policy().model_dump(mode="json")
+
+
+@app.post("/authoring/pro/boundary/check", response_model=AuthoringBoundaryCheckResponse)
+def check_authoring_pro_boundary(
+    request: AuthoringBoundaryCheckRequest,
+) -> AuthoringBoundaryCheckResponse:
+    require_authoring_api()
+    return check_authoring_boundary(request)
+
+
 def _provider_status_label(active_settings: object) -> str:
     provider = str(getattr(active_settings, "llm_provider", "mock")).strip().lower()
     if provider == "mock":
@@ -803,6 +920,32 @@ def get_world_branch_service() -> WorldBranchService:
     return WorldBranchService(get_worlds_root())
 
 
+def get_world_merge_service() -> WorldMergeService:
+    return WorldMergeService(get_worlds_root())
+
+
+def get_content_diff_review_service() -> ContentDiffReviewService:
+    return ContentDiffReviewService(get_worlds_root())
+
+
+def get_draft_history_service() -> AuthoringDraftHistoryService:
+    return AuthoringDraftHistoryService(get_worlds_root())
+
+
+def get_authoring_project_summary(
+    world_id: str | None = None,
+    branch_id: str | None = None,
+) -> AuthoringProjectSummary:
+    return build_authoring_project_summary(
+        world_id=world_id,
+        branch_id=branch_id,
+        authoring_service=get_authoring_service(),
+        branch_service=get_world_branch_service(),
+        library_service=get_local_content_library_service(),
+        quality_gate_results=get_quality_gate_results(),
+    )
+
+
 def get_scenario_template_renderer() -> ScenarioTemplateRenderer:
     renderer = getattr(app.state, "scenario_template_renderer", None)
     if isinstance(renderer, ScenarioTemplateRenderer):
@@ -866,6 +1009,10 @@ def get_import_export_service() -> ImportExportService:
         templates_root=Path("templates"),
         repository=get_save_repository(),
     )
+
+
+def get_local_content_library_service() -> LocalContentLibraryService:
+    return LocalContentLibraryService(get_import_export_service())
 
 
 @app.post("/game/start", response_model=StartGameResponse)
@@ -2078,6 +2225,195 @@ def save_authoring_example_dialogues(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@app.get("/authoring/worlds/{world_id}/rp/characters/pro", response_model=RPCharacterAuthoring)
+def get_authoring_rp_characters(world_id: str) -> RPCharacterAuthoring:
+    require_authoring_api()
+    try:
+        return parse_rp_character_authoring(world_id, get_authoring_service())
+    except (AuthoringError, RPCharacterAuthoringError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/authoring/worlds/{world_id}/rp/characters/pro/import-preview", response_model=CharacterCardImportReport)
+def preview_authoring_rp_character_import(
+    world_id: str,
+    request: RPCharacterImportPreviewRequest,
+) -> CharacterCardImportReport:
+    require_authoring_api()
+    try:
+        return preview_rp_character_import(request)
+    except (CharacterCardImportError, RPCharacterAuthoringError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/authoring/worlds/{world_id}/rp/characters/pro/preview", response_model=RPCharacterAuthoringPreview)
+def preview_authoring_rp_characters(
+    world_id: str,
+    graph: RPCharacterAuthoring,
+) -> RPCharacterAuthoringPreview:
+    require_authoring_api()
+    try:
+        return preview_rp_character_authoring(world_id, graph, get_authoring_service())
+    except (AuthoringError, RPCharacterAuthoringError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/authoring/worlds/{world_id}/rp/characters/pro/validate", response_model=RPCharacterAuthoringPreview)
+def validate_authoring_rp_characters(
+    world_id: str,
+    graph: RPCharacterAuthoring,
+) -> RPCharacterAuthoringPreview:
+    require_authoring_api()
+    try:
+        return validate_rp_character_authoring(world_id, graph, get_authoring_service())
+    except (AuthoringError, RPCharacterAuthoringError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.put("/authoring/worlds/{world_id}/rp/characters/pro", response_model=RPCharacterAuthoringSaveResponse)
+def save_authoring_rp_characters(
+    world_id: str,
+    graph: RPCharacterAuthoring,
+    confirm_warnings: bool = False,
+) -> RPCharacterAuthoringSaveResponse:
+    require_authoring_api()
+    try:
+        return save_rp_character_authoring(world_id, graph, get_authoring_service(), confirm_warnings=confirm_warnings)
+    except (AuthoringError, RPCharacterAuthoringError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/authoring/worlds/{world_id}/rp/characters/pro/safe-export", response_model=RPCharacterSafeExportResponse)
+def export_authoring_rp_character_safe_card(
+    world_id: str,
+    request: RPCharacterSafeExportRequest,
+) -> RPCharacterSafeExportResponse:
+    require_authoring_api()
+    try:
+        return export_safe_character_card(world_id, request, get_authoring_service())
+    except (AuthoringError, RPCharacterAuthoringError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/authoring/worlds/{world_id}/dialogue-scenes", response_model=DialogueSceneAuthoring)
+def get_authoring_dialogue_scenes(world_id: str) -> DialogueSceneAuthoring:
+    require_authoring_api()
+    try:
+        return parse_dialogue_scene_authoring(world_id, get_authoring_service())
+    except (AuthoringError, DialogueSceneAuthoringError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/authoring/worlds/{world_id}/dialogue-scenes/preview", response_model=DialogueScenePreview)
+def preview_authoring_dialogue_scenes(
+    world_id: str,
+    graph: DialogueSceneAuthoring,
+) -> DialogueScenePreview:
+    require_authoring_api()
+    try:
+        return preview_dialogue_scene_authoring(world_id, graph, get_authoring_service())
+    except (AuthoringError, DialogueSceneAuthoringError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/authoring/worlds/{world_id}/dialogue-scenes/validate", response_model=DialogueScenePreview)
+def validate_authoring_dialogue_scenes(
+    world_id: str,
+    graph: DialogueSceneAuthoring,
+) -> DialogueScenePreview:
+    require_authoring_api()
+    try:
+        return validate_dialogue_scene_authoring(world_id, graph, get_authoring_service())
+    except (AuthoringError, DialogueSceneAuthoringError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.put("/authoring/worlds/{world_id}/dialogue-scenes", response_model=DialogueSceneSaveResponse)
+def save_authoring_dialogue_scenes(
+    world_id: str,
+    graph: DialogueSceneAuthoring,
+    confirm_warnings: bool = False,
+) -> DialogueSceneSaveResponse:
+    require_authoring_api()
+    try:
+        return save_dialogue_scene_authoring(world_id, graph, get_authoring_service(), confirm_warnings=confirm_warnings)
+    except (AuthoringError, DialogueSceneAuthoringError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/authoring/worlds/{world_id}/group-rp-scenes", response_model=GroupRPSceneAuthoring)
+def get_authoring_group_rp_scenes(world_id: str) -> GroupRPSceneAuthoring:
+    require_authoring_api()
+    try:
+        return parse_group_rp_scene_authoring(world_id, get_authoring_service())
+    except (AuthoringError, GroupRPSceneAuthoringError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/authoring/worlds/{world_id}/group-rp-scenes/preview", response_model=GroupRPScenePreview)
+def preview_authoring_group_rp_scenes(
+    world_id: str,
+    graph: GroupRPSceneAuthoring,
+) -> GroupRPScenePreview:
+    require_authoring_api()
+    try:
+        return preview_group_rp_scene_authoring(world_id, graph, get_authoring_service())
+    except (AuthoringError, GroupRPSceneAuthoringError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/authoring/worlds/{world_id}/group-rp-scenes/validate", response_model=GroupRPScenePreview)
+def validate_authoring_group_rp_scenes(
+    world_id: str,
+    graph: GroupRPSceneAuthoring,
+) -> GroupRPScenePreview:
+    require_authoring_api()
+    try:
+        return validate_group_rp_scene_authoring(world_id, graph, get_authoring_service())
+    except (AuthoringError, GroupRPSceneAuthoringError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.put("/authoring/worlds/{world_id}/group-rp-scenes", response_model=GroupRPSceneSaveResponse)
+def save_authoring_group_rp_scenes(
+    world_id: str,
+    graph: GroupRPSceneAuthoring,
+    confirm_warnings: bool = False,
+) -> GroupRPSceneSaveResponse:
+    require_authoring_api()
+    try:
+        return save_group_rp_scene_authoring(world_id, graph, get_authoring_service(), confirm_warnings=confirm_warnings)
+    except (AuthoringError, GroupRPSceneAuthoringError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/authoring/character-packs/export", response_model=CharacterPack)
+def export_authoring_character_pack(request: CharacterPackExportRequest) -> CharacterPack:
+    require_authoring_api()
+    try:
+        return export_character_pack(request, get_authoring_service())
+    except (AuthoringError, CharacterPackError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/authoring/character-packs/import-dry-run", response_model=CharacterPackImportPreview)
+def dry_run_authoring_character_pack_import(request: CharacterPackImportRequest) -> CharacterPackImportPreview:
+    require_authoring_api()
+    try:
+        return import_character_pack_dry_run(request, get_authoring_service())
+    except (AuthoringError, CharacterPackError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/authoring/character-packs/import-apply", response_model=CharacterPackImportPreview)
+def apply_authoring_character_pack_import(request: CharacterPackImportRequest) -> CharacterPackImportPreview:
+    require_authoring_api()
+    try:
+        return apply_character_pack_import(request, get_authoring_service())
+    except (AuthoringError, CharacterPackError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.put("/authoring/scenarios/{scenario_id}", response_model=ScenarioAuthoringSaveResponse)
 def save_authoring_scenario(
     scenario_id: str,
@@ -2244,6 +2580,121 @@ def diff_world_draft(world_id: str, request: WorldDiffDraftRequest) -> WorldDiff
     return WorldDiffResponse(diff=diff)
 
 
+@app.post("/authoring/worlds/{world_id}/merge/preview", response_model=WorldMergeDraft)
+def preview_world_merge(world_id: str, request: WorldMergePreviewRequest) -> WorldMergeDraft:
+    require_authoring_api()
+    try:
+        return get_world_merge_service().preview_merge(world_id, request)
+    except (AuthoringError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/authoring/worlds/{world_id}/merge/validate", response_model=WorldMergeDraft)
+def validate_world_merge(world_id: str, request: WorldMergePreviewRequest) -> WorldMergeDraft:
+    require_authoring_api()
+    try:
+        return get_world_merge_service().preview_merge(world_id, request)
+    except (AuthoringError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/authoring/worlds/{world_id}/merge/save", response_model=WorldMergeDraft)
+def save_world_merge(world_id: str, request: WorldMergeSaveRequest) -> WorldMergeDraft:
+    require_authoring_api()
+    try:
+        return get_world_merge_service().save_merge(world_id, request)
+    except (AuthoringError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/authoring/diff/review", response_model=ContentDiffReview)
+def review_authoring_content_diff(request: ContentDiffReviewRequest) -> ContentDiffReview:
+    require_authoring_api()
+    try:
+        return get_content_diff_review_service().review(request)
+    except (AuthoringError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/authoring/drafts", response_model=AuthoringDraftHistory)
+def list_authoring_drafts(world_id: str | None = None) -> AuthoringDraftHistory:
+    require_authoring_api()
+    try:
+        return get_draft_history_service().list_history(world_id)
+    except AuthoringDraftHistoryError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/authoring/drafts/snapshot", response_model=AuthoringDraftSnapshot)
+def create_authoring_draft_snapshot(request: AuthoringDraftSnapshotRequest) -> AuthoringDraftSnapshot:
+    require_authoring_api()
+    try:
+        return get_draft_history_service().create_snapshot(request)
+    except AuthoringDraftHistoryError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/authoring/drafts/compare", response_model=ContentDiffReview)
+def compare_authoring_draft_snapshots(request: AuthoringDraftCompareRequest) -> ContentDiffReview:
+    require_authoring_api()
+    try:
+        return get_draft_history_service().compare_snapshots(request)
+    except (AuthoringDraftHistoryError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/authoring/drafts/{draft_id}/restore", response_model=AuthoringDraftRestoreResponse)
+def restore_authoring_draft_snapshot(draft_id: str) -> AuthoringDraftRestoreResponse:
+    require_authoring_api()
+    try:
+        return get_draft_history_service().restore_snapshot(draft_id)
+    except AuthoringDraftHistoryError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.delete("/authoring/drafts/{draft_id}", response_model=AuthoringDraftHistory)
+def discard_authoring_draft_snapshot(draft_id: str) -> AuthoringDraftHistory:
+    require_authoring_api()
+    try:
+        return get_draft_history_service().discard_snapshot(draft_id)
+    except AuthoringDraftHistoryError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/authoring/workflow-presets", response_model=AuthoringWorkflowPresetList)
+def get_authoring_workflow_presets() -> AuthoringWorkflowPresetList:
+    require_authoring_api()
+    try:
+        return list_authoring_workflow_presets()
+    except AuthoringWorkflowError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/authoring/project-summary", response_model=AuthoringProjectSummary)
+def read_authoring_project_summary(
+    world_id: str | None = None,
+    branch_id: str | None = None,
+) -> AuthoringProjectSummary:
+    require_authoring_api()
+    try:
+        return get_authoring_project_summary(world_id=world_id, branch_id=branch_id)
+    except (AuthoringError, ImportExportError, LocalContentLibraryError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/authoring/worlds/{world_id}/references", response_model=ReferenceIndex)
+def get_authoring_reference_index(world_id: str) -> ReferenceIndex:
+    require_authoring_api()
+    try:
+        return build_reference_index(
+            world_id,
+            worlds_root=get_worlds_root(),
+            prompt_profile_store=get_prompt_profile_store(),
+        )
+    except (WorldLoaderError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.get("/authoring/worlds/{world_id}", response_model=AuthoringWorldDetailResponse)
 def get_authoring_world(world_id: str) -> AuthoringWorldDetailResponse:
     require_authoring_api()
@@ -2289,7 +2740,12 @@ def write_authoring_file(
 ) -> AuthoringFileWriteResponse:
     require_authoring_api()
     try:
-        report = get_authoring_service().write_file(world_id, file_name, request.content)
+        report = get_authoring_service().write_file(
+            world_id,
+            file_name,
+            request.content,
+            confirm_warnings=request.confirm_warnings,
+        )
     except AuthoringError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not report.ok:
@@ -2297,10 +2753,21 @@ def write_authoring_file(
             status_code=400,
             detail=_authoring_validation_response(report).model_dump(mode="json"),
         )
+    confirmation_required = bool(report.warnings) and not request.confirm_warnings
+    if confirmation_required:
+        return AuthoringFileWriteResponse(
+            world_id=world_id,
+            file_name=file_name,
+            validation=_authoring_validation_response(report),
+            confirmation_required=True,
+            saved=False,
+        )
     return AuthoringFileWriteResponse(
         world_id=world_id,
         file_name=file_name,
         validation=_authoring_validation_response(report),
+        confirmation_required=False,
+        saved=True,
     )
 
 
@@ -2423,6 +2890,10 @@ def preview_authoring_map(
         yaml_content=yaml_content,
         validation=validation,
         confirmation_required=validation.ok and bool(validation.warnings),
+        diff_summary=AuthoringDiffSummaryResponse.model_validate(
+            preview.diff_summary.model_dump(mode="json")
+        ),
+        impact=_authoring_impact_response(preview.impact),
     )
 
 
@@ -2447,7 +2918,11 @@ def write_authoring_map(
     require_authoring_api()
     try:
         service = get_authoring_service()
-        report = service.write_map_graph(world_id, request.graph)
+        report = service.write_map_graph(
+            world_id,
+            request.graph,
+            confirm_warnings=request.confirm_warnings,
+        )
     except AuthoringError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     validation = _authoring_validation_response(report)
@@ -2456,11 +2931,20 @@ def write_authoring_map(
             status_code=400,
             detail=validation.model_dump(mode="json"),
         )
+    if validation.warnings and not request.confirm_warnings:
+        return AuthoringMapWriteResponse(
+            world_id=world_id,
+            graph=request.graph,
+            validation=validation,
+            confirmation_required=True,
+            saved=False,
+        )
     return AuthoringMapWriteResponse(
         world_id=world_id,
         graph=service.get_map_graph(world_id),
         validation=validation,
-        confirmation_required=bool(validation.warnings),
+        confirmation_required=False,
+        saved=True,
     )
 
 
@@ -2541,6 +3025,33 @@ def render_authoring_template(
     except ScenarioTemplateError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return _rendered_template_response(rendered)
+
+
+@app.post("/authoring/template-wizard/preview", response_model=TemplateWizardPreview)
+def preview_authoring_template_wizard(draft: TemplateWizardDraft) -> TemplateWizardPreview:
+    require_authoring_api()
+    try:
+        return preview_template_wizard_draft(draft, get_authoring_service())
+    except (AuthoringError, TemplateWizardError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/authoring/template-wizard/validate", response_model=TemplateWizardPreview)
+def validate_authoring_template_wizard(draft: TemplateWizardDraft) -> TemplateWizardPreview:
+    require_authoring_api()
+    try:
+        return validate_template_wizard_draft(draft, get_authoring_service())
+    except (AuthoringError, TemplateWizardError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/authoring/template-wizard/apply", response_model=TemplateWizardPreview)
+def apply_authoring_template_wizard(request: TemplateWizardApplyRequest) -> TemplateWizardPreview:
+    require_authoring_api()
+    try:
+        return apply_template_wizard_draft(request, get_authoring_service())
+    except (AuthoringError, TemplateWizardError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/authoring/rp-scenario-templates", response_model=RPScenarioTemplateListResponse)
@@ -2661,7 +3172,12 @@ def save_authoring_quest_graph(
     try:
         graph = QuestGraph.model_validate(request.graph.model_dump(mode="json", exclude={"local_only"}))
         preview = preview_quest_graph(world_id, graph, get_authoring_service())
-        report = save_quest_graph(world_id, graph, get_authoring_service())
+        report = save_quest_graph(
+            world_id,
+            graph,
+            get_authoring_service(),
+            confirm_warnings=request.confirm_warnings,
+        )
     except (AuthoringError, QuestGraphError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return QuestGraphSaveResponse(
@@ -2669,8 +3185,27 @@ def save_authoring_quest_graph(
         graph=_quest_graph_response(graph),
         yaml_content=preview.yaml_content,
         validation=_authoring_validation_response(report),
-        saved=report.ok,
-        confirmation_required=report.ok and bool(report.warnings),
+        saved=report.ok and not (report.warnings and not request.confirm_warnings),
+        confirmation_required=report.ok and bool(report.warnings) and not request.confirm_warnings,
+    )
+
+
+@app.post("/authoring/worlds/{world_id}/quests/graph/scenario-draft", response_model=QuestGraphScenarioDraftResponse)
+def generate_authoring_quest_graph_scenario_draft(
+    world_id: str,
+    request: QuestGraphPreviewRequest,
+) -> QuestGraphScenarioDraftResponse:
+    require_authoring_api()
+    try:
+        graph = QuestGraph.model_validate(request.graph.model_dump(mode="json", exclude={"local_only"}))
+        scenario = generate_scenario_regression_draft(world_id, graph)
+        validation = get_scenario_authoring_service().validate_scenario(scenario)
+    except (AuthoringError, QuestGraphError, ScenarioAuthoringError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return QuestGraphScenarioDraftResponse(
+        world_id=world_id,
+        scenario=scenario.model_dump(mode="json"),
+        validation=_authoring_validation_response(validation),
     )
 
 
@@ -2801,7 +3336,7 @@ def validate_authoring_social_graph(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return SocialAuthoringPreviewResponse(
         world_id=world_id,
-        graph=_social_authoring_graph_response(graph),
+        graph=_social_authoring_graph_response(preview.graph),
         yaml_contents=preview.yaml_contents,
         validation=_authoring_validation_response(validation),
         confirmation_required=validation.ok and bool(validation.warnings),
@@ -2819,16 +3354,21 @@ def save_authoring_social_graph(
             request.graph.model_dump(mode="json", exclude={"local_only"})
         )
         preview = preview_social_authoring_graph(world_id, graph, get_authoring_service())
-        report = save_social_authoring_graph(world_id, graph, get_authoring_service())
+        report = save_social_authoring_graph(
+            world_id,
+            graph,
+            get_authoring_service(),
+            confirm_warnings=request.confirm_warnings,
+        )
     except (AuthoringError, SocialGraphAuthoringError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return SocialAuthoringSaveResponse(
         world_id=world_id,
-        graph=_social_authoring_graph_response(graph),
+        graph=_social_authoring_graph_response(preview.graph),
         yaml_contents=preview.yaml_contents,
         validation=_authoring_validation_response(report),
-        confirmation_required=report.ok and bool(report.warnings),
-        saved=report.ok,
+        confirmation_required=report.ok and bool(report.warnings) and not request.confirm_warnings,
+        saved=report.ok and not (report.warnings and not request.confirm_warnings),
     )
 
 
@@ -2887,6 +3427,28 @@ def validate_authoring_item_economy(
     )
 
 
+@app.post("/authoring/worlds/{world_id}/economy/balance-check", response_model=ItemEconomyAuthoringPreviewResponse)
+def balance_check_authoring_item_economy(
+    world_id: str,
+    request: ItemEconomyAuthoringRequest,
+) -> ItemEconomyAuthoringPreviewResponse:
+    require_authoring_api()
+    try:
+        graph = ItemEconomyAuthoring.model_validate(
+            request.graph.model_dump(mode="json", exclude={"local_only"})
+        )
+        preview = balance_check_item_economy_authoring(world_id, graph, get_authoring_service())
+    except (AuthoringError, ItemEconomyAuthoringError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return ItemEconomyAuthoringPreviewResponse(
+        world_id=world_id,
+        graph=_item_economy_authoring_response(preview.graph),
+        yaml_contents=preview.yaml_contents,
+        validation=_authoring_validation_response(preview.validation),
+        confirmation_required=preview.confirmation_required,
+    )
+
+
 @app.put("/authoring/worlds/{world_id}/economy", response_model=ItemEconomyAuthoringSaveResponse)
 def save_authoring_item_economy(
     world_id: str,
@@ -2898,7 +3460,12 @@ def save_authoring_item_economy(
             request.graph.model_dump(mode="json", exclude={"local_only"})
         )
         preview = preview_item_economy_authoring(world_id, graph, get_authoring_service())
-        report = save_item_economy_authoring(world_id, graph, get_authoring_service())
+        report = save_item_economy_authoring(
+            world_id,
+            graph,
+            get_authoring_service(),
+            confirm_warnings=request.confirm_warnings,
+        )
     except (AuthoringError, ItemEconomyAuthoringError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return ItemEconomyAuthoringSaveResponse(
@@ -2906,8 +3473,8 @@ def save_authoring_item_economy(
         graph=_item_economy_authoring_response(graph),
         yaml_contents=preview.yaml_contents,
         validation=_authoring_validation_response(report),
-        confirmation_required=report.ok and bool(report.warnings),
-        saved=report.ok,
+        confirmation_required=report.ok and bool(report.warnings) and not request.confirm_warnings,
+        saved=report.ok and not (report.warnings and not request.confirm_warnings),
     )
 
 
@@ -2959,7 +3526,7 @@ def validate_authoring_rumor_crime(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return RumorCrimeConsequencePreviewResponse(
         world_id=world_id,
-        graph=_rumor_crime_authoring_response(graph),
+        graph=_rumor_crime_authoring_response(preview.graph),
         yaml_contents=preview.yaml_contents,
         validation=_authoring_validation_response(validation),
         confirmation_required=validation.ok and bool(validation.warnings),
@@ -2977,16 +3544,21 @@ def save_authoring_rumor_crime(
             request.graph.model_dump(mode="json", exclude={"local_only"})
         )
         preview = preview_rumor_crime_authoring(world_id, graph, get_authoring_service())
-        report = save_rumor_crime_authoring(world_id, graph, get_authoring_service())
+        report = save_rumor_crime_authoring(
+            world_id,
+            graph,
+            get_authoring_service(),
+            confirm_warnings=request.confirm_warnings,
+        )
     except (AuthoringError, RumorCrimeAuthoringError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return RumorCrimeConsequenceSaveResponse(
         world_id=world_id,
-        graph=_rumor_crime_authoring_response(graph),
+        graph=_rumor_crime_authoring_response(preview.graph),
         yaml_contents=preview.yaml_contents,
         validation=_authoring_validation_response(report),
-        confirmation_required=report.ok and bool(report.warnings),
-        saved=report.ok,
+        confirmation_required=report.ok and bool(report.warnings) and not request.confirm_warnings,
+        saved=report.ok and not (report.warnings and not request.confirm_warnings),
     )
 
 
@@ -3108,6 +3680,63 @@ def export_authoring_scenario_suite(suite_id: str = "local_scenarios") -> Archiv
     except ImportExportError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return ArchiveExportResponse(export_type="scenario_suite", id=suite_id, file_name=exported.file_name, archive_base64=exported.archive_base64)
+
+
+@app.get("/library/items", response_model=LocalContentLibrary)
+def list_library_items(content_type: str | None = None) -> LocalContentLibrary:
+    require_authoring_api()
+    try:
+        parsed_type = LocalContentType(content_type) if content_type else None
+        return get_local_content_library_service().list_items(parsed_type)
+    except (ImportExportError, LocalContentLibraryError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/library/items/{item_id}", response_model=LocalContentLibraryItem)
+def inspect_library_item(item_id: str) -> LocalContentLibraryItem:
+    require_authoring_api()
+    try:
+        return get_local_content_library_service().inspect_item(item_id)
+    except (ImportExportError, LocalContentLibraryError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/library/items/{item_id}/validate", response_model=ValidationReport)
+def validate_library_item(item_id: str) -> ValidationReport:
+    require_authoring_api()
+    try:
+        return get_local_content_library_service().validate_item(item_id)
+    except (ImportExportError, LocalContentLibraryError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/library/import")
+def import_library_item(request: LocalContentLibraryImportRequest) -> dict[str, Any]:
+    require_authoring_api()
+    try:
+        result = get_local_content_library_service().import_archive(request)
+    except (ImportExportError, LocalContentLibraryError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return result.model_dump(mode="json")
+
+
+@app.post("/library/export", response_model=ArchiveExportResponse)
+def export_library_item(request: LocalContentLibraryExportRequest) -> ArchiveExportResponse:
+    require_authoring_api()
+    try:
+        exported = get_local_content_library_service().export_item(request)
+    except (ImportExportError, LocalContentLibraryError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return ArchiveExportResponse(export_type=request.content_type.value, id=request.item_id, file_name=exported.file_name, archive_base64=exported.archive_base64)
+
+
+@app.post("/library/duplicate", response_model=LocalContentLibraryItem)
+def duplicate_library_item(request: LocalContentLibraryDuplicateRequest) -> LocalContentLibraryItem:
+    require_authoring_api()
+    try:
+        return get_local_content_library_service().duplicate_item(request)
+    except (ImportExportError, LocalContentLibraryError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/authoring/import/packages/dry-run", response_model=PackageDryRunResponse)
@@ -3294,7 +3923,7 @@ def _social_authoring_graph_response(graph: SocialAuthoringGraph) -> SocialAutho
 
 
 def _item_economy_authoring_response(graph: ItemEconomyAuthoring) -> ItemEconomyAuthoringResponse:
-    return ItemEconomyAuthoringResponse.model_validate(graph.model_dump(mode="json"))
+    return ItemEconomyAuthoringResponse.model_validate(graph.normalized().model_dump(mode="json"))
 
 
 def _rumor_crime_authoring_response(

@@ -1,7 +1,8 @@
 # World Engine
 
-This document describes the local world engine as of v1.1 Roleplay Immersion
-Layer on top of v1.0 Stable Local Studio Edition. The engine is the
+This document describes the local world engine as of v1.2 Visual Authoring Pro
+on top of the v1.1 Roleplay Immersion Layer and v1.0 Stable Local Studio
+Edition. The engine is the
 only source of truth for world state, rules, consequences, persistence, and
 visibility. The LLM layer may parse intent, render narration, and summarize
 memory, but it does not decide rule outcomes or mutate `GameState`.
@@ -433,6 +434,233 @@ v0.6+ adds local authoring dry-run support:
 
 These APIs do not modify active `GameState`, active sessions, or saves. They
 are local authoring tools only and must stay behind `ENABLE_AUTHORING_API`.
+
+## v1.2 Visual Authoring Pro
+
+v1.2 adds Visual Authoring Pro: a broader local authoring workflow for maps,
+quests, social data, economy, RP scenes, reusable packs, templates, branch
+merge, content review, reference picking, and draft history. These are content
+pack tools. They do not modify active session `GameState`, do not call the LLM
+to generate authoritative content, and do not execute imported code.
+
+### Authoring Pro Boundary
+
+`docs/AUTHORING_BOUNDARY.md` defines the v1.2 boundary terms:
+
+- `authoring_draft`
+- `preview_result`
+- `validation_report`
+- `explicit_save`
+- `active_world_pack`
+- `active_game_state`
+- `migration_impact`
+- `hidden_authoring_field`
+- `player_visible_content`
+
+Preview and validation do not write disk. Save writes content-pack files only.
+Apply-to-active-session is not part of the default v1.2 workflow. Warnings
+require confirmation, and validation errors block save. Hidden authoring fields
+must not enter player UI or ordinary narrator/RP prompts.
+
+### Authoring Validation Gate
+
+`AuthoringValidationGate` is the shared save/import/merge/export/apply gate.
+It receives draft content, target world, operation type, affected files, and an
+optional validation report. It returns validation, quality warnings, migration
+impact, hidden leak risks, `allowed_to_save`, and `confirmation_required`.
+
+All v1.2 editor save paths should route through this gate directly or through
+`ContentAuthoringService.write_file(s)`. Hidden leak risks are blocked by
+default unless an explicit debug override is designed for a local-only flow.
+
+### Visual Map Editor Pro
+
+Map authoring extends `MapVisualGraph` with regions, layers, conditional edges,
+locked edges, hidden edges, travel costs, and discovery rules. Backend APIs:
+
+- `GET /authoring/worlds/{world_id}/map`
+- `POST /authoring/worlds/{world_id}/map/preview`
+- `POST /authoring/worlds/{world_id}/map/validate`
+- `PUT /authoring/worlds/{world_id}/map`
+
+The editor supports node coordinates, location add/remove, exit edge edits, and
+edge types such as exit, locked, hidden, conditional, and one-way. Player map
+builders filter hidden nodes and hidden edges.
+
+### Quest Graph Editor Pro
+
+Quest authoring represents quests, stages, objectives, triggers, rewards,
+consequences, optional paths, failure paths, and hidden objective fields. APIs:
+
+- `GET /authoring/worlds/{world_id}/quests/graph`
+- `POST /authoring/worlds/{world_id}/quests/graph/preview`
+- `POST /authoring/worlds/{world_id}/quests/graph/validate`
+- `PUT /authoring/worlds/{world_id}/quests/graph`
+- `POST /authoring/worlds/{world_id}/quests/graph/scenario-draft`
+
+Graph preview and scenario-draft generation are deterministic. Hidden
+objectives do not enter player quest UI unless normal visibility rules expose
+them.
+
+### NPC Relationship Graph Editing And Faction Conflict Editor
+
+The social authoring graph reads and writes `relationships.yaml`,
+`factions.yaml`, and NPC metadata. APIs:
+
+- `GET /authoring/worlds/{world_id}/social/graph`
+- `POST /authoring/worlds/{world_id}/social/graph/preview`
+- `POST /authoring/worlds/{world_id}/social/graph/validate`
+- `PUT /authoring/worlds/{world_id}/social/graph`
+
+It supports NPC relationship edges, trust/fear/affinity/obligation, hidden
+relationships, RP tone presets, faction nodes, faction relation edges, alert
+levels, visibility, and conflict tags. Player relationship and faction graphs
+remain separate filtered runtime views.
+
+### Rumor / Crime Consequence Graph Pro
+
+Rumor/crime consequence authoring models triggers, witnesses, crimes, rumors,
+reputation effects, NPC reactions, quest effects, delay/cooldown, and dedupe
+keys. APIs:
+
+- `GET /authoring/worlds/{world_id}/rumor-crime`
+- `POST /authoring/worlds/{world_id}/rumor-crime/preview`
+- `POST /authoring/worlds/{world_id}/rumor-crime/validate`
+- `PUT /authoring/worlds/{world_id}/rumor-crime`
+
+Validation checks missing fact/faction/NPC/quest refs, hidden fact text leakage,
+loops, and dedupe warnings. Runtime consequences are still decided by code.
+
+### Item / Economy Editor Pro
+
+Item/economy authoring covers items, merchants, shop inventory edges, price
+modifiers, stolen item policy, and quest reward links. APIs:
+
+- `GET /authoring/worlds/{world_id}/economy`
+- `POST /authoring/worlds/{world_id}/economy/preview`
+- `POST /authoring/worlds/{world_id}/economy/validate`
+- `POST /authoring/worlds/{world_id}/economy/balance-check`
+- `PUT /authoring/worlds/{world_id}/economy`
+
+The frontend offers table and graph-style editing surfaces. Backend rules remain
+authoritative for real trade prices, and hidden items cannot enter player shop
+inventory.
+
+### RP Character Authoring UI Pro
+
+RP character authoring reads NPC base fields, `rp_profile`, `voice_profile`,
+default emotional state, example dialogue refs, lorebook links, scene mood
+preferences, import safety reports, and safe export data. APIs:
+
+- `GET /authoring/worlds/{world_id}/rp/characters/pro`
+- `POST /authoring/worlds/{world_id}/rp/characters/pro/import-preview`
+- `POST /authoring/worlds/{world_id}/rp/characters/pro/preview`
+- `POST /authoring/worlds/{world_id}/rp/characters/pro/validate`
+- `PUT /authoring/worlds/{world_id}/rp/characters/pro`
+- `POST /authoring/worlds/{world_id}/rp/characters/pro/safe-export`
+
+Unsafe imported prompt text is rejected or quarantined. Safe export excludes
+private summaries, hidden facts, NPC secrets, debug state, and unsafe examples.
+
+### Dialogue Scene Editor And Group RP Scene Authoring
+
+Dialogue scene templates describe participants, focus NPC, location, dialogue
+mode, scene mood, opening context, allowed/forbidden topics, required visible
+facts, and possible outcomes. Group RP scene templates add scene type, required
+roles, turn order policy, speaker selection policy, tension, and exit
+conditions. APIs:
+
+- `GET /authoring/worlds/{world_id}/dialogue-scenes`
+- `POST /authoring/worlds/{world_id}/dialogue-scenes/preview`
+- `POST /authoring/worlds/{world_id}/dialogue-scenes/validate`
+- `PUT /authoring/worlds/{world_id}/dialogue-scenes`
+- `GET /authoring/worlds/{world_id}/group-rp-scenes`
+- `POST /authoring/worlds/{world_id}/group-rp-scenes/preview`
+- `POST /authoring/worlds/{world_id}/group-rp-scenes/validate`
+- `PUT /authoring/worlds/{world_id}/group-rp-scenes`
+
+These tools save templates. They do not start active dialogue sessions, do not
+generate model text, and do not create hidden facts.
+
+### Character Pack Builder
+
+Character packs bundle NPCs, RP profiles, voice profiles, prompt-safe examples,
+dialogue/group scene templates, flavor lore, and optional fact candidates.
+APIs:
+
+- `POST /authoring/character-packs/export`
+- `POST /authoring/character-packs/import-dry-run`
+- `POST /authoring/character-packs/import-apply`
+
+Import apply requires explicit confirmation and validation. Character packs
+reject API keys, executable files, path traversal, remote URLs, and script-like
+payloads. Safe export does not include hidden facts by default.
+
+### Template Wizard
+
+Template Wizard creates deterministic drafts for world, location cluster,
+questline, NPC set, character pack, dialogue scene, group RP scene, faction
+conflict, and mystery case templates. APIs:
+
+- `POST /authoring/template-wizard/preview`
+- `POST /authoring/template-wizard/validate`
+- `POST /authoring/template-wizard/apply`
+
+Preview does not write disk. Apply requires validation and explicit save/apply
+semantics. Templates are YAML/data only and do not execute scripts.
+
+### World Branch Merge Assistant And Content Diff Review
+
+Merge Assistant compares world branches, detects conflicts, accepts explicit
+base/ours/theirs/custom resolutions, validates merge drafts, and saves only
+after confirmation and validation. APIs:
+
+- `POST /authoring/worlds/{world_id}/merge/preview`
+- `POST /authoring/worlds/{world_id}/merge/validate`
+- `POST /authoring/worlds/{world_id}/merge/save`
+
+Content Diff Review provides file/entity/graph/package/schema/visibility/RP
+profile diff summaries:
+
+- `POST /authoring/diff/review`
+
+These tools do not auto-merge with an LLM and do not modify active sessions.
+Normal views should continue to redact hidden details; full conflict payloads
+are local authoring/debug data.
+
+### Authoring Workflow Presets, Local Content Library, Reference Picker, And Draft History
+
+Workflow presets are a lightweight launcher, not a workflow engine:
+
+- `GET /authoring/workflow-presets`
+
+Local Content Library lists, inspects, validates, imports, exports, archives,
+and duplicates local worlds, packs, scenarios, prompt/RP profiles, and mods:
+
+- `GET /library/items`
+- `GET /library/items/{id}`
+- `POST /library/items/{id}/validate`
+- `POST /library/import`
+- `POST /library/export`
+- `POST /library/duplicate`
+
+ReferenceIndex powers the common Reference Picker:
+
+- `GET /authoring/worlds/{world_id}/references`
+
+It returns authoring-safe metadata and marks hidden refs. It is not a player
+API.
+
+Draft History stores local authoring draft snapshots, not active `GameState`:
+
+- `GET /authoring/drafts`
+- `POST /authoring/drafts/snapshot`
+- `POST /authoring/drafts/compare`
+- `POST /authoring/drafts/{draft_id}/restore`
+- `DELETE /authoring/drafts/{draft_id}`
+
+Restored drafts still require validation before save. Draft history rejects API
+keys and raw env/config-like content.
 
 ## Visual Map Data Model and Editor
 

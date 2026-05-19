@@ -1,3 +1,5 @@
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 from app.core.state_delta import StateDelta
@@ -659,6 +661,7 @@ class AuthoringFileResponse(BaseModel):
 
 class AuthoringFileWriteRequest(BaseModel):
     content: str
+    confirm_warnings: bool = False
 
 
 class AuthoringDraftFileRequest(BaseModel):
@@ -706,6 +709,8 @@ class AuthoringFileWriteResponse(BaseModel):
     world_id: str
     file_name: str
     validation: AuthoringValidationResponse
+    confirmation_required: bool = False
+    saved: bool = True
 
 
 class WorldBranchListResponse(BaseModel):
@@ -734,6 +739,7 @@ class AuthoringMapGraphResponse(BaseModel):
 
 class AuthoringMapGraphRequest(BaseModel):
     graph: MapVisualGraph
+    confirm_warnings: bool = False
 
 
 class AuthoringMapPreviewResponse(BaseModel):
@@ -743,6 +749,8 @@ class AuthoringMapPreviewResponse(BaseModel):
     yaml_content: str
     validation: AuthoringValidationResponse
     confirmation_required: bool = False
+    diff_summary: AuthoringDiffSummaryResponse | None = None
+    impact: AuthoringImpactAnalysisResponse | None = None
 
 
 class AuthoringMapWriteResponse(BaseModel):
@@ -751,6 +759,7 @@ class AuthoringMapWriteResponse(BaseModel):
     graph: MapVisualGraph
     validation: AuthoringValidationResponse
     confirmation_required: bool = False
+    saved: bool = True
 
 
 class ScenarioTemplateOutputFileResponse(BaseModel):
@@ -831,6 +840,10 @@ class RPScenarioTemplatePreviewResponse(BaseModel):
 class QuestObjectiveNodeResponse(BaseModel):
     id: str
     text: str
+    visibility: str = "public"
+    hidden_authoring_note: str | None = None
+    x: float = 0.0
+    y: float = 0.0
 
 
 class QuestStageNodeResponse(BaseModel):
@@ -841,6 +854,8 @@ class QuestStageNodeResponse(BaseModel):
     next_stages: list[str] = Field(default_factory=list)
     failure_stages: list[str] = Field(default_factory=list)
     alternate_stages: list[str] = Field(default_factory=list)
+    x: float = 0.0
+    y: float = 0.0
 
 
 class QuestTriggerNodeResponse(BaseModel):
@@ -849,12 +864,24 @@ class QuestTriggerNodeResponse(BaseModel):
     action: str
     objective_id: str | None = None
     next_stage: str | None = None
+    x: float = 0.0
+    y: float = 0.0
 
 
 class QuestRewardNodeResponse(BaseModel):
     id: str
     text: str
     reward_type: str = "generic"
+    x: float = 0.0
+    y: float = 0.0
+
+
+class QuestConsequenceNodeResponse(BaseModel):
+    id: str
+    text: str
+    consequence_type: str = "generic"
+    x: float = 0.0
+    y: float = 0.0
 
 
 class QuestGraphNodeResponse(BaseModel):
@@ -866,6 +893,9 @@ class QuestGraphNodeResponse(BaseModel):
     stages: list[QuestStageNodeResponse] = Field(default_factory=list)
     triggers: list[QuestTriggerNodeResponse] = Field(default_factory=list)
     rewards: list[QuestRewardNodeResponse] = Field(default_factory=list)
+    consequences: list[QuestConsequenceNodeResponse] = Field(default_factory=list)
+    x: float = 0.0
+    y: float = 0.0
 
 
 class QuestGraphEdgeResponse(BaseModel):
@@ -884,10 +914,26 @@ class QuestGraphResponse(BaseModel):
     world_id: str
     quests: list[QuestGraphNodeResponse] = Field(default_factory=list)
     edges: list[QuestGraphEdgeResponse] = Field(default_factory=list)
+    quest_nodes: list[QuestGraphNodeResponse] = Field(default_factory=list)
+    stage_nodes: list[QuestStageNodeResponse] = Field(default_factory=list)
+    objective_nodes: list[QuestObjectiveNodeResponse] = Field(default_factory=list)
+    trigger_nodes: list[QuestTriggerNodeResponse] = Field(default_factory=list)
+    reward_nodes: list[QuestRewardNodeResponse] = Field(default_factory=list)
+    consequence_nodes: list[QuestConsequenceNodeResponse] = Field(default_factory=list)
+    failure_path_edges: list[QuestGraphEdgeResponse] = Field(default_factory=list)
+    optional_path_edges: list[QuestGraphEdgeResponse] = Field(default_factory=list)
 
 
 class QuestGraphPreviewRequest(BaseModel):
     graph: QuestGraphResponse
+    confirm_warnings: bool = False
+
+
+class QuestGraphScenarioDraftResponse(BaseModel):
+    local_only: bool = True
+    world_id: str
+    scenario: dict[str, Any]
+    validation: AuthoringValidationResponse
 
 
 class QuestGraphPreviewResponse(BaseModel):
@@ -964,20 +1010,31 @@ class FactionAuthoringNodeResponse(BaseModel):
     default_conflict_level: int = 0
     tags: list[str] = Field(default_factory=list)
     conflict_tags: list[str] = Field(default_factory=list)
+    visibility: str = "hidden"
+    x: float = 0.0
+    y: float = 0.0
 
 
 class FactionAuthoringEdgeResponse(BaseModel):
     source_faction_id: str
     target_faction_id: str
+    relation_type: str = "neutral"
     relation: int = 0
     conflict_level: int = 0
     visibility: str = "hidden"
+    conflict_tags: list[str] = Field(default_factory=list)
 
 
 class FactionAuthoringGraphResponse(BaseModel):
     world_id: str
+    faction_nodes: list[FactionAuthoringNodeResponse] = Field(default_factory=list)
     factions: list[FactionAuthoringNodeResponse] = Field(default_factory=list)
+    relation_edges: list[FactionAuthoringEdgeResponse] = Field(default_factory=list)
     conflict_edges: list[FactionAuthoringEdgeResponse] = Field(default_factory=list)
+    alliance_edges: list[FactionAuthoringEdgeResponse] = Field(default_factory=list)
+    hostility_edges: list[FactionAuthoringEdgeResponse] = Field(default_factory=list)
+    visibility_fields: list[str] = Field(default_factory=list)
+    conflict_tag_index: list[str] = Field(default_factory=list)
 
 
 class RelationshipAuthoringNodeResponse(BaseModel):
@@ -985,6 +1042,29 @@ class RelationshipAuthoringNodeResponse(BaseModel):
     label: str
     node_type: str
     hidden: bool = False
+    x: float = 0.0
+    y: float = 0.0
+
+
+class RelationshipTonePreviewResponse(BaseModel):
+    preset_id: str = "derived"
+    summary: str = ""
+    address_style: str = "neutral"
+    formality: str = "medium"
+    warmth: int = 0
+    tension: int = 0
+    intimacy: int = 0
+    respect: int = 50
+    resentment: int = 0
+    fear: int = 0
+    avoidance: int = 0
+    trust_expression: str = "reserved"
+
+
+class RelationshipTonePresetResponse(BaseModel):
+    id: str
+    label: str
+    description: str = ""
 
 
 class RelationshipAuthoringEdgeResponse(BaseModel):
@@ -998,12 +1078,21 @@ class RelationshipAuthoringEdgeResponse(BaseModel):
     obligation: int = 0
     tags: list[str] = Field(default_factory=list)
     known_by_player: bool = False
+    hidden_relationship: bool = False
+    hidden_authoring_note: str | None = None
+    tone_preset: str | None = None
+    rp_tone_preview: RelationshipTonePreviewResponse = Field(default_factory=RelationshipTonePreviewResponse)
 
 
 class RelationshipAuthoringGraphResponse(BaseModel):
     world_id: str
+    npc_nodes: list[RelationshipAuthoringNodeResponse] = Field(default_factory=list)
     nodes: list[RelationshipAuthoringNodeResponse] = Field(default_factory=list)
+    relationship_edges: list[RelationshipAuthoringEdgeResponse] = Field(default_factory=list)
     relationships: list[RelationshipAuthoringEdgeResponse] = Field(default_factory=list)
+    hidden_relationship_fields: list[str] = Field(default_factory=list)
+    relationship_tone_presets: list[RelationshipTonePresetResponse] = Field(default_factory=list)
+    rp_tone_preview_fields: list[str] = Field(default_factory=list)
 
 
 class SocialAuthoringGraphResponse(BaseModel):
@@ -1015,6 +1104,7 @@ class SocialAuthoringGraphResponse(BaseModel):
 
 class SocialAuthoringGraphRequest(BaseModel):
     graph: SocialAuthoringGraphResponse
+    confirm_warnings: bool = False
 
 
 class SocialAuthoringPreviewResponse(BaseModel):
@@ -1049,6 +1139,7 @@ class ItemEconomyItemResponse(BaseModel):
     locked: bool = False
     lock_difficulty: int = 0
     lock_state: str = "intact"
+    stolen_item_policy: str = "refuse_stolen"
 
 
 class MerchantEconomyNodeResponse(BaseModel):
@@ -1061,15 +1152,46 @@ class MerchantEconomyNodeResponse(BaseModel):
     sell_price_modifier: float = 0.5
 
 
+class ShopInventoryEdgeResponse(BaseModel):
+    id: str
+    merchant_id: str
+    item_id: str
+    buy_price: int = 0
+    sell_price: int = 0
+    player_visible: bool = True
+
+
+class QuestRewardLinkResponse(BaseModel):
+    id: str
+    quest_id: str
+    item_id: str
+    reward_index: int = 0
+
+
+class EconomyBalanceWarningResponse(BaseModel):
+    code: str
+    path: str
+    message: str
+    ref_id: str | None = None
+
+
 class ItemEconomyAuthoringResponse(BaseModel):
     local_only: bool = True
     world_id: str
     items: list[ItemEconomyItemResponse] = Field(default_factory=list)
     merchants: list[MerchantEconomyNodeResponse] = Field(default_factory=list)
+    item_nodes: list[ItemEconomyItemResponse] = Field(default_factory=list)
+    merchant_nodes: list[MerchantEconomyNodeResponse] = Field(default_factory=list)
+    shop_inventory_edges: list[ShopInventoryEdgeResponse] = Field(default_factory=list)
+    price_modifier_fields: dict[str, dict[str, float]] = Field(default_factory=dict)
+    stolen_item_policy: dict[str, str] = Field(default_factory=dict)
+    quest_reward_links: list[QuestRewardLinkResponse] = Field(default_factory=list)
+    balance_warnings: list[EconomyBalanceWarningResponse] = Field(default_factory=list)
 
 
 class ItemEconomyAuthoringRequest(BaseModel):
     graph: ItemEconomyAuthoringResponse
+    confirm_warnings: bool = False
 
 
 class ItemEconomyAuthoringPreviewResponse(BaseModel):
@@ -1097,6 +1219,31 @@ class FactionReferenceNodeResponse(BaseModel):
     known_by_player: bool = False
 
 
+class NPCReferenceNodeResponse(BaseModel):
+    id: str
+    name: str
+    hidden: bool = False
+
+
+class QuestReferenceNodeResponse(BaseModel):
+    id: str
+    title: str = ""
+
+
+class ConsequenceTriggerNodeResponse(BaseModel):
+    id: str
+    trigger_type: str = "event"
+    ref_id: str | None = None
+    label: str = ""
+
+
+class WitnessConsequenceNodeResponse(BaseModel):
+    id: str
+    npc_id: str
+    crime_id: str | None = None
+    report_intent: str = "none"
+
+
 class RumorAuthoringNodeResponse(BaseModel):
     id: str
     fact_id: str | None = None
@@ -1109,6 +1256,9 @@ class RumorAuthoringNodeResponse(BaseModel):
     spread_level: int = 0
     created_turn: int = 0
     tags: list[str] = Field(default_factory=list)
+    delay_turns: int = 0
+    cooldown_turns: int = 0
+    dedupe_key: str | None = None
 
 
 class CrimeConsequenceNodeResponse(BaseModel):
@@ -1125,6 +1275,18 @@ class ReputationEffectNodeResponse(BaseModel):
     faction_id: str
     amount: int = 0
     reason: str = ""
+    delay_turns: int = 0
+    cooldown_turns: int = 0
+    dedupe_key: str | None = None
+
+
+class NPCReactionConsequenceNodeResponse(BaseModel):
+    id: str
+    npc_id: str
+    reaction: str = "notice"
+    delay_turns: int = 0
+    cooldown_turns: int = 0
+    dedupe_key: str | None = None
 
 
 class QuestTriggerConsequenceNodeResponse(BaseModel):
@@ -1132,6 +1294,9 @@ class QuestTriggerConsequenceNodeResponse(BaseModel):
     quest_id: str
     trigger_id: str
     action: str = "activate"
+    delay_turns: int = 0
+    cooldown_turns: int = 0
+    dedupe_key: str | None = None
 
 
 class ConsequenceGraphEdgeResponse(BaseModel):
@@ -1146,15 +1311,27 @@ class RumorCrimeConsequenceAuthoringResponse(BaseModel):
     world_id: str
     facts: list[FactReferenceNodeResponse] = Field(default_factory=list)
     factions: list[FactionReferenceNodeResponse] = Field(default_factory=list)
+    npcs: list[NPCReferenceNodeResponse] = Field(default_factory=list)
+    quests: list[QuestReferenceNodeResponse] = Field(default_factory=list)
+    trigger_nodes: list[ConsequenceTriggerNodeResponse] = Field(default_factory=list)
+    witness_nodes: list[WitnessConsequenceNodeResponse] = Field(default_factory=list)
+    crime_nodes: list[CrimeConsequenceNodeResponse] = Field(default_factory=list)
+    rumor_nodes: list[RumorAuthoringNodeResponse] = Field(default_factory=list)
+    reputation_effect_nodes: list[ReputationEffectNodeResponse] = Field(default_factory=list)
+    npc_reaction_nodes: list[NPCReactionConsequenceNodeResponse] = Field(default_factory=list)
+    quest_effect_nodes: list[QuestTriggerConsequenceNodeResponse] = Field(default_factory=list)
     rumors: list[RumorAuthoringNodeResponse] = Field(default_factory=list)
     crimes: list[CrimeConsequenceNodeResponse] = Field(default_factory=list)
     reputation_effects: list[ReputationEffectNodeResponse] = Field(default_factory=list)
+    npc_reactions: list[NPCReactionConsequenceNodeResponse] = Field(default_factory=list)
     quest_triggers: list[QuestTriggerConsequenceNodeResponse] = Field(default_factory=list)
     edges: list[ConsequenceGraphEdgeResponse] = Field(default_factory=list)
+    impact_summary: dict[str, int] = Field(default_factory=dict)
 
 
 class RumorCrimeConsequenceAuthoringRequest(BaseModel):
     graph: RumorCrimeConsequenceAuthoringResponse
+    confirm_warnings: bool = False
 
 
 class RumorCrimeConsequencePreviewResponse(BaseModel):

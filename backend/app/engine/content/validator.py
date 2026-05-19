@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, computed_field
 
 from app.core.world_state import FactVisibility, QuestTriggerType, QuestVisibility
 from app.engine.rules.npc_planning import PLANNING_ACTIONS
@@ -45,6 +45,7 @@ class ValidationReport(BaseModel):
     warnings: list[ValidationIssue] = Field(default_factory=list)
     suggestions: list[ValidationIssue] = Field(default_factory=list)
 
+    @computed_field
     @property
     def ok(self) -> bool:
         return not self.errors
@@ -517,6 +518,15 @@ def _validate_references(pack: RawWorldPack, report: ValidationReport) -> None:
                 code="relationship_blank_relation_type",
                 ref_id=relationship_id,
             )
+        if relationship.hidden_relationship and relationship.known_by_player:
+            report.add(
+                ValidationSeverity.ERROR,
+                f"relationships.yaml.{relationship_id}.known_by_player",
+                "Hidden relationship cannot be marked player-visible.",
+                code="hidden_relationship_player_visible",
+                ref_id=relationship_id,
+                suggestion="Clear known_by_player before saving a hidden relationship.",
+            )
         for field_name in ("trust", "fear", "affinity", "obligation"):
             value = getattr(relationship, field_name)
             if value < -100 or value > 100:
@@ -600,9 +610,9 @@ def _validate_quest(
 ) -> None:
     stage_ids = {stage.id for stage in quest.stages}
     objective_ids = {
-        objective_id
+        objective if isinstance(objective, str) else objective.id
         for stage in quest.stages
-        for objective_id in stage.objectives
+        for objective in stage.objectives
     }
     if quest.initial_stage not in stage_ids:
         report.add(

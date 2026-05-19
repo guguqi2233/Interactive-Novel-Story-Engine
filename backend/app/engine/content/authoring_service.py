@@ -15,7 +15,20 @@ from app.engine.content.validator import (
     ValidationSeverity,
     validate_world_pack,
 )
-from app.engine.content.world_loader import MapVisualGraph, WorldLoader, WorldLoaderError, WorldManifest
+from app.engine.content.validation_gate import (
+    AuthoringOperationType,
+    AuthoringValidationGate,
+    AuthoringValidationGateRequest,
+)
+from app.engine.content.world_loader import (
+    MapVisualEdge,
+    MapVisualEdgeType,
+    MapVisualGraph,
+    MapVisibility,
+    WorldLoader,
+    WorldLoaderError,
+    WorldManifest,
+)
 
 
 ALLOWED_AUTHORING_FILES: tuple[str, ...] = (
@@ -29,6 +42,9 @@ ALLOWED_AUTHORING_FILES: tuple[str, ...] = (
     "rumors.yaml",
     "relationships.yaml",
     "example_dialogues.yaml",
+    "scene_moods.yaml",
+    "dialogue_scenes.yaml",
+    "group_rp_scenes.yaml",
 )
 
 LIST_FILE_KEYS: dict[str, str] = {
@@ -41,6 +57,9 @@ LIST_FILE_KEYS: dict[str, str] = {
     "rumors.yaml": "rumors",
     "relationships.yaml": "relationships",
     "example_dialogues.yaml": "example_dialogues",
+    "scene_moods.yaml": "scene_mood_presets",
+    "dialogue_scenes.yaml": "dialogue_scenes",
+    "group_rp_scenes.yaml": "group_rp_scenes",
 }
 
 
@@ -91,6 +110,7 @@ class AuthoringPreviewReport(BaseModel):
 class ContentAuthoringService:
     def __init__(self, worlds_root: str | Path = "worlds") -> None:
         self.worlds_root = Path(worlds_root)
+        self.validation_gate = AuthoringValidationGate(self.worlds_root)
 
     def list_worlds(self) -> list[AuthoringWorldSummary]:
         if not self.worlds_root.exists():
@@ -123,9 +143,30 @@ class ContentAuthoringService:
             raise AuthoringError(f"Content file not found: {file_name}")
         return path.read_text(encoding="utf-8")
 
-    def write_file(self, world_id: str, file_name: str, content: str) -> ValidationReport:
+    def write_file(
+        self,
+        world_id: str,
+        file_name: str,
+        content: str,
+        *,
+        confirm_warnings: bool = False,
+    ) -> ValidationReport:
         path = self._safe_file_path(world_id, file_name)
         self._parse_yaml(content, file_name)
+        report = self.validate_draft(world_id, file_name, content)
+        gate = self.validation_gate.evaluate(
+            AuthoringValidationGateRequest(
+                world_id=world_id,
+                operation_type=AuthoringOperationType.SAVE,
+                draft_content={file_name: content},
+                affected_files=[file_name],
+                validation_report=report,
+                confirm_warnings=confirm_warnings,
+            )
+        )
+        report = gate.validation_report
+        if not gate.allowed_to_save:
+            return report
         previous_content = path.read_text(encoding="utf-8") if path.exists() else None
         path.write_text(content, encoding="utf-8")
         report = self.validate_world(world_id)
@@ -245,9 +286,26 @@ class ContentAuthoringService:
                 (draft_world / file_name).write_text(content, encoding="utf-8")
             return validate_world_pack(world_id, worlds_root=temp_worlds_root)
 
-    def write_files(self, world_id: str, proposed_files: dict[str, str]) -> ValidationReport:
+    def write_files(
+        self,
+        world_id: str,
+        proposed_files: dict[str, str],
+        *,
+        confirm_warnings: bool = False,
+    ) -> ValidationReport:
         report = self.validate_drafts(world_id, proposed_files)
-        if not report.ok:
+        gate = self.validation_gate.evaluate(
+            AuthoringValidationGateRequest(
+                world_id=world_id,
+                operation_type=AuthoringOperationType.SAVE,
+                draft_content=proposed_files,
+                affected_files=list(proposed_files),
+                validation_report=report,
+                confirm_warnings=confirm_warnings,
+            )
+        )
+        report = gate.validation_report
+        if not gate.allowed_to_save:
             return report
         backups: dict[Path, str | None] = {}
         paths: dict[Path, str] = {}
@@ -352,8 +410,17 @@ class ContentAuthoringService:
         current_data = _safe_parse_mapping(current_content)
         current_locations = _items_by_id("locations.yaml", current_data)
         exits_by_source: dict[str, dict[str, str]] = {node.location_id: {} for node in graph.nodes}
+        edge_metadata_by_source: dict[str, dict[str, dict[str, Any]]] = {
+            node.location_id: {} for node in graph.nodes
+        }
         for edge in graph.edges:
             exits_by_source.setdefault(edge.source_location_id, {})[edge.label] = edge.target_location_id
+            if _edge_has_authoring_metadata(edge):
+                edge_metadata_by_source.setdefault(edge.source_location_id, {})[edge.label] = {
+                    key: value
+                    for key, value in edge.model_dump(mode="json").items()
+                    if key not in {"source_location_id", "label"} and value not in (None, [], {}, "")
+                }
 
         locations: list[dict[str, Any]] = []
         for node in graph.nodes:
@@ -362,12 +429,18 @@ class ContentAuthoringService:
             existing["name"] = node.name
             existing.setdefault("description", "")
             existing["exits"] = dict(sorted(exits_by_source.get(node.location_id, {}).items()))
+            metadata = edge_metadata_by_source.get(node.location_id, {})
+            if metadata:
+                existing["exit_metadata"] = dict(sorted(metadata.items()))
+            else:
+                existing.pop("exit_metadata", None)
             visual = dict(existing.get("visual") or {})
             visual.update(
                 {
                     "x": node.x,
                     "y": node.y,
                     "region_id": node.region_id,
+                    "layer_id": node.layer_id,
                     "icon": node.icon,
                     "color_tag": node.color_tag,
                     "display_group": node.display_group,
@@ -385,15 +458,43 @@ class ContentAuthoringService:
 
     def preview_map_graph(self, world_id: str, graph: MapVisualGraph) -> AuthoringPreviewReport:
         content = self.map_graph_to_locations_yaml(world_id, graph)
-        return self.preview_file_change(world_id, "locations.yaml", content)
+        preview = self.preview_file_change(world_id, "locations.yaml", content)
+        _add_map_graph_validation_issues(graph, preview.validation_report)
+        return preview
 
     def validate_map_graph(self, world_id: str, graph: MapVisualGraph) -> ValidationReport:
         content = self.map_graph_to_locations_yaml(world_id, graph)
-        return self.validate_draft(world_id, "locations.yaml", content)
+        report = self.validate_draft(world_id, "locations.yaml", content)
+        _add_map_graph_validation_issues(graph, report)
+        return report
 
-    def write_map_graph(self, world_id: str, graph: MapVisualGraph) -> ValidationReport:
+    def write_map_graph(
+        self,
+        world_id: str,
+        graph: MapVisualGraph,
+        *,
+        confirm_warnings: bool = False,
+    ) -> ValidationReport:
         content = self.map_graph_to_locations_yaml(world_id, graph)
-        return self.write_file(world_id, "locations.yaml", content)
+        report = self.validate_map_graph(world_id, graph)
+        gate = self.validation_gate.evaluate(
+            AuthoringValidationGateRequest(
+                world_id=world_id,
+                operation_type=AuthoringOperationType.SAVE,
+                draft_content={"locations.yaml": content},
+                affected_files=["locations.yaml"],
+                validation_report=report,
+                confirm_warnings=confirm_warnings,
+            )
+        )
+        if not gate.allowed_to_save:
+            return gate.validation_report
+        return self.write_file(
+            world_id,
+            "locations.yaml",
+            content,
+            confirm_warnings=confirm_warnings,
+        )
 
     def _safe_world_path(self, world_id: str) -> Path:
         if not _is_safe_id(world_id):
@@ -568,3 +669,114 @@ def _guess_renamed_ids(removed_ids: list[str], added_ids: list[str]) -> list[str
     if len(removed_ids) == 1 and len(added_ids) == 1:
         return [f"{removed_ids[0]} -> {added_ids[0]}"]
     return []
+
+
+def _edge_has_authoring_metadata(edge: MapVisualEdge) -> bool:
+    return (
+        edge.edge_type not in {MapVisualEdgeType.EXIT, MapVisualEdgeType.ONE_WAY}
+        or edge.visibility != MapVisibility.PUBLIC
+        or edge.travel_cost != 1
+        or bool(edge.discovery_rules)
+        or bool(edge.unlock_condition)
+    )
+
+
+def _add_map_graph_validation_issues(graph: MapVisualGraph, report: ValidationReport) -> None:
+    node_ids = {node.location_id for node in graph.nodes}
+    region_ids = {region.id for region in graph.regions}
+    outgoing: dict[str, list[MapVisualEdge]] = {node_id: [] for node_id in node_ids}
+    incoming: dict[str, list[MapVisualEdge]] = {node_id: [] for node_id in node_ids}
+    for node in graph.nodes:
+        if node.region_id and region_ids and node.region_id not in region_ids:
+            report.add(
+                ValidationSeverity.ERROR,
+                f"locations.yaml.{node.location_id}.visual.region_id",
+                f"Map node references invalid region id: {node.region_id}",
+                code="map_visual_invalid_region_id",
+                suggestion="Use a region id declared in graph.regions.",
+            )
+    for edge in graph.edges:
+        if edge.source_location_id not in node_ids:
+            report.add(
+                ValidationSeverity.ERROR,
+                f"locations.yaml.{edge.source_location_id}.exits.{edge.label}",
+                f"Map edge source location does not exist: {edge.source_location_id}",
+                code="map_visual_invalid_location_id",
+            )
+            continue
+        outgoing.setdefault(edge.source_location_id, []).append(edge)
+        if edge.target_location_id not in node_ids:
+            report.add(
+                ValidationSeverity.ERROR,
+                f"locations.yaml.{edge.source_location_id}.exits.{edge.label}",
+                f"Map edge target location does not exist: {edge.target_location_id}",
+                code="map_visual_edge_target_missing",
+                suggestion="Pick an existing location id as the target.",
+            )
+            continue
+        incoming.setdefault(edge.target_location_id, []).append(edge)
+        if edge.edge_type == MapVisualEdgeType.HIDDEN and edge.visibility != MapVisibility.HIDDEN:
+            report.add(
+                ValidationSeverity.WARNING,
+                f"locations.yaml.{edge.source_location_id}.exit_metadata.{edge.label}",
+                "Hidden map edge is not marked hidden and may leak a hidden path in authoring previews.",
+                code="map_visual_hidden_edge_leakage_risk",
+                suggestion="Set edge visibility to hidden for hidden paths.",
+            )
+        if edge.edge_type == MapVisualEdgeType.LOCKED and not edge.unlock_condition:
+            report.add(
+                ValidationSeverity.WARNING,
+                f"locations.yaml.{edge.source_location_id}.exit_metadata.{edge.label}",
+                "Locked edge has no unlock path or condition.",
+                code="map_visual_locked_edge_without_unlock_path",
+                suggestion="Add unlock_condition or discovery rules for this locked edge.",
+            )
+    _warn_unreachable_regions(graph, outgoing, incoming, report)
+    _warn_circular_one_way_edges(graph, report)
+
+
+def _warn_unreachable_regions(
+    graph: MapVisualGraph,
+    outgoing: dict[str, list[MapVisualEdge]],
+    incoming: dict[str, list[MapVisualEdge]],
+    report: ValidationReport,
+) -> None:
+    region_nodes: dict[str, list[str]] = {}
+    for node in graph.nodes:
+        if node.region_id:
+            region_nodes.setdefault(node.region_id, []).append(node.location_id)
+    for region_id, node_ids in sorted(region_nodes.items()):
+        has_connection = any(
+            edge.target_location_id not in node_ids
+            for node_id in node_ids
+            for edge in outgoing.get(node_id, [])
+        ) or any(
+            edge.source_location_id not in node_ids
+            for node_id in node_ids
+            for edge in incoming.get(node_id, [])
+        )
+        if not has_connection and len(region_nodes) > 1:
+            report.add(
+                ValidationSeverity.WARNING,
+                f"locations.yaml.visual.regions.{region_id}",
+                f"Region has no visible connection to other regions: {region_id}",
+                code="map_visual_unreachable_region_warning",
+                suggestion="Add at least one inter-region edge if this region should be reachable.",
+            )
+
+
+def _warn_circular_one_way_edges(graph: MapVisualGraph, report: ValidationReport) -> None:
+    one_way_pairs = {
+        (edge.source_location_id, edge.target_location_id)
+        for edge in graph.edges
+        if edge.edge_type == MapVisualEdgeType.ONE_WAY
+    }
+    for source_id, target_id in sorted(one_way_pairs):
+        if (target_id, source_id) in one_way_pairs:
+            report.add(
+                ValidationSeverity.WARNING,
+                f"locations.yaml.{source_id}.exits",
+                f"One-way exits form a circular pair: {source_id} <-> {target_id}",
+                code="map_visual_circular_one_way_warning",
+                suggestion="Use normal exit edges for bidirectional travel.",
+            )

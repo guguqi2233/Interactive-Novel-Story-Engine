@@ -1,25 +1,38 @@
-import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
+﻿import { FormEvent, PointerEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import {
+  AuthoringDiffSummary,
   AuthoringValidation,
   AuthoringFilePreviewResponse,
   AuthoringModLoadOrderResponse,
   AuthoringModSummary,
   AuthoringModValidation,
   AuthoringWorldSummary,
+  AuthoringWorkflowPreset,
+  AuthoringProjectSummary,
+  ReferenceIndex,
+  ReferenceIndexItem,
+  ReferenceKind,
+  LocalContentLibraryItem,
+  LocalContentType,
   ArchiveImportResponse,
+  balanceCheckItemEconomyAuthoring,
   DebugEvent,
   DebugPerformanceRecentResponse,
   DebugPerformanceSummaryResponse,
   applyScenarioTemplate,
+  applyTemplateWizard,
   applyRPScenarioTemplate,
   deleteSave,
   dryRunSaveTimelineReplay,
   exportModArchive,
+  exportSafeRPCharacterCard,
   exportSaveArchive,
   exportWorldArchive,
+  exportLocalContentLibraryItem,
   importModArchive,
   importSaveArchive,
   importWorldArchive,
+  importLocalContentLibraryArchive,
   applySaveMigration,
   dryRunSaveMigration,
   fetchAuthoringFile,
@@ -27,14 +40,23 @@ import {
   fetchAuthoringMod,
   fetchAuthoringModLoadOrder,
   fetchAuthoringMods,
+  fetchDialogueSceneAuthoring,
+  fetchGroupRPSceneAuthoring,
   fetchAuthoringMap,
   fetchItemEconomyAuthoring,
   fetchNPCGoalGraph,
   fetchRumorCrimeAuthoring,
+  fetchRPCharacterAuthoring,
   fetchSocialAuthoringGraph,
   fetchValidationGraph,
+  generateQuestGraphScenarioDraft,
   fetchAuthoringWorld,
   fetchAuthoringWorlds,
+  fetchAuthoringWorkflowPresets,
+  fetchAuthoringProjectSummary,
+  fetchReferenceIndex,
+  fetchLocalContentLibrary,
+  fetchWorldBranches,
   fetchScenarioTemplates,
   fetchRPScenarioTemplates,
   fetchScenarioRegression,
@@ -60,7 +82,9 @@ import {
   fetchStudioConfigSummary,
   fetchStudioStatus,
   fetchContentCoverage,
+  reviewContentDiff,
   GameInputResponse,
+  ContentDiffReview,
   GraphResponse,
   listSaves,
   loadGame,
@@ -72,6 +96,8 @@ import {
   previewAuthoringScenario,
   previewQuestGraph,
   previewScenarioTemplate,
+  previewTemplateWizard,
+  previewWorldMerge,
   previewRPScenarioTemplate,
   runNarrativeEval,
   runContentCoverage,
@@ -88,6 +114,12 @@ import {
   SaveMigrationStatus,
   ScenarioTemplate,
   ScenarioTemplatePreviewResponse,
+  MergeResolution,
+  TemplateWizardDraft,
+  TemplateWizardPreviewResponse,
+  TemplateWizardType,
+  WorldBranch,
+  WorldMergeDraft,
   RPScenarioTemplate,
   RPScenarioTemplatePreviewResponse,
   ScenarioAuthoringPreviewResponse,
@@ -95,6 +127,7 @@ import {
   ScenarioRegressionRun,
   QuestGraphResponse,
   QuestStageNode,
+  QuestTriggerNode,
   startGame,
   StudioConfigSummary,
   StudioStatus,
@@ -119,27 +152,48 @@ import {
   ItemEconomyAuthoring,
   ItemEconomyItem,
   MerchantEconomyNode,
+  ShopInventoryEdge,
+  CharacterCardImportReport,
   RumorAuthoringNode,
   RumorCrimeConsequenceAuthoring,
+  RPCharacterAuthoring,
+  RPCharacterAuthoringProfile,
+  DialogueSceneAuthoring,
+  DialogueSceneTemplate,
+  GroupRPSceneAuthoring,
+  GroupRPSceneTemplate,
   ExampleDialogue,
   fetchExampleDialogues,
   previewNPCGoalGraph,
   previewItemEconomyAuthoring,
   previewExampleDialogues,
+  previewRPCharacterAuthoring,
+  previewRPCharacterImport,
+  previewDialogueSceneAuthoring,
+  previewGroupRPSceneAuthoring,
   previewRumorCrimeAuthoring,
   previewSocialAuthoringGraph,
   saveNPCGoalGraph,
   saveItemEconomyAuthoring,
   saveExampleDialogues,
+  saveRPCharacterAuthoring,
+  saveDialogueSceneAuthoring,
+  saveGroupRPSceneAuthoring,
   saveRumorCrimeAuthoring,
   saveSocialAuthoringGraph,
+  saveWorldMerge,
   selectPromptProfile,
   SocialAuthoringGraph,
   validateItemEconomyAuthoring,
+  validateRPCharacterAuthoring,
+  validateDialogueSceneAuthoring,
+  validateGroupRPSceneAuthoring,
   validateNPCGoalGraph,
   validateExampleDialogues,
   validateRumorCrimeAuthoring,
   validateSocialAuthoringGraph,
+  validateTemplateWizard,
+  validateLocalContentLibraryItem,
   fetchWorldHealth,
   runWorldHealth,
   continueDialogue,
@@ -217,27 +271,43 @@ const MAP_VISIBILITIES: MapVisibility[] = ["public", "hidden", "discoverable"];
 const TIMELINE_FILTERS = ["all", "player", "system", "npc", "quest", "combat", "social", "migration"] as const;
 type TimelineFilter = (typeof TIMELINE_FILTERS)[number];
 type AuthoringToolId =
+  | "project_dashboard"
   | "map"
   | "quests"
   | "npc_goals"
   | "social"
   | "economy"
   | "rumor_crime"
+  | "rp_characters"
+  | "dialogue_scenes"
+  | "group_rp_scenes"
   | "example_dialogue"
   | "scenarios"
   | "templates"
+  | "template_wizard"
+  | "merge_assistant"
+  | "diff_review"
+  | "library"
   | "validation";
 
 const AUTHORING_TOOL_NAV: { id: AuthoringToolId; label: string; description: string; preferredFile?: string }[] = [
+  { id: "project_dashboard", label: "Project", description: "status, quality, recent edits" },
   { id: "map", label: "Map", description: "locations, exits, visual coordinates", preferredFile: "locations.yaml" },
   { id: "quests", label: "Quests", description: "quest stages, triggers, rewards", preferredFile: "quests.yaml" },
   { id: "npc_goals", label: "NPC Goals", description: "goal priorities and planning constraints", preferredFile: "npcs.yaml" },
   { id: "social", label: "Factions / Relationships", description: "factions, trust, conflict, visibility", preferredFile: "factions.yaml" },
   { id: "economy", label: "Items / Economy", description: "items, prices, merchants, shops", preferredFile: "items.yaml" },
   { id: "rumor_crime", label: "Rumors / Crime", description: "rumors and social consequence chains", preferredFile: "rumors.yaml" },
+  { id: "rp_characters", label: "RP Characters", description: "profiles, voice, emotions, safe imports", preferredFile: "npcs.yaml" },
+  { id: "dialogue_scenes", label: "Dialogue Scenes", description: "participants, topics, moods, openings", preferredFile: "dialogue_scenes.yaml" },
+  { id: "group_rp_scenes", label: "Group RP Scenes", description: "multi-NPC scenes, roles, tension", preferredFile: "group_rp_scenes.yaml" },
   { id: "example_dialogue", label: "Example Dialogue", description: "style-only dialogue samples", preferredFile: "example_dialogues.yaml" },
   { id: "scenarios", label: "Scenarios", description: "regression case authoring" },
   { id: "templates", label: "Templates", description: "local scenario templates" },
+  { id: "template_wizard", label: "Template Wizard", description: "guided template drafts" },
+  { id: "merge_assistant", label: "Merge Assistant", description: "branch conflict review" },
+  { id: "diff_review", label: "Diff Review", description: "content change review" },
+  { id: "library", label: "Library", description: "local content packages" },
   { id: "validation", label: "Validation", description: "validation graph and issue routing" }
 ];
 
@@ -1643,7 +1713,7 @@ function StudioHome({
               {recentSaves.map((save) => (
                 <li key={save.save_id}>
                   <strong>{save.world_name}</strong> turn {save.turn}, {save.current_location_name}
-                  <span className="muted"> · {save.formatted_time}</span>
+                  <span className="muted"> 路 {save.formatted_time}</span>
                 </li>
               ))}
             </ul>
@@ -1675,7 +1745,7 @@ function StudioHome({
             <p className="muted">
               Recent runs: {status.playtest_summary.recent_runs}
               {status.playtest_summary.latest_status
-                ? ` · ${status.playtest_summary.latest_status}`
+                ? ` 路 ${status.playtest_summary.latest_status}`
                 : ""}
             </p>
           ) : (
@@ -2028,7 +2098,7 @@ function NarrativeQualityDashboard({
           >
             {reports.map((report) => (
               <option key={report.run_id} value={report.run_id}>
-                {shortRunId(report.run_id)} · {report.passed}/{report.total_cases}
+                {shortRunId(report.run_id)} 路 {report.passed}/{report.total_cases}
               </option>
             ))}
           </select>
@@ -2193,7 +2263,7 @@ function PerformanceDashboard({
               <li key={sample.sample_id}>
                 <strong>{sample.name}</strong> {formatDuration(sample.duration_ms)}
                 {Object.keys(sample.stage_durations_ms).length > 0 && (
-                  <span className="muted"> · {formatStageDurations(sample.stage_durations_ms)}</span>
+                  <span className="muted"> 路 {formatStageDurations(sample.stage_durations_ms)}</span>
                 )}
               </li>
             ))}
@@ -3589,6 +3659,75 @@ function AuthoringToolNav({
   );
 }
 
+function AuthoringWorkflowLauncher({ onLaunch }: { onLaunch: (toolId: AuthoringToolId) => void }) {
+  const [presets, setPresets] = useState<AuthoringWorkflowPreset[]>([]);
+  const [selectedId, setSelectedId] = useState<string>("");
+  const [activeStep, setActiveStep] = useState<string>("");
+  const [error, setError] = useState<string>("");
+
+  useEffect(() => {
+    void loadPresets();
+  }, []);
+
+  async function loadPresets() {
+    setError("");
+    try {
+      const response = await fetchAuthoringWorkflowPresets();
+      setPresets(response.presets);
+      setSelectedId((current) => current || response.presets[0]?.id || "");
+    } catch (err) {
+      setPresets([]);
+      setError(authoringErrorMessage(err));
+    }
+  }
+
+  const selected = presets.find((preset) => preset.id === selectedId) ?? presets[0] ?? null;
+  return (
+    <section className="mod-manager-panel authoring-zone">
+      <div className="authoring-pane-header">
+        <div>
+          <h2>Workflow Launcher</h2>
+          <p className="muted">Open guided local workflows. Steps route to existing editors and validation gates.</p>
+        </div>
+        <button type="button" onClick={() => void loadPresets()}>Refresh Workflows</button>
+      </div>
+      {error && <ErrorPanel message={error} />}
+      {selected ? (
+        <>
+          <div className="template-grid">
+            <label>Preset<select value={selected.id} onChange={(event) => { setSelectedId(event.target.value); setActiveStep(""); }}>{presets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}</select></label>
+            <p className="muted">{selected.description}</p>
+          </div>
+          <div className="diff-summary">
+            <h3>Steps</h3>
+            {selected.steps.map((step) => (
+              <p key={step.id}>
+                <strong>{step.label}</strong> {step.action}
+                <button type="button" onClick={() => { setActiveStep(step.id); onLaunch(workflowToolRefToAuthoringTool(step.tool_ref)); }}>Open</button>
+                {activeStep === step.id && <span className="badge">active</span>}
+              </p>
+            ))}
+          </div>
+          <div className="diff-summary">
+            <h3>Gates / Checks</h3>
+            <p>Validation gates: {selected.validation_gates.join(", ") || "None"}</p>
+            <p>Quality checks: {selected.quality_checks.join(", ") || "None"}</p>
+            <p>Suggested templates: {selected.suggested_templates.join(", ") || "None"}</p>
+          </div>
+        </>
+      ) : (
+        <EmptyState title="No workflow presets." detail="Authoring workflow presets are local and read-only." />
+      )}
+    </section>
+  );
+}
+
+function workflowToolRefToAuthoringTool(toolRef: string): AuthoringToolId {
+  if (toolRef === "quality_gate") return "validation";
+  if (toolRef === "import_export") return "diff_review";
+  return AUTHORING_TOOL_NAV.some((tool) => tool.id === toolRef) ? (toolRef as AuthoringToolId) : "validation";
+}
+
 function AuthoringSection({
   toolId,
   activeTool,
@@ -3861,7 +4000,7 @@ function AuthoringPanel() {
   const [content, setContent] = useState<string>("");
   const [diskContent, setDiskContent] = useState<string>("");
   const [viewMode, setViewMode] = useState<AuthoringViewMode>("raw");
-  const [activeAuthoringTool, setActiveAuthoringTool] = useState<AuthoringToolId>("map");
+  const [activeAuthoringTool, setActiveAuthoringTool] = useState<AuthoringToolId>("project_dashboard");
   const [selectedEntityId, setSelectedEntityId] = useState<string>("");
   const [validation, setValidation] = useState<AuthoringValidation | null>(null);
   const [preview, setPreview] = useState<AuthoringFilePreviewResponse | null>(null);
@@ -4095,6 +4234,8 @@ function AuthoringPanel() {
       </LocalOnlyNotice>
       <ImportPackagePanel />
 
+      <AuthoringWorkflowLauncher onLaunch={handleSelectAuthoringTool} />
+
       <AuthoringToolNav activeTool={activeAuthoringTool} onSelectTool={handleSelectAuthoringTool} />
 
       <div className="authoring-controls">
@@ -4237,6 +4378,18 @@ function AuthoringPanel() {
       {selectedWorldId && (
         <>
           <AuthoringSection
+            toolId="project_dashboard"
+            activeTool={activeAuthoringTool}
+            title="Project Dashboard"
+            description="Current world, branch, validation, quality, packages, and recent local edits."
+          >
+            <AuthoringProjectDashboardPanel
+              worldId={selectedWorldId}
+              onOpenEditor={handleSelectAuthoringTool}
+            />
+          </AuthoringSection>
+
+          <AuthoringSection
             toolId="map"
             activeTool={activeAuthoringTool}
             title="Map"
@@ -4362,6 +4515,76 @@ function AuthoringPanel() {
           </AuthoringSection>
 
           <AuthoringSection
+            toolId="rp_characters"
+            activeTool={activeAuthoringTool}
+            title="RP Characters"
+            description="Roleplay character profiles, voice, emotions, safe imports, and safe exports."
+          >
+            <RPCharacterAuthoringPanel
+              worldId={selectedWorldId}
+              onPreviewYaml={(yamlContents, validationResult) => {
+                const nextFile = yamlContents["npcs.yaml"] ? "npcs.yaml" : "example_dialogues.yaml";
+                setSelectedFile(nextFile);
+                const nextContent = yamlContents[nextFile];
+                if (nextContent) {
+                  setContent(nextContent);
+                }
+                setPreview(null);
+                setValidation(validationResult);
+                setMessage(
+                  validationResult.ok
+                    ? "RP character preview converted to YAML. Use Preview/Save to persist."
+                    : "RP character preview has validation errors."
+                );
+              }}
+            />
+          </AuthoringSection>
+
+          <AuthoringSection
+            toolId="dialogue_scenes"
+            activeTool={activeAuthoringTool}
+            title="Dialogue Scenes"
+            description="Draft reusable dialogue scene templates. They never start active DialogueSession objects."
+          >
+            <DialogueSceneEditorPanel
+              worldId={selectedWorldId}
+              onPreviewYaml={(yamlContent, validationResult) => {
+                setSelectedFile("dialogue_scenes.yaml");
+                setContent(yamlContent);
+                setPreview(null);
+                setValidation(validationResult);
+                setMessage(
+                  validationResult.ok
+                    ? "Dialogue scene preview converted to YAML. Use Preview/Save to persist."
+                    : "Dialogue scene preview has validation errors."
+                );
+              }}
+            />
+          </AuthoringSection>
+
+          <AuthoringSection
+            toolId="group_rp_scenes"
+            activeTool={activeAuthoringTool}
+            title="Group RP Scenes"
+            description="Author multi-NPC group scene templates without starting active group dialogue."
+          >
+            <GroupRPSceneEditorPanel
+              worldId={selectedWorldId}
+              onPreviewYaml={(yamlContent, validationResult) => {
+                setSelectedFile("group_rp_scenes.yaml");
+                setContent(yamlContent);
+                setPreview(null);
+                setValidation(validationResult);
+                setMessage(
+                  validationResult.ok
+                    ? "Group RP scene preview converted to YAML. Use Preview/Save to persist."
+                    : "Group RP scene preview has validation errors."
+                );
+              }}
+            />
+          </AuthoringSection>
+
+          <AuthoringSection
             toolId="social"
             activeTool={activeAuthoringTool}
             title="Factions / Relationships"
@@ -4424,6 +4647,47 @@ function AuthoringPanel() {
           >
             <ScenarioTemplatePanel />
           </AuthoringSection>
+
+          <AuthoringSection
+            toolId="template_wizard"
+            activeTool={activeAuthoringTool}
+            title="Template Wizard"
+            description="Guided local template drafts for worlds, quests, characters, scenes, factions, and mysteries."
+          >
+            <TemplateWizardPanel worldId={selectedWorldId} />
+          </AuthoringSection>
+
+          <AuthoringSection
+            toolId="merge_assistant"
+            activeTool={activeAuthoringTool}
+            title="Merge Assistant"
+            description="Compare two local world branches, resolve content conflicts, and save only after validation."
+          >
+            <WorldMergeAssistantPanel worldId={selectedWorldId} />
+          </AuthoringSection>
+
+          <AuthoringSection
+            toolId="diff_review"
+            activeTool={activeAuthoringTool}
+            title="Content Diff Review"
+            description="Review file, entity, graph, package, schema, visibility, and RP profile changes."
+          >
+            <ContentDiffReviewPanel
+              worldId={selectedWorldId}
+              fileName={selectedFile}
+              content={content}
+              onJump={(toolId) => setActiveAuthoringTool(toolId)}
+            />
+          </AuthoringSection>
+
+          <AuthoringSection
+            toolId="library"
+            activeTool={activeAuthoringTool}
+            title="Local Content Library"
+            description="Browse, validate, import, and export local content without exposing sensitive paths."
+          >
+            <LocalContentLibraryPanel onOpenEditor={setActiveAuthoringTool} />
+          </AuthoringSection>
         </>
       )}
 
@@ -4435,6 +4699,726 @@ function AuthoringPanel() {
         </p>
       )}
       <ModManagerPanel />
+    </section>
+  );
+}
+
+function GroupRPSceneEditorPanel({
+  worldId,
+  onPreviewYaml
+}: {
+  worldId: string;
+  onPreviewYaml: (yamlContent: string, validation: AuthoringValidation) => void;
+}) {
+  const [graph, setGraph] = useState<GroupRPSceneAuthoring | null>(null);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
+  const [validation, setValidation] = useState<AuthoringValidation | null>(null);
+  const [safePreview, setSafePreview] = useState<Record<string, string>>({});
+  const [message, setMessage] = useState<string>("");
+  const [error, setError] = useState<string>("");
+  const [isBusy, setIsBusy] = useState<boolean>(false);
+  const referenceIndex = useReferenceIndex(worldId);
+
+  useEffect(() => {
+    void loadScenes();
+  }, [worldId]);
+
+  async function loadScenes() {
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await fetchGroupRPSceneAuthoring(worldId);
+      setGraph(response);
+      setSelectedTemplateId(response.templates[0]?.id ?? "");
+      setValidation(null);
+      setSafePreview({});
+    } catch (err) {
+      setGraph(null);
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  function updateSelected(updater: (template: GroupRPSceneTemplate) => GroupRPSceneTemplate) {
+    if (!graph || !selectedTemplateId) {
+      return;
+    }
+    setGraph({
+      ...graph,
+      templates: graph.templates.map((template) => template.id === selectedTemplateId ? updater(template) : template)
+    });
+  }
+
+  function addTemplate() {
+    if (!graph) {
+      return;
+    }
+    const id = nextUniqueId("group_rp_scene", graph.templates.map((template) => template.id));
+    const template: GroupRPSceneTemplate = {
+      id,
+      name: "New Group RP Scene",
+      scene_type: "meeting",
+      participant_ids: ["harlan"],
+      required_roles: [{ role_id: "speaker", npc_id: "harlan", label: "Speaker", required: true }],
+      location_id: "blacksmith",
+      turn_order_policy: "round_robin",
+      speaker_selection_policy: "deterministic",
+      scene_mood: "mist_tension",
+      starting_tension: 30,
+      opening_public_context: "",
+      allowed_topics: [],
+      forbidden_topics: [],
+      exit_conditions: [],
+      allow_dead_participants: false
+    };
+    setGraph({ ...graph, templates: [...graph.templates, template] });
+    setSelectedTemplateId(id);
+  }
+
+  function deleteSelected() {
+    if (!graph || !selectedTemplateId) {
+      return;
+    }
+    if (!confirmDangerousAction(`Delete group RP scene "${selectedTemplateId}" from this draft?`)) {
+      return;
+    }
+    const nextTemplates = graph.templates.filter((template) => template.id !== selectedTemplateId);
+    setGraph({ ...graph, templates: nextTemplates });
+    setSelectedTemplateId(nextTemplates[0]?.id ?? "");
+  }
+
+  async function runPreview(kind: "preview" | "validate") {
+    if (!graph) {
+      return;
+    }
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = kind === "preview"
+        ? await previewGroupRPSceneAuthoring(worldId, graph)
+        : await validateGroupRPSceneAuthoring(worldId, graph);
+      setGraph(response.graph);
+      setValidation(response.validation);
+      setSafePreview(response.safe_prompt_preview);
+      onPreviewYaml(response.yaml_content, response.validation);
+      setMessage(response.validation.ok ? "Group RP scene draft is valid." : "Group RP scene draft has errors.");
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleSave() {
+    if (!graph) {
+      return;
+    }
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const validationResponse = await validateGroupRPSceneAuthoring(worldId, graph);
+      setValidation(validationResponse.validation);
+      setSafePreview(validationResponse.safe_prompt_preview);
+      onPreviewYaml(validationResponse.yaml_content, validationResponse.validation);
+      if (!validationResponse.validation.ok) {
+        setMessage("Group RP scene save blocked by validation errors.");
+        return;
+      }
+      const confirmWarnings = validationResponse.confirmation_required;
+      if (confirmWarnings && !confirmDangerousAction("Validation returned warnings. Save group RP scene changes anyway?")) {
+        setMessage("Group RP scene save cancelled.");
+        return;
+      }
+      if (!confirmDangerousAction(DANGEROUS_ACTION_COPY.saveGraphChanges)) {
+        setMessage("Group RP scene save cancelled.");
+        return;
+      }
+      const response = await saveGroupRPSceneAuthoring(worldId, graph, confirmWarnings);
+      setGraph(response.graph);
+      setValidation(response.validation);
+      setSafePreview(response.safe_prompt_preview);
+      onPreviewYaml(response.yaml_content, response.validation);
+      setMessage(response.saved ? "Group RP scene templates saved." : "Group RP scene templates were not saved.");
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  const selected = graph?.templates.find((template) => template.id === selectedTemplateId) ?? null;
+
+  return (
+    <section className="quest-graph-editor">
+      <div className="authoring-pane-header">
+        <div>
+          <h2>Group RP Scene Authoring</h2>
+          <p className="muted">Design multi-NPC scenes, roles, turn policy, tension, and safe public openings.</p>
+        </div>
+        <button type="button" onClick={() => void loadScenes()} disabled={isBusy}>Reload Group Scenes</button>
+      </div>
+      {graph ? (
+        <div className="graph-editor-layout">
+          <aside className="graph-node-list">
+            <h3>Group Scenes</h3>
+            {graph.templates.map((template) => (
+              <button
+                type="button"
+                key={template.id}
+                className={template.id === selectedTemplateId ? "active" : ""}
+                onClick={() => setSelectedTemplateId(template.id)}
+              >
+                {template.name || template.id}
+              </button>
+            ))}
+            <button type="button" onClick={addTemplate} disabled={isBusy}>Add Group Scene</button>
+          </aside>
+          <div className="graph-detail-panel">
+            {selected ? (
+              <section className="authoring-preview-box">
+                <div className="authoring-pane-header compact">
+                  <h3>Group Scene Template</h3>
+                  <button type="button" onClick={deleteSelected} disabled={isBusy}>Delete Scene</button>
+                </div>
+                <div className="form-grid">
+                  <TextInput label="Id" value={selected.id} onChange={(value) => updateSelected((template) => ({ ...template, id: value }))} />
+                  <TextInput label="Name" value={selected.name} onChange={(value) => updateSelected((template) => ({ ...template, name: value }))} />
+                  <TextInput label="Scene type" value={selected.scene_type} onChange={(value) => updateSelected((template) => ({ ...template, scene_type: value }))} />
+                  <TextInput label="Participants" value={selected.participant_ids.join(", ")} onChange={(value) => updateSelected((template) => ({ ...template, participant_ids: commaList(value) }))} />
+                  <TextInput label="Roles" value={selected.required_roles.map((role) => `${role.role_id}:${role.npc_id}`).join(", ")} onChange={(value) => updateSelected((template) => ({ ...template, required_roles: commaList(value).map((entry) => {
+                    const [roleId, npcId] = entry.split(":");
+                    return { role_id: roleId || "role", npc_id: npcId || roleId || "", label: roleId || "Role", required: true };
+                  }) }))} />
+                  <ReferencePicker label="Location" kind="location" index={referenceIndex} value={selected.location_id} onChange={(value) => updateSelected((template) => ({ ...template, location_id: value }))} allowEmpty={false} />
+                  <TextInput label="Turn order" value={selected.turn_order_policy} onChange={(value) => updateSelected((template) => ({ ...template, turn_order_policy: value }))} />
+                  <TextInput label="Speaker policy" value={selected.speaker_selection_policy} onChange={(value) => updateSelected((template) => ({ ...template, speaker_selection_policy: value }))} />
+                  <ReferencePicker label="Mood" kind="scene mood" index={referenceIndex} value={selected.scene_mood ?? ""} onChange={(value) => updateSelected((template) => ({ ...template, scene_mood: emptyToNull(value) }))} />
+                  <NumberInput label="Starting tension" value={selected.starting_tension} onChange={(value) => updateSelected((template) => ({ ...template, starting_tension: value }))} />
+                  <TextInput label="Allowed topics" value={selected.allowed_topics.join(", ")} onChange={(value) => updateSelected((template) => ({ ...template, allowed_topics: commaList(value) }))} />
+                  <TextInput label="Forbidden topics" value={selected.forbidden_topics.join(", ")} onChange={(value) => updateSelected((template) => ({ ...template, forbidden_topics: commaList(value) }))} />
+                  <TextInput label="Exit conditions" value={selected.exit_conditions.join(", ")} onChange={(value) => updateSelected((template) => ({ ...template, exit_conditions: commaList(value) }))} />
+                </div>
+                <label><input type="checkbox" checked={selected.allow_dead_participants} onChange={(event) => updateSelected((template) => ({ ...template, allow_dead_participants: event.target.checked }))} /> Allow dead/incapacitated participants</label>
+                <label>Opening public context<textarea value={selected.opening_public_context} onChange={(event) => updateSelected((template) => ({ ...template, opening_public_context: event.target.value }))} /></label>
+                <div className="authoring-preview-box subtle">
+                  <h4>Safe group prompt preview</h4>
+                  <p className="muted">{safePreview[selected.id] || "Run Preview to generate a safe group scene preview."}</p>
+                </div>
+              </section>
+            ) : (
+              <EmptyState title="No group RP scene selected." detail="Add or select a group scene template to edit." />
+            )}
+            <AuthoringActionBar
+              onPreview={() => void runPreview("preview")}
+              onValidate={() => void runPreview("validate")}
+              onSave={() => void handleSave()}
+              disabled={isBusy}
+            />
+            <PreviewResultPanel title="Group RP Scene Validation" validation={validation} />
+          </div>
+        </div>
+      ) : (
+        <EmptyState title="No group RP scenes loaded." detail="Load group_rp_scenes.yaml through the authoring API." />
+      )}
+      {message && <p className="muted">{message}</p>}
+      <ErrorPanel message={error} />
+    </section>
+  );
+}
+
+function DialogueSceneEditorPanel({
+  worldId,
+  onPreviewYaml
+}: {
+  worldId: string;
+  onPreviewYaml: (yamlContent: string, validation: AuthoringValidation) => void;
+}) {
+  const [graph, setGraph] = useState<DialogueSceneAuthoring | null>(null);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
+  const [validation, setValidation] = useState<AuthoringValidation | null>(null);
+  const [promptPreview, setPromptPreview] = useState<Record<string, string>>({});
+  const [message, setMessage] = useState<string>("");
+  const [error, setError] = useState<string>("");
+  const [isBusy, setIsBusy] = useState<boolean>(false);
+  const referenceIndex = useReferenceIndex(worldId);
+
+  useEffect(() => {
+    void loadScenes();
+  }, [worldId]);
+
+  async function loadScenes() {
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await fetchDialogueSceneAuthoring(worldId);
+      setGraph(response);
+      setSelectedTemplateId(response.templates[0]?.id ?? "");
+      setValidation(null);
+      setPromptPreview({});
+    } catch (err) {
+      setGraph(null);
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  function updateSelected(updater: (template: DialogueSceneTemplate) => DialogueSceneTemplate) {
+    if (!graph || !selectedTemplateId) {
+      return;
+    }
+    setGraph({
+      ...graph,
+      templates: graph.templates.map((template) => template.id === selectedTemplateId ? updater(template) : template)
+    });
+  }
+
+  function addTemplate() {
+    if (!graph) {
+      return;
+    }
+    const id = nextUniqueId("dialogue_scene", graph.templates.map((template) => template.id));
+    const template: DialogueSceneTemplate = {
+      id,
+      name: "New Dialogue Scene",
+      participant_ids: ["harlan"],
+      focus_npc_id: "harlan",
+      location_id: "blacksmith",
+      dialogue_mode: "focused",
+      scene_mood: "mist_tension",
+      rp_prompt_profile_id: "default_safe",
+      opening_context: "",
+      allowed_topics: [],
+      forbidden_topics: [],
+      required_visible_facts: [],
+      possible_outcomes: []
+    };
+    setGraph({ ...graph, templates: [...graph.templates, template] });
+    setSelectedTemplateId(id);
+  }
+
+  function deleteSelected() {
+    if (!graph || !selectedTemplateId) {
+      return;
+    }
+    if (!confirmDangerousAction(`Delete dialogue scene "${selectedTemplateId}" from this draft?`)) {
+      return;
+    }
+    const nextTemplates = graph.templates.filter((template) => template.id !== selectedTemplateId);
+    setGraph({ ...graph, templates: nextTemplates });
+    setSelectedTemplateId(nextTemplates[0]?.id ?? "");
+  }
+
+  async function runPreview(kind: "preview" | "validate") {
+    if (!graph) {
+      return;
+    }
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = kind === "preview"
+        ? await previewDialogueSceneAuthoring(worldId, graph)
+        : await validateDialogueSceneAuthoring(worldId, graph);
+      setGraph(response.graph);
+      setValidation(response.validation);
+      setPromptPreview(response.prompt_preview);
+      onPreviewYaml(response.yaml_content, response.validation);
+      setMessage(response.validation.ok ? "Dialogue scene draft is valid." : "Dialogue scene draft has errors.");
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleSave() {
+    if (!graph) {
+      return;
+    }
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const validationResponse = await validateDialogueSceneAuthoring(worldId, graph);
+      setValidation(validationResponse.validation);
+      setPromptPreview(validationResponse.prompt_preview);
+      onPreviewYaml(validationResponse.yaml_content, validationResponse.validation);
+      if (!validationResponse.validation.ok) {
+        setMessage("Dialogue scene save blocked by validation errors.");
+        return;
+      }
+      const confirmWarnings = validationResponse.confirmation_required;
+      if (confirmWarnings && !confirmDangerousAction("Validation returned warnings. Save dialogue scene changes anyway?")) {
+        setMessage("Dialogue scene save cancelled.");
+        return;
+      }
+      if (!confirmDangerousAction(DANGEROUS_ACTION_COPY.saveGraphChanges)) {
+        setMessage("Dialogue scene save cancelled.");
+        return;
+      }
+      const response = await saveDialogueSceneAuthoring(worldId, graph, confirmWarnings);
+      setGraph(response.graph);
+      setValidation(response.validation);
+      setPromptPreview(response.prompt_preview);
+      onPreviewYaml(response.yaml_content, response.validation);
+      setMessage(response.saved ? "Dialogue scene templates saved." : "Dialogue scene templates were not saved.");
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  const selected = graph?.templates.find((template) => template.id === selectedTemplateId) ?? null;
+
+  return (
+    <section className="quest-graph-editor">
+      <div className="authoring-pane-header">
+        <div>
+          <h2>Dialogue Scene Editor</h2>
+          <p className="muted">Local scene templates for DialogueManager. Preview and validation do not start sessions.</p>
+        </div>
+        <button type="button" onClick={() => void loadScenes()} disabled={isBusy}>Reload Scenes</button>
+      </div>
+      {graph ? (
+        <div className="graph-editor-layout">
+          <aside className="graph-node-list">
+            <h3>Scenes</h3>
+            {graph.templates.map((template) => (
+              <button
+                type="button"
+                key={template.id}
+                className={template.id === selectedTemplateId ? "active" : ""}
+                onClick={() => setSelectedTemplateId(template.id)}
+              >
+                {template.name || template.id}
+              </button>
+            ))}
+            <button type="button" onClick={addTemplate} disabled={isBusy}>Add Scene</button>
+          </aside>
+          <div className="graph-detail-panel">
+            {selected ? (
+              <section className="authoring-preview-box">
+                <div className="authoring-pane-header compact">
+                  <h3>Scene Template</h3>
+                  <button type="button" onClick={deleteSelected} disabled={isBusy}>Delete Scene</button>
+                </div>
+                <div className="form-grid">
+                  <TextInput label="Id" value={selected.id} onChange={(value) => updateSelected((template) => ({ ...template, id: value }))} />
+                  <TextInput label="Name" value={selected.name} onChange={(value) => updateSelected((template) => ({ ...template, name: value }))} />
+                  <TextInput label="Participants" value={selected.participant_ids.join(", ")} onChange={(value) => updateSelected((template) => ({ ...template, participant_ids: commaList(value) }))} />
+                  <ReferencePicker label="Focus NPC" kind="NPC" index={referenceIndex} value={selected.focus_npc_id} onChange={(value) => updateSelected((template) => ({ ...template, focus_npc_id: value }))} allowEmpty={false} />
+                  <ReferencePicker label="Location" kind="location" index={referenceIndex} value={selected.location_id} onChange={(value) => updateSelected((template) => ({ ...template, location_id: value }))} allowEmpty={false} />
+                  <TextInput label="Dialogue mode" value={selected.dialogue_mode} onChange={(value) => updateSelected((template) => ({ ...template, dialogue_mode: value }))} />
+                  <ReferencePicker label="Scene mood" kind="scene mood" index={referenceIndex} value={selected.scene_mood ?? ""} onChange={(value) => updateSelected((template) => ({ ...template, scene_mood: emptyToNull(value) }))} />
+                  <ReferencePicker label="RP prompt profile" kind="prompt profile" index={referenceIndex} value={selected.rp_prompt_profile_id ?? ""} onChange={(value) => updateSelected((template) => ({ ...template, rp_prompt_profile_id: emptyToNull(value) }))} />
+                  <TextInput label="Allowed topics" value={selected.allowed_topics.join(", ")} onChange={(value) => updateSelected((template) => ({ ...template, allowed_topics: commaList(value) }))} />
+                  <TextInput label="Forbidden topics" value={selected.forbidden_topics.join(", ")} onChange={(value) => updateSelected((template) => ({ ...template, forbidden_topics: commaList(value) }))} />
+                  <TextInput label="Required visible facts" value={selected.required_visible_facts.join(", ")} onChange={(value) => updateSelected((template) => ({ ...template, required_visible_facts: commaList(value) }))} />
+                </div>
+                <label>Opening context<textarea value={selected.opening_context} onChange={(event) => updateSelected((template) => ({ ...template, opening_context: event.target.value }))} /></label>
+                <div className="authoring-preview-box subtle">
+                  <h4>Prompt-safe preview</h4>
+                  <p className="muted">{promptPreview[selected.id] || "Run Preview to generate a safe prompt preview."}</p>
+                </div>
+              </section>
+            ) : (
+              <EmptyState title="No dialogue scene selected." detail="Add or select a scene template to edit." />
+            )}
+            <AuthoringActionBar
+              onPreview={() => void runPreview("preview")}
+              onValidate={() => void runPreview("validate")}
+              onSave={() => void handleSave()}
+              disabled={isBusy}
+            />
+            <PreviewResultPanel title="Dialogue Scene Validation" validation={validation} />
+          </div>
+        </div>
+      ) : (
+        <EmptyState title="No dialogue scenes loaded." detail="Load dialogue_scenes.yaml through the authoring API." />
+      )}
+      {message && <p className="muted">{message}</p>}
+      <ErrorPanel message={error} />
+    </section>
+  );
+}
+
+function RPCharacterAuthoringPanel({
+  worldId,
+  onPreviewYaml
+}: {
+  worldId: string;
+  onPreviewYaml: (yamlContents: Record<string, string>, validation: AuthoringValidation) => void;
+}) {
+  const [graph, setGraph] = useState<RPCharacterAuthoring | null>(null);
+  const [selectedNpcId, setSelectedNpcId] = useState<string>("");
+  const [validation, setValidation] = useState<AuthoringValidation | null>(null);
+  const [importDraft, setImportDraft] = useState<string>("");
+  const [importReport, setImportReport] = useState<CharacterCardImportReport | null>(null);
+  const [safeExport, setSafeExport] = useState<string>("");
+  const [message, setMessage] = useState<string>("");
+  const [error, setError] = useState<string>("");
+  const [isBusy, setIsBusy] = useState<boolean>(false);
+  const referenceIndex = useReferenceIndex(worldId);
+
+  useEffect(() => {
+    void loadCharacters();
+  }, [worldId]);
+
+  async function loadCharacters() {
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await fetchRPCharacterAuthoring(worldId);
+      setGraph(response);
+      setSelectedNpcId(response.characters[0]?.npc_id ?? "");
+      setValidation(null);
+    } catch (err) {
+      setGraph(null);
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  function updateSelected(updater: (character: RPCharacterAuthoringProfile) => RPCharacterAuthoringProfile) {
+    if (!graph || !selectedNpcId) {
+      return;
+    }
+    setGraph({
+      ...graph,
+      characters: graph.characters.map((character) => character.npc_id === selectedNpcId ? updater(character) : character)
+    });
+  }
+
+  async function handlePreview() {
+    if (!graph) {
+      return;
+    }
+    setIsBusy(true);
+    setError("");
+    try {
+      const response = await previewRPCharacterAuthoring(worldId, graph);
+      setGraph(response.graph);
+      setValidation(response.validation);
+      onPreviewYaml(response.yaml_contents, response.validation);
+      setMessage(response.validation.ok ? "RP character preview is valid." : "RP character preview has errors.");
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleValidate() {
+    if (!graph) {
+      return;
+    }
+    setIsBusy(true);
+    setError("");
+    try {
+      const response = await validateRPCharacterAuthoring(worldId, graph);
+      setGraph(response.graph);
+      setValidation(response.validation);
+      onPreviewYaml(response.yaml_contents, response.validation);
+      setMessage(response.validation.ok ? "RP character validation passed." : "RP character validation found errors.");
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleSave() {
+    if (!graph) {
+      return;
+    }
+    setIsBusy(true);
+    setError("");
+    try {
+      const validationResponse = await validateRPCharacterAuthoring(worldId, graph);
+      setValidation(validationResponse.validation);
+      onPreviewYaml(validationResponse.yaml_contents, validationResponse.validation);
+      if (!validationResponse.validation.ok) {
+        setMessage("RP character save blocked by validation errors.");
+        return;
+      }
+      const confirmWarnings = validationResponse.confirmation_required;
+      if (confirmWarnings && !confirmDangerousAction("Validation returned warnings. Save RP character changes anyway?")) {
+        setMessage("RP character save cancelled.");
+        return;
+      }
+      if (!confirmDangerousAction(DANGEROUS_ACTION_COPY.saveGraphChanges)) {
+        setMessage("RP character save cancelled.");
+        return;
+      }
+      const response = await saveRPCharacterAuthoring(worldId, graph, confirmWarnings);
+      setGraph(response.graph);
+      setValidation(response.validation);
+      onPreviewYaml(response.yaml_contents, response.validation);
+      setMessage(response.saved ? "RP character data saved." : "RP character data was not saved.");
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleImportPreview() {
+    const raw = importDraft.trim();
+    if (!raw) {
+      setMessage("Paste a local character card payload first.");
+      return;
+    }
+    setIsBusy(true);
+    setError("");
+    try {
+      const response = await previewRPCharacterImport(worldId, raw);
+      setImportReport(response);
+      setMessage(response.ok ? "Character card import preview is safe." : "Character card import contains unsafe entries.");
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleSafeExport() {
+    if (!selectedNpcId) {
+      return;
+    }
+    setIsBusy(true);
+    setError("");
+    try {
+      const response = await exportSafeRPCharacterCard(worldId, selectedNpcId);
+      setSafeExport(JSON.stringify(response.card, null, 2));
+      setMessage(`Safe export ready. Excluded: ${response.excluded_fields.join(", ")}`);
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  const selected = graph?.characters.find((character) => character.npc_id === selectedNpcId) ?? null;
+
+  return (
+    <section className="quest-graph-editor">
+      <div className="authoring-pane-header">
+        <div>
+          <h2>RP Character Editor</h2>
+          <p className="muted">Local-only RP profile, voice, emotion, example dialogue, import report, and safe export editor.</p>
+        </div>
+        <button type="button" onClick={() => void loadCharacters()} disabled={isBusy}>Reload Characters</button>
+      </div>
+
+      {graph ? (
+        <div className="graph-editor-layout">
+          <aside className="graph-node-list">
+            <h3>Characters</h3>
+            {graph.characters.map((character) => (
+              <button
+                type="button"
+                key={character.npc_id}
+                className={character.npc_id === selectedNpcId ? "active" : ""}
+                onClick={() => setSelectedNpcId(character.npc_id)}
+              >
+                {character.name || character.npc_id}
+                {character.safety_flags.length ? " *" : ""}
+              </button>
+            ))}
+          </aside>
+
+          <div className="graph-detail-panel">
+            {selected ? (
+              <>
+                <section className="authoring-preview-box">
+                  <h3>Character Card</h3>
+                  <div className="form-grid">
+                    <TextInput label="Name" value={selected.name} onChange={(value) => updateSelected((character) => ({ ...character, name: value }))} />
+                    <ReferencePicker label="Location" kind="location" index={referenceIndex} value={selected.location_id} onChange={(value) => updateSelected((character) => ({ ...character, location_id: value }))} allowEmpty={false} />
+                    <TextInput label="Knowledge refs" value={selected.knowledge.join(", ")} onChange={(value) => updateSelected((character) => ({ ...character, knowledge: commaList(value) }))} />
+                    <TextInput label="Scene moods" value={selected.scene_mood_preferences.join(", ")} onChange={(value) => updateSelected((character) => ({ ...character, scene_mood_preferences: commaList(value) }))} />
+                  </div>
+                  <label>Personality<textarea value={selected.personality} onChange={(event) => updateSelected((character) => ({ ...character, personality: event.target.value }))} /></label>
+                  <div className="checkbox-grid">
+                    <label><input type="checkbox" checked={selected.visible} onChange={(event) => updateSelected((character) => ({ ...character, visible: event.target.checked }))} /> Visible</label>
+                    <label><input type="checkbox" checked={selected.hidden} onChange={(event) => updateSelected((character) => ({ ...character, hidden: event.target.checked }))} /> Hidden</label>
+                  </div>
+                </section>
+
+                <section className="authoring-preview-box">
+                  <h3>RP Profile</h3>
+                  <label>Public persona<textarea value={selected.rp_profile.public_persona} onChange={(event) => updateSelected((character) => ({ ...character, rp_profile: { ...character.rp_profile, public_persona: event.target.value } }))} /></label>
+                  <label>Private self summary<textarea value={selected.rp_profile.private_self_summary ?? ""} onChange={(event) => updateSelected((character) => ({ ...character, rp_profile: { ...character.rp_profile, private_self_summary: emptyToNull(event.target.value) } }))} /></label>
+                  <div className="form-grid">
+                    <TextInput label="Trust expression" value={selected.rp_profile.trust_expression_style} onChange={(value) => updateSelected((character) => ({ ...character, rp_profile: { ...character.rp_profile, trust_expression_style: value } }))} />
+                    <TextInput label="Conflict expression" value={selected.rp_profile.conflict_expression_style} onChange={(value) => updateSelected((character) => ({ ...character, rp_profile: { ...character.rp_profile, conflict_expression_style: value } }))} />
+                    <TextInput label="Intimacy expression" value={selected.rp_profile.intimacy_expression_style} onChange={(value) => updateSelected((character) => ({ ...character, rp_profile: { ...character.rp_profile, intimacy_expression_style: value } }))} />
+                    <TextInput label="Boundaries" value={selected.rp_profile.boundaries.join(", ")} onChange={(value) => updateSelected((character) => ({ ...character, rp_profile: { ...character.rp_profile, boundaries: commaList(value) } }))} />
+                  </div>
+                </section>
+
+                <section className="authoring-preview-box">
+                  <h3>Voice / Emotion</h3>
+                  <div className="form-grid">
+                    <TextInput label="Tone" value={selected.voice_profile.tone} onChange={(value) => updateSelected((character) => ({ ...character, voice_profile: { ...character.voice_profile, tone: value } }))} />
+                    <TextInput label="Sentence length" value={selected.voice_profile.sentence_length} onChange={(value) => updateSelected((character) => ({ ...character, voice_profile: { ...character.voice_profile, sentence_length: value } }))} />
+                    <TextInput label="Catchphrases" value={selected.voice_profile.catchphrases.join(", ")} onChange={(value) => updateSelected((character) => ({ ...character, voice_profile: { ...character.voice_profile, catchphrases: commaList(value) } }))} />
+                    <TextInput label="Speech habits" value={selected.voice_profile.speech_habits.join(", ")} onChange={(value) => updateSelected((character) => ({ ...character, voice_profile: { ...character.voice_profile, speech_habits: commaList(value) } }))} />
+                    <TextInput label="Default emotion" value={selected.default_emotional_state.primary_emotion} onChange={(value) => updateSelected((character) => ({ ...character, default_emotional_state: { ...character.default_emotional_state, primary_emotion: value } }))} />
+                    <NumberInput label="Intensity" value={selected.default_emotional_state.intensity} onChange={(value) => updateSelected((character) => ({ ...character, default_emotional_state: { ...character.default_emotional_state, intensity: value } }))} />
+                  </div>
+                </section>
+
+                <section className="authoring-preview-box">
+                  <h3>Example Dialogue</h3>
+                  <TextInput label="Prompt-safe refs" value={selected.example_dialogue_refs.join(", ")} onChange={(value) => updateSelected((character) => ({ ...character, example_dialogue_refs: commaList(value) }))} />
+                  <ul className="compact-list">
+                    {selected.example_dialogues.map((entry) => (
+                      <li key={entry.id}>{entry.id}: {entry.visibility} / {entry.fact_policy}</li>
+                    ))}
+                  </ul>
+                </section>
+              </>
+            ) : (
+              <EmptyState title="No RP character selected." detail="Select an NPC to edit RP authoring fields." />
+            )}
+
+            <section className="authoring-preview-box">
+              <h3>Character Card Import Preview</h3>
+              <textarea value={importDraft} onChange={(event) => setImportDraft(event.target.value)} />
+              <button type="button" onClick={() => void handleImportPreview()} disabled={isBusy}>Preview Import</button>
+              {importReport && (
+                <p className={importReport.ok ? "muted" : "danger-text"}>
+                  {importReport.ok ? "Safe import candidate" : "Unsafe entries quarantined"}; examples {importReport.example_dialogue_candidate.lines.length}; hidden candidates {importReport.hidden_fact_candidate.length}.
+                </p>
+              )}
+            </section>
+
+            <AuthoringActionBar
+              onPreview={() => void handlePreview()}
+              onValidate={() => void handleValidate()}
+              onSave={() => void handleSave()}
+              disabled={isBusy}
+            />
+            <button type="button" onClick={() => void handleSafeExport()} disabled={isBusy || !selectedNpcId}>Export Safe Character Card</button>
+            {safeExport && <textarea readOnly value={safeExport} />}
+            <PreviewResultPanel title="RP Character Validation" validation={validation} />
+          </div>
+        </div>
+      ) : (
+        <EmptyState title="No RP character graph loaded." detail="Load npcs.yaml through the authoring API to edit RP character fields." />
+      )}
+      {message && <p className="muted">{message}</p>}
+      <ErrorPanel message={error} />
     </section>
   );
 }
@@ -4651,13 +5635,18 @@ function MapEditorPanel({
     target_location_id: "",
     edge_type: "exit",
     label: "path",
-    visibility: "public"
+    visibility: "public",
+    travel_cost: 1,
+    discovery_rules: []
   });
   const [validation, setValidation] = useState<AuthoringValidation | null>(null);
   const [previewYaml, setPreviewYaml] = useState<string>("");
+  const [mapDiffSummary, setMapDiffSummary] = useState<AuthoringDiffSummary | null>(null);
+  const [draggingNodeId, setDraggingNodeId] = useState<string>("");
   const [message, setMessage] = useState<string>("");
   const [error, setError] = useState<string>("");
   const [isBusy, setIsBusy] = useState<boolean>(false);
+  const referenceIndex = useReferenceIndex(worldId);
 
   useEffect(() => {
     if (worldId) {
@@ -4700,6 +5689,7 @@ function MapEditorPanel({
       const response = await previewAuthoringMap(worldId, graph);
       setValidation(response.validation);
       setPreviewYaml(response.yaml_content);
+      setMapDiffSummary(response.diff_summary ?? null);
       setMessage(response.validation.ok ? "Map preview is valid." : "Map preview found validation errors.");
     } catch (err) {
       setError(authoringErrorMessage(err));
@@ -4750,11 +5740,12 @@ function MapEditorPanel({
       if (!confirmed) {
         return;
       }
-      const response = await saveAuthoringMap(worldId, graph);
+      const response = await saveAuthoringMap(worldId, graph, validationResponse.warnings.length > 0);
       setGraph(response.graph);
       setSavedGraphJson(JSON.stringify(response.graph));
       setValidation(response.validation);
       setPreviewYaml("");
+      setMapDiffSummary(null);
       setMessage(response.confirmation_required ? "Saved with warnings." : "Map saved and validated.");
     } catch (err) {
       setError(authoringErrorMessage(err));
@@ -4776,6 +5767,7 @@ function MapEditorPanel({
       };
     });
     setPreviewYaml("");
+    setMapDiffSummary(null);
   }
 
   function updateEdge(index: number, updates: Partial<MapVisualEdge>) {
@@ -4791,6 +5783,7 @@ function MapEditorPanel({
       };
     });
     setPreviewYaml("");
+    setMapDiffSummary(null);
   }
 
   function addEdge() {
@@ -4817,6 +5810,60 @@ function MapEditorPanel({
     });
     setSelectedEdgeIndex(-1);
     setPreviewYaml("");
+  }
+
+  function addNode() {
+    if (!graph) {
+      return;
+    }
+    const nextIndex = graph.nodes.length + 1;
+    const locationId = `new_location_${nextIndex}`;
+    const node: MapVisualNode = {
+      id: locationId,
+      location_id: locationId,
+      name: `New Location ${nextIndex}`,
+      x: nextIndex * 80,
+      y: nextIndex * 40,
+      region_id: graph.regions[0]?.id ?? null,
+      layer_id: graph.layers[0]?.id ?? null,
+      tags: [],
+      visibility: "public"
+    };
+    setGraph({ ...graph, nodes: [...graph.nodes, node] });
+    setSelectedNodeId(locationId);
+    setPreviewYaml("");
+  }
+
+  function deleteNode(locationId: string) {
+    if (!graph) {
+      return;
+    }
+    setGraph({
+      ...graph,
+      nodes: graph.nodes.filter((node) => node.location_id !== locationId),
+      edges: graph.edges.filter(
+        (edge) => edge.source_location_id !== locationId && edge.target_location_id !== locationId
+      )
+    });
+    setSelectedNodeId(graph.nodes.find((node) => node.location_id !== locationId)?.location_id ?? "");
+    setSelectedEdgeIndex(-1);
+    setPreviewYaml("");
+  }
+
+  function addRegion() {
+    if (!graph) {
+      return;
+    }
+    const id = `region_${graph.regions.length + 1}`;
+    setGraph({ ...graph, regions: [...graph.regions, { id, name: id.replace("_", " ") }] });
+  }
+
+  function addLayer() {
+    if (!graph) {
+      return;
+    }
+    const id = `layer_${graph.layers.length + 1}`;
+    setGraph({ ...graph, layers: [...graph.layers, { id, name: id.replace("_", " "), order: graph.layers.length }] });
   }
 
   if (authoringDisabled) {
@@ -4876,10 +5923,20 @@ function MapEditorPanel({
             selectedEdgeIndex={selectedEdgeIndex}
             onSelectNode={setSelectedNodeId}
             onSelectEdge={setSelectedEdgeIndex}
+            draggingNodeId={draggingNodeId}
+            onDragStart={setDraggingNodeId}
+            onDragEnd={() => setDraggingNodeId("")}
+            onMoveNode={(locationId, x, y) => updateNode(locationId, { x, y })}
           />
 
           <section className="map-editor-form">
             <h3>Node</h3>
+            <div className="button-row">
+              <button type="button" onClick={addNode} disabled={isBusy}>Add Location</button>
+              <button type="button" className="danger-button" onClick={() => selectedNode && deleteNode(selectedNode.location_id)} disabled={!selectedNode || isBusy}>
+                Delete Location
+              </button>
+            </div>
             {selectedNode ? (
               <div className="form-grid">
                 <label>
@@ -4914,11 +5971,25 @@ function MapEditorPanel({
                 </label>
                 <label>
                   Region
-                  <input
+                  <select
                     value={selectedNode.region_id ?? ""}
                     onChange={(event) => updateNode(selectedNode.location_id, { region_id: event.target.value || null })}
                     disabled={isBusy}
-                  />
+                  >
+                    <option value="">None</option>
+                    {graph.regions.map((region) => <option key={region.id} value={region.id}>{region.name || region.id}</option>)}
+                  </select>
+                </label>
+                <label>
+                  Layer
+                  <select
+                    value={selectedNode.layer_id ?? ""}
+                    onChange={(event) => updateNode(selectedNode.location_id, { layer_id: event.target.value || null })}
+                    disabled={isBusy}
+                  >
+                    <option value="">Default</option>
+                    {graph.layers.map((layer) => <option key={layer.id} value={layer.id}>{layer.name || layer.id}</option>)}
+                  </select>
                 </label>
                 <label>
                   Tags
@@ -4959,6 +6030,16 @@ function MapEditorPanel({
 
           <section className="map-editor-form">
             <h3>Edges</h3>
+            <div className="map-summary-row">
+              <span>Regions {graph.regions.length}</span>
+              <span>Layers {graph.layers.length}</span>
+              <span>Hidden paths {graph.edges.filter((edge) => edge.edge_type === "hidden" || edge.visibility === "hidden").length}</span>
+              <span>Locked {graph.edges.filter((edge) => edge.edge_type === "locked").length}</span>
+            </div>
+            <div className="button-row">
+              <button type="button" onClick={addRegion} disabled={isBusy}>Add Region</button>
+              <button type="button" onClick={addLayer} disabled={isBusy}>Add Layer</button>
+            </div>
             <div className="edge-list">
               {graph.edges.map((edge, index) => (
                 <button
@@ -4975,6 +6056,8 @@ function MapEditorPanel({
 
             {selectedEdge && (
               <div className="form-grid">
+                <ReferencePicker label="Source" kind="location" index={referenceIndex} value={selectedEdge.source_location_id} onChange={(value) => updateEdge(selectedEdgeIndex, { source_location_id: value })} allowEmpty={false} disabled={isBusy} />
+                <ReferencePicker label="Target" kind="location" index={referenceIndex} value={selectedEdge.target_location_id} onChange={(value) => updateEdge(selectedEdgeIndex, { target_location_id: value })} allowEmpty={false} disabled={isBusy} />
                 <label>
                   Label
                   <input
@@ -4997,6 +6080,42 @@ function MapEditorPanel({
                     ))}
                   </select>
                 </label>
+                <label>
+                  Visibility
+                  <select
+                    value={selectedEdge.visibility}
+                    onChange={(event) => updateEdge(selectedEdgeIndex, { visibility: event.target.value as MapVisibility })}
+                    disabled={isBusy}
+                  >
+                    {MAP_VISIBILITIES.map((visibility) => <option key={visibility} value={visibility}>{visibility}</option>)}
+                  </select>
+                </label>
+                <label>
+                  Travel cost
+                  <input
+                    type="number"
+                    min={0}
+                    value={selectedEdge.travel_cost}
+                    onChange={(event) => updateEdge(selectedEdgeIndex, { travel_cost: Number(event.target.value) })}
+                    disabled={isBusy}
+                  />
+                </label>
+                <label>
+                  Unlock / condition
+                  <input
+                    value={selectedEdge.unlock_condition ?? ""}
+                    onChange={(event) => updateEdge(selectedEdgeIndex, { unlock_condition: event.target.value || null })}
+                    disabled={isBusy}
+                  />
+                </label>
+                <label className="full-width">
+                  Discovery rules
+                  <input
+                    value={(selectedEdge.discovery_rules ?? []).join(", ")}
+                    onChange={(event) => updateEdge(selectedEdgeIndex, { discovery_rules: splitCsv(event.target.value) })}
+                    disabled={isBusy}
+                  />
+                </label>
                 <div className="full-width">
                   <HiddenContentBadge visibility={selectedEdge.visibility} />
                 </div>
@@ -5008,34 +6127,8 @@ function MapEditorPanel({
 
             <h4>Add Exit</h4>
             <div className="form-grid">
-              <label>
-                Source
-                <select
-                  value={newEdge.source_location_id}
-                  onChange={(event) => setNewEdge({ ...newEdge, source_location_id: event.target.value })}
-                >
-                  <option value="">Select</option>
-                  {graph.nodes.map((node) => (
-                    <option key={node.location_id} value={node.location_id}>
-                      {node.location_id}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Target
-                <select
-                  value={newEdge.target_location_id}
-                  onChange={(event) => setNewEdge({ ...newEdge, target_location_id: event.target.value })}
-                >
-                  <option value="">Select</option>
-                  {graph.nodes.map((node) => (
-                    <option key={node.location_id} value={node.location_id}>
-                      {node.location_id}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <ReferencePicker label="Source" kind="location" index={referenceIndex} value={newEdge.source_location_id} onChange={(value) => setNewEdge({ ...newEdge, source_location_id: value })} />
+              <ReferencePicker label="Target" kind="location" index={referenceIndex} value={newEdge.target_location_id} onChange={(value) => setNewEdge({ ...newEdge, target_location_id: value })} />
               <label>
                 Label
                 <input value={newEdge.label} onChange={(event) => setNewEdge({ ...newEdge, label: event.target.value })} />
@@ -5053,6 +6146,24 @@ function MapEditorPanel({
                   ))}
                 </select>
               </label>
+              <label>
+                Visibility
+                <select
+                  value={newEdge.visibility}
+                  onChange={(event) => setNewEdge({ ...newEdge, visibility: event.target.value as MapVisibility })}
+                >
+                  {MAP_VISIBILITIES.map((visibility) => <option key={visibility} value={visibility}>{visibility}</option>)}
+                </select>
+              </label>
+              <label>
+                Travel cost
+                <input
+                  type="number"
+                  min={0}
+                  value={newEdge.travel_cost}
+                  onChange={(event) => setNewEdge({ ...newEdge, travel_cost: Number(event.target.value) })}
+                />
+              </label>
               <button type="button" onClick={addEdge} disabled={isBusy}>
                 Add Edge
               </button>
@@ -5064,6 +6175,19 @@ function MapEditorPanel({
       )}
 
       <PreviewResultPanel title="Map Validation / Preview" validation={validation} previewContent={previewYaml} />
+      {mapDiffSummary && (
+        <section className="debug-group">
+          <h3>Diff Preview</h3>
+          <ItemList
+            emptyText="No map entity changes."
+            items={[
+              ...mapDiffSummary.added_ids.map((id: string) => <span key={`add-${id}`}>added {id}</span>),
+              ...mapDiffSummary.removed_ids.map((id: string) => <span key={`remove-${id}`}>removed {id}</span>),
+              ...mapDiffSummary.changed_ids.map((id: string) => <span key={`change-${id}`}>changed {id}</span>)
+            ]}
+          />
+        </section>
+      )}
       {message && <p className="muted">{message}</p>}
       <ErrorPanel message={error} />
     </section>
@@ -5075,17 +6199,45 @@ function MapEditorSvg({
   selectedNodeId,
   selectedEdgeIndex,
   onSelectNode,
-  onSelectEdge
+  onSelectEdge,
+  draggingNodeId,
+  onDragStart,
+  onDragEnd,
+  onMoveNode
 }: {
   graph: MapVisualGraph;
   selectedNodeId: string;
   selectedEdgeIndex: number;
   onSelectNode: (locationId: string) => void;
   onSelectEdge: (edgeIndex: number) => void;
+  draggingNodeId: string;
+  onDragStart: (locationId: string) => void;
+  onDragEnd: () => void;
+  onMoveNode: (locationId: string, x: number, y: number) => void;
 }) {
   const positions = mapNodePositions(graph.nodes);
+  function handlePointerMove(event: PointerEvent<SVGSVGElement>) {
+    if (!draggingNodeId) {
+      return;
+    }
+    const svg = event.currentTarget;
+    const point = svg.createSVGPoint();
+    point.x = event.clientX;
+    point.y = event.clientY;
+    const transformed = point.matrixTransform(svg.getScreenCTM()?.inverse());
+    const raw = mapSvgToNodeCoordinates(graph.nodes, transformed.x, transformed.y);
+    onMoveNode(draggingNodeId, Math.round(raw.x), Math.round(raw.y));
+  }
   return (
-    <svg className="map-editor-svg" viewBox="0 0 520 320" role="img" aria-label="Visual map editor">
+    <svg
+      className="map-editor-svg"
+      viewBox="0 0 520 320"
+      role="img"
+      aria-label="Visual map editor"
+      onPointerMove={handlePointerMove}
+      onPointerUp={onDragEnd}
+      onPointerLeave={onDragEnd}
+    >
       {graph.edges.map((edge, index) => {
         const source = positions[edge.source_location_id];
         const target = positions[edge.target_location_id];
@@ -5101,7 +6253,7 @@ function MapEditorSvg({
               y1={source.y}
               x2={target.x}
               y2={target.y}
-              className={`map-edge ${edge.visibility} ${selectedEdgeIndex === index ? "selected" : ""}`}
+              className={`map-edge ${edge.visibility} ${edge.edge_type} ${selectedEdgeIndex === index ? "selected" : ""}`}
             />
             <text x={midX} y={midY - 6} textAnchor="middle" className="map-edge-label">
               {edge.label}
@@ -5112,7 +6264,14 @@ function MapEditorSvg({
       {graph.nodes.map((node) => {
         const position = positions[node.location_id];
         return (
-          <g key={node.location_id} onClick={() => onSelectNode(node.location_id)}>
+          <g
+            key={node.location_id}
+            onPointerDown={(event) => {
+              event.preventDefault();
+              onSelectNode(node.location_id);
+              onDragStart(node.location_id);
+            }}
+          >
             <circle
               cx={position.x}
               cy={position.y}
@@ -5127,6 +6286,24 @@ function MapEditorSvg({
       })}
     </svg>
   );
+}
+
+function mapSvgToNodeCoordinates(nodes: MapVisualNode[], svgX: number, svgY: number): { x: number; y: number } {
+  if (nodes.length === 0) {
+    return { x: svgX, y: svgY };
+  }
+  const xs = nodes.map((node) => node.x);
+  const ys = nodes.map((node) => node.y);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const width = Math.max(maxX - minX, 1);
+  const height = Math.max(maxY - minY, 1);
+  return {
+    x: minX + ((svgX - 50) / 420) * width,
+    y: minY + ((svgY - 50) / 220) * height
+  };
 }
 
 function mapNodePositions(nodes: MapVisualNode[]): Record<string, { x: number; y: number }> {
@@ -5424,6 +6601,662 @@ function defaultScenarioDraft(worldId: string): ScenarioRegressionCase {
     max_turns: 5,
     tags: []
   };
+}
+
+const TEMPLATE_WIZARD_TYPES: TemplateWizardType[] = [
+  "world",
+  "location_cluster",
+  "questline",
+  "npc_set",
+  "character_pack",
+  "dialogue_scene",
+  "group_rp_scene",
+  "faction_conflict",
+  "mystery_case"
+];
+
+function TemplateWizardPanel({ worldId }: { worldId: string }) {
+  const [draft, setDraft] = useState<TemplateWizardDraft>(() => defaultTemplateWizardDraft(worldId));
+  const [variableText, setVariableText] = useState<string>("location_id=village_square\nnpc_id=harlan");
+  const [preview, setPreview] = useState<TemplateWizardPreviewResponse | null>(null);
+  const [message, setMessage] = useState<string>("");
+  const [error, setError] = useState<string>("");
+  const [isBusy, setIsBusy] = useState<boolean>(false);
+
+  useEffect(() => {
+    setDraft((current) => ({ ...current, target_world_id: current.template_type === "world" ? null : worldId }));
+  }, [worldId]);
+
+  function buildDraft(): TemplateWizardDraft {
+    return {
+      ...draft,
+      variables: parseKeyValueLines(variableText),
+      target_world_id: draft.template_type === "world" ? null : worldId
+    };
+  }
+
+  async function handlePreview() {
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await previewTemplateWizard(buildDraft());
+      setPreview(response);
+      setMessage(response.validation?.ok ? "Wizard preview generated without writing files." : "Wizard preview has validation issues.");
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleValidate() {
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await validateTemplateWizard(buildDraft());
+      setPreview(response);
+      setMessage(response.validation?.ok ? "Wizard draft validates." : "Wizard draft needs changes.");
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleApply() {
+    const nextDraft = buildDraft();
+    const action = nextDraft.save_as_template ? "save this wizard output as a local template" : "apply this wizard output to the local world pack";
+    if (!confirmDangerousAction(`Validate and ${action}?`)) {
+      return;
+    }
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await applyTemplateWizard(nextDraft, true, true);
+      setPreview(response);
+      setMessage(response.saved_template ? "Wizard template saved." : response.applied ? "Wizard output applied after validation." : "Wizard apply was blocked.");
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  return (
+    <section className="mod-manager-panel authoring-zone">
+      <div className="authoring-pane-header">
+        <div>
+          <h2>Template Wizard</h2>
+          <p className="muted">Step through type, variables, preview, validation, and explicit save/apply.</p>
+        </div>
+        <span className="badge">{draft.current_step}</span>
+      </div>
+      <div className="template-grid">
+        <label>
+          Type
+          <select
+            value={draft.template_type}
+            onChange={(event) => {
+              const nextType = event.target.value as TemplateWizardType;
+              setDraft({ ...draft, template_type: nextType, target_world_id: nextType === "world" ? null : worldId, current_step: "fill_variables" });
+              setPreview(null);
+            }}
+            disabled={isBusy}
+          >
+            {TEMPLATE_WIZARD_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
+          </select>
+        </label>
+        <TextInput label="Draft id" value={draft.id} onChange={(value) => setDraft({ ...draft, id: value })} />
+        <TextInput label="Name" value={draft.name} onChange={(value) => setDraft({ ...draft, name: value })} />
+        <label>
+          Target world
+          <input value={draft.template_type === "world" ? "(new world)" : worldId} disabled />
+        </label>
+      </div>
+      <label className="full-width-field">
+        Variables
+        <textarea value={variableText} onChange={(event) => setVariableText(event.target.value)} disabled={isBusy} />
+      </label>
+      <label>
+        <input type="checkbox" checked={draft.save_as_template} onChange={(event) => setDraft({ ...draft, save_as_template: event.target.checked })} />
+        Save as reusable local template
+      </label>
+      <div className="authoring-header-actions">
+        <button type="button" onClick={() => void handlePreview()} disabled={isBusy}>Preview</button>
+        <button type="button" onClick={() => void handleValidate()} disabled={isBusy}>Validate</button>
+        <button type="button" onClick={() => void handleApply()} disabled={isBusy}>Save / Apply</button>
+      </div>
+      {preview?.validation && <ValidationPanel validation={preview.validation} onSelectIssue={() => undefined} />}
+      {preview && (
+        <div className="template-preview">
+          <h3>Generated Content</h3>
+          {preview.generated_files.map((file) => (
+            <details key={file.file_name} open>
+              <summary>{file.file_name}</summary>
+              <pre className="template-preview-code">{file.content}</pre>
+            </details>
+          ))}
+        </div>
+      )}
+      {message && <p className="muted">{message}</p>}
+      <ErrorPanel message={error} />
+    </section>
+  );
+}
+
+function defaultTemplateWizardDraft(worldId: string): TemplateWizardDraft {
+  return {
+    id: "wizard_template",
+    name: "Wizard Template",
+    template_type: "questline",
+    current_step: "choose_template_type",
+    variables: {},
+    target_world_id: worldId,
+    save_as_template: false
+  };
+}
+
+function parseKeyValueLines(value: string): Record<string, string> {
+  const result: Record<string, string> = {};
+  value.split("\n").forEach((line) => {
+    const index = line.indexOf("=");
+    if (index > 0) {
+      result[line.slice(0, index).trim()] = line.slice(index + 1).trim();
+    }
+  });
+  return result;
+}
+
+function WorldMergeAssistantPanel({ worldId }: { worldId: string }) {
+  const [branches, setBranches] = useState<WorldBranch[]>([]);
+  const [ours, setOurs] = useState<string>("");
+  const [theirs, setTheirs] = useState<string>("");
+  const [resolutions, setResolutions] = useState<MergeResolution[]>([]);
+  const [customText, setCustomText] = useState<Record<string, string>>({});
+  const [draft, setDraft] = useState<WorldMergeDraft | null>(null);
+  const [message, setMessage] = useState<string>("");
+  const [error, setError] = useState<string>("");
+  const [isBusy, setIsBusy] = useState<boolean>(false);
+
+  useEffect(() => {
+    void loadBranches();
+  }, [worldId]);
+
+  async function loadBranches() {
+    setIsBusy(true);
+    setError("");
+    try {
+      const response = await fetchWorldBranches(worldId);
+      setBranches(response.branches);
+      setOurs((current) => current || response.branches[0]?.branch_id || "");
+      setTheirs((current) => current || response.branches[1]?.branch_id || response.branches[0]?.branch_id || "");
+    } catch (err) {
+      setBranches([]);
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handlePreview() {
+    if (!ours || !theirs) {
+      setError("Choose two branches before previewing a merge.");
+      return;
+    }
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await previewWorldMerge(worldId, ours, theirs, materializeCustomResolutions(resolutions, customText));
+      setDraft(response);
+      setMessage(response.validation.ok ? "Merge draft validates." : "Merge draft has validation issues.");
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleSave() {
+    if (!ours || !theirs) {
+      return;
+    }
+    if (!confirmDangerousAction("Save this merge result to the local world pack after validation?")) {
+      return;
+    }
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await saveWorldMerge(worldId, ours, theirs, materializeCustomResolutions(resolutions, customText), true);
+      setDraft(response);
+      setMessage(response.saved ? "Merge result saved after validation." : "Merge save was blocked by validation or unresolved warnings.");
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  function updateResolution(conflictId: string, choice: MergeResolution["choice"]) {
+    setResolutions((current) => {
+      const next = current.filter((resolution) => resolution.conflict_id !== conflictId);
+      return [...next, { conflict_id: conflictId, choice }];
+    });
+  }
+
+  return (
+    <section className="mod-manager-panel authoring-zone">
+      <div className="authoring-pane-header">
+        <div>
+          <h2>World Branch Merge Assistant</h2>
+          <p className="muted">Preview merge drafts, choose conflict resolutions, and save only after backend validation.</p>
+        </div>
+        <button type="button" onClick={() => void loadBranches()} disabled={isBusy}>Refresh Branches</button>
+      </div>
+      <div className="template-grid">
+        <label>Ours<select value={ours} onChange={(event) => setOurs(event.target.value)} disabled={isBusy}>{branches.map((branch) => <option key={branch.branch_id} value={branch.branch_id}>{branch.name || branch.branch_id}</option>)}</select></label>
+        <label>Theirs<select value={theirs} onChange={(event) => setTheirs(event.target.value)} disabled={isBusy}>{branches.map((branch) => <option key={branch.branch_id} value={branch.branch_id}>{branch.name || branch.branch_id}</option>)}</select></label>
+      </div>
+      <div className="authoring-header-actions">
+        <button type="button" onClick={() => void handlePreview()} disabled={isBusy || !ours || !theirs}>Merge Preview</button>
+        <button type="button" onClick={() => void handleSave()} disabled={isBusy || !draft}>Explicit Save</button>
+      </div>
+      {draft?.validation && <ValidationPanel validation={draft.validation} onSelectIssue={() => undefined} />}
+      {draft && (
+        <div className="template-preview">
+          <h3>Conflicts</h3>
+          {draft.conflicts.length ? draft.conflicts.map((conflict) => (
+            <div key={conflict.conflict_id} className="diff-summary">
+              <strong>{conflict.conflict_type}</strong>
+              <p>{conflict.file_name} / {conflict.entity_id}: {conflict.message}</p>
+              <select value={resolutions.find((item) => item.conflict_id === conflict.conflict_id)?.choice ?? "base"} onChange={(event) => updateResolution(conflict.conflict_id, event.target.value as MergeResolution["choice"])}>
+                <option value="base">base</option>
+                <option value="ours">ours</option>
+                <option value="theirs">theirs</option>
+                <option value="custom">custom</option>
+              </select>
+              {(resolutions.find((item) => item.conflict_id === conflict.conflict_id)?.choice === "custom") && (
+                <textarea value={customText[conflict.conflict_id] ?? JSON.stringify(conflict.base ?? {}, null, 2)} onChange={(event) => setCustomText({ ...customText, [conflict.conflict_id]: event.target.value })} />
+              )}
+            </div>
+          )) : <EmptyState title="No conflicts." detail="The merge draft can be validated and saved explicitly." />}
+          <h3>Merge Draft Files</h3>
+          {Object.entries(draft.proposed_files).slice(0, 3).map(([fileName, content]) => <details key={fileName}><summary>{fileName}</summary><pre className="template-preview-code">{content}</pre></details>)}
+        </div>
+      )}
+      {message && <p className="muted">{message}</p>}
+      <ErrorPanel message={error} />
+    </section>
+  );
+}
+
+function materializeCustomResolutions(resolutions: MergeResolution[], customText: Record<string, string>): MergeResolution[] {
+  return resolutions.map((resolution) => {
+    if (resolution.choice !== "custom") {
+      return resolution;
+    }
+    try {
+      return { ...resolution, custom: JSON.parse(customText[resolution.conflict_id] ?? "{}") as Record<string, unknown> };
+    } catch {
+      return resolution;
+    }
+  });
+}
+
+function ContentDiffReviewPanel({ worldId, fileName, content, onJump }: { worldId: string; fileName: string; content: string; onJump: (toolId: AuthoringToolId) => void }) {
+  const [viewMode, setViewMode] = useState<"file" | "entity" | "graph">("entity");
+  const [review, setReview] = useState<ContentDiffReview | null>(null);
+  const [message, setMessage] = useState<string>("");
+  const [error, setError] = useState<string>("");
+  const [isBusy, setIsBusy] = useState<boolean>(false);
+
+  async function handleReview() {
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await reviewContentDiff(
+        { world_id: worldId },
+        { world_id: worldId, files: { [fileName]: content } },
+        ["file_diff", "entity_diff", "graph_diff", "package_diff", "schema_diff", "visibility_diff", "rp_profile_diff"],
+        true
+      );
+      setReview(response);
+      setMessage("Diff review generated. Hidden details are redacted in normal view.");
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  const visibleChanges = review
+    ? viewMode === "file"
+      ? [...review.added, ...review.removed, ...review.changed]
+      : viewMode === "graph"
+        ? review.changed.filter((item) => item.diff_type === "graph_diff")
+        : [...review.added, ...review.removed, ...review.changed].filter((item) => item.diff_type !== "graph_diff")
+    : [];
+
+  return (
+    <section className="mod-manager-panel authoring-zone">
+      <div className="authoring-pane-header">
+        <div>
+          <h2>Content Diff Review</h2>
+          <p className="muted">Review current YAML draft against disk content without saving or exposing hidden details.</p>
+        </div>
+        <button type="button" onClick={() => void handleReview()} disabled={isBusy}>Review Current Draft</button>
+      </div>
+      <div className="authoring-header-actions">
+        <button type="button" className={viewMode === "file" ? "active" : ""} onClick={() => setViewMode("file")}>File View</button>
+        <button type="button" className={viewMode === "entity" ? "active" : ""} onClick={() => setViewMode("entity")}>Entity View</button>
+        <button type="button" className={viewMode === "graph" ? "active" : ""} onClick={() => setViewMode("graph")}>Graph View</button>
+      </div>
+      {review && (
+        <>
+          <div className="diff-summary">
+            <h3>Changes</h3>
+            {visibleChanges.length ? visibleChanges.map((item) => (
+              <p key={`${item.file_name}:${item.entity_id}:${item.diff_type}`}>
+                <strong>{item.diff_type}</strong> {item.file_name}/{item.entity_id}: {item.summary}
+                <button type="button" onClick={() => onJump(toolForFile(item.file_name))}>Open editor</button>
+              </p>
+            )) : <p className="muted">No changes for this view.</p>}
+          </div>
+          <div className="diff-summary">
+            <h3>Visibility / Migration</h3>
+            {review.visibility_risk.map((risk) => <p key={risk} className="danger-text">{risk}</p>)}
+            {review.migration_impact.map((impact) => <p key={impact}>{impact}</p>)}
+            {review.renamed_candidates.map((candidate) => <p key={candidate}>Rename candidate: {candidate}</p>)}
+          </div>
+          <div className="diff-summary">
+            <h3>Validation Issues</h3>
+            {review.validation_issues.length ? review.validation_issues.map((issue) => <p key={issue}>{issue}</p>) : <p className="muted">No validation issues.</p>}
+          </div>
+        </>
+      )}
+      {message && <p className="muted">{message}</p>}
+      <ErrorPanel message={error} />
+    </section>
+  );
+}
+
+const LIBRARY_TYPES: Array<"all" | LocalContentType> = ["all", "world", "character_pack", "template_pack", "scenario_suite", "prompt_profile", "RP_profile", "mod"];
+
+function LocalContentLibraryPanel({ onOpenEditor }: { onOpenEditor: (toolId: AuthoringToolId) => void }) {
+  const [items, setItems] = useState<LocalContentLibraryItem[]>([]);
+  const [filter, setFilter] = useState<"all" | LocalContentType>("all");
+  const [selectedId, setSelectedId] = useState<string>("");
+  const [validation, setValidation] = useState<AuthoringValidation | null>(null);
+  const [archiveDraft, setArchiveDraft] = useState<string>("");
+  const [message, setMessage] = useState<string>("");
+  const [error, setError] = useState<string>("");
+  const [isBusy, setIsBusy] = useState<boolean>(false);
+
+  useEffect(() => {
+    void loadItems();
+  }, [filter]);
+
+  async function loadItems() {
+    setIsBusy(true);
+    setError("");
+    try {
+      const response = await fetchLocalContentLibrary(filter);
+      setItems(response.items);
+      setSelectedId((current) => response.items.some((item) => item.id === current) ? current : response.items[0]?.id ?? "");
+    } catch (err) {
+      setItems([]);
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  const selected = items.find((item) => item.id === selectedId) ?? items[0] ?? null;
+
+  async function handleValidate() {
+    if (!selected) return;
+    setIsBusy(true);
+    setError("");
+    try {
+      const response = await validateLocalContentLibraryItem(selected.id);
+      setValidation(response);
+      setMessage(response.ok ? "Library item validates." : "Library item has validation issues.");
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleExport() {
+    if (!selected) return;
+    setIsBusy(true);
+    setError("");
+    try {
+      const response = await exportLocalContentLibraryItem(selected.content_type, selected.id);
+      setArchiveDraft(response.archive_base64);
+      setMessage(`Export ready: ${response.file_name}`);
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleImport(confirmApply: boolean) {
+    if (!archiveDraft.trim()) {
+      setError("Paste a local archive payload first.");
+      return;
+    }
+    if (confirmApply && !confirmDangerousAction(DANGEROUS_ACTION_COPY.importPackageApply)) {
+      return;
+    }
+    setIsBusy(true);
+    setError("");
+    try {
+      const response = await importLocalContentLibraryArchive(archiveDraft.trim(), false, confirmApply);
+      setMessage(JSON.stringify(response));
+      void loadItems();
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  return (
+    <section className="mod-manager-panel authoring-zone">
+      <div className="authoring-pane-header">
+        <div>
+          <h2>Local Content Library</h2>
+          <p className="muted">Worlds, character packs, templates, scenario suites, prompt/RP profiles, and mods.</p>
+        </div>
+        <button type="button" onClick={() => void loadItems()} disabled={isBusy}>Refresh Library</button>
+      </div>
+      <div className="template-grid">
+        <label>Type<select value={filter} onChange={(event) => setFilter(event.target.value as "all" | LocalContentType)}>{LIBRARY_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}</select></label>
+        <label>Item<select value={selected?.id ?? ""} onChange={(event) => setSelectedId(event.target.value)}>{items.map((item) => <option key={`${item.content_type}:${item.id}`} value={item.id}>{item.name}</option>)}</select></label>
+      </div>
+      {selected ? (
+        <div className="diff-summary">
+          <h3>{selected.name}</h3>
+          <p>{selected.content_type} / {selected.id}</p>
+          <p className="muted">{selected.description || "No description."}</p>
+          <p>Path: {selected.path_label}</p>
+          <pre className="template-preview-code">{JSON.stringify(selected.metadata, null, 2)}</pre>
+          <div className="authoring-header-actions">
+            <button type="button" onClick={() => void handleValidate()} disabled={isBusy || !selected.capabilities.includes("validate")}>Validate</button>
+            <button type="button" onClick={() => void handleExport()} disabled={isBusy || !selected.capabilities.includes("export")}>Export</button>
+            <button type="button" onClick={() => onOpenEditor(libraryToolForItem(selected))}>Open Editor</button>
+          </div>
+        </div>
+      ) : <EmptyState title="No content items." detail="The local library did not find matching items." />}
+      {validation && <ValidationPanel validation={validation} onSelectIssue={() => undefined} />}
+      <label className="full-width-field">Import archive payload<textarea value={archiveDraft} onChange={(event) => setArchiveDraft(event.target.value)} /></label>
+      <div className="authoring-header-actions">
+        <button type="button" onClick={() => void handleImport(false)} disabled={isBusy}>Import Dry-run</button>
+        <button type="button" onClick={() => void handleImport(true)} disabled={isBusy}>Explicit Import</button>
+      </div>
+      {message && <p className="muted">{message}</p>}
+      <ErrorPanel message={error} />
+    </section>
+  );
+}
+
+function libraryToolForItem(item: LocalContentLibraryItem): AuthoringToolId {
+  if (item.content_type === "world") return "map";
+  if (item.content_type === "mod") return "templates";
+  if (item.content_type === "template_pack") return "templates";
+  if (item.content_type === "scenario_suite") return "scenarios";
+  if (item.content_type === "RP_profile") return "rp_characters";
+  if (item.content_type === "character_pack") return "rp_characters";
+  return "validation";
+}
+
+function AuthoringProjectDashboardPanel({
+  worldId,
+  onOpenEditor
+}: {
+  worldId: string;
+  onOpenEditor: (toolId: AuthoringToolId) => void;
+}) {
+  const [summary, setSummary] = useState<AuthoringProjectSummary | null>(null);
+  const [message, setMessage] = useState<string>("");
+  const [error, setError] = useState<string>("");
+  const [isBusy, setIsBusy] = useState<boolean>(false);
+
+  useEffect(() => {
+    void loadSummary();
+  }, [worldId]);
+
+  async function loadSummary() {
+    setIsBusy(true);
+    setError("");
+    try {
+      const response = await fetchAuthoringProjectSummary(worldId);
+      setSummary(response);
+      setMessage("Project summary refreshed.");
+    } catch (err) {
+      setSummary(null);
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  const countEntries = Object.entries(summary?.content_counts ?? {}).filter(([, value]) => value > 0);
+  const packageEntries = Object.entries(summary?.package_status.by_type ?? {});
+  const shortcuts: { label: string; tool: AuthoringToolId }[] = [
+    { label: "Map", tool: "map" },
+    { label: "Quests", tool: "quests" },
+    { label: "RP Characters", tool: "rp_characters" },
+    { label: "Validation", tool: "validation" },
+    { label: "Diff Review", tool: "diff_review" },
+    { label: "Library", tool: "library" }
+  ];
+
+  return (
+    <section className="mod-manager-panel authoring-zone">
+      <div className="authoring-pane-header">
+        <div>
+          <h2>Authoring Project Dashboard</h2>
+          <p className="muted">World pack, branch, validation, quality, package, and recent edit summary.</p>
+        </div>
+        <button type="button" onClick={() => void loadSummary()} disabled={isBusy}>Refresh</button>
+      </div>
+      {summary ? (
+        <>
+          <div className="template-grid">
+            <div className="diff-summary">
+              <h3>{summary.active_world_name || summary.active_world || "No world"}</h3>
+              <p className="muted">World: {summary.active_world || "none"}</p>
+              <p>Branch: {summary.active_branch_name || summary.active_branch || "active world pack"}</p>
+            </div>
+            <ProjectStatusCard title="Validation" status={summary.validation_status} />
+            <ProjectStatusCard title="Quality Gate" status={summary.quality_gate_status} />
+            <div className="diff-summary">
+              <h3>Packages</h3>
+              <p>{summary.package_status.total} local items</p>
+              <p className="muted">{packageEntries.map(([type, count]) => `${type}: ${count}`).join(" / ") || "No packages found."}</p>
+            </div>
+          </div>
+          <div className="diff-summary">
+            <h3>Content Counts</h3>
+            <div className="authoring-section-badges">
+              {countEntries.map(([key, value]) => <span key={key} className="badge">{key}: {value}</span>)}
+            </div>
+          </div>
+          <div className="template-grid">
+            <div className="diff-summary">
+              <h3>Recent Edits</h3>
+              {summary.recent_edits.length > 0 ? (
+                <ul>
+                  {summary.recent_edits.map((edit) => (
+                    <li key={`${edit.label}:${edit.updated_at}`}>
+                      <code>{edit.label}</code> <span className="muted">{new Date(edit.updated_at).toLocaleString()}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : <p className="muted">No recent local edit metadata found.</p>}
+            </div>
+            <div className="diff-summary">
+              <h3>Open Warnings</h3>
+              {summary.open_warnings.length > 0 ? (
+                <ul>{summary.open_warnings.map((warning) => <li key={warning}><code>{warning}</code></li>)}</ul>
+              ) : <p className="muted">No validation warnings.</p>}
+            </div>
+            <div className="diff-summary">
+              <h3>Migration Impact</h3>
+              {summary.migration_impact.length > 0 ? (
+                <ul>{summary.migration_impact.map((impact) => <li key={impact}><code>{impact}</code></li>)}</ul>
+              ) : <p className="muted">No branch migration impact selected.</p>}
+            </div>
+          </div>
+          <div className="authoring-header-actions">
+            {shortcuts.map((shortcut) => (
+              <button key={shortcut.tool} type="button" onClick={() => onOpenEditor(shortcut.tool)}>
+                {shortcut.label}
+              </button>
+            ))}
+          </div>
+          {(summary.hidden_details_redacted || summary.sensitive_details_redacted) && (
+            <p className="muted">Hidden and sensitive details are redacted from this normal authoring summary.</p>
+          )}
+        </>
+      ) : <EmptyState title="Project summary unavailable." detail="Refresh after selecting a local world pack." />}
+      {message && <p className="muted">{message}</p>}
+      <ErrorPanel message={error} />
+    </section>
+  );
+}
+
+function ProjectStatusCard({ title, status }: { title: string; status: AuthoringProjectSummary["validation_status"] }) {
+  const tone = status.status === "passed" ? "ok" : status.status === "not_run" ? "muted" : "warn";
+  return (
+    <div className="diff-summary">
+      <h3>{title}</h3>
+      <p><span className={`badge ${tone}`}>{status.status}</span> {status.summary}</p>
+      <p className="muted">Errors: {status.errors} / Warnings: {status.warnings}</p>
+      {status.last_run_at && <p className="muted">{new Date(status.last_run_at).toLocaleString()}</p>}
+    </div>
+  );
+}
+
+function toolForFile(fileName: string): AuthoringToolId {
+  if (fileName === "locations.yaml") return "map";
+  if (fileName === "quests.yaml") return "quests";
+  if (fileName === "npcs.yaml") return "rp_characters";
+  if (fileName === "relationships.yaml" || fileName === "factions.yaml") return "social";
+  if (fileName === "items.yaml") return "economy";
+  if (fileName === "rumors.yaml") return "rumor_crime";
+  if (fileName === "dialogue_scenes.yaml") return "dialogue_scenes";
+  if (fileName === "group_rp_scenes.yaml") return "group_rp_scenes";
+  return "validation";
 }
 
 function ScenarioTemplatePanel() {
@@ -5826,6 +7659,8 @@ function QuestGraphEditor({
   const [error, setError] = useState<string>("");
   const [message, setMessage] = useState<string>("");
   const [isBusy, setIsBusy] = useState<boolean>(false);
+  const [scenarioDraftJson, setScenarioDraftJson] = useState<string>("");
+  const [draggingStageId, setDraggingStageId] = useState<string>("");
 
   useEffect(() => {
     void loadQuestGraph();
@@ -5881,6 +7716,35 @@ function QuestGraphEditor({
     });
   }
 
+  function updateStageCoordinates(stageId: string, x: number, y: number) {
+    if (!graph || !selectedQuest) {
+      return;
+    }
+    setGraph({
+      ...graph,
+      quests: graph.quests.map((quest) =>
+        quest.id === selectedQuest.id
+          ? {
+              ...quest,
+              stages: quest.stages.map((stage) => (stage.id === stageId ? { ...stage, x, y } : stage))
+            }
+          : quest
+      )
+    });
+  }
+
+  function handleStagePointerMove(event: PointerEvent<SVGSVGElement>) {
+    if (!draggingStageId) {
+      return;
+    }
+    const rect = event.currentTarget.getBoundingClientRect();
+    const point = {
+      x: ((event.clientX - rect.left) / Math.max(rect.width, 1)) * 760,
+      y: ((event.clientY - rect.top) / Math.max(rect.height, 1)) * 300
+    };
+    updateStageCoordinates(draggingStageId, point.x, point.y);
+  }
+
   function updateSelectedQuest(updater: (quest: NonNullable<typeof selectedQuest>) => NonNullable<typeof selectedQuest>) {
     if (!graph || !selectedQuest) {
       return;
@@ -5914,7 +7778,9 @@ function QuestGraphEditor({
           objectives: [],
           next_stages: [],
           failure_stages: [],
-          alternate_stages: []
+          alternate_stages: [],
+          x: 120 + selectedQuest.stages.length * 120,
+          y: 120
         }
       ]
     }));
@@ -5982,6 +7848,123 @@ function QuestGraphEditor({
     return issues.filter((issue) => issue.path.includes(`.${stageId}`) || issue.ref_id === stageId);
   }
 
+  function addQuest() {
+    if (!graph) {
+      return;
+    }
+    const existing = new Set(graph.quests.map((quest) => quest.id));
+    let candidate = "new_quest";
+    let suffix = 1;
+    while (existing.has(candidate)) {
+      suffix += 1;
+      candidate = `new_quest_${suffix}`;
+    }
+    const quest = {
+      id: candidate,
+      title: "New Quest",
+      description: "",
+      initial_stage: "start",
+      visibility: "hidden",
+      stages: [
+        {
+          id: "start",
+          title: "Start",
+          description: "",
+          objectives: [],
+          next_stages: [],
+          failure_stages: [],
+          alternate_stages: [],
+          x: 120,
+          y: 120
+        }
+      ],
+      triggers: [],
+      rewards: [],
+      consequences: [],
+      x: 80,
+      y: 80
+    };
+    setGraph({ ...graph, quests: [...graph.quests, quest] });
+    setSelectedQuestId(candidate);
+    setSelectedStageId("start");
+  }
+
+  function deleteSelectedQuest() {
+    if (!graph || !selectedQuest) {
+      return;
+    }
+    const confirmed = confirmDangerousAction(`Delete quest "${selectedQuest.id}" from this quest graph draft?`);
+    if (!confirmed) {
+      return;
+    }
+    const quests = graph.quests.filter((quest) => quest.id !== selectedQuest.id);
+    setGraph({ ...graph, quests });
+    setSelectedQuestId(quests[0]?.id ?? "");
+    setSelectedStageId(quests[0]?.stages[0]?.id ?? "");
+  }
+
+  function addTrigger() {
+    if (!selectedQuest) {
+      return;
+    }
+    const trigger: QuestTriggerNode = {
+      type: "npc_talked",
+      id: "",
+      action: "activate",
+      objective_id: null,
+      next_stage: selectedStage?.id ?? null,
+      x: 120,
+      y: 320
+    };
+    updateSelectedQuest((quest) => ({ ...quest, triggers: [...quest.triggers, trigger] }));
+  }
+
+  function addReward() {
+    updateSelectedQuest((quest) => ({
+      ...quest,
+      rewards: [...quest.rewards, { id: "reward", text: "Reward", reward_type: "generic", x: 120, y: 420 }]
+    }));
+  }
+
+  function addObjective() {
+    if (!selectedStage) {
+      return;
+    }
+    updateStage((stage) => ({
+      ...stage,
+      objectives: [
+        ...stage.objectives,
+        {
+          id: "new_objective",
+          text: "new_objective",
+          visibility: "public",
+          hidden_authoring_note: null,
+          x: 120 + stage.objectives.length * 80,
+          y: 220
+        }
+      ]
+    }));
+  }
+
+  async function handleScenarioDraft() {
+    if (!graph) {
+      return;
+    }
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await generateQuestGraphScenarioDraft(worldId, graph);
+      setScenarioDraftJson(JSON.stringify(response.scenario, null, 2));
+      setValidation(response.validation);
+      setMessage(response.validation.ok ? "Scenario regression draft generated." : "Scenario draft needs review.");
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
   async function handleGraphPreview() {
     if (!graph) {
       return;
@@ -6046,7 +8029,7 @@ function QuestGraphEditor({
         setMessage("Save cancelled.");
         return;
       }
-      const response = await saveQuestGraph(worldId, graph);
+      const response = await saveQuestGraph(worldId, graph, validationResponse.validation.warnings.length > 0);
       setValidation(response.validation);
       onPreviewYaml(response.yaml_content, response.validation);
       setMessage(response.saved ? "Quest graph saved to quests.yaml." : "Quest graph was not saved.");
@@ -6066,6 +8049,9 @@ function QuestGraphEditor({
         </div>
         <button type="button" onClick={() => void loadQuestGraph()} disabled={isBusy}>
           Reload Graph
+        </button>
+        <button type="button" onClick={addQuest} disabled={isBusy || !graph}>
+          Add Quest
         </button>
       </div>
 
@@ -6132,7 +8118,57 @@ function QuestGraphEditor({
                     disabled={isBusy}
                   />
                 </label>
+                <div className="full-width">
+                  <button type="button" onClick={deleteSelectedQuest} disabled={isBusy || !selectedQuest}>
+                    Delete Quest
+                  </button>
+                </div>
               </div>
+            )}
+            {selectedQuest && (
+              <svg
+                className="map-editor-canvas"
+                viewBox="0 0 760 300"
+                role="img"
+                aria-label="Quest stage graph"
+                onPointerMove={handleStagePointerMove}
+                onPointerUp={() => setDraggingStageId("")}
+                onPointerLeave={() => setDraggingStageId("")}
+              >
+                {selectedQuest.stages.flatMap((stage) =>
+                  [...stage.next_stages, ...stage.failure_stages, ...stage.alternate_stages].map((targetId) => {
+                    const target = selectedQuest.stages.find((candidate) => candidate.id === targetId);
+                    if (!target) {
+                      return null;
+                    }
+                    return (
+                      <line
+                        key={`${stage.id}-${targetId}`}
+                        className={stage.failure_stages.includes(targetId) ? "map-edge locked" : "map-edge"}
+                        x1={stage.x || 120}
+                        y1={stage.y || 120}
+                        x2={target.x || 120}
+                        y2={target.y || 120}
+                      />
+                    );
+                  })
+                )}
+                {selectedQuest.stages.map((stage) => (
+                  <g
+                    key={stage.id}
+                    className="map-node"
+                    transform={`translate(${stage.x || 120}, ${stage.y || 120})`}
+                    onPointerDown={(event) => {
+                      event.currentTarget.setPointerCapture(event.pointerId);
+                      setDraggingStageId(stage.id);
+                      setSelectedStageId(stage.id);
+                    }}
+                  >
+                    <circle r="24" />
+                    <text y="46">{stage.id}</text>
+                  </g>
+                ))}
+              </svg>
             )}
             <div className="quest-stage-pills">
               {selectedQuest?.stages.map((stage) => (
@@ -6177,22 +8213,80 @@ function QuestGraphEditor({
                   />
                 </label>
                 <label className="full-width">
-                  Objectives, one per line
-                  <textarea
-                    value={selectedStage.objectives.map((objective) => objective.text).join("\n")}
-                    onChange={(event) =>
-                      updateStage((stage) => ({
-                        ...stage,
-                        objectives: event.target.value
-                          .split("\n")
-                          .map((line) => line.trim())
-                          .filter(Boolean)
-                          .map((text) => ({ id: text, text }))
-                      }))
-                    }
-                    disabled={isBusy}
-                  />
+                  Objectives
+                  <div className="button-row">
+                    <button type="button" onClick={addObjective} disabled={isBusy}>
+                      Add Objective
+                    </button>
+                  </div>
                 </label>
+                {selectedStage.objectives.map((objective, objectiveIndex) => (
+                  <div className="authoring-preview-box full-width" key={`${selectedStage.id}-${objective.id}-${objectiveIndex}`}>
+                    <label>
+                      Objective id
+                      <input
+                        value={objective.id}
+                        onChange={(event) =>
+                          updateStage((stage) => ({
+                            ...stage,
+                            objectives: stage.objectives.map((item, itemIndex) =>
+                              itemIndex === objectiveIndex ? { ...item, id: event.target.value, text: item.text || event.target.value } : item
+                            )
+                          }))
+                        }
+                        disabled={isBusy}
+                      />
+                    </label>
+                    <label>
+                      Player text
+                      <input
+                        value={objective.text}
+                        onChange={(event) =>
+                          updateStage((stage) => ({
+                            ...stage,
+                            objectives: stage.objectives.map((item, itemIndex) =>
+                              itemIndex === objectiveIndex ? { ...item, text: event.target.value } : item
+                            )
+                          }))
+                        }
+                        disabled={isBusy}
+                      />
+                    </label>
+                    <label>
+                      Visibility
+                      <select
+                        value={objective.visibility}
+                        onChange={(event) =>
+                          updateStage((stage) => ({
+                            ...stage,
+                            objectives: stage.objectives.map((item, itemIndex) =>
+                              itemIndex === objectiveIndex ? { ...item, visibility: event.target.value } : item
+                            )
+                          }))
+                        }
+                        disabled={isBusy}
+                      >
+                        <option value="public">public</option>
+                        <option value="hidden">hidden</option>
+                      </select>
+                    </label>
+                    <label>
+                      Hidden note
+                      <input
+                        value={objective.hidden_authoring_note ?? ""}
+                        onChange={(event) =>
+                          updateStage((stage) => ({
+                            ...stage,
+                            objectives: stage.objectives.map((item, itemIndex) =>
+                              itemIndex === objectiveIndex ? { ...item, hidden_authoring_note: event.target.value || null } : item
+                            )
+                          }))
+                        }
+                        disabled={isBusy}
+                      />
+                    </label>
+                  </div>
+                ))}
                 <label>
                   Next stages
                   <input
@@ -6265,6 +8359,9 @@ function QuestGraphEditor({
 
             <section className="studio-section">
               <h3>Triggers</h3>
+              <button type="button" onClick={addTrigger} disabled={isBusy || !selectedQuest}>
+                Add Trigger
+              </button>
               {(selectedQuest?.triggers ?? []).length > 0 ? (
                 <div className="form-grid">
                   {(selectedQuest?.triggers ?? []).map((trigger, index) => (
@@ -6358,6 +8455,9 @@ function QuestGraphEditor({
 
             <section className="studio-section">
               <h3>Rewards</h3>
+              <button type="button" onClick={addReward} disabled={isBusy || !selectedQuest}>
+                Add Reward
+              </button>
               <textarea
                 value={(selectedQuest?.rewards ?? []).map((reward) => `${reward.id}|${reward.text}|${reward.reward_type}`).join("\n")}
                 onChange={(event) =>
@@ -6372,7 +8472,9 @@ function QuestGraphEditor({
                         return {
                           id: id?.trim() || "reward",
                           text: text?.trim() || id?.trim() || "reward",
-                          reward_type: rewardType?.trim() || "generic"
+                          reward_type: rewardType?.trim() || "generic",
+                          x: 120,
+                          y: 420
                         };
                       })
                   }))
@@ -6392,7 +8494,16 @@ function QuestGraphEditor({
               <button type="button" onClick={() => void handleGraphSave()} disabled={!graph || isBusy}>
                 Save Quest Graph
               </button>
+              <button type="button" onClick={() => void handleScenarioDraft()} disabled={!graph || isBusy}>
+                Generate Scenario Draft
+              </button>
             </div>
+            {scenarioDraftJson && (
+              <section className="studio-section">
+                <h3>Scenario Draft</h3>
+                <pre className="authoring-preview-box">{scenarioDraftJson}</pre>
+              </section>
+            )}
             <PreviewResultPanel title="Quest Graph Validation" validation={validation} />
           </section>
         </div>
@@ -6860,6 +8971,7 @@ function ItemEconomyEditorPanel({
   const [message, setMessage] = useState<string>("");
   const [error, setError] = useState<string>("");
   const [isBusy, setIsBusy] = useState<boolean>(false);
+  const [viewMode, setViewMode] = useState<"table" | "graph">("table");
 
   useEffect(() => {
     void loadEconomyGraph();
@@ -6931,7 +9043,8 @@ function ItemEconomyEditorPanel({
       rarity: "common",
       locked: false,
       lock_difficulty: 0,
-      lock_state: "intact"
+      lock_state: "intact",
+      stolen_item_policy: "refuse_stolen"
     };
     setGraph({ ...graph, items: [...graph.items, item] });
     setSelectedItemId(id);
@@ -6965,6 +9078,7 @@ function ItemEconomyEditorPanel({
     setMessage("");
     try {
       const response = await previewItemEconomyAuthoring(worldId, graph);
+      setGraph(response.graph);
       setValidation(response.validation);
       onPreviewYaml(response.yaml_contents, response.validation);
       setMessage(response.validation.ok ? "Item/economy preview is valid." : "Item/economy preview has errors.");
@@ -6984,9 +9098,30 @@ function ItemEconomyEditorPanel({
     setMessage("");
     try {
       const response = await validateItemEconomyAuthoring(worldId, graph);
+      setGraph(response.graph);
       setValidation(response.validation);
       onPreviewYaml(response.yaml_contents, response.validation);
       setMessage(response.validation.ok ? "Item/economy validation passed." : "Item/economy validation found errors.");
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleBalanceCheck() {
+    if (!graph) {
+      return;
+    }
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await balanceCheckItemEconomyAuthoring(worldId, graph);
+      setGraph(response.graph);
+      setValidation(response.validation);
+      onPreviewYaml(response.yaml_contents, response.validation);
+      setMessage(response.graph.balance_warnings.length ? "Economy balance warnings found." : "Economy balance check passed.");
     } catch (err) {
       setError(authoringErrorMessage(err));
     } finally {
@@ -7020,7 +9155,8 @@ function ItemEconomyEditorPanel({
         setMessage("Item/economy save cancelled.");
         return;
       }
-      const response = await saveItemEconomyAuthoring(worldId, graph);
+      const response = await saveItemEconomyAuthoring(worldId, graph, validationResponse.confirmation_required);
+      setGraph(response.graph);
       setValidation(response.validation);
       onPreviewYaml(response.yaml_contents, response.validation);
       setMessage(response.saved ? "Item/economy data saved." : "Item/economy data was not saved.");
@@ -7033,6 +9169,10 @@ function ItemEconomyEditorPanel({
 
   const selectedItem = graph?.items.find((item) => item.id === selectedItemId) ?? null;
   const selectedMerchant = graph?.merchants.find((merchant) => merchant.npc_id === selectedMerchantId) ?? null;
+  const selectedMerchantEdges =
+    graph && selectedMerchant
+      ? graph.shop_inventory_edges.filter((edge) => edge.merchant_id === selectedMerchant.npc_id)
+      : [];
   const visibleShopItems =
     graph && selectedMerchant
       ? selectedMerchant.shop_inventory
@@ -7045,11 +9185,13 @@ function ItemEconomyEditorPanel({
       <div className="authoring-pane-header">
         <div>
           <h2>Item / Economy Editor</h2>
-          <p className="muted">Authoring-only editor for item ownership, prices, trade flags, and merchant inventory.</p>
+          <p className="muted">Authoring-only editor for item ownership, backend price previews, trade flags, and merchant inventory.</p>
         </div>
-        <button type="button" onClick={() => void loadEconomyGraph()} disabled={isBusy}>
-          Reload Economy
-        </button>
+        <div className="segmented-control">
+          <button type="button" className={viewMode === "table" ? "active" : ""} onClick={() => setViewMode("table")}>Table</button>
+          <button type="button" className={viewMode === "graph" ? "active" : ""} onClick={() => setViewMode("graph")}>Graph</button>
+          <button type="button" onClick={() => void loadEconomyGraph()} disabled={isBusy}>Reload Economy</button>
+        </div>
       </div>
 
       {graph ? (
@@ -7083,6 +9225,15 @@ function ItemEconomyEditorPanel({
           </aside>
 
           <div className="graph-detail-panel">
+            {viewMode === "graph" && graph && (
+              <ItemEconomyGraphView
+                items={graph.items}
+                merchants={graph.merchants}
+                edges={graph.shop_inventory_edges}
+                onSelectItem={setSelectedItemId}
+                onSelectMerchant={setSelectedMerchantId}
+              />
+            )}
             {selectedItem ? (
               <section className="authoring-preview-box">
                 <div className="authoring-pane-header compact">
@@ -7096,6 +9247,7 @@ function ItemEconomyEditorPanel({
                   <TextInput label="Name" value={selectedItem.name} onChange={(value) => updateSelectedItem((item) => ({ ...item, name: value }))} />
                   <TextInput label="Rarity" value={selectedItem.rarity} onChange={(value) => updateSelectedItem((item) => ({ ...item, rarity: value }))} />
                   <NumberInput label="Base price" value={selectedItem.base_price} onChange={(value) => updateSelectedItem((item) => ({ ...item, base_price: value }))} />
+                  <TextInput label="Stolen policy" value={selectedItem.stolen_item_policy} onChange={(value) => updateSelectedItem((item) => ({ ...item, stolen_item_policy: value }))} />
                   <TextInput label="Location" value={selectedItem.location_id ?? ""} onChange={(value) => updateSelectedItem((item) => ({ ...item, location_id: emptyToNull(value) }))} />
                   <TextInput label="Owner" value={selectedItem.owner_id ?? ""} onChange={(value) => updateSelectedItem((item) => ({ ...item, owner_id: emptyToNull(value) }))} />
                   <TextInput label="Container" value={selectedItem.container_id ?? ""} onChange={(value) => updateSelectedItem((item) => ({ ...item, container_id: emptyToNull(value) }))} />
@@ -7130,16 +9282,29 @@ function ItemEconomyEditorPanel({
                 </div>
                 <label><input type="checkbox" checked={selectedMerchant.merchant} onChange={(event) => updateSelectedMerchant((merchant) => ({ ...merchant, merchant: event.target.checked }))} /> Merchant enabled</label>
                 <h4>Visible shop preview</h4>
-                {visibleShopItems.length ? (
+                {selectedMerchantEdges.length ? (
                   <ul className="compact-list">
-                    {visibleShopItems.map((item) => (
-                      <li key={item.id}>
-                        {item.name} · buy {Math.round(item.base_price * selectedMerchant.buy_price_modifier)} · sell {Math.round(item.base_price * selectedMerchant.sell_price_modifier)}
+                    {selectedMerchantEdges.map((edge) => {
+                      const item = graph.items.find((candidate) => candidate.id === edge.item_id);
+                      return item && edge.player_visible ? (
+                      <li key={edge.id}>
+                          {item.name} buy {edge.buy_price} / sell {edge.sell_price}
                       </li>
-                    ))}
+                      ) : null;
+                    })}
                   </ul>
                 ) : (
                   <p className="muted">No player-visible tradeable items. Hidden items remain filtered from player shop UI.</p>
+                )}
+                {graph.balance_warnings.length > 0 && (
+                  <div className="authoring-preview-box subtle">
+                    <h4>Balance warnings</h4>
+                    <ul className="compact-list">
+                      {graph.balance_warnings.map((warning) => (
+                        <li key={`${warning.path}:${warning.code}`}>{warning.code}: {warning.message}</li>
+                      ))}
+                    </ul>
+                  </div>
                 )}
               </section>
             )}
@@ -7150,6 +9315,9 @@ function ItemEconomyEditorPanel({
               onSave={() => void handleSave()}
               disabled={isBusy}
             />
+            <button type="button" onClick={() => void handleBalanceCheck()} disabled={isBusy}>
+              Balance Check
+            </button>
             <PreviewResultPanel title="Item / Economy Validation" validation={validation} />
           </div>
         </div>
@@ -7158,6 +9326,59 @@ function ItemEconomyEditorPanel({
       )}
       {message && <p className="muted">{message}</p>}
       <ErrorPanel message={error} />
+    </section>
+  );
+}
+
+function ItemEconomyGraphView({
+  items,
+  merchants,
+  edges,
+  onSelectItem,
+  onSelectMerchant
+}: {
+  items: ItemEconomyItem[];
+  merchants: MerchantEconomyNode[];
+  edges: ShopInventoryEdge[];
+  onSelectItem: (itemId: string) => void;
+  onSelectMerchant: (merchantId: string) => void;
+}) {
+  return (
+    <section className="authoring-preview-box">
+      <h3>Economy Graph</h3>
+      <div className="relationship-grid">
+        <div>
+          <h4>Merchants</h4>
+          <ul className="compact-list">
+            {merchants.map((merchant) => (
+              <li key={merchant.npc_id}>
+                <button type="button" onClick={() => onSelectMerchant(merchant.npc_id)}>
+                  {merchant.name || merchant.npc_id}
+                </button>
+                <span className="muted"> buy {merchant.buy_price_modifier} / sell {merchant.sell_price_modifier}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div>
+          <h4>Shop Links</h4>
+          <ul className="compact-list">
+            {edges.map((edge) => {
+              const item = items.find((candidate) => candidate.id === edge.item_id);
+              return (
+                <li key={edge.id}>
+                  <button type="button" onClick={() => onSelectMerchant(edge.merchant_id)}>{edge.merchant_id}</button>
+                  {" -> "}
+                  <button type="button" onClick={() => onSelectItem(edge.item_id)}>{item?.name ?? edge.item_id}</button>
+                  <span className={edge.player_visible ? "muted" : "danger-text"}>
+                    {" "}buy {edge.buy_price} / sell {edge.sell_price}{edge.player_visible ? "" : " hidden"}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      </div>
     </section>
   );
 }
@@ -7177,6 +9398,76 @@ function TextInput({
       <input type="text" value={value} onChange={(event) => onChange(event.target.value)} />
     </label>
   );
+}
+
+const EMPTY_REFERENCE_INDEX: ReferenceIndex = { local_only: true, world_id: "", items: [] };
+
+function useReferenceIndex(worldId: string): ReferenceIndex {
+  const [index, setIndex] = useState<ReferenceIndex>(EMPTY_REFERENCE_INDEX);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!worldId) {
+      setIndex(EMPTY_REFERENCE_INDEX);
+      return;
+    }
+    fetchReferenceIndex(worldId)
+      .then((response) => {
+        if (!cancelled) {
+          setIndex(response);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setIndex(EMPTY_REFERENCE_INDEX);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [worldId]);
+
+  return index;
+}
+
+function ReferencePicker({
+  label,
+  value,
+  kind,
+  index,
+  onChange,
+  allowEmpty = true,
+  disabled = false
+}: {
+  label: string;
+  value: string;
+  kind: ReferenceKind;
+  index: ReferenceIndex;
+  onChange: (value: string) => void;
+  allowEmpty?: boolean;
+  disabled?: boolean;
+}) {
+  const options = index.items.filter((item) => item.kind === kind);
+  const selected = options.find((item) => item.id === value) ?? null;
+  return (
+    <label>
+      {label}
+      <select value={value} onChange={(event) => onChange(event.target.value)} disabled={disabled || options.length === 0}>
+        {allowEmpty && <option value="">None</option>}
+        {options.map((item) => (
+          <option key={`${item.kind}:${item.id}`} value={item.id}>
+            {referenceLabel(item)}
+          </option>
+        ))}
+        {value && !selected && <option value={value}>{value} (missing)</option>}
+      </select>
+    </label>
+  );
+}
+
+function referenceLabel(item: ReferenceIndexItem): string {
+  const flags = [item.hidden ? "hidden" : "", item.player_visible ? "player" : ""].filter(Boolean).join(", ");
+  return `${item.label || item.id} [${item.id}]${flags ? ` (${flags})` : ""}`;
 }
 
 function NumberInput({
@@ -7288,7 +9579,10 @@ function RumorCrimeConsequenceEditorPanel({
       known_by_player: false,
       spread_level: 0,
       created_turn: 0,
-      tags: []
+      tags: [],
+      delay_turns: 0,
+      cooldown_turns: 0,
+      dedupe_key: `rumor:${id}`
     };
     setGraph({ ...graph, rumors: [...graph.rumors, rumor] });
     setSelectedRumorId(id);
@@ -7319,6 +9613,7 @@ function RumorCrimeConsequenceEditorPanel({
     setMessage("");
     try {
       const response = await previewRumorCrimeAuthoring(worldId, graph);
+      setGraph(response.graph);
       setValidation(response.validation);
       onPreviewYaml(response.yaml_contents, response.validation);
       setMessage(response.validation.ok ? "Consequence preview is valid." : "Consequence preview has errors.");
@@ -7338,6 +9633,7 @@ function RumorCrimeConsequenceEditorPanel({
     setMessage("");
     try {
       const response = await validateRumorCrimeAuthoring(worldId, graph);
+      setGraph(response.graph);
       setValidation(response.validation);
       onPreviewYaml(response.yaml_contents, response.validation);
       setMessage(response.validation.ok ? "Consequence validation passed." : "Consequence validation found errors.");
@@ -7374,7 +9670,8 @@ function RumorCrimeConsequenceEditorPanel({
         setMessage("Consequence save cancelled.");
         return;
       }
-      const response = await saveRumorCrimeAuthoring(worldId, graph);
+      const response = await saveRumorCrimeAuthoring(worldId, graph, validationResponse.validation.warnings.length > 0);
+      setGraph(response.graph);
       setValidation(response.validation);
       onPreviewYaml(response.yaml_contents, response.validation);
       setMessage(response.saved ? "Rumors saved." : "Rumors were not saved.");
@@ -7435,6 +9732,9 @@ function RumorCrimeConsequenceEditorPanel({
                   <TextInput label="Fact id" value={selectedRumor.fact_id ?? ""} onChange={(value) => updateSelectedRumor((rumor) => ({ ...rumor, fact_id: emptyToNull(value) }))} />
                   <TextInput label="Truth status" value={selectedRumor.truth_status} onChange={(value) => updateSelectedRumor((rumor) => ({ ...rumor, truth_status: value }))} />
                   <NumberInput label="Spread level" value={selectedRumor.spread_level} onChange={(value) => updateSelectedRumor((rumor) => ({ ...rumor, spread_level: value }))} />
+                  <NumberInput label="Delay turns" value={selectedRumor.delay_turns} onChange={(value) => updateSelectedRumor((rumor) => ({ ...rumor, delay_turns: value }))} />
+                  <NumberInput label="Cooldown turns" value={selectedRumor.cooldown_turns} onChange={(value) => updateSelectedRumor((rumor) => ({ ...rumor, cooldown_turns: value }))} />
+                  <TextInput label="Dedupe key" value={selectedRumor.dedupe_key ?? ""} onChange={(value) => updateSelectedRumor((rumor) => ({ ...rumor, dedupe_key: emptyToNull(value) }))} />
                   <TextInput label="Known by NPCs" value={selectedRumor.known_by_npcs.join(", ")} onChange={(value) => updateSelectedRumor((rumor) => ({ ...rumor, known_by_npcs: commaList(value) }))} />
                   <TextInput label="Known by factions" value={selectedRumor.known_by_factions.join(", ")} onChange={(value) => updateSelectedRumor((rumor) => ({ ...rumor, known_by_factions: commaList(value) }))} />
                   <TextInput label="Tags" value={selectedRumor.tags.join(", ")} onChange={(value) => updateSelectedRumor((rumor) => ({ ...rumor, tags: commaList(value) }))} />
@@ -7467,6 +9767,12 @@ function RumorCrimeConsequenceEditorPanel({
             <section className="authoring-preview-box">
               <h3>Consequence Graph</h3>
               <div className="compact-grid">
+                <DashboardCard title="Triggers" value={String(graph.trigger_nodes.length)}>
+                  <p>Event, crime, and rumor trigger entry points.</p>
+                </DashboardCard>
+                <DashboardCard title="Witnesses" value={String(graph.witness_nodes.length)}>
+                  <p>Witness paths derived from known NPCs.</p>
+                </DashboardCard>
                 <DashboardCard title="Crimes" value={String(graph.crimes.length)}>
                   <p>Derived crime consequence templates.</p>
                 </DashboardCard>
@@ -7476,12 +9782,18 @@ function RumorCrimeConsequenceEditorPanel({
                 <DashboardCard title="Quest triggers" value={String(graph.quest_triggers.length)}>
                   <p>Quest trigger references related to facts.</p>
                 </DashboardCard>
+                <DashboardCard title="NPC reactions" value={String(graph.npc_reactions.length)}>
+                  <p>NPC reaction effects linked to rumors.</p>
+                </DashboardCard>
               </div>
+              <p className="muted">
+                Impact: {Object.entries(graph.impact_summary).map(([key, value]) => `${key} ${value}`).join(" / ") || "No impact yet"}
+              </p>
               {graph.edges.length ? (
                 <ul className="compact-list">
                   {graph.edges.map((edge, index) => (
                     <li key={`${edge.source}-${edge.target}-${index}`}>
-                      <code>{edge.source}</code> {"->"} <code>{edge.target}</code> · {edge.type}
+                      <code>{edge.source}</code> {"->"} <code>{edge.target}</code> 路 {edge.type}
                     </li>
                   ))}
                 </ul>
@@ -7567,7 +9879,7 @@ function ValidationGraphPanel({
               visibleIssues.map((issue) => (
                 <button type="button" key={issue.id} onClick={() => onSelectIssue(issue)}>
                   {issue.severity}: {issue.code}
-                  <small>{issue.file} · {issue.path}</small>
+                  <small>{issue.file} 路 {issue.path}</small>
                 </button>
               ))
             ) : (
@@ -7591,7 +9903,7 @@ function ValidationGraphPanel({
               <ul className="compact-list">
                 {visibleEdges.slice(0, 80).map((edge, index) => (
                   <li key={`${edge.source}-${edge.target}-${index}`}>
-                    <code>{edge.source}</code> {"->"} <code>{edge.target}</code> · {edge.type}
+                    <code>{edge.source}</code> {"->"} <code>{edge.target}</code> 路 {edge.type}
                   </li>
                 ))}
               </ul>
@@ -7684,7 +9996,7 @@ function SocialGraphEditorPanel({
     });
   }
 
-  function updateFactionEdge(index: number, field: "source_faction_id" | "target_faction_id" | "visibility", value: string): void;
+  function updateFactionEdge(index: number, field: "source_faction_id" | "target_faction_id" | "visibility" | "relation_type", value: string): void;
   function updateFactionEdge(index: number, field: "relation" | "conflict_level", value: number): void;
   function updateFactionEdge(index: number, field: string, value: string | number) {
     if (!graph) {
@@ -7696,6 +10008,21 @@ function SocialGraphEditorPanel({
         ...graph.faction_graph,
         conflict_edges: graph.faction_graph.conflict_edges.map((edge, edgeIndex) =>
           edgeIndex === index ? { ...edge, [field]: value } : edge
+        )
+      }
+    });
+  }
+
+  function updateFactionEdgeTags(index: number, tags: string[]) {
+    if (!graph) {
+      return;
+    }
+    setGraph({
+      ...graph,
+      faction_graph: {
+        ...graph.faction_graph,
+        conflict_edges: graph.faction_graph.conflict_edges.map((edge, edgeIndex) =>
+          edgeIndex === index ? { ...edge, conflict_tags: tags } : edge
         )
       }
     });
@@ -7724,7 +10051,24 @@ function SocialGraphEditorPanel({
             affinity: 0,
             obligation: 0,
             tags: [],
-            known_by_player: false
+            known_by_player: false,
+            hidden_relationship: true,
+            hidden_authoring_note: null,
+            tone_preset: "derived",
+            rp_tone_preview: {
+              preset_id: "derived",
+              summary: "",
+              address_style: "neutral",
+              formality: "medium",
+              warmth: 0,
+              tension: 0,
+              intimacy: 0,
+              respect: 50,
+              resentment: 0,
+              fear: 0,
+              avoidance: 0,
+              trust_expression: "reserved"
+            }
           }
         ]
       }
@@ -7761,9 +10105,11 @@ function SocialGraphEditorPanel({
           {
             source_faction_id: graph.faction_graph.factions[0].id,
             target_faction_id: graph.faction_graph.factions[1].id,
+            relation_type: "neutral",
             relation: 0,
             conflict_level: 0,
-            visibility: "hidden"
+            visibility: "hidden",
+            conflict_tags: []
           }
         ]
       }
@@ -7792,6 +10138,7 @@ function SocialGraphEditorPanel({
     setMessage("");
     try {
       const response = await previewSocialAuthoringGraph(worldId, graph);
+      setGraph(response.graph);
       setValidation(response.validation);
       onPreviewYaml(response.yaml_contents, response.validation);
       setMessage(response.validation.ok ? "Social graph preview is valid." : "Social graph preview has errors.");
@@ -7811,6 +10158,7 @@ function SocialGraphEditorPanel({
     setMessage("");
     try {
       const response = await validateSocialAuthoringGraph(worldId, graph);
+      setGraph(response.graph);
       setValidation(response.validation);
       onPreviewYaml(response.yaml_contents, response.validation);
       setMessage(response.validation.ok ? "Social graph validation passed." : "Social graph validation found errors.");
@@ -7844,7 +10192,8 @@ function SocialGraphEditorPanel({
         setMessage("Save cancelled.");
         return;
       }
-      const response = await saveSocialAuthoringGraph(worldId, graph);
+      const response = await saveSocialAuthoringGraph(worldId, graph, validationResponse.validation.warnings.length > 0);
+      setGraph(response.graph);
       setValidation(response.validation);
       onPreviewYaml(response.yaml_contents, response.validation);
       setMessage(response.saved ? "Social graph saved." : "Social graph was not saved.");
@@ -7948,6 +10297,15 @@ function SocialGraphEditorPanel({
                     </label>
                   ))}
                   <label>
+                    Hidden relationship
+                    <input
+                      type="checkbox"
+                      checked={selectedRelationship.hidden_relationship}
+                      onChange={(event) => updateRelationship(selectedRelationship.id, (item) => item ? { ...item, hidden_relationship: event.target.checked, known_by_player: event.target.checked ? false : item.known_by_player } : item)}
+                      disabled={isBusy}
+                    />
+                  </label>
+                  <label>
                     Player known
                     <input
                       type="checkbox"
@@ -7957,6 +10315,18 @@ function SocialGraphEditorPanel({
                     />
                   </label>
                   <label>
+                    RP tone preset
+                    <select
+                      value={selectedRelationship.tone_preset ?? "derived"}
+                      onChange={(event) => updateRelationship(selectedRelationship.id, (item) => item ? { ...item, tone_preset: event.target.value } : item)}
+                      disabled={isBusy}
+                    >
+                      {graph.relationship_graph.relationship_tone_presets.map((preset) => (
+                        <option key={preset.id} value={preset.id}>{preset.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
                     Tags
                     <input
                       value={selectedRelationship.tags.join(", ")}
@@ -7964,6 +10334,21 @@ function SocialGraphEditorPanel({
                       disabled={isBusy}
                     />
                   </label>
+                  <label className="full-width">
+                    Hidden authoring note
+                    <input
+                      value={selectedRelationship.hidden_authoring_note ?? ""}
+                      onChange={(event) => updateRelationship(selectedRelationship.id, (item) => item ? { ...item, hidden_authoring_note: event.target.value || null } : item)}
+                      disabled={isBusy}
+                    />
+                  </label>
+                </div>
+                <div className="authoring-preview-box">
+                  <strong>RP tone preview</strong>
+                  <p className="muted">{selectedRelationship.rp_tone_preview.summary || "Preview updates after preview/validate."}</p>
+                  <p className="muted">
+                    warmth {selectedRelationship.rp_tone_preview.warmth} / tension {selectedRelationship.rp_tone_preview.tension} / intimacy {selectedRelationship.rp_tone_preview.intimacy}
+                  </p>
                 </div>
                 <button type="button" onClick={deleteRelationship} disabled={isBusy}>
                   Delete Relationship
@@ -8019,6 +10404,25 @@ function SocialGraphEditorPanel({
                       disabled={isBusy}
                     />
                   </label>
+                  <label>
+                    Visibility
+                    <select
+                      value={selectedFaction.visibility}
+                      onChange={(event) => updateFaction(selectedFaction.id, (item) => item ? { ...item, visibility: event.target.value, known_by_player: event.target.value === "player_visible" } : item)}
+                      disabled={isBusy}
+                    >
+                      <option value="player_visible">player_visible</option>
+                      <option value="hidden">hidden</option>
+                    </select>
+                  </label>
+                  <label>
+                    Conflict tags
+                    <input
+                      value={selectedFaction.conflict_tags.join(", ")}
+                      onChange={(event) => updateFaction(selectedFaction.id, (item) => item ? { ...item, conflict_tags: splitCsv(event.target.value) } : item)}
+                      disabled={isBusy}
+                    />
+                  </label>
                   <label className="full-width">
                     Description
                     <textarea
@@ -8052,16 +10456,29 @@ function SocialGraphEditorPanel({
                       Relation
                       <input type="number" value={edge.relation} onChange={(event) => updateFactionEdge(index, "relation", Number(event.target.value))} disabled={isBusy} />
                     </label>
-                    <label>
-                      Conflict level
-                      <input type="number" value={edge.conflict_level} onChange={(event) => updateFactionEdge(index, "conflict_level", Number(event.target.value))} disabled={isBusy} />
-                    </label>
-                    <label>
-                      Visibility
-                      <select value={edge.visibility} onChange={(event) => updateFactionEdge(index, "visibility", event.target.value)} disabled={isBusy}>
+                  <label>
+                    Conflict level
+                    <input type="number" value={edge.conflict_level} onChange={(event) => updateFactionEdge(index, "conflict_level", Number(event.target.value))} disabled={isBusy} />
+                  </label>
+                  <label>
+                    Relation type
+                    <select value={edge.relation_type} onChange={(event) => updateFactionEdge(index, "relation_type", event.target.value)} disabled={isBusy}>
+                      <option value="alliance">alliance</option>
+                      <option value="hostility">hostility</option>
+                      <option value="conflict">conflict</option>
+                      <option value="neutral">neutral</option>
+                    </select>
+                  </label>
+                  <label>
+                    Visibility
+                    <select value={edge.visibility} onChange={(event) => updateFactionEdge(index, "visibility", event.target.value)} disabled={isBusy}>
                         <option value="hidden">hidden</option>
                         <option value="player_visible">player_visible</option>
                       </select>
+                    </label>
+                    <label>
+                      Conflict tags
+                      <input value={edge.conflict_tags.join(", ")} onChange={(event) => updateFactionEdgeTags(index, splitCsv(event.target.value))} disabled={isBusy} />
                     </label>
                   </div>
                   <button type="button" onClick={() => deleteFactionEdge(index)} disabled={isBusy}>Delete Edge</button>

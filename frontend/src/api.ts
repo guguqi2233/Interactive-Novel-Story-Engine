@@ -636,6 +636,204 @@ export type AuthoringFilePreviewResponse = {
   impact: AuthoringImpactAnalysis;
 };
 
+export type WorldBranch = {
+  branch_id: string;
+  world_id: string;
+  base_world_id: string;
+  name: string;
+  created_at: string;
+  description: string;
+  content_path: string;
+  parent_branch_id?: string | null;
+};
+
+export type WorldBranchListResponse = {
+  world_id: string;
+  branches: WorldBranch[];
+};
+
+export type MergeConflict = {
+  conflict_id: string;
+  conflict_type: string;
+  file_name: string;
+  entity_id: string;
+  message: string;
+  base?: Record<string, unknown> | null;
+  ours?: Record<string, unknown> | null;
+  theirs?: Record<string, unknown> | null;
+};
+
+export type MergeResolution = {
+  conflict_id: string;
+  choice: "base" | "ours" | "theirs" | "custom";
+  custom?: Record<string, unknown> | null;
+};
+
+export type WorldMergeDraft = {
+  world_id: string;
+  ours: string;
+  theirs: string;
+  conflicts: MergeConflict[];
+  resolutions: MergeResolution[];
+  proposed_files: Record<string, string>;
+  validation: AuthoringValidation;
+  writes_to_disk: boolean;
+  saved: boolean;
+};
+
+export type ContentDiffKind =
+  | "file_diff"
+  | "entity_diff"
+  | "graph_diff"
+  | "package_diff"
+  | "schema_diff"
+  | "visibility_diff"
+  | "rp_profile_diff";
+
+export type ContentDiffRef = {
+  world_id?: string | null;
+  branch_id?: string | null;
+  files?: Record<string, string>;
+};
+
+export type ContentDiffEntity = {
+  file_name: string;
+  entity_id: string;
+  entity_type: string;
+  diff_type: ContentDiffKind;
+  summary: string;
+};
+
+export type ContentDiffReview = {
+  local_only: boolean;
+  normal_view: boolean;
+  diff_types: ContentDiffKind[];
+  added: ContentDiffEntity[];
+  removed: ContentDiffEntity[];
+  changed: ContentDiffEntity[];
+  renamed_candidates: string[];
+  visibility_risk: string[];
+  migration_impact: string[];
+  validation_issues: string[];
+};
+
+export type AuthoringWorkflowStep = {
+  id: string;
+  label: string;
+  tool_ref: string;
+  action: string;
+  requires_validation: boolean;
+  writes_content: boolean;
+};
+
+export type AuthoringWorkflowPreset = {
+  id: string;
+  preset_type: string;
+  name: string;
+  description: string;
+  steps: AuthoringWorkflowStep[];
+  required_tools: string[];
+  validation_gates: string[];
+  suggested_templates: string[];
+  quality_checks: string[];
+};
+
+export type AuthoringWorkflowPresetList = {
+  local_only: boolean;
+  presets: AuthoringWorkflowPreset[];
+};
+
+export type LocalContentType =
+  | "world"
+  | "character_pack"
+  | "template_pack"
+  | "scenario_suite"
+  | "prompt_profile"
+  | "RP_profile"
+  | "mod";
+
+export type LocalContentLibraryItem = {
+  id: string;
+  content_type: LocalContentType;
+  name: string;
+  version?: string | null;
+  description: string;
+  path_label: string;
+  metadata: Record<string, unknown>;
+  capabilities: string[];
+};
+
+export type LocalContentLibrary = {
+  local_only: boolean;
+  items: LocalContentLibraryItem[];
+};
+
+export type AuthoringProjectStatus = {
+  status: string;
+  errors: number;
+  warnings: number;
+  last_run_at?: string | null;
+  summary: string;
+};
+
+export type AuthoringRecentEdit = {
+  label: string;
+  content_type: string;
+  updated_at: string;
+};
+
+export type AuthoringPackageStatus = {
+  total: number;
+  by_type: Record<string, number>;
+};
+
+export type AuthoringProjectSummary = {
+  local_only: boolean;
+  active_world?: string | null;
+  active_world_name?: string | null;
+  active_branch?: string | null;
+  active_branch_name?: string | null;
+  recent_edits: AuthoringRecentEdit[];
+  validation_status: AuthoringProjectStatus;
+  quality_gate_status: AuthoringProjectStatus;
+  content_counts: Record<string, number>;
+  open_warnings: string[];
+  migration_impact: string[];
+  package_status: AuthoringPackageStatus;
+  hidden_details_redacted: boolean;
+  sensitive_details_redacted: boolean;
+};
+
+export type ReferenceKind =
+  | "location"
+  | "NPC"
+  | "item"
+  | "fact"
+  | "quest"
+  | "quest_stage"
+  | "faction"
+  | "relationship"
+  | "rumor"
+  | "crime type"
+  | "RP profile"
+  | "scene mood"
+  | "prompt profile";
+
+export type ReferenceIndexItem = {
+  id: string;
+  kind: ReferenceKind;
+  label: string;
+  hidden: boolean;
+  player_visible: boolean;
+  authoring_safe_metadata: Record<string, unknown>;
+};
+
+export type ReferenceIndex = {
+  local_only: boolean;
+  world_id: string;
+  items: ReferenceIndexItem[];
+};
+
 export type ValidationGraphNode = {
   id: string;
   label: string;
@@ -682,6 +880,7 @@ export type MapVisualNode = {
   x: number;
   y: number;
   region_id?: string | null;
+  layer_id?: string | null;
   tags: string[];
   visibility: MapVisibility;
   icon?: string | null;
@@ -695,11 +894,32 @@ export type MapVisualEdge = {
   edge_type: MapVisualEdgeType;
   label: string;
   visibility: MapVisibility;
+  travel_cost: number;
+  discovery_rules: string[];
+  unlock_condition?: string | null;
+};
+
+export type MapVisualRegion = {
+  id: string;
+  name: string;
+  layer_id?: string | null;
+  color_tag?: string | null;
+};
+
+export type MapVisualLayer = {
+  id: string;
+  name: string;
+  order: number;
 };
 
 export type MapVisualGraph = {
   nodes: MapVisualNode[];
   edges: MapVisualEdge[];
+  regions: MapVisualRegion[];
+  layers: MapVisualLayer[];
+  conditional_edges: MapVisualEdge[];
+  locked_edges: MapVisualEdge[];
+  hidden_edges: MapVisualEdge[];
 };
 
 export type AuthoringMapGraphResponse = {
@@ -715,6 +935,8 @@ export type AuthoringMapPreviewResponse = {
   yaml_content: string;
   validation: AuthoringValidation;
   confirmation_required: boolean;
+  diff_summary?: AuthoringDiffSummary | null;
+  impact?: AuthoringImpactAnalysis | null;
 };
 
 export type AuthoringMapWriteResponse = {
@@ -723,6 +945,7 @@ export type AuthoringMapWriteResponse = {
   graph: MapVisualGraph;
   validation: AuthoringValidation;
   confirmation_required: boolean;
+  saved: boolean;
 };
 
 export type ScenarioTemplateOutputFile = {
@@ -764,6 +987,36 @@ export type ScenarioTemplatePreviewResponse = {
 
 export type ScenarioTemplateApplyResponse = ScenarioTemplatePreviewResponse & {
   applied: boolean;
+};
+
+export type TemplateWizardType =
+  | "world"
+  | "location_cluster"
+  | "questline"
+  | "npc_set"
+  | "character_pack"
+  | "dialogue_scene"
+  | "group_rp_scene"
+  | "faction_conflict"
+  | "mystery_case";
+
+export type TemplateWizardDraft = {
+  id: string;
+  name: string;
+  template_type: TemplateWizardType;
+  current_step: string;
+  variables: Record<string, string>;
+  target_world_id?: string | null;
+  save_as_template: boolean;
+};
+
+export type TemplateWizardPreviewResponse = {
+  draft: TemplateWizardDraft;
+  generated_files: ScenarioTemplateOutputFile[];
+  validation?: AuthoringValidation | null;
+  writes_to_disk: boolean;
+  applied: boolean;
+  saved_template: boolean;
 };
 
 export type RPScenarioTemplate = {
@@ -819,6 +1072,10 @@ export type RPScenarioTemplatePreviewResponse = {
 export type QuestObjectiveNode = {
   id: string;
   text: string;
+  visibility: string;
+  hidden_authoring_note?: string | null;
+  x: number;
+  y: number;
 };
 
 export type QuestStageNode = {
@@ -829,6 +1086,8 @@ export type QuestStageNode = {
   next_stages: string[];
   failure_stages: string[];
   alternate_stages: string[];
+  x: number;
+  y: number;
 };
 
 export type QuestTriggerNode = {
@@ -837,12 +1096,24 @@ export type QuestTriggerNode = {
   action: string;
   objective_id?: string | null;
   next_stage?: string | null;
+  x: number;
+  y: number;
 };
 
 export type QuestRewardNode = {
   id: string;
   text: string;
   reward_type: string;
+  x: number;
+  y: number;
+};
+
+export type QuestConsequenceNode = {
+  id: string;
+  text: string;
+  consequence_type: string;
+  x: number;
+  y: number;
 };
 
 export type QuestGraphNode = {
@@ -854,6 +1125,9 @@ export type QuestGraphNode = {
   stages: QuestStageNode[];
   triggers: QuestTriggerNode[];
   rewards: QuestRewardNode[];
+  consequences: QuestConsequenceNode[];
+  x: number;
+  y: number;
 };
 
 export type QuestGraphEdge = {
@@ -872,6 +1146,14 @@ export type QuestGraphResponse = {
   world_id: string;
   quests: QuestGraphNode[];
   edges: QuestGraphEdge[];
+  quest_nodes: QuestGraphNode[];
+  stage_nodes: QuestStageNode[];
+  objective_nodes: QuestObjectiveNode[];
+  trigger_nodes: QuestTriggerNode[];
+  reward_nodes: QuestRewardNode[];
+  consequence_nodes: QuestConsequenceNode[];
+  failure_path_edges: QuestGraphEdge[];
+  optional_path_edges: QuestGraphEdge[];
 };
 
 export type QuestGraphPreviewResponse = {
@@ -891,6 +1173,13 @@ export type QuestGraphSaveResponse = {
   validation: AuthoringValidation;
   saved: boolean;
   confirmation_required: boolean;
+};
+
+export type QuestGraphScenarioDraftResponse = {
+  local_only: boolean;
+  world_id: string;
+  scenario: ScenarioRegressionCase;
+  validation: AuthoringValidation;
 };
 
 export type NPCGoalNode = {
@@ -944,20 +1233,31 @@ export type FactionAuthoringNode = {
   default_conflict_level: number;
   tags: string[];
   conflict_tags: string[];
+  visibility: string;
+  x: number;
+  y: number;
 };
 
 export type FactionAuthoringEdge = {
   source_faction_id: string;
   target_faction_id: string;
+  relation_type: string;
   relation: number;
   conflict_level: number;
   visibility: string;
+  conflict_tags: string[];
 };
 
 export type FactionAuthoringGraph = {
   world_id: string;
+  faction_nodes: FactionAuthoringNode[];
   factions: FactionAuthoringNode[];
+  relation_edges: FactionAuthoringEdge[];
   conflict_edges: FactionAuthoringEdge[];
+  alliance_edges: FactionAuthoringEdge[];
+  hostility_edges: FactionAuthoringEdge[];
+  visibility_fields: string[];
+  conflict_tag_index: string[];
 };
 
 export type RelationshipAuthoringNode = {
@@ -965,6 +1265,29 @@ export type RelationshipAuthoringNode = {
   label: string;
   node_type: string;
   hidden: boolean;
+  x: number;
+  y: number;
+};
+
+export type RelationshipTonePreview = {
+  preset_id: string;
+  summary: string;
+  address_style: string;
+  formality: string;
+  warmth: number;
+  tension: number;
+  intimacy: number;
+  respect: number;
+  resentment: number;
+  fear: number;
+  avoidance: number;
+  trust_expression: string;
+};
+
+export type RelationshipTonePreset = {
+  id: string;
+  label: string;
+  description: string;
 };
 
 export type RelationshipAuthoringEdge = {
@@ -978,6 +1301,10 @@ export type RelationshipAuthoringEdge = {
   obligation: number;
   tags: string[];
   known_by_player: boolean;
+  hidden_relationship: boolean;
+  hidden_authoring_note?: string | null;
+  tone_preset?: string | null;
+  rp_tone_preview: RelationshipTonePreview;
 };
 
 export type SocialAuthoringGraph = {
@@ -989,8 +1316,13 @@ export type SocialAuthoringGraph = {
 
 export type RelationshipAuthoringGraph = {
   world_id: string;
+  npc_nodes: RelationshipAuthoringNode[];
   nodes: RelationshipAuthoringNode[];
+  relationship_edges: RelationshipAuthoringEdge[];
   relationships: RelationshipAuthoringEdge[];
+  hidden_relationship_fields: string[];
+  relationship_tone_presets: RelationshipTonePreset[];
+  rp_tone_preview_fields: string[];
 };
 
 export type SocialAuthoringPreviewResponse = {
@@ -1025,6 +1357,7 @@ export type ItemEconomyItem = {
   locked: boolean;
   lock_difficulty: number;
   lock_state: string;
+  stolen_item_policy: string;
 };
 
 export type MerchantEconomyNode = {
@@ -1037,11 +1370,41 @@ export type MerchantEconomyNode = {
   sell_price_modifier: number;
 };
 
+export type ShopInventoryEdge = {
+  id: string;
+  merchant_id: string;
+  item_id: string;
+  buy_price: number;
+  sell_price: number;
+  player_visible: boolean;
+};
+
+export type QuestRewardLink = {
+  id: string;
+  quest_id: string;
+  item_id: string;
+  reward_index: number;
+};
+
+export type EconomyBalanceWarning = {
+  code: string;
+  path: string;
+  message: string;
+  ref_id?: string | null;
+};
+
 export type ItemEconomyAuthoring = {
   local_only: boolean;
   world_id: string;
   items: ItemEconomyItem[];
   merchants: MerchantEconomyNode[];
+  item_nodes: ItemEconomyItem[];
+  merchant_nodes: MerchantEconomyNode[];
+  shop_inventory_edges: ShopInventoryEdge[];
+  price_modifier_fields: Record<string, Record<string, number>>;
+  stolen_item_policy: Record<string, string>;
+  quest_reward_links: QuestRewardLink[];
+  balance_warnings: EconomyBalanceWarning[];
 };
 
 export type ItemEconomyAuthoringPreviewResponse = {
@@ -1069,6 +1432,31 @@ export type FactionReferenceNode = {
   known_by_player: boolean;
 };
 
+export type NPCReferenceNode = {
+  id: string;
+  name: string;
+  hidden: boolean;
+};
+
+export type QuestReferenceNode = {
+  id: string;
+  title: string;
+};
+
+export type ConsequenceTriggerNode = {
+  id: string;
+  trigger_type: string;
+  ref_id?: string | null;
+  label: string;
+};
+
+export type WitnessConsequenceNode = {
+  id: string;
+  npc_id: string;
+  crime_id?: string | null;
+  report_intent: string;
+};
+
 export type RumorAuthoringNode = {
   id: string;
   fact_id?: string | null;
@@ -1081,6 +1469,9 @@ export type RumorAuthoringNode = {
   spread_level: number;
   created_turn: number;
   tags: string[];
+  delay_turns: number;
+  cooldown_turns: number;
+  dedupe_key?: string | null;
 };
 
 export type CrimeConsequenceNode = {
@@ -1097,6 +1488,18 @@ export type ReputationEffectNode = {
   faction_id: string;
   amount: number;
   reason: string;
+  delay_turns: number;
+  cooldown_turns: number;
+  dedupe_key?: string | null;
+};
+
+export type NPCReactionConsequenceNode = {
+  id: string;
+  npc_id: string;
+  reaction: string;
+  delay_turns: number;
+  cooldown_turns: number;
+  dedupe_key?: string | null;
 };
 
 export type QuestTriggerConsequenceNode = {
@@ -1104,6 +1507,9 @@ export type QuestTriggerConsequenceNode = {
   quest_id: string;
   trigger_id: string;
   action: string;
+  delay_turns: number;
+  cooldown_turns: number;
+  dedupe_key?: string | null;
 };
 
 export type ConsequenceGraphEdge = {
@@ -1118,11 +1524,22 @@ export type RumorCrimeConsequenceAuthoring = {
   world_id: string;
   facts: FactReferenceNode[];
   factions: FactionReferenceNode[];
+  npcs: NPCReferenceNode[];
+  quests: QuestReferenceNode[];
+  trigger_nodes: ConsequenceTriggerNode[];
+  witness_nodes: WitnessConsequenceNode[];
+  crime_nodes: CrimeConsequenceNode[];
+  rumor_nodes: RumorAuthoringNode[];
+  reputation_effect_nodes: ReputationEffectNode[];
+  npc_reaction_nodes: NPCReactionConsequenceNode[];
+  quest_effect_nodes: QuestTriggerConsequenceNode[];
   rumors: RumorAuthoringNode[];
   crimes: CrimeConsequenceNode[];
   reputation_effects: ReputationEffectNode[];
+  npc_reactions: NPCReactionConsequenceNode[];
   quest_triggers: QuestTriggerConsequenceNode[];
   edges: ConsequenceGraphEdge[];
+  impact_summary: Record<string, number>;
 };
 
 export type RumorCrimeConsequencePreviewResponse = {
@@ -1981,7 +2398,8 @@ export async function validateAuthoringMap(
 
 export async function saveAuthoringMap(
   worldId: string,
-  graph: MapVisualGraph
+  graph: MapVisualGraph,
+  confirmWarnings = false
 ): Promise<AuthoringMapWriteResponse> {
   return requestJson<AuthoringMapWriteResponse>(
     `/authoring/worlds/${encodeURIComponent(worldId)}/map`,
@@ -1990,9 +2408,107 @@ export async function saveAuthoringMap(
       headers: {
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ graph })
+      body: JSON.stringify({ graph, confirm_warnings: confirmWarnings })
     }
   );
+}
+
+export async function fetchWorldBranches(worldId: string): Promise<WorldBranchListResponse> {
+  return requestJson<WorldBranchListResponse>(`/authoring/worlds/${encodeURIComponent(worldId)}/branches`);
+}
+
+export async function previewWorldMerge(
+  worldId: string,
+  ours: string,
+  theirs: string,
+  resolutions: MergeResolution[] = []
+): Promise<WorldMergeDraft> {
+  return requestJson<WorldMergeDraft>(`/authoring/worlds/${encodeURIComponent(worldId)}/merge/preview`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ours, theirs, resolutions })
+  });
+}
+
+export async function saveWorldMerge(
+  worldId: string,
+  ours: string,
+  theirs: string,
+  resolutions: MergeResolution[] = [],
+  confirmWarnings = false
+): Promise<WorldMergeDraft> {
+  return requestJson<WorldMergeDraft>(`/authoring/worlds/${encodeURIComponent(worldId)}/merge/save`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ours, theirs, resolutions, confirm_save: true, confirm_warnings: confirmWarnings })
+  });
+}
+
+export async function reviewContentDiff(
+  base: ContentDiffRef,
+  proposed: ContentDiffRef,
+  diffTypes: ContentDiffKind[] = ["file_diff", "entity_diff", "graph_diff"],
+  normalView = true
+): Promise<ContentDiffReview> {
+  return requestJson<ContentDiffReview>("/authoring/diff/review", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      base,
+      proposed,
+      diff_types: diffTypes,
+      normal_view: normalView
+    })
+  });
+}
+
+export async function fetchAuthoringWorkflowPresets(): Promise<AuthoringWorkflowPresetList> {
+  return requestJson<AuthoringWorkflowPresetList>("/authoring/workflow-presets");
+}
+
+export async function fetchAuthoringProjectSummary(worldId?: string, branchId?: string): Promise<AuthoringProjectSummary> {
+  const params = new URLSearchParams();
+  if (worldId) {
+    params.set("world_id", worldId);
+  }
+  if (branchId) {
+    params.set("branch_id", branchId);
+  }
+  const query = params.toString();
+  return requestJson<AuthoringProjectSummary>(`/authoring/project-summary${query ? `?${query}` : ""}`);
+}
+
+export async function fetchReferenceIndex(worldId: string): Promise<ReferenceIndex> {
+  return requestJson<ReferenceIndex>(`/authoring/worlds/${encodeURIComponent(worldId)}/references`);
+}
+
+export async function fetchLocalContentLibrary(contentType?: string): Promise<LocalContentLibrary> {
+  const query = contentType && contentType !== "all" ? `?content_type=${encodeURIComponent(contentType)}` : "";
+  return requestJson<LocalContentLibrary>(`/library/items${query}`);
+}
+
+export async function fetchLocalContentLibraryItem(itemId: string): Promise<LocalContentLibraryItem> {
+  return requestJson<LocalContentLibraryItem>(`/library/items/${encodeURIComponent(itemId)}`);
+}
+
+export async function validateLocalContentLibraryItem(itemId: string): Promise<AuthoringValidation> {
+  return requestJson<AuthoringValidation>(`/library/items/${encodeURIComponent(itemId)}/validate`, { method: "POST" });
+}
+
+export async function exportLocalContentLibraryItem(contentType: LocalContentType, itemId: string): Promise<ArchiveExportResponse> {
+  return requestJson<ArchiveExportResponse>("/library/export", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content_type: contentType, item_id: itemId })
+  });
+}
+
+export async function importLocalContentLibraryArchive(archiveBase64: string, overwrite = false, confirmApply = false): Promise<Record<string, unknown>> {
+  return requestJson<Record<string, unknown>>("/library/import", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ archive_base64: archiveBase64, overwrite, confirm_apply: confirmApply })
+  });
 }
 
 export async function fetchScenarioTemplates(): Promise<ScenarioTemplateListResponse> {
@@ -2042,6 +2558,48 @@ export async function applyScenarioTemplate(
       })
     }
   );
+}
+
+export async function previewTemplateWizard(
+  draft: TemplateWizardDraft
+): Promise<TemplateWizardPreviewResponse> {
+  return requestJson<TemplateWizardPreviewResponse>("/authoring/template-wizard/preview", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(draft)
+  });
+}
+
+export async function validateTemplateWizard(
+  draft: TemplateWizardDraft
+): Promise<TemplateWizardPreviewResponse> {
+  return requestJson<TemplateWizardPreviewResponse>("/authoring/template-wizard/validate", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(draft)
+  });
+}
+
+export async function applyTemplateWizard(
+  draft: TemplateWizardDraft,
+  confirmApply = true,
+  confirmWarnings = false
+): Promise<TemplateWizardPreviewResponse> {
+  return requestJson<TemplateWizardPreviewResponse>("/authoring/template-wizard/apply", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      draft,
+      confirm_apply: confirmApply,
+      confirm_warnings: confirmWarnings
+    })
+  });
 }
 
 export async function fetchRPScenarioTemplates(): Promise<RPScenarioTemplateListResponse> {
@@ -2129,12 +2687,29 @@ export async function validateQuestGraph(
 
 export async function saveQuestGraph(
   worldId: string,
-  graph: QuestGraphResponse
+  graph: QuestGraphResponse,
+  confirmWarnings = false
 ): Promise<QuestGraphSaveResponse> {
   return requestJson<QuestGraphSaveResponse>(
     `/authoring/worlds/${encodeURIComponent(worldId)}/quests/graph`,
     {
       method: "PUT",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ graph, confirm_warnings: confirmWarnings })
+    }
+  );
+}
+
+export async function generateQuestGraphScenarioDraft(
+  worldId: string,
+  graph: QuestGraphResponse
+): Promise<QuestGraphScenarioDraftResponse> {
+  return requestJson<QuestGraphScenarioDraftResponse>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/quests/graph/scenario-draft`,
+    {
+      method: "POST",
       headers: {
         "Content-Type": "application/json"
       },
@@ -2237,7 +2812,8 @@ export async function validateSocialAuthoringGraph(
 
 export async function saveSocialAuthoringGraph(
   worldId: string,
-  graph: SocialAuthoringGraph
+  graph: SocialAuthoringGraph,
+  confirmWarnings = false
 ): Promise<SocialAuthoringSaveResponse> {
   return requestJson<SocialAuthoringSaveResponse>(
     `/authoring/worlds/${encodeURIComponent(worldId)}/social/graph`,
@@ -2246,7 +2822,7 @@ export async function saveSocialAuthoringGraph(
       headers: {
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ graph })
+      body: JSON.stringify({ graph, confirm_warnings: confirmWarnings })
     }
   );
 }
@@ -2289,9 +2865,26 @@ export async function validateItemEconomyAuthoring(
   );
 }
 
-export async function saveItemEconomyAuthoring(
+export async function balanceCheckItemEconomyAuthoring(
   worldId: string,
   graph: ItemEconomyAuthoring
+): Promise<ItemEconomyAuthoringPreviewResponse> {
+  return requestJson<ItemEconomyAuthoringPreviewResponse>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/economy/balance-check`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ graph })
+    }
+  );
+}
+
+export async function saveItemEconomyAuthoring(
+  worldId: string,
+  graph: ItemEconomyAuthoring,
+  confirmWarnings = false
 ): Promise<ItemEconomyAuthoringSaveResponse> {
   return requestJson<ItemEconomyAuthoringSaveResponse>(
     `/authoring/worlds/${encodeURIComponent(worldId)}/economy`,
@@ -2300,7 +2893,7 @@ export async function saveItemEconomyAuthoring(
       headers: {
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ graph })
+      body: JSON.stringify({ graph, confirm_warnings: confirmWarnings })
     }
   );
 }
@@ -2345,7 +2938,8 @@ export async function validateRumorCrimeAuthoring(
 
 export async function saveRumorCrimeAuthoring(
   worldId: string,
-  graph: RumorCrimeConsequenceAuthoring
+  graph: RumorCrimeConsequenceAuthoring,
+  confirmWarnings = false
 ): Promise<RumorCrimeConsequenceSaveResponse> {
   return requestJson<RumorCrimeConsequenceSaveResponse>(
     `/authoring/worlds/${encodeURIComponent(worldId)}/rumor-crime`,
@@ -2354,7 +2948,7 @@ export async function saveRumorCrimeAuthoring(
       headers: {
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ graph })
+      body: JSON.stringify({ graph, confirm_warnings: confirmWarnings })
     }
   );
 }
@@ -2391,6 +2985,179 @@ export type ExampleDialoguePreviewResponse = {
 };
 
 export type ExampleDialogueSaveResponse = ExampleDialoguePreviewResponse & {
+  saved: boolean;
+};
+
+export type RPProfile = {
+  public_persona: string;
+  private_self_summary?: string | null;
+  attachment_style: string;
+  trust_expression_style: string;
+  conflict_expression_style: string;
+  intimacy_expression_style: string;
+  deception_style: string;
+  boundaries: string[];
+};
+
+export type VoiceProfile = {
+  tone: string;
+  sentence_length: string;
+  vocabulary_style: string;
+  catchphrases: string[];
+  speech_habits: string[];
+  silence_style: string;
+  emotional_tells: string[];
+};
+
+export type EmotionalState = {
+  primary_emotion: string;
+  intensity: number;
+  stress: number;
+  stability: number;
+  last_emotional_event_id?: string | null;
+};
+
+export type RPCharacterAuthoringProfile = {
+  npc_id: string;
+  name: string;
+  location_id: string;
+  personality: string;
+  visible: boolean;
+  hidden: boolean;
+  knowledge: string[];
+  rp_profile: RPProfile;
+  voice_profile: VoiceProfile;
+  default_emotional_state: EmotionalState;
+  relationship_expression: Record<string, string>;
+  example_dialogue_refs: string[];
+  example_dialogues: ExampleDialogue[];
+  lorebook_links: string[];
+  scene_mood_preferences: string[];
+  private_field_visibility: Record<string, string>;
+  import_report?: CharacterCardImportReport | null;
+  safety_flags: string[];
+};
+
+export type RPCharacterAuthoring = {
+  world_id: string;
+  characters: RPCharacterAuthoringProfile[];
+};
+
+export type RPCharacterAuthoringPreviewResponse = {
+  world_id: string;
+  graph: RPCharacterAuthoring;
+  yaml_contents: Record<string, string>;
+  validation: AuthoringValidation;
+  confirmation_required: boolean;
+};
+
+export type RPCharacterAuthoringSaveResponse = RPCharacterAuthoringPreviewResponse & {
+  saved: boolean;
+};
+
+export type CharacterCardImportReport = {
+  ok: boolean;
+  source_format: string;
+  normalized_card: Record<string, unknown>;
+  rp_profile_candidate: Record<string, unknown>;
+  voice_profile_candidate: Record<string, unknown>;
+  example_dialogue_candidate: { lines: string[] };
+  flavor_lore_candidate: unknown[];
+  structured_fact_candidate: unknown[];
+  hidden_fact_candidate: unknown[];
+  unsafe_or_unsupported_entries: unknown[];
+  warnings: string[];
+};
+
+export type RPCharacterSafeExportResponse = {
+  world_id: string;
+  npc_id: string;
+  card: Record<string, unknown>;
+  excluded_fields: string[];
+};
+
+export type DialogueSceneOutcomeTemplate = {
+  id: string;
+  description: string;
+  state_delta_operation?: string | null;
+  state_delta_path?: string | null;
+  allowed: boolean;
+};
+
+export type DialogueSceneTemplate = {
+  id: string;
+  name: string;
+  participant_ids: string[];
+  focus_npc_id: string;
+  location_id: string;
+  dialogue_mode: string;
+  scene_mood?: string | null;
+  rp_prompt_profile_id?: string | null;
+  opening_context: string;
+  allowed_topics: string[];
+  forbidden_topics: string[];
+  required_visible_facts: string[];
+  possible_outcomes: DialogueSceneOutcomeTemplate[];
+};
+
+export type DialogueSceneAuthoring = {
+  world_id: string;
+  templates: DialogueSceneTemplate[];
+};
+
+export type DialogueScenePreviewResponse = {
+  world_id: string;
+  graph: DialogueSceneAuthoring;
+  yaml_content: string;
+  validation: AuthoringValidation;
+  prompt_preview: Record<string, string>;
+  confirmation_required: boolean;
+};
+
+export type DialogueSceneSaveResponse = DialogueScenePreviewResponse & {
+  saved: boolean;
+};
+
+export type GroupRPParticipantRole = {
+  role_id: string;
+  npc_id: string;
+  label: string;
+  required: boolean;
+};
+
+export type GroupRPSceneTemplate = {
+  id: string;
+  name: string;
+  scene_type: string;
+  participant_ids: string[];
+  required_roles: GroupRPParticipantRole[];
+  location_id: string;
+  turn_order_policy: string;
+  speaker_selection_policy: string;
+  scene_mood?: string | null;
+  starting_tension: number;
+  opening_public_context: string;
+  allowed_topics: string[];
+  forbidden_topics: string[];
+  exit_conditions: string[];
+  allow_dead_participants: boolean;
+};
+
+export type GroupRPSceneAuthoring = {
+  world_id: string;
+  templates: GroupRPSceneTemplate[];
+};
+
+export type GroupRPScenePreviewResponse = {
+  world_id: string;
+  graph: GroupRPSceneAuthoring;
+  yaml_content: string;
+  validation: AuthoringValidation;
+  safe_prompt_preview: Record<string, string>;
+  confirmation_required: boolean;
+};
+
+export type GroupRPSceneSaveResponse = GroupRPScenePreviewResponse & {
   saved: boolean;
 };
 
@@ -2444,6 +3211,182 @@ export async function saveExampleDialogues(
         "Content-Type": "application/json"
       },
       body: JSON.stringify({ entries })
+    }
+  );
+}
+
+export async function fetchRPCharacterAuthoring(worldId: string): Promise<RPCharacterAuthoring> {
+  return requestJson<RPCharacterAuthoring>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/rp/characters/pro`
+  );
+}
+
+export async function previewRPCharacterImport(
+  worldId: string,
+  rawContent: string,
+  inputFormat = "auto"
+): Promise<CharacterCardImportReport> {
+  return requestJson<CharacterCardImportReport>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/rp/characters/pro/import-preview`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ raw_content: rawContent, input_format: inputFormat })
+    }
+  );
+}
+
+export async function previewRPCharacterAuthoring(
+  worldId: string,
+  graph: RPCharacterAuthoring
+): Promise<RPCharacterAuthoringPreviewResponse> {
+  return requestJson<RPCharacterAuthoringPreviewResponse>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/rp/characters/pro/preview`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(graph)
+    }
+  );
+}
+
+export async function validateRPCharacterAuthoring(
+  worldId: string,
+  graph: RPCharacterAuthoring
+): Promise<RPCharacterAuthoringPreviewResponse> {
+  return requestJson<RPCharacterAuthoringPreviewResponse>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/rp/characters/pro/validate`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(graph)
+    }
+  );
+}
+
+export async function saveRPCharacterAuthoring(
+  worldId: string,
+  graph: RPCharacterAuthoring,
+  confirmWarnings = false
+): Promise<RPCharacterAuthoringSaveResponse> {
+  return requestJson<RPCharacterAuthoringSaveResponse>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/rp/characters/pro?confirm_warnings=${confirmWarnings ? "true" : "false"}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(graph)
+    }
+  );
+}
+
+export async function exportSafeRPCharacterCard(
+  worldId: string,
+  npcId: string
+): Promise<RPCharacterSafeExportResponse> {
+  return requestJson<RPCharacterSafeExportResponse>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/rp/characters/pro/safe-export`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ npc_id: npcId })
+    }
+  );
+}
+
+export async function fetchDialogueSceneAuthoring(worldId: string): Promise<DialogueSceneAuthoring> {
+  return requestJson<DialogueSceneAuthoring>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/dialogue-scenes`
+  );
+}
+
+export async function previewDialogueSceneAuthoring(
+  worldId: string,
+  graph: DialogueSceneAuthoring
+): Promise<DialogueScenePreviewResponse> {
+  return requestJson<DialogueScenePreviewResponse>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/dialogue-scenes/preview`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(graph)
+    }
+  );
+}
+
+export async function validateDialogueSceneAuthoring(
+  worldId: string,
+  graph: DialogueSceneAuthoring
+): Promise<DialogueScenePreviewResponse> {
+  return requestJson<DialogueScenePreviewResponse>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/dialogue-scenes/validate`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(graph)
+    }
+  );
+}
+
+export async function saveDialogueSceneAuthoring(
+  worldId: string,
+  graph: DialogueSceneAuthoring,
+  confirmWarnings = false
+): Promise<DialogueSceneSaveResponse> {
+  return requestJson<DialogueSceneSaveResponse>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/dialogue-scenes?confirm_warnings=${confirmWarnings ? "true" : "false"}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(graph)
+    }
+  );
+}
+
+export async function fetchGroupRPSceneAuthoring(worldId: string): Promise<GroupRPSceneAuthoring> {
+  return requestJson<GroupRPSceneAuthoring>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/group-rp-scenes`
+  );
+}
+
+export async function previewGroupRPSceneAuthoring(
+  worldId: string,
+  graph: GroupRPSceneAuthoring
+): Promise<GroupRPScenePreviewResponse> {
+  return requestJson<GroupRPScenePreviewResponse>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/group-rp-scenes/preview`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(graph)
+    }
+  );
+}
+
+export async function validateGroupRPSceneAuthoring(
+  worldId: string,
+  graph: GroupRPSceneAuthoring
+): Promise<GroupRPScenePreviewResponse> {
+  return requestJson<GroupRPScenePreviewResponse>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/group-rp-scenes/validate`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(graph)
+    }
+  );
+}
+
+export async function saveGroupRPSceneAuthoring(
+  worldId: string,
+  graph: GroupRPSceneAuthoring,
+  confirmWarnings = false
+): Promise<GroupRPSceneSaveResponse> {
+  return requestJson<GroupRPSceneSaveResponse>(
+    `/authoring/worlds/${encodeURIComponent(worldId)}/group-rp-scenes?confirm_warnings=${confirmWarnings ? "true" : "false"}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(graph)
     }
   );
 }

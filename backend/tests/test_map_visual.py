@@ -160,7 +160,55 @@ locations:
     assert any(edge.visibility == MapVisibility.HIDDEN for edge in authoring_graph.edges)
     assert any(node.location_id == "secret_room" for node in authoring_graph.nodes)
     assert all(node.location_id != "secret_room" for node in player_graph.nodes)
-    assert player_graph.edges == []
+    assert all(
+        not (
+            edge.source_location_id == "square"
+            and edge.target_location_id == "forge"
+            and edge.label == "north"
+        )
+        for edge in player_graph.edges
+    )
+
+
+def test_hidden_edge_metadata_is_filtered_from_player_visible_map(tmp_path: Path) -> None:
+    write_world(
+        tmp_path,
+        "hidden_edge_metadata",
+        locations_yaml="""
+locations:
+  - id: square
+    name: Square
+    description: A quiet square.
+    exits:
+      north: forge
+    exit_metadata:
+      north:
+        edge_type: hidden
+        visibility: hidden
+        discovery_rules:
+          - learn_secret_path
+  - id: forge
+    name: Forge
+    description: A warm forge.
+    exits:
+      south: square
+""",
+    )
+
+    pack = WorldLoader(tmp_path).load("hidden_edge_metadata")
+    authoring_graph = build_authoring_map_visual_graph(pack)
+    player_graph = build_player_visible_map_visual_graph(pack, ["square", "forge"])
+
+    assert any(edge.edge_type == "hidden" for edge in authoring_graph.edges)
+    assert authoring_graph.hidden_edges
+    assert all(
+        not (
+            edge.source_location_id == "square"
+            and edge.target_location_id == "forge"
+            and edge.label == "north"
+        )
+        for edge in player_graph.edges
+    )
 
 
 def test_hidden_visual_exit_does_not_enter_player_visible_state(tmp_path: Path) -> None:

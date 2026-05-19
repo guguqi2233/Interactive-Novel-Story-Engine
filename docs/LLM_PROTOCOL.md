@@ -6,8 +6,9 @@ The LLM protocol defines how this project talks to model providers without letti
 
 The LLM is a parser, narrator, summarizer, roleplay expression layer, and
 optional authoring draft assistant. It is not the world judge. In v1.0 this
-boundary is frozen as a stable local studio contract, and v1.1 extends it to RP
-dialogue: model output can affect language-facing fields only after schema
+boundary is frozen as a stable local studio contract, v1.1 extends it to RP
+dialogue, and v1.2 extends local visual authoring without expanding LLM
+authority: model output can affect language-facing fields only after schema
 validation and consistency checks, and cannot directly modify `GameState`.
 
 ## Provider Boundary
@@ -291,6 +292,63 @@ visible-state snapshots, validation reports, and temporary sessions. They must
 not use a model to decide whether a rule outcome is correct, whether content is
 valid, or whether a quality gate passes.
 
+## v1.2 Visual Authoring Pro LLM Boundary
+
+v1.2 Visual Authoring Pro modules are deterministic authoring tools. They do
+not call `LLMProvider`, do not instantiate concrete providers, and do not use
+model output to create authoritative content. They may show provider status in
+studio surfaces, but provider selection remains limited to
+`create_llm_provider`.
+
+The following v1.2 modules do not call the LLM:
+
+- Authoring Pro Boundary policy and checks.
+- Authoring Validation Gate.
+- Visual Map Editor Pro.
+- Quest Graph Editor Pro and deterministic scenario regression draft
+  generation.
+- NPC Relationship Graph Editing.
+- Faction Conflict Editor.
+- Rumor / Crime Consequence Graph Pro.
+- Item / Economy Editor Pro and balance warnings.
+- RP Character Authoring UI Pro, import preview, validation, and safe export.
+- Dialogue Scene Editor.
+- Group RP Scene Authoring.
+- Character Pack Builder import/export.
+- Template Wizard.
+- World Branch Merge Assistant.
+- Content Diff Review.
+- Authoring Workflow Presets.
+- Local Content Library.
+- Reference Picker / ReferenceIndex.
+- Authoring Draft History.
+
+Visual editors can convert graph DTOs to YAML, preview generated YAML, validate
+drafts, show diff/impact reports, and save after explicit confirmation. They do
+not ask an LLM to generate maps, quests, relationships, faction conflict,
+rumors, crime consequences, prices, dialogue scene facts, group scene hidden
+facts, templates, merge resolutions, or diff explanations.
+
+Authoring drafts are not active runtime state. A v1.2 editor save writes
+content-pack files only after validation and the Authoring Validation Gate. It
+does not write active sessions, active saves, or live `GameState`.
+
+RP authoring can edit public style/profile fields and private authoring fields,
+but it cannot enlarge prompt permissions. Imported `system_prompt`,
+`creator_notes`, unsafe example dialogue, hidden facts, and
+`private_self_summary` stay out of ordinary player-facing and RP prompt
+contexts unless deterministic code creates a separate safe field. Safe export
+excludes hidden/private/debug fields.
+
+Template Wizard, character-pack import, local library import, and package import
+are data flows. They do not execute scripts, fetch remote URLs, read local
+secrets, or automatically apply external content to active worlds. Imported or
+generated content must remain draft/content-pack data and must pass validation.
+
+Merge Assistant and Content Diff Review are structural tools. They do not call
+an LLM to resolve conflicts or explain diffs. Conflict resolution requires an
+explicit user choice.
+
 ### v1.0 Quality And Eval Boundary
 
 v1.0 evals and playtests use deterministic fixtures, mock providers,
@@ -557,6 +615,25 @@ deterministic checker, not an external LLM judge.
 RP boundary evals and RP regression playtests use fake/mock outputs and
 mock/local providers. They do not call real model APIs.
 
+## v1.2 Prompt Safety Notes
+
+Narrator and dialogue prompt safety remains unchanged in v1.2:
+
+- `Narrator` receives only safe action result payload, current location, tone,
+  and visible facts.
+- Dialogue context receives player-visible facts, NPC-known facts, safe
+  RP/voice fields, prompt-safe examples, scene mood style, relationship tone,
+  and filtered RP memory.
+- Group RP builds a separate context per participant.
+- Hidden facts, NPC secrets, hidden/debug memory, raw `GameState`, raw
+  `state_deltas`, authoring draft YAML, import reports, diff payloads, merge
+  conflicts, and draft history snapshots do not enter ordinary prompts.
+
+Prompt profiles and RP prompt profiles can alter style, variants, temperature,
+and RP expression settings only. They cannot add hidden facts, change NPC
+knowledge, bypass visibility, grant state-write authority, or change the
+provider construction path.
+
 ## Output Validation
 
 All LLM JSON outputs must validate against Pydantic schemas:
@@ -628,3 +705,8 @@ The LLM can render prose or draft authoring candidates, but it cannot create can
   integration.
 - Keep package import/export reports summarized and avoid rendering raw save
   JSON, raw EventLog, or raw `state_deltas` outside debug/local-only panels.
+- Keep v1.2 Merge Assistant and ReferenceIndex normal views redacted when
+  showing hidden/private content. Full merge conflict payloads and hidden
+  reference labels are local authoring/debug data, not player or prompt input.
+- Add static regression tests that fail if v1.2 visual authoring modules import
+  concrete LLM providers or call `generate_text` / `generate_json`.

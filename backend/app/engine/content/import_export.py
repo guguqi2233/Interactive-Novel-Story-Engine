@@ -20,6 +20,11 @@ from app.engine.content.authoring_service import ALLOWED_AUTHORING_FILES
 from app.engine.content.mod_loader import FORBIDDEN_CODE_SUFFIXES, ModLoader
 from app.engine.content.scenario_templates import ScenarioTemplateRenderer
 from app.engine.content.validator import ValidationReport, validate_world_pack
+from app.engine.content.validation_gate import (
+    AuthoringOperationType,
+    AuthoringValidationGate,
+    AuthoringValidationGateRequest,
+)
 from app.scenarios.regression import sample_scenario_regression_cases
 
 
@@ -94,9 +99,20 @@ class ImportExportService:
         self.mods_root = Path(mods_root)
         self.templates_root = Path(templates_root)
         self.repository = repository
+        self.validation_gate = AuthoringValidationGate(self.worlds_root)
 
     def export_world(self, world_id: str) -> ArchiveExport:
         world_path = self._safe_existing_dir(self.worlds_root, world_id, "world")
+        gate = self.validation_gate.evaluate(
+            AuthoringValidationGateRequest(
+                world_id=world_id,
+                operation_type=AuthoringOperationType.EXPORT,
+                affected_files=[name for name in ALLOWED_AUTHORING_FILES if (world_path / name).exists()],
+                confirm_warnings=True,
+            )
+        )
+        if not gate.validation_report.ok:
+            raise ImportExportError("Authoring Validation Gate blocked world export.")
         manifest = ExportManifest(
             export_type="world",
             id=world_id,
@@ -123,6 +139,16 @@ class ImportExportService:
                 raise ImportExportError("World archive missing world directory.")
             target = self._safe_new_or_existing_dir(self.worlds_root, manifest.id, overwrite, "world")
             report = validate_world_pack(manifest.id, worlds_root=root / "worlds")
+            gate = AuthoringValidationGate(root / "worlds").evaluate(
+                AuthoringValidationGateRequest(
+                    world_id=manifest.id,
+                    operation_type=AuthoringOperationType.IMPORT,
+                    affected_files=[name for name in ALLOWED_AUTHORING_FILES if (source / name).exists()],
+                    validation_report=report,
+                    confirm_warnings=True,
+                )
+            )
+            report = gate.validation_report
             if not report.ok:
                 return _result_from_validation("world", manifest.id, report)
             if target.exists() and overwrite:
@@ -284,6 +310,8 @@ class ImportExportService:
             raise ImportExportError("; ".join(dry_run.errors))
         package_type = dry_run.package_type
         if package_type == "world":
+            self._gate_world_package_import(archive_base64)
+        if package_type == "world":
             return self.import_world(archive_base64, overwrite=overwrite)
         if package_type == "mod":
             return self.import_mod(archive_base64, overwrite=overwrite)
@@ -294,6 +322,24 @@ class ImportExportService:
         if package_type == "scenario_suite":
             return self._import_scenario_suite(archive_base64)
         raise ImportExportError(f"Unsupported package_type: {package_type}")
+
+    def _gate_world_package_import(self, archive_base64: str) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            export_manifest, _package_manifest = _extract_safe_package(_unb64(archive_base64), root)
+            source = root / "worlds" / export_manifest.id
+            report = validate_world_pack(export_manifest.id, worlds_root=root / "worlds")
+            gate = AuthoringValidationGate(root / "worlds").evaluate(
+                AuthoringValidationGateRequest(
+                    world_id=export_manifest.id,
+                    operation_type=AuthoringOperationType.APPLY_PACK,
+                    affected_files=[name for name in ALLOWED_AUTHORING_FILES if (source / name).exists()],
+                    validation_report=report,
+                    confirm_warnings=True,
+                )
+            )
+            if not gate.validation_report.ok:
+                raise ImportExportError("Authoring Validation Gate blocked package import apply.")
 
     def _import_template_pack(self, archive_base64: str, *, overwrite: bool = False) -> ImportResult:
         with TemporaryDirectory() as temp_dir:
