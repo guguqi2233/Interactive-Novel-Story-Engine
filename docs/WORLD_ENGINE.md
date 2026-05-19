@@ -1,11 +1,12 @@
 # World Engine
 
-This document describes the local world engine as of v1.4 Content Production
-Pipeline on top of v1.3 Advanced NPC Simulation, v1.2 Visual Authoring Pro,
-the v1.1 Roleplay Immersion Layer, and v1.0 Stable Local Studio Edition. The engine is the
-only source of truth for world state, rules, consequences, persistence, and
-visibility. The LLM layer may parse intent, render narration, and summarize
-memory, but it does not decide rule outcomes or mutate `GameState`.
+This document describes the local world engine as of v1.5 Local Model & Prompt
+Lab on top of v1.4 Content Production Pipeline, v1.3 Advanced NPC Simulation,
+v1.2 Visual Authoring Pro, the v1.1 Roleplay Immersion Layer, and v1.0 Stable
+Local Studio Edition. The engine is the only source of truth for world state,
+rules, consequences, persistence, and visibility. The LLM layer may parse
+intent, render narration, and summarize memory, but it does not decide rule
+outcomes or mutate `GameState`.
 
 ## Core Boundary
 
@@ -1988,3 +1989,277 @@ and do not expose quality APIs as a hosted service.
 - v1.4 does not provide online marketplace, remote download, script execution,
   background production jobs, or automatic long-form campaign writing.
 - Memory retrieval is context support, not canonical truth.
+
+## v1.5 Local Model & Prompt Lab
+
+v1.5 adds a local Model & Prompt Lab for comparing and debugging providers,
+models, prompt profiles, context construction, structured output reliability,
+token budgets, latency, cost estimates, routing rules, and prompt experiment
+packages.
+
+The lab is diagnostic and evaluative. It produces reports, matrices,
+diagnostics, usage summaries, diffs, and packages. It does not modify active
+`GameState`, active saves, active content packs, or world facts.
+
+The boundary contract lives in `docs/MODEL_PROMPT_LAB_BOUNDARY.md`.
+
+### Provider Capability Registry
+
+`ProviderCapabilityRegistry` records declared provider/model metadata:
+
+- provider id and type
+- text/JSON/streaming/tool/embedding support flags
+- context window and max output hints
+- recommended use cases
+- local-only / requires-key flags
+- cost and reliability metadata where known
+
+The registry is metadata only. It does not call providers, probe networks,
+validate real model availability, or expose API key values. Frontend summaries
+may show booleans such as `api_key_configured`, but not secrets.
+
+API:
+
+- `GET /prompt-lab/provider-capabilities`
+
+### Provider Benchmark Harness
+
+`ProviderBenchmarkRun`, `ProviderBenchmarkCase`, and
+`ProviderBenchmarkReport` compare provider behavior for safe local cases:
+
+- text smoke
+- JSON schema
+- intent parser schema
+- narrator style
+- RP dialogue style
+- memory summary schema
+- hidden fact refusal
+- latency smoke
+
+Benchmarks default to fake/mock/local providers. Real provider runs require
+explicit `allow_real_provider=true`. Reports use redacted prompt previews and
+safe output summaries; they do not become world facts.
+
+API / CLI:
+
+- `POST /prompt-lab/providers/benchmark`
+- `GET /prompt-lab/providers/benchmark/{run_id}`
+- `python -m app.tools.prompt_lab benchmark-provider`
+- `python -m app.tools.provider_benchmark`
+
+### Prompt Profile A/B Test
+
+`PromptABTestRun` compares two prompt profiles for narrator, RP dialogue,
+intent parser, or memory summary use cases. It reports style metrics, schema
+reliability, hidden leak flags, consistency flags, and latency/cost summaries.
+
+Prompt profiles remain style/configuration only. They cannot set
+`hidden_fact_policy` or `state_modification_policy` to anything other than
+`deny`, cannot add facts, and cannot modify `GameState`.
+
+API:
+
+- `POST /prompt-lab/prompt-profiles/ab-test`
+- `GET /prompt-lab/prompt-profiles/ab-test/{run_id}`
+
+### Narrator Style Lab
+
+`NarratorStyleExperiment` tests narrator style parameters such as prompt
+profile, scene mood, perspective, prose density, response length, sensory
+focus, and genre tone. Findings check hidden leaks, invented key items,
+contradictions with the resolved `ActionResult`, concise output, style match,
+and suggested action validity.
+
+The lab does not change `ActionResult`, does not apply state changes, and does
+not write narration into active play.
+
+API:
+
+- `POST /prompt-lab/narrator-style/run`
+- `GET /prompt-lab/narrator-style/{run_id}`
+
+### NPC Voice Style Lab
+
+`NPCVoiceStyleExperiment` compares voice profile variants, RP prompt profiles,
+and example dialogue sets for NPC voice consistency. Findings cover voice
+consistency, catchphrases, emotional tone, unknown facts, hidden leaks,
+relationship value invention, and quest completion invention.
+
+Example dialogue remains style-only. The lab does not add NPC knowledge,
+modify NPC state, or write dialogue into active sessions.
+
+API:
+
+- `POST /prompt-lab/npc-voice-style/run`
+- `GET /prompt-lab/npc-voice-style/{run_id}`
+
+### Structured Output Reliability Test
+
+`StructuredOutputReliabilityRun` tests model JSON/schema reliability for
+schemas such as `PlayerIntent`, `NarrativeResult`, `MemorySummary`,
+`QuestDraft`, character card import, lorebook classification, and RP
+consistency reports.
+
+Metrics include valid JSON rate, schema valid rate, retry success rate,
+invalid field rate, refusal/empty rate, and hidden-policy violation rate.
+Failures produce safe reports and do not modify state.
+
+API / CLI:
+
+- `POST /prompt-lab/structured-output/run`
+- `python -m app.tools.prompt_lab structured-output`
+- `python -m app.tools.structured_output_reliability`
+
+### Cost / Latency Tracker and Model Usage Dashboard
+
+`ModelUsageRecord` and `CostLatencySummary` record safe usage metadata:
+
+- provider/model/use case
+- start time and duration
+- estimated input/output tokens
+- estimated cost
+- success/failure and error type
+
+Usage tracking is controlled by `ENABLE_USAGE_TRACKING`. It does not store raw
+prompts, hidden fact text, raw `GameState`, raw `state_deltas`, or API keys.
+
+APIs:
+
+- `GET /prompt-lab/usage/recent`
+- `GET /prompt-lab/usage/summary`
+- `GET /prompt-lab/usage/by-use-case`
+
+The frontend Model Usage Dashboard displays provider/use-case distribution,
+latency p50/p95, estimated token/cost totals, error rate, and recent failure
+metadata.
+
+### Context Builder Inspector
+
+`ContextSnapshot` and `ContextSection` show how narrator, dialogue, group RP,
+intent parser, memory summary, and character import context is assembled.
+Sections are classified as:
+
+- `normal`
+- `narrator_safe`
+- `npc_known`
+- `debug_only`
+- `hidden_redacted`
+
+Hidden facts and unknown NPC facts are shown as redacted/excluded sections.
+Raw prompt output is disabled by default and, when explicitly requested for
+local debug, is still redacted.
+
+API:
+
+- `POST /prompt-lab/context/inspect`
+
+### Prompt Diff Tool
+
+`PromptDiffRequest` and `PromptDiffReport` compare prompt profiles, RP prompt
+profiles, context snapshots, or prompt templates. Reports include added,
+removed, and changed sections, token delta, safety policy changes,
+hidden-access policy changes, and state-modification policy changes.
+
+Relaxing `hidden_fact_policy` or `state_modification_policy` is a blocker.
+Reports do not show raw hidden text or API keys.
+
+API:
+
+- `POST /prompt-lab/prompt-diff/review`
+
+### Model Compatibility Matrix
+
+`ModelCompatibilityMatrix` combines declared capabilities, benchmark reports,
+structured-output reliability, usage summaries, and hidden-leak findings to
+mark provider/model/use-case pairs as supported, recommended, caution, or
+unsupported.
+
+The matrix is advisory. It does not call real APIs by itself, does not switch
+models automatically, and does not expose hidden prompt cases.
+
+APIs:
+
+- `GET /prompt-lab/model-compatibility`
+- `POST /prompt-lab/model-compatibility/recompute`
+
+### Provider Routing Rule Editor
+
+`ProviderRoutingRule` configures which provider/model to use for a use case,
+plus fallback and constraints such as JSON support, local-only requirements,
+latency/cost hints, and enabled state.
+
+Routing rules do not contain API keys and do not expand model authority.
+Business code still uses `LLMProvider` / provider factory paths. Routing is
+configuration, not a world-rule authority.
+
+APIs:
+
+- `GET /prompt-lab/provider-routing`
+- `POST /prompt-lab/provider-routing/validate`
+- `POST /prompt-lab/provider-routing/preview`
+- `POST /prompt-lab/provider-routing/save`
+
+### Prompt Regression Suite
+
+`PromptRegressionRun` compares baseline and candidate prompt/provider/model
+settings for intent parser schema, narrator consistency, RP dialogue boundary,
+NPC voice consistency, memory summary schema, hidden leak cases, and structured
+JSON reliability.
+
+Pass/fail is computed by deterministic checks and schema/eval results, not by
+an LLM judge. Results are reports only and are not applied automatically.
+
+API / CLI:
+
+- `POST /prompt-lab/regression/run`
+- `python -m app.tools.prompt_lab prompt-regression`
+- `python -m app.tools.prompt_regression`
+
+### Local Model Diagnostics
+
+`LocalModelDiagnosticRequest` and `LocalModelDiagnosticReport` diagnose
+`local_stub` or `local_http` providers for base URL configuration, optional
+health check, text smoke, JSON smoke, timeout behavior, error parsing,
+latency, and declared context window.
+
+Diagnostics default to fake/local behavior. Real local checks require explicit
+`allow_real_local_check=true`. Safe diagnostic prompts do not include world
+facts or hidden facts.
+
+API / CLI:
+
+- `POST /prompt-lab/local-model/diagnose`
+- `python -m app.tools.prompt_lab local-diagnostics`
+
+### Token Budget Manager Pro
+
+`TokenBudgetProfile`, `TokenBudgetRequest`, and `BudgetReport` estimate token
+usage, allocate per-use-case budgets, trim low-priority context, and report
+trimmed or dropped sections.
+
+Safety/boundary/policy sections are protected. Hidden-redacted sections are
+dropped rather than added to context. The manager is deterministic and does
+not call an LLM.
+
+APIs / CLI:
+
+- `GET /prompt-lab/token-budget/profiles`
+- `POST /prompt-lab/token-budget/estimate`
+- `python -m app.tools.prompt_lab token-budget-report`
+
+### Prompt Experiment Package
+
+`PromptExperimentPackageManifest` packages prompt profiles, RP prompt
+profiles, test cases, benchmark configs, regression configs, provider
+requirements, and redaction policy for local reproducible experiments.
+
+Exports reject API keys, raw env, hidden facts, raw `GameState`, raw
+`state_delta`, sensitive prompt snapshots, executable files, and path
+traversal. Imports validate first, dry-run by default, do not auto-enable
+profiles, and do not modify active `GameState`.
+
+APIs:
+
+- `POST /prompt-lab/experiment-packages/export`
+- `POST /prompt-lab/experiment-packages/import-dry-run`
+- `POST /prompt-lab/experiment-packages/import-apply`

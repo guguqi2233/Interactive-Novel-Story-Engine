@@ -2073,6 +2073,496 @@ export type PromptProfileListResponse = {
   profiles: PromptProfile[];
 };
 
+export type PromptABUseCase = "narrator" | "RP_dialogue" | "intent_parser" | "memory_summary";
+
+export type PromptABTestCase = {
+  id: string;
+  input_text: string;
+  visible_facts: string[];
+  hidden_terms: string[];
+  expected_schema?: string | null;
+  tags: string[];
+  max_prompt_preview_chars: number;
+};
+
+export type PromptABVariantResult = {
+  profile_id: string;
+  ok: boolean;
+  latency_ms: number;
+  schema_valid?: boolean | null;
+  hidden_leak: boolean;
+  consistency_flags: string[];
+  style_metrics: Record<string, number>;
+  output_summary_safe: string;
+  error_class?: string | null;
+  error_message_safe?: string | null;
+};
+
+export type PromptABCaseResult = {
+  case_id: string;
+  input_preview_redacted: string;
+  variant_a: PromptABVariantResult;
+  variant_b: PromptABVariantResult;
+};
+
+export type PromptABTestReport = {
+  run_id: string;
+  created_at: string;
+  profile_a_id: string;
+  profile_b_id: string;
+  provider_id: string;
+  model_id?: string | null;
+  use_case: PromptABUseCase;
+  pass_fail: string;
+  cases: PromptABCaseResult[];
+  schema_reliability: Record<string, number>;
+  hidden_leak_flags: string[];
+  consistency_flags: string[];
+  style_metrics: Record<string, Record<string, number>>;
+  latency_cost_summary: Record<string, number>;
+  blockers: string[];
+  warnings: string[];
+};
+
+export type PromptABTestRun = {
+  run_id?: string;
+  profile_a_id: string;
+  profile_b_id: string;
+  test_cases?: Partial<PromptABTestCase>[];
+  provider_id?: string;
+  model_id?: string | null;
+  use_case?: PromptABUseCase;
+  allow_real_provider?: boolean;
+};
+
+export type NarratorStyleExperiment = {
+  run_id?: string;
+  prompt_profile_id?: string;
+  scene_mood_id?: string | null;
+  perspective?: string;
+  prose_density?: string;
+  response_length?: string;
+  sensory_focus?: string;
+  genre_tone?: string;
+  provider_id?: string;
+  model_id?: string | null;
+  allow_real_provider?: boolean;
+  player_input?: string;
+  visible_facts?: string[];
+  hidden_terms?: string[];
+  action_reason?: string;
+  expected_action?: string;
+};
+
+export type NarratorStyleFinding = {
+  check: string;
+  passed: boolean;
+  severity: string;
+  safe_detail: string;
+};
+
+export type NarratorStyleReport = {
+  run_id: string;
+  created_at: string;
+  prompt_profile_id: string;
+  scene_mood_id?: string | null;
+  provider_id: string;
+  model_id?: string | null;
+  pass_fail: string;
+  output_summary_safe: string;
+  style_score: number;
+  latency_ms: number;
+  suggested_actions: string[];
+  findings: NarratorStyleFinding[];
+  blockers: string[];
+  warnings: string[];
+};
+
+export type VoiceProfileVariant = {
+  tone?: string;
+  sentence_length?: string;
+  vocabulary_style?: string;
+  catchphrases?: string[];
+  speech_habits?: string[];
+  silence_style?: string;
+  emotional_tells?: string[];
+};
+
+export type NPCVoiceDialogueTestCase = {
+  id?: string;
+  player_line?: string;
+  expected_emotional_tone?: string;
+  npc_known_facts?: string[];
+  unknown_fact_terms?: string[];
+  hidden_terms?: string[];
+};
+
+export type NPCVoiceStyleExperiment = {
+  run_id?: string;
+  npc_id: string;
+  voice_profile_variant?: VoiceProfileVariant;
+  rp_prompt_profile_id?: string;
+  example_dialogue_set?: string[];
+  dialogue_test_cases?: NPCVoiceDialogueTestCase[];
+  provider_id?: string;
+  model_id?: string | null;
+  allow_real_provider?: boolean;
+};
+
+export type NPCVoiceStyleFinding = {
+  case_id: string;
+  check: string;
+  passed: boolean;
+  severity: string;
+  safe_detail: string;
+};
+
+export type NPCVoiceStyleReport = {
+  run_id: string;
+  created_at: string;
+  npc_id: string;
+  rp_prompt_profile_id: string;
+  provider_id: string;
+  model_id?: string | null;
+  pass_fail: string;
+  voice_consistency_score: number;
+  latency_ms: number;
+  output_summaries_safe: string[];
+  findings: NPCVoiceStyleFinding[];
+  blockers: string[];
+  warnings: string[];
+};
+
+export type ContextInspectType =
+  | "narrator"
+  | "dialogue"
+  | "group_rp"
+  | "intent_parser"
+  | "memory_summary"
+  | "character_import";
+
+export type ContextSection = {
+  section_type: string;
+  token_estimate: number;
+  visibility_level: "normal" | "narrator_safe" | "npc_known" | "debug_only" | "hidden_redacted";
+  safe_summary: string;
+  content_redacted: string;
+  excluded_reasons: string[];
+};
+
+export type ContextSnapshot = {
+  local_only?: boolean;
+  snapshot_id: string;
+  context_type: ContextInspectType;
+  total_token_estimate: number;
+  sections: ContextSection[];
+  raw_prompt_redacted?: string | null;
+  raw_prompt_included: boolean;
+};
+
+export type ContextInspectRequest = {
+  context_type?: ContextInspectType;
+  actor_id?: string;
+  location_id?: string;
+  npc_id?: string | null;
+  player_input?: string;
+  include_debug_raw?: boolean;
+  max_raw_chars?: number;
+};
+
+export type ModelCompatibilityUseCase =
+  | "intent_parser"
+  | "narrator"
+  | "RP_dialogue"
+  | "memory_summary"
+  | "character_import"
+  | "lorebook_classification"
+  | "quest_draft"
+  | "structured_json"
+  | "embedding";
+
+export type ModelUseCaseCompatibility = {
+  provider_id: string;
+  model_id: string;
+  use_case: ModelCompatibilityUseCase;
+  supported: boolean;
+  recommended: boolean;
+  caution: boolean;
+  unsupported: boolean;
+  reason: string;
+  last_tested_at?: string | null;
+};
+
+export type ModelCompatibilityMatrix = {
+  local_only?: boolean;
+  matrix_id: string;
+  generated_at: string;
+  use_cases: ModelCompatibilityUseCase[];
+  rows: ModelUseCaseCompatibility[];
+  blockers: string[];
+  warnings: string[];
+  source_summary: Record<string, unknown>;
+};
+
+export type ProviderRoutingUseCase =
+  | "intent_parser"
+  | "narrator"
+  | "RP_dialogue"
+  | "memory_summary"
+  | "character_import"
+  | "lorebook_classification"
+  | "quest_draft"
+  | "structured_json";
+
+export type ProviderRoutingRule = {
+  use_case: ProviderRoutingUseCase;
+  primary_provider_id: string;
+  primary_model_id: string;
+  fallback_provider_id?: string | null;
+  fallback_model_id?: string | null;
+  max_latency_ms?: number | null;
+  max_cost_per_call?: number | null;
+  require_json_support: boolean;
+  require_local_only?: boolean | null;
+  enabled: boolean;
+};
+
+export type ProviderRoutingConfig = {
+  rules: ProviderRoutingRule[];
+};
+
+export type ProviderRoutingValidationReport = {
+  ok: boolean;
+  rule: ProviderRoutingRule;
+  errors: string[];
+  warnings: string[];
+};
+
+export type ProviderRoutingDecision = {
+  use_case: ProviderRoutingUseCase;
+  provider_id: string;
+  model_id: string;
+  used_fallback: boolean;
+  reason: string;
+  warnings: string[];
+};
+
+export type ProviderRoutingSummary = {
+  local_only: boolean;
+  rules: ProviderRoutingRule[];
+  validation_reports: ProviderRoutingValidationReport[];
+  warnings: string[];
+};
+
+export type ProviderRoutingPreview = {
+  local_only: boolean;
+  validation: ProviderRoutingValidationReport;
+  decision?: ProviderRoutingDecision | null;
+};
+
+export type ProviderCapabilitySummary = {
+  provider_id: string;
+  provider_type: string;
+  supports_text: boolean;
+  supports_json: boolean;
+  supports_streaming: boolean;
+  supports_tools: boolean;
+  supports_embeddings: boolean;
+  context_window?: number | null;
+  max_output_tokens?: number | null;
+  recommended_use_cases: string[];
+  json_reliability_rating?: string | null;
+  requires_api_key: boolean;
+  local_only: boolean;
+  notes: string;
+};
+
+export type ModelCapabilitySummary = ProviderCapabilitySummary & {
+  model_id: string;
+};
+
+export type ProviderCapabilityCatalog = {
+  local_only: boolean;
+  current_provider?: string | null;
+  current_model?: string | null;
+  api_key_configured: boolean;
+  local_http_configured: boolean;
+  providers: ProviderCapabilitySummary[];
+  models: ModelCapabilitySummary[];
+};
+
+export type ModelUsageRecord = {
+  usage_id: string;
+  provider_id: string;
+  model_id: string;
+  use_case: string;
+  started_at: string;
+  duration_ms: number;
+  input_tokens_estimated: number;
+  output_tokens_estimated: number;
+  cost_estimated: number;
+  success: boolean;
+  error_type?: string | null;
+  request_id?: string | null;
+};
+
+export type CostLatencyGroupSummary = {
+  key: string;
+  count: number;
+  failures: number;
+  latency_p50_ms: number;
+  latency_p95_ms: number;
+  total_tokens_estimated: number;
+  total_cost_estimated: number;
+};
+
+export type CostLatencyUseCaseSummary = {
+  use_case: string;
+  count: number;
+  failures: number;
+  average_latency_ms: number;
+  latency_p50_ms: number;
+  latency_p95_ms: number;
+  total_input_tokens_estimated: number;
+  total_output_tokens_estimated: number;
+  total_cost_estimated: number;
+};
+
+export type ModelUsageSummary = {
+  local_only?: boolean;
+  enabled: boolean;
+  total_calls: number;
+  successes: number;
+  failures: number;
+  error_rate: number;
+  average_latency_ms: number;
+  latency_p50_ms: number;
+  latency_p95_ms: number;
+  total_input_tokens_estimated: number;
+  total_output_tokens_estimated: number;
+  total_cost_estimated: number;
+  by_use_case: CostLatencyUseCaseSummary[];
+  by_provider: CostLatencyGroupSummary[];
+  by_model: CostLatencyGroupSummary[];
+  recent_failures: ModelUsageRecord[];
+};
+
+export type ProviderBenchmarkReport = {
+  run_id: string;
+  provider_id: string;
+  model_id?: string | null;
+  allow_real_provider: boolean;
+  real_provider_blocked: boolean;
+  total_cases: number;
+  ok_cases: number;
+  error_rate: number;
+  schema_reliability?: number | null;
+  average_latency_ms: number;
+  hidden_leak_risk_count: number;
+  blockers: string[];
+  warnings: string[];
+};
+
+export type StructuredOutputReliabilityReport = {
+  run_id: string;
+  provider_id: string;
+  model_id?: string | null;
+  allow_real_provider: boolean;
+  real_provider_blocked: boolean;
+  total_cases: number;
+  valid_json_rate: number;
+  schema_valid_rate: number;
+  retry_success_rate: number;
+  hidden_policy_violation_rate: number;
+  blockers: string[];
+  warnings: string[];
+};
+
+export type PromptRegressionReport = {
+  run_id: string;
+  pass_fail: string;
+  regressions: string[];
+  improvements: string[];
+  safety_blockers: string[];
+  blockers: string[];
+  warnings: string[];
+};
+
+export type LocalModelDiagnosticReport = {
+  run_id: string;
+  provider_id: string;
+  model_id?: string | null;
+  base_url_configured: boolean;
+  allow_real_local_check: boolean;
+  pass_fail: string;
+  blockers: string[];
+  warnings: string[];
+};
+
+export type PromptDiffReport = {
+  local_only?: boolean;
+  report_id: string;
+  diff_type: string;
+  added_sections: string[];
+  removed_sections: string[];
+  changed_sections: string[];
+  safety_policy_changes: string[];
+  token_delta: number;
+  hidden_access_policy_changes: string[];
+  state_modification_policy_changes: string[];
+  blockers: string[];
+  warnings: string[];
+};
+
+export type TokenBudgetUseCase =
+  | "narrator"
+  | "dialogue"
+  | "group_rp"
+  | "intent_parser"
+  | "memory_summary"
+  | "character_import";
+
+export type TokenBudgetProfile = {
+  id: string;
+  use_case: TokenBudgetUseCase;
+  max_total_tokens: number;
+  reserved_output_tokens: number;
+  max_memory_tokens: number;
+  max_lore_tokens: number;
+  max_recent_events_tokens: number;
+  max_dialogue_examples_tokens: number;
+  priority_order: string[];
+  overflow_policy: "trim_low_priority" | "drop_low_priority" | "report_only";
+};
+
+export type TokenBudgetSectionReport = {
+  section_type: string;
+  original_tokens: number;
+  allocated_tokens: number;
+  final_tokens: number;
+  trimmed_tokens: number;
+  dropped: boolean;
+  protected: boolean;
+  safe_summary: string;
+};
+
+export type BudgetReport = {
+  local_only?: boolean;
+  report_id: string;
+  profile: TokenBudgetProfile;
+  input_token_estimate: number;
+  available_context_tokens: number;
+  reserved_output_tokens: number;
+  final_context_tokens: number;
+  overflow_tokens: number;
+  sections: TokenBudgetSectionReport[];
+  trimmed_sections: string[];
+  dropped_sections: string[];
+  warnings: string[];
+  blockers: string[];
+  trimmed_context: ContextSection[];
+};
+
 export type SaveGameResponse = {
   save_id: string;
   session_id: string;
@@ -2155,6 +2645,140 @@ export async function selectPromptProfile(profileId: string): Promise<PromptProf
       "Content-Type": "application/json"
     },
     body: JSON.stringify({ profile_id: profileId })
+  });
+}
+
+export async function runPromptABTest(request: PromptABTestRun): Promise<PromptABTestReport> {
+  return requestJson<PromptABTestReport>("/prompt-lab/prompt-profiles/ab-test", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(request)
+  });
+}
+
+export async function runNarratorStyleExperiment(request: NarratorStyleExperiment): Promise<NarratorStyleReport> {
+  return requestJson<NarratorStyleReport>("/prompt-lab/narrator-style/run", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(request)
+  });
+}
+
+export async function runNPCVoiceStyleExperiment(request: NPCVoiceStyleExperiment): Promise<NPCVoiceStyleReport> {
+  return requestJson<NPCVoiceStyleReport>("/prompt-lab/npc-voice-style/run", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(request)
+  });
+}
+
+export async function inspectPromptLabContext(request: ContextInspectRequest): Promise<ContextSnapshot> {
+  return requestJson<ContextSnapshot>("/prompt-lab/context/inspect", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(request)
+  });
+}
+
+export async function fetchModelCompatibilityMatrix(): Promise<ModelCompatibilityMatrix> {
+  return requestJson<ModelCompatibilityMatrix>("/prompt-lab/model-compatibility");
+}
+
+export async function recomputeModelCompatibilityMatrix(): Promise<ModelCompatibilityMatrix> {
+  return requestJson<ModelCompatibilityMatrix>("/prompt-lab/model-compatibility/recompute", {
+    method: "POST"
+  });
+}
+
+export async function fetchProviderRoutingSummary(): Promise<ProviderRoutingSummary> {
+  return requestJson<ProviderRoutingSummary>("/prompt-lab/provider-routing");
+}
+
+export async function fetchProviderCapabilities(): Promise<ProviderCapabilityCatalog> {
+  return requestJson<ProviderCapabilityCatalog>("/prompt-lab/provider-capabilities");
+}
+
+export async function runProviderBenchmark(allowRealProvider = false): Promise<ProviderBenchmarkReport> {
+  return requestJson<ProviderBenchmarkReport>("/prompt-lab/providers/benchmark", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ provider_id: "fake", allow_real_provider: allowRealProvider })
+  });
+}
+
+export async function runStructuredOutputReliability(allowRealProvider = false): Promise<StructuredOutputReliabilityReport> {
+  return requestJson<StructuredOutputReliabilityReport>("/prompt-lab/structured-output/run", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ provider_id: "fake", allow_real_provider: allowRealProvider })
+  });
+}
+
+export async function runPromptRegressionSuite(): Promise<PromptRegressionReport> {
+  return requestJson<PromptRegressionReport>("/prompt-lab/regression/run", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({})
+  });
+}
+
+export async function runLocalModelDiagnostics(): Promise<LocalModelDiagnosticReport> {
+  return requestJson<LocalModelDiagnosticReport>("/prompt-lab/local-model/diagnose", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ provider_id: "local_stub", fake_mode: "ok" })
+  });
+}
+
+export async function reviewPromptDiff(left: Record<string, unknown>, right: Record<string, unknown>): Promise<PromptDiffReport> {
+  return requestJson<PromptDiffReport>("/prompt-lab/prompt-diff/review", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ diff_type: "prompt_profile_diff", left, right })
+  });
+}
+
+export async function fetchModelUsageSummary(): Promise<ModelUsageSummary> {
+  return requestJson<ModelUsageSummary>("/prompt-lab/usage/summary");
+}
+
+export async function fetchRecentModelUsage(limit = 20): Promise<{ local_only: boolean; enabled: boolean; records: ModelUsageRecord[] }> {
+  return requestJson<{ local_only: boolean; enabled: boolean; records: ModelUsageRecord[] }>(`/prompt-lab/usage/recent?limit=${limit}`);
+}
+
+export async function previewProviderRoutingRule(rule: ProviderRoutingRule): Promise<ProviderRoutingPreview> {
+  return requestJson<ProviderRoutingPreview>("/prompt-lab/provider-routing/preview", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(rule)
+  });
+}
+
+export async function saveProviderRoutingConfig(config: ProviderRoutingConfig): Promise<ProviderRoutingSummary> {
+  return requestJson<ProviderRoutingSummary>("/prompt-lab/provider-routing/save", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(config)
+  });
+}
+
+export async function fetchTokenBudgetProfiles(): Promise<{ local_only: boolean; profiles: TokenBudgetProfile[] }> {
+  return requestJson<{ local_only: boolean; profiles: TokenBudgetProfile[] }>("/prompt-lab/token-budget/profiles");
+}
+
+export async function estimateTokenBudget(profile: TokenBudgetProfile, sections: ContextSection[]): Promise<BudgetReport> {
+  return requestJson<BudgetReport>("/prompt-lab/token-budget/estimate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ profile, sections })
   });
 }
 

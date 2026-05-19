@@ -4,14 +4,15 @@
 
 The LLM protocol defines how this project talks to model providers without letting model output become trusted world state. All model calls pass through `LLMProvider`, and structured outputs are validated with Pydantic schemas.
 
-The LLM is a parser, narrator, summarizer, roleplay expression layer, and
-optional authoring/production draft assistant. It is not the world judge. In
-v1.0 this boundary is frozen as a stable local studio contract, v1.1 extends it
-to RP dialogue, v1.2 extends local visual authoring, v1.3 adds deterministic
-NPC simulation, and v1.4 adds local content production without expanding LLM
-authority: model output can affect language-facing draft fields only after
-schema validation and consistency checks, and cannot directly modify
-`GameState`.
+The LLM is a parser, narrator, summarizer, roleplay expression layer, optional
+authoring/production draft assistant, and v1.5 local model/prompt experiment
+target. It is not the world judge. In v1.0 this boundary is frozen as a stable
+local studio contract, v1.1 extends it to RP dialogue, v1.2 extends local
+visual authoring, v1.3 adds deterministic NPC simulation, v1.4 adds local
+content production, and v1.5 adds Model & Prompt Lab diagnostics without
+expanding LLM authority: model output can affect language-facing draft fields
+or lab reports only after schema validation and consistency checks, and cannot
+directly modify `GameState`.
 
 ## Provider Boundary
 
@@ -55,6 +56,13 @@ Local provider settings:
 These settings must not expand LLM authority. Local models remain parser,
 narrator, summarizer, or draft assistant providers behind `LLMProvider`; they
 do not judge world outcomes or directly mutate `GameState`.
+
+v1.5 adds `ProviderRouter` as a local routing configuration layer. Routing
+rules select provider/model ids for use cases and may define fallback
+constraints, but they do not contain credentials and do not create providers
+directly. Runtime provider construction still delegates to `LLMProvider` /
+`create_llm_provider`, and routing cannot grant world-judge or state-write
+authority.
 
 ## Current LLM Uses
 
@@ -750,6 +758,127 @@ Narrator and dialogue prompt boundaries are unchanged in v1.4:
 - RP prompt profiles can tune expression but cannot expand authority.
 - Production debug data, package manifests, batch reports, hidden truth facts,
   unsafe import text, and dry-run reports are not narrator inputs.
+
+## v1.5 Model & Prompt Lab LLM Boundary
+
+v1.5 Local Model & Prompt Lab is a local diagnostic surface for providers,
+models, prompt profiles, prompt diffs, context snapshots, structured output,
+token budgets, usage summaries, compatibility, and prompt experiment packages.
+
+It may call a provider only for explicit lab runs such as benchmark, structured
+output reliability, Prompt A/B, narrator style, NPC voice style, prompt
+regression, or local diagnostics. These runs default to fake/mock/local_stub
+providers. Real external provider benchmark/regression runs require explicit
+`allow_real_provider=true`; real local HTTP diagnostics require
+`allow_real_local_check=true`.
+
+Prompt Lab must not:
+
+- mutate active `GameState`, active saves, active sessions, or active content
+  packs
+- treat benchmark/model output as canonical facts
+- let Prompt Profiles grant hidden facts, NPC secrets, raw `GameState`, raw
+  `state_deltas`, or state-write authority
+- record API keys, raw env, raw sensitive prompts, hidden fact text, or raw
+  provider secrets in normal reports
+- expose debug context through ordinary UI, player UI, narrator prompts, or
+  exported packages
+- bypass Pydantic schema validation for structured output
+- switch production provider configuration automatically based on benchmark or
+  compatibility results
+
+### Provider Factory / Router Usage
+
+Allowed v1.5 provider entry points:
+
+- `create_llm_provider(settings)`
+- `LLMProvider`
+- local fake provider/test doubles for deterministic tests
+- `ProviderRouter` for selecting provider/model ids before delegating to the
+  factory/provider abstraction
+
+Disallowed:
+
+- business/lab modules directly constructing `OpenAIProvider`,
+  `LocalHTTPProvider`, or other concrete runtime providers
+- storing API keys in routing rules, Prompt Profiles, experiment packages, or
+  frontend state
+- treating compatibility matrix recommendations as automatic routing changes
+
+### Prompt Profile Safety Boundary
+
+`PromptProfile` can configure provider/model filters, prompt variants,
+narrator style, temperature overrides, max output hints, scene mood id, and RP
+style fields.
+
+`RPPromptProfile` can configure expression fields such as dialogue depth,
+emotional intensity, prose density, response length, perspective, inner-thought
+policy, and sensuality policy.
+
+Both remain style/configuration only:
+
+- `hidden_fact_policy` must be `deny`
+- `state_modification_policy` must be `deny`
+- profiles cannot add hidden facts or NPC knowledge
+- profiles cannot modify `ActionResult`, `StateDelta`, EventLog, quest state,
+  relationship values, inventory, combat, economy, or facts
+
+Prompt Diff must mark any relaxed hidden-fact or state-modification policy as
+a blocker.
+
+### Context Redaction
+
+`Context Inspector` builds read-only `ContextSnapshot` reports. Sections are
+classified as:
+
+- `normal`
+- `narrator_safe`
+- `npc_known`
+- `debug_only`
+- `hidden_redacted`
+
+Normal reports may show labels, token estimates, safe summaries, redacted ids,
+and exclusion reasons. They must not show hidden fact text, NPC secrets,
+hidden/debug memory text, raw `GameState`, raw `state_deltas`, API keys, raw
+env, or full sensitive prompts.
+
+`include_debug_raw` is off by default. If enabled for local debug, the raw
+prompt field is still redacted and must not be copied into player UI,
+narration, exports, packages, or normal dashboards.
+
+### Real Provider Benchmark Principle
+
+Provider benchmarks, Prompt A/B, style labs, structured output reliability,
+and prompt regression default to fake/mock/local providers. Real provider
+calls require explicit request flags and should show local UI/CLI warnings.
+
+Reports must store safe summaries and metrics only:
+
+- pass/fail or blocker flags
+- schema reliability
+- hidden leak flags
+- latency and estimated cost
+- redacted prompt previews
+- safe error classes
+
+They must not store full sensitive prompt text, hidden fact text, API keys, or
+raw provider credentials.
+
+### Structured Output Reliability
+
+Structured output tests exercise schemas such as:
+
+- `PlayerIntent`
+- `NarrativeResult`
+- `MemorySummary`
+- `QuestDraft`
+- `CharacterCardImportResult`
+- `LorebookClassificationResult`
+- `RPConsistencyReport`
+
+Invalid JSON, schema validation errors, retry failures, refusals, and hidden
+policy violations are reported as diagnostics. They do not produce canonical
+state, `StateDelta`, or content-pack writes.
 
 ## Output Validation
 

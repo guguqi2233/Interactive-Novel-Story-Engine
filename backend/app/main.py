@@ -436,6 +436,81 @@ from app.engine.rules.graphs import (
     build_relationship_graph,
 )
 from app.llm.provider_base import LLMProviderError
+from app.llm.provider_benchmark import (
+    ProviderBenchmarkReport,
+    ProviderBenchmarkRun,
+    run_provider_benchmark,
+)
+from app.llm.provider_router import (
+    ProviderRouter,
+    ProviderRoutingConfig,
+    ProviderRoutingDecision,
+    ProviderRoutingRule,
+    ProviderRoutingValidationReport,
+    get_default_provider_router,
+)
+from app.llm.structured_output_reliability import (
+    StructuredOutputReliabilityReport,
+    StructuredOutputReliabilityRun,
+    run_structured_output_reliability,
+)
+from app.llm.usage_tracker import (
+    CostLatencySummary,
+    ModelUsageRecord,
+    get_model_usage_store,
+    set_usage_tracking_enabled,
+    usage_tracking_enabled,
+)
+from app.llm.token_budget import (
+    BudgetReport,
+    TokenBudgetRequest,
+    build_default_token_budget_profiles,
+    estimate_token_budget,
+)
+from app.llm.context_inspector import (
+    ContextInspectRequest,
+    ContextSnapshot,
+    inspect_context,
+)
+from app.llm.local_model_diagnostics import (
+    LocalModelDiagnosticReport,
+    LocalModelDiagnosticRequest,
+    run_local_model_diagnostics,
+)
+from app.llm.model_compatibility import (
+    ModelCompatibilityMatrix,
+    build_model_compatibility_matrix,
+)
+from app.llm.narrator_style_lab import (
+    NarratorStyleExperiment,
+    NarratorStyleReport,
+    run_narrator_style_experiment,
+)
+from app.llm.npc_voice_style_lab import (
+    NPCVoiceStyleExperiment,
+    NPCVoiceStyleReport,
+    run_npc_voice_style_experiment,
+)
+from app.llm.prompt_ab_test import (
+    PromptABTestReport,
+    PromptABTestRun,
+    run_prompt_ab_test,
+)
+from app.llm.prompt_experiment_packages import (
+    PromptExperimentPackage,
+    PromptExperimentPackageExportRequest,
+    PromptExperimentPackageImportReport,
+    PromptExperimentPackageImportRequest,
+    apply_prompt_experiment_package_import,
+    export_prompt_experiment_package,
+    import_prompt_experiment_package_dry_run,
+)
+from app.llm.prompt_diff import PromptDiffReport, PromptDiffRequest, review_prompt_diff
+from app.llm.prompt_regression import (
+    PromptRegressionReport,
+    PromptRegressionRun,
+    run_prompt_regression,
+)
 from app.llm.prompt_profiles import (
     PromptProfile,
     PromptProfileStore,
@@ -443,6 +518,7 @@ from app.llm.prompt_profiles import (
     profile_matches_settings,
     set_default_prompt_profile_store,
 )
+from app.llm.provider_capabilities import get_default_provider_capability_registry
 from app.playtesting.runner import PlaytestOptions, PlaytestReport, run_playtest
 from app.playtesting.batch import PlaytestBatchRun, PlaytestBatchRunRequest, run_playtest_batch
 from app.quality.dead_end_detector import (
@@ -603,6 +679,7 @@ def _sqlite_path_from_url(database_url: str) -> str:
 
 settings = get_settings()
 set_performance_logging_enabled(settings.enable_perf_logging)
+set_usage_tracking_enabled(settings.enable_usage_tracking)
 
 app = FastAPI(title=settings.app_name, version="0.1.0")
 app.state.session_store = InMemorySessionStore()
@@ -611,6 +688,11 @@ app.state.narrative_eval_reports = []
 app.state.playtest_reports = []
 app.state.playtest_batch_reports = []
 app.state.benchmark_reports = []
+app.state.provider_benchmark_reports = []
+app.state.structured_output_reports = []
+app.state.prompt_ab_test_reports = []
+app.state.narrator_style_reports = []
+app.state.npc_voice_style_reports = []
 app.state.world_health_scores = []
 app.state.content_coverage_reports = []
 app.state.branch_regression_reports = []
@@ -866,6 +948,7 @@ def debug_api_enabled() -> bool:
 def sync_runtime_settings() -> None:
     active_settings = getattr(app.state, "settings", settings)
     set_performance_logging_enabled(bool(active_settings.enable_perf_logging))
+    set_usage_tracking_enabled(bool(getattr(active_settings, "enable_usage_tracking", False)))
 
 
 def authoring_api_enabled() -> bool:
@@ -895,7 +978,12 @@ def scenario_regression_api_enabled() -> bool:
 
 def benchmark_api_enabled() -> bool:
     active_settings = getattr(app.state, "settings", settings)
-    return bool(active_settings.enable_debug_api or active_settings.enable_perf_logging)
+    return bool(active_settings.enable_debug_api or active_settings.enable_perf_logging or getattr(active_settings, "enable_usage_tracking", False))
+
+
+def usage_api_enabled() -> bool:
+    active_settings = getattr(app.state, "settings", settings)
+    return bool(active_settings.enable_debug_api or getattr(active_settings, "enable_usage_tracking", False))
 
 
 def quality_api_enabled() -> bool:
@@ -918,6 +1006,12 @@ def require_benchmark_api() -> None:
     sync_runtime_settings()
     if not benchmark_api_enabled():
         raise HTTPException(status_code=403, detail="Benchmark API is disabled")
+
+
+def require_usage_api() -> None:
+    sync_runtime_settings()
+    if not usage_api_enabled():
+        raise HTTPException(status_code=403, detail="Usage API is disabled")
 
 
 def require_scenario_regression_api() -> None:
@@ -985,6 +1079,86 @@ def get_benchmark_reports() -> list[BenchmarkReport]:
     if not isinstance(reports, list):
         reports = []
         app.state.benchmark_reports = reports
+    return reports
+
+
+def get_provider_benchmark_reports() -> list[ProviderBenchmarkReport]:
+    reports = getattr(app.state, "provider_benchmark_reports", None)
+    if not isinstance(reports, list):
+        reports = []
+        app.state.provider_benchmark_reports = reports
+    return reports
+
+
+def get_structured_output_reports() -> list[StructuredOutputReliabilityReport]:
+    reports = getattr(app.state, "structured_output_reports", None)
+    if not isinstance(reports, list):
+        reports = []
+        app.state.structured_output_reports = reports
+    return reports
+
+
+def get_model_compatibility_reports() -> list[ModelCompatibilityMatrix]:
+    reports = getattr(app.state, "model_compatibility_reports", None)
+    if not isinstance(reports, list):
+        reports = []
+        app.state.model_compatibility_reports = reports
+    return reports
+
+
+def get_provider_router() -> ProviderRouter:
+    router = getattr(app.state, "provider_router", None)
+    if not isinstance(router, ProviderRouter):
+        router = get_default_provider_router()
+        app.state.provider_router = router
+    return router
+
+
+def get_prompt_ab_test_reports() -> list[PromptABTestReport]:
+    reports = getattr(app.state, "prompt_ab_test_reports", None)
+    if not isinstance(reports, list):
+        reports = []
+        app.state.prompt_ab_test_reports = reports
+    return reports
+
+
+def get_narrator_style_reports() -> list[NarratorStyleReport]:
+    reports = getattr(app.state, "narrator_style_reports", None)
+    if not isinstance(reports, list):
+        reports = []
+        app.state.narrator_style_reports = reports
+    return reports
+
+
+def get_npc_voice_style_reports() -> list[NPCVoiceStyleReport]:
+    reports = getattr(app.state, "npc_voice_style_reports", None)
+    if not isinstance(reports, list):
+        reports = []
+        app.state.npc_voice_style_reports = reports
+    return reports
+
+
+def get_prompt_regression_reports() -> list[PromptRegressionReport]:
+    reports = getattr(app.state, "prompt_regression_reports", None)
+    if not isinstance(reports, list):
+        reports = []
+        app.state.prompt_regression_reports = reports
+    return reports
+
+
+def get_local_model_diagnostic_reports() -> list[LocalModelDiagnosticReport]:
+    reports = getattr(app.state, "local_model_diagnostic_reports", None)
+    if not isinstance(reports, list):
+        reports = []
+        app.state.local_model_diagnostic_reports = reports
+    return reports
+
+
+def get_token_budget_reports() -> list[BudgetReport]:
+    reports = getattr(app.state, "token_budget_reports", None)
+    if not isinstance(reports, list):
+        reports = []
+        app.state.token_budget_reports = reports
     return reports
 
 
@@ -2025,6 +2199,281 @@ def run_benchmarks_api(request: BenchmarkRunRequest) -> dict[str, Any]:
 def get_recent_benchmarks() -> list[dict[str, Any]]:
     require_benchmark_api()
     return [report.model_dump_safe() for report in get_benchmark_reports()[-10:]]
+
+
+@app.post("/prompt-lab/providers/benchmark", response_model=dict[str, Any])
+def run_prompt_lab_provider_benchmark(request: ProviderBenchmarkRun) -> dict[str, Any]:
+    require_benchmark_api()
+    active_settings = getattr(app.state, "settings", settings)
+    report = run_provider_benchmark(request, settings=active_settings)
+    get_provider_benchmark_reports().append(report)
+    return report.model_dump_safe()
+
+
+@app.get("/prompt-lab/providers/benchmark/{run_id}", response_model=dict[str, Any])
+def get_prompt_lab_provider_benchmark(run_id: str) -> dict[str, Any]:
+    require_benchmark_api()
+    for report in get_provider_benchmark_reports():
+        if report.run_id == run_id:
+            return report.model_dump_safe()
+    raise HTTPException(status_code=404, detail=f"Provider benchmark run not found: {run_id}")
+
+
+@app.post("/prompt-lab/structured-output/run", response_model=dict[str, Any])
+def run_prompt_lab_structured_output(request: StructuredOutputReliabilityRun) -> dict[str, Any]:
+    require_benchmark_api()
+    active_settings = getattr(app.state, "settings", settings)
+    report = run_structured_output_reliability(request, settings=active_settings)
+    get_structured_output_reports().append(report)
+    return report.model_dump_safe()
+
+
+@app.get("/prompt-lab/provider-capabilities", response_model=dict[str, Any])
+def get_prompt_lab_provider_capabilities() -> dict[str, Any]:
+    require_benchmark_api()
+    active_settings = getattr(app.state, "settings", settings)
+    return {"local_only": True, **get_default_provider_capability_registry().safe_summary_for_frontend(active_settings)}
+
+
+@app.get("/prompt-lab/usage/recent", response_model=dict[str, Any])
+def get_prompt_lab_usage_recent(
+    limit: int = 50,
+    provider_id: str | None = None,
+    model_id: str | None = None,
+    use_case: str | None = None,
+) -> dict[str, Any]:
+    require_usage_api()
+    records = get_model_usage_store().recent(limit, provider_id=provider_id, model_id=model_id, use_case=use_case)
+    return {
+        "local_only": True,
+        "enabled": usage_tracking_enabled(),
+        "records": [record.safe_dict() for record in records],
+    }
+
+
+@app.get("/prompt-lab/usage/summary", response_model=dict[str, Any])
+def get_prompt_lab_usage_summary(provider_id: str | None = None, model_id: str | None = None, use_case: str | None = None) -> dict[str, Any]:
+    require_usage_api()
+    summary = get_model_usage_store().summary(provider_id=provider_id, model_id=model_id, use_case=use_case)
+    return {
+        "local_only": True,
+        **summary.model_dump(mode="json"),
+    }
+
+
+@app.get("/prompt-lab/usage/by-use-case", response_model=dict[str, Any])
+def get_prompt_lab_usage_by_use_case(provider_id: str | None = None, model_id: str | None = None) -> dict[str, Any]:
+    require_usage_api()
+    summary = get_model_usage_store().summary(provider_id=provider_id, model_id=model_id)
+    return {
+        "local_only": True,
+        "enabled": usage_tracking_enabled(),
+        "by_use_case": [item.model_dump(mode="json") for item in summary.by_use_case],
+    }
+
+
+@app.get("/prompt-lab/model-compatibility", response_model=dict[str, Any])
+def get_prompt_lab_model_compatibility() -> dict[str, Any]:
+    require_benchmark_api()
+    matrix = build_model_compatibility_matrix(
+        benchmark_reports=get_provider_benchmark_reports(),
+        structured_reports=get_structured_output_reports(),
+        usage_records=get_model_usage_store().recent(500),
+    )
+    return {"local_only": True, **matrix.model_dump_safe()}
+
+
+@app.post("/prompt-lab/model-compatibility/recompute", response_model=dict[str, Any])
+def recompute_prompt_lab_model_compatibility() -> dict[str, Any]:
+    require_benchmark_api()
+    matrix = build_model_compatibility_matrix(
+        benchmark_reports=get_provider_benchmark_reports(),
+        structured_reports=get_structured_output_reports(),
+        usage_records=get_model_usage_store().recent(500),
+    )
+    get_model_compatibility_reports().append(matrix)
+    return {"local_only": True, **matrix.model_dump_safe()}
+
+
+@app.get("/prompt-lab/provider-routing", response_model=dict[str, Any])
+def get_prompt_lab_provider_routing() -> dict[str, Any]:
+    require_benchmark_api()
+    return get_provider_router().safe_summary().model_dump_safe()
+
+
+@app.post("/prompt-lab/provider-routing/validate", response_model=dict[str, Any])
+def validate_prompt_lab_provider_routing(rule: ProviderRoutingRule) -> dict[str, Any]:
+    require_benchmark_api()
+    report = get_provider_router().validate_routing_rule(rule)
+    return report.model_dump_safe()
+
+
+@app.post("/prompt-lab/provider-routing/preview", response_model=dict[str, Any])
+def preview_prompt_lab_provider_routing(rule: ProviderRoutingRule) -> dict[str, Any]:
+    require_benchmark_api()
+    router = get_provider_router()
+    report = router.validate_routing_rule(rule)
+    decision: ProviderRoutingDecision | None = None
+    if report.ok or rule.fallback_provider_id:
+        try:
+            preview_router = ProviderRouter(config=ProviderRoutingConfig(rules=[rule]))
+            decision = preview_router.select_model_for_use_case(rule.use_case)
+        except ValueError:
+            decision = None
+    return {
+        "local_only": True,
+        "validation": report.model_dump_safe(),
+        "decision": decision.model_dump_safe() if decision is not None else None,
+    }
+
+
+@app.post("/prompt-lab/provider-routing/save", response_model=dict[str, Any])
+def save_prompt_lab_provider_routing(config: ProviderRoutingConfig) -> dict[str, Any]:
+    require_benchmark_api()
+    summary = get_provider_router().apply_routing_config(config)
+    if any(not report.ok for report in summary.validation_reports):
+        raise HTTPException(status_code=400, detail=summary.model_dump_safe())
+    return summary.model_dump_safe()
+
+
+@app.post("/prompt-lab/context/inspect", response_model=dict[str, Any])
+def inspect_prompt_lab_context(request: ContextInspectRequest) -> dict[str, Any]:
+    require_benchmark_api()
+    snapshot = inspect_context(request)
+    return {"local_only": True, **snapshot.model_dump_safe()}
+
+
+@app.post("/prompt-lab/prompt-profiles/ab-test", response_model=dict[str, Any])
+def run_prompt_lab_prompt_ab_test(request: PromptABTestRun) -> dict[str, Any]:
+    require_benchmark_api()
+    active_settings = getattr(app.state, "settings", settings)
+    report = run_prompt_ab_test(
+        request,
+        prompt_store=get_prompt_profile_store(),
+        settings=active_settings,
+    )
+    get_prompt_ab_test_reports().append(report)
+    return report.model_dump_safe()
+
+
+@app.get("/prompt-lab/prompt-profiles/ab-test/{run_id}", response_model=dict[str, Any])
+def get_prompt_lab_prompt_ab_test(run_id: str) -> dict[str, Any]:
+    require_benchmark_api()
+    for report in get_prompt_ab_test_reports():
+        if report.run_id == run_id:
+            return report.model_dump_safe()
+    raise HTTPException(status_code=404, detail=f"Prompt A/B test run not found: {run_id}")
+
+
+@app.post("/prompt-lab/narrator-style/run", response_model=dict[str, Any])
+def run_prompt_lab_narrator_style(request: NarratorStyleExperiment) -> dict[str, Any]:
+    require_benchmark_api()
+    active_settings = getattr(app.state, "settings", settings)
+    report = run_narrator_style_experiment(
+        request,
+        prompt_store=get_prompt_profile_store(),
+        settings=active_settings,
+    )
+    get_narrator_style_reports().append(report)
+    return report.model_dump_safe()
+
+
+@app.get("/prompt-lab/narrator-style/{run_id}", response_model=dict[str, Any])
+def get_prompt_lab_narrator_style(run_id: str) -> dict[str, Any]:
+    require_benchmark_api()
+    for report in get_narrator_style_reports():
+        if report.run_id == run_id:
+            return report.model_dump_safe()
+    raise HTTPException(status_code=404, detail=f"Narrator style run not found: {run_id}")
+
+
+@app.post("/prompt-lab/npc-voice-style/run", response_model=dict[str, Any])
+def run_prompt_lab_npc_voice_style(request: NPCVoiceStyleExperiment) -> dict[str, Any]:
+    require_benchmark_api()
+    active_settings = getattr(app.state, "settings", settings)
+    report = run_npc_voice_style_experiment(
+        request,
+        prompt_store=get_prompt_profile_store(),
+        settings=active_settings,
+    )
+    get_npc_voice_style_reports().append(report)
+    return report.model_dump_safe()
+
+
+@app.get("/prompt-lab/npc-voice-style/{run_id}", response_model=dict[str, Any])
+def get_prompt_lab_npc_voice_style(run_id: str) -> dict[str, Any]:
+    require_benchmark_api()
+    for report in get_npc_voice_style_reports():
+        if report.run_id == run_id:
+            return report.model_dump_safe()
+    raise HTTPException(status_code=404, detail=f"NPC voice style run not found: {run_id}")
+
+
+@app.post("/prompt-lab/regression/run", response_model=dict[str, Any])
+def run_prompt_lab_regression(request: PromptRegressionRun) -> dict[str, Any]:
+    require_benchmark_api()
+    active_settings = getattr(app.state, "settings", settings)
+    report = run_prompt_regression(
+        request,
+        prompt_store=get_prompt_profile_store(),
+        settings=active_settings,
+    )
+    get_prompt_regression_reports().append(report)
+    return report.model_dump_safe()
+
+
+@app.post("/prompt-lab/prompt-diff/review", response_model=dict[str, Any])
+def review_prompt_lab_prompt_diff(request: PromptDiffRequest) -> dict[str, Any]:
+    require_benchmark_api()
+    report = review_prompt_diff(request)
+    return {"local_only": True, **report.model_dump_safe()}
+
+
+@app.post("/prompt-lab/experiment-packages/export", response_model=PromptExperimentPackage)
+def export_prompt_lab_experiment_package(request: PromptExperimentPackageExportRequest) -> PromptExperimentPackage:
+    require_benchmark_api()
+    try:
+        return export_prompt_experiment_package(request, prompt_store=get_prompt_profile_store())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/prompt-lab/experiment-packages/import-dry-run", response_model=PromptExperimentPackageImportReport)
+def dry_run_prompt_lab_experiment_package_import(request: PromptExperimentPackageImportRequest) -> PromptExperimentPackageImportReport:
+    require_benchmark_api()
+    return import_prompt_experiment_package_dry_run(request, prompt_store=get_prompt_profile_store())
+
+
+@app.post("/prompt-lab/experiment-packages/import-apply", response_model=PromptExperimentPackageImportReport)
+def apply_prompt_lab_experiment_package_import(request: PromptExperimentPackageImportRequest) -> PromptExperimentPackageImportReport:
+    require_benchmark_api()
+    return apply_prompt_experiment_package_import(request, prompt_store=get_prompt_profile_store())
+
+
+@app.post("/prompt-lab/local-model/diagnose", response_model=dict[str, Any])
+def run_prompt_lab_local_model_diagnostics(request: LocalModelDiagnosticRequest) -> dict[str, Any]:
+    require_benchmark_api()
+    active_settings = getattr(app.state, "settings", settings)
+    report = run_local_model_diagnostics(request, settings=active_settings)
+    get_local_model_diagnostic_reports().append(report)
+    return {"local_only": True, **report.model_dump_safe()}
+
+
+@app.get("/prompt-lab/token-budget/profiles", response_model=dict[str, Any])
+def get_prompt_lab_token_budget_profiles() -> dict[str, Any]:
+    require_benchmark_api()
+    return {
+        "local_only": True,
+        "profiles": [profile.model_dump(mode="json") for profile in build_default_token_budget_profiles()],
+    }
+
+
+@app.post("/prompt-lab/token-budget/estimate", response_model=dict[str, Any])
+def estimate_prompt_lab_token_budget(request: TokenBudgetRequest) -> dict[str, Any]:
+    require_benchmark_api()
+    report = estimate_token_budget(request)
+    get_token_budget_reports().append(report)
+    return {"local_only": True, **report.model_dump_safe()}
 
 
 @app.get("/quality/worlds/{world_id}/health", response_model=dict[str, Any])

@@ -19,6 +19,7 @@ class Settings(BaseModel):
     enable_debug_api: bool = True
     enable_authoring_api: bool = False
     enable_perf_logging: bool = False
+    enable_usage_tracking: bool = False
     enable_playtest_api: bool = False
     enable_eval_api: bool = False
 
@@ -40,6 +41,7 @@ def get_settings() -> Settings:
         enable_debug_api=_read_bool_env("ENABLE_DEBUG_API", default=True),
         enable_authoring_api=_read_bool_env("ENABLE_AUTHORING_API", default=False),
         enable_perf_logging=_read_bool_env("ENABLE_PERF_LOGGING", default=False),
+        enable_usage_tracking=_read_bool_env("ENABLE_USAGE_TRACKING", default=False),
         enable_playtest_api=_read_bool_env("ENABLE_PLAYTEST_API", default=False),
         enable_eval_api=_read_bool_env("ENABLE_EVAL_API", default=False),
     )

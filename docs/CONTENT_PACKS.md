@@ -1402,6 +1402,140 @@ Campaign starter kits compose world, NPC, quest, faction, optional mystery,
 scenario, quality, and script package drafts. Preview does not write disk;
 build requires validation and quality dry-run.
 
+## v1.5 Prompt Lab Schemas
+
+v1.5 Prompt Lab schemas describe local provider/prompt experiments and safe
+diagnostic reports. They are not content-pack runtime facts and do not modify
+active `GameState`.
+
+### PromptProfile
+
+```yaml
+id: default_safe
+name: Default Safe
+description: Safe local prompt profile.
+provider_filter:
+  - mock
+  - local_stub
+model_filter: []
+narrator_style: grounded
+intent_parser_prompt_variant: default
+narrator_prompt_variant: default
+memory_prompt_variant: default
+temperature_overrides:
+  narrator:
+  intent_parser:
+  memory:
+max_output_tokens:
+scene_mood_preset_id:
+enabled: true
+rp_profile:
+  id: default_rp
+  name: Default RP
+  dialogue_depth: medium
+  emotional_intensity: restrained
+  prose_density: medium
+  response_length_policy: medium
+  perspective: second_person
+  inner_thought_policy: none
+  sensuality_policy: fade_to_black
+  hidden_fact_policy: deny
+  state_modification_policy: deny
+```
+
+Prompt Profiles tune style, variants, temperature, and output hints only. They
+must not contain API keys, raw env, raw `GameState`, raw `state_deltas`, hidden
+facts, or provider secrets.
+
+### RPPromptProfile
+
+```yaml
+id: grounded_dialogue
+name: Grounded Dialogue
+description: Local RP expression style.
+dialogue_depth: medium
+emotional_intensity: restrained
+prose_density: medium
+response_length_policy: medium
+perspective: second_person
+inner_thought_policy: none
+sensuality_policy: fade_to_black
+hidden_fact_policy: deny
+state_modification_policy: deny
+```
+
+`hidden_fact_policy` and `state_modification_policy` must remain `deny`.
+Validation rejects profiles that try to expand LLM authority.
+
+### TokenBudgetProfile
+
+```yaml
+id: narrator_balanced
+use_case: narrator
+max_total_tokens: 1200
+reserved_output_tokens: 300
+max_memory_tokens: 240
+max_lore_tokens: 160
+max_recent_events_tokens: 220
+max_dialogue_examples_tokens: 180
+priority_order:
+  - safety_constraints
+  - player_input
+  - action_result
+  - visible_facts
+  - dialogue_profile
+  - npc_known_facts
+  - recent_events
+  - memory
+  - lore
+  - dialogue_examples
+overflow_policy: trim_low_priority
+```
+
+Token budgets estimate and trim context. They must preserve safety/boundary
+sections and drop hidden-redacted sections rather than adding hidden content.
+
+### ProviderRoutingRule
+
+```yaml
+use_case: narrator
+primary_provider_id: local_stub
+primary_model_id: local_stub
+fallback_provider_id: mock
+fallback_model_id: mock
+max_latency_ms:
+max_cost_per_call:
+require_json_support: false
+require_local_only: true
+enabled: true
+```
+
+Routing rules select provider/model ids and fallback preferences. They must not
+store API keys or raw provider secrets. They do not bypass `LLMProvider`.
+
+### PromptExperimentPackageManifest
+
+```yaml
+package_id: prompt_experiment
+name: Prompt Experiment Package
+version: "1.0"
+prompt_profiles: []
+rp_prompt_profiles: []
+test_cases: []
+benchmark_configs: []
+regression_configs: []
+provider_requirements:
+  - mock
+  - local_stub
+redaction_policy: safe_redacted
+exported_at: "2026-05-20T00:00:00Z"
+```
+
+Prompt experiment packages are local reproducibility bundles. They must not
+include API keys, raw env, hidden fact text, raw `GameState`, raw
+`state_delta`, sensitive prompt snapshots, executable files, or path traversal.
+Import validates first and does not auto-enable imported profiles.
+
 ## Current Limits
 
 - The v1.0 authoring UI has multiple visual editors and quality dashboards, but
@@ -1418,4 +1552,7 @@ build requires validation and quality dry-run.
 - No template script execution.
 - No LLM automatic world/map/quest/social/economy rewriting.
 - No automatic quality-report repair of content packs.
+- Prompt Lab schemas are diagnostic/configuration data, not runtime world
+  facts. They do not grant models access to hidden facts or state-write
+  authority.
 - No claim that quality scores are absolute judgments.

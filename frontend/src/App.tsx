@@ -77,6 +77,12 @@ import {
   fetchAuthoringProjectSummary,
   fetchImportExportProfiles,
   fetchProductionPipelineSummary,
+  fetchModelCompatibilityMatrix,
+  fetchModelUsageSummary,
+  fetchProviderCapabilities,
+  fetchTokenBudgetProfiles,
+  fetchRecentModelUsage,
+  fetchProviderRoutingSummary,
   fetchReferenceIndex,
   fetchLocalContentLibrary,
   searchLocalContentLibrary,
@@ -120,8 +126,28 @@ import {
   listSaves,
   loadGame,
   NarrativeEvalReport,
+  NarratorStyleReport,
+  NPCVoiceStyleReport,
+  ContextInspectType,
+  ContextSnapshot,
+  ModelCompatibilityMatrix,
+  ModelUsageRecord,
+  ModelUsageSummary,
+  ProviderBenchmarkReport,
+  ProviderCapabilityCatalog,
+  BudgetReport,
+  TokenBudgetProfile,
+  TokenBudgetUseCase,
+  ProviderRoutingPreview,
+  ProviderRoutingRule,
+  ProviderRoutingSummary,
+  ProviderRoutingUseCase,
+  PromptDiffReport,
+  PromptRegressionReport,
   PlaytestReport,
   PlaytestBatchRun,
+  PromptABTestReport,
+  PromptABUseCase,
   previewAuthoringFileChange,
   previewAuthoringMap,
   previewAuthoringScenario,
@@ -142,6 +168,21 @@ import {
   runContentCoverage,
   runPlaytest,
   runPlaytestBatch,
+  runPromptABTest,
+  runProviderBenchmark,
+  runNarratorStyleExperiment,
+  runNPCVoiceStyleExperiment,
+  runStructuredOutputReliability,
+  runPromptRegressionSuite,
+  runLocalModelDiagnostics,
+  recomputeModelCompatibilityMatrix,
+  estimateTokenBudget,
+  previewProviderRoutingRule,
+  saveProviderRoutingConfig,
+  reviewPromptDiff,
+  StructuredOutputReliabilityReport,
+  LocalModelDiagnosticReport,
+  inspectPromptLabContext,
   runScenarioRegression,
   saveGame,
   saveAuthoringFile,
@@ -498,7 +539,7 @@ export function App() {
   const [saveWorldFilter, setSaveWorldFilter] = useState<string>("");
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>("");
-  const [mode, setMode] = useState<"studio" | "play" | "authoring">("studio");
+  const [mode, setMode] = useState<"studio" | "play" | "authoring" | "prompt_lab">("studio");
   const [requestedAuthoringTool, setRequestedAuthoringTool] = useState<AuthoringToolId | null>(null);
   const [studioStatus, setStudioStatus] = useState<StudioStatus | null>(null);
   const [studioStatusError, setStudioStatusError] = useState<string>("");
@@ -1376,6 +1417,13 @@ export function App() {
             >
               Authoring
             </button>
+            <button
+              type="button"
+              className={mode === "prompt_lab" ? "active" : ""}
+              onClick={() => setMode("prompt_lab")}
+            >
+              Prompt Lab
+            </button>
           </div>
         </section>
 
@@ -1509,6 +1557,12 @@ export function App() {
           <AuthoringPanel
             requestedTool={requestedAuthoringTool}
             onRequestedToolHandled={() => setRequestedAuthoringTool(null)}
+          />
+        ) : mode === "prompt_lab" ? (
+          <PromptLabPage
+            summary={studioConfigSummary}
+            configError={studioConfigError}
+            onSelectPromptProfile={(profileId) => void handleSelectPromptProfile(profileId)}
           />
         ) : mode === "studio" ? (
           <StudioHome
@@ -2996,21 +3050,461 @@ function ScenarioRegressionDashboard({
   );
 }
 
+function PromptLabPage({
+  summary,
+  configError,
+  onSelectPromptProfile
+}: {
+  summary: StudioConfigSummary | null;
+  configError: string;
+  onSelectPromptProfile: (profileId: string) => void;
+}) {
+  const [capabilities, setCapabilities] = useState<ProviderCapabilityCatalog | null>(null);
+  const [benchmarkReport, setBenchmarkReport] = useState<ProviderBenchmarkReport | null>(null);
+  const [structuredReport, setStructuredReport] = useState<StructuredOutputReliabilityReport | null>(null);
+  const [regressionReport, setRegressionReport] = useState<PromptRegressionReport | null>(null);
+  const [diagnosticReport, setDiagnosticReport] = useState<LocalModelDiagnosticReport | null>(null);
+  const [usageSummary, setUsageSummary] = useState<ModelUsageSummary | null>(null);
+  const [recentUsage, setRecentUsage] = useState<ModelUsageRecord[]>([]);
+  const [diffReport, setDiffReport] = useState<PromptDiffReport | null>(null);
+  const [labError, setLabError] = useState<string>("");
+
+  async function runLabAction(action: () => Promise<void>) {
+    setLabError("");
+    try {
+      await action();
+    } catch (err) {
+      setLabError(toErrorMessage(err));
+    }
+  }
+
+  const profiles = summary?.prompt_profiles ?? [];
+  const leftProfile = profiles[0] ? { id: profiles[0].id, hidden_fact_policy: "deny", state_modification_policy: "deny" } : {};
+  const rightProfile = profiles[1] ? { id: profiles[1].id, hidden_fact_policy: "deny", state_modification_policy: "deny" } : leftProfile;
+
+  return (
+    <section className="studio-section">
+      <div className="authoring-pane-header">
+        <div>
+          <h3>Prompt Lab</h3>
+          <p className="muted">Unified local model and prompt workbench. All summaries are redacted and local-only.</p>
+        </div>
+        <StatusBadge label={summary?.debug_api_enabled || summary?.performance_logging_enabled ? "Local APIs ready" : "API gated"} enabled={Boolean(summary?.debug_api_enabled || summary?.performance_logging_enabled)} />
+      </div>
+      <ErrorPanel message={labError || configError} compact />
+      <div className="studio-grid compact-dashboard-grid">
+        <DashboardCard title="Provider" value={summary?.llm_provider ?? "unknown"}>
+          <p>{summary?.provider_sends_prompts_off_machine ? "External provider requires explicit opt-in for real tests." : "No real provider call is made by default."}</p>
+        </DashboardCard>
+        <DashboardCard title="API Key" value={summary?.api_key_configured ? "configured" : "not shown"}>
+          <p>Key values never render in Prompt Lab.</p>
+        </DashboardCard>
+        <DashboardCard title="Hidden Data" value="redacted">
+          <p>Normal UI does not show hidden facts, raw env, or raw prompts.</p>
+        </DashboardCard>
+      </div>
+
+      <section className="studio-section">
+        <div className="authoring-pane-header">
+          <div>
+            <h4>Provider Capabilities</h4>
+            <p className="muted">Declared provider/model metadata only; no network probe.</p>
+          </div>
+          <button type="button" onClick={() => void runLabAction(async () => setCapabilities(await fetchProviderCapabilities()))}>
+            Load Capabilities
+          </button>
+        </div>
+        {capabilities ? (
+          <ItemList
+            emptyText="No providers."
+            items={capabilities.providers.map((provider) => (
+              <span key={provider.provider_id}>
+                {provider.provider_id}: json {provider.supports_json ? "yes" : "no"}, local {provider.local_only ? "yes" : "no"}
+              </span>
+            ))}
+          />
+        ) : (
+          <p className="muted">Empty until loaded. API disabled states are shown as a safe error instead of exposing config.</p>
+        )}
+      </section>
+
+      <section className="studio-section">
+        <div className="authoring-pane-header">
+          <div>
+            <h4>Benchmarks / Reliability / Regression</h4>
+            <p className="muted">Runs use fake/mock defaults. Real provider runs require explicit backend opt-in and are not triggered here.</p>
+          </div>
+          <div className="button-row">
+            <button type="button" onClick={() => void runLabAction(async () => setBenchmarkReport(await runProviderBenchmark(false)))}>
+              Run Benchmark
+            </button>
+            <button type="button" onClick={() => void runLabAction(async () => setStructuredReport(await runStructuredOutputReliability(false)))}>
+              Run JSON
+            </button>
+            <button type="button" onClick={() => void runLabAction(async () => setRegressionReport(await runPromptRegressionSuite()))}>
+              Run Regression
+            </button>
+          </div>
+        </div>
+        <div className="studio-grid compact-dashboard-grid">
+          <DashboardCard title="Benchmark" value={benchmarkReport?.run_id ? String(benchmarkReport.ok_cases) : "empty"}>
+            <p>{benchmarkReport ? `${benchmarkReport.total_cases} cases, leak risks ${benchmarkReport.hidden_leak_risk_count}` : "No benchmark report loaded."}</p>
+          </DashboardCard>
+          <DashboardCard title="Structured JSON" value={structuredReport ? `${Math.round(structuredReport.schema_valid_rate * 100)}%` : "empty"}>
+            <p>{structuredReport ? `${structuredReport.total_cases} cases, hidden policy ${structuredReport.hidden_policy_violation_rate}` : "No structured output report."}</p>
+          </DashboardCard>
+          <DashboardCard title="Regression" value={regressionReport?.pass_fail ?? "empty"}>
+            <p>{regressionReport ? `${regressionReport.safety_blockers.length} safety blockers` : "No prompt regression report."}</p>
+          </DashboardCard>
+        </div>
+      </section>
+
+      <section className="studio-section">
+        <div className="authoring-pane-header">
+          <div>
+            <h4>Prompt Diff / Local Diagnostics / Usage</h4>
+            <p className="muted">Diff and diagnostics use redacted inputs. Usage records never include prompts or API keys.</p>
+          </div>
+          <div className="button-row">
+            <button type="button" onClick={() => void runLabAction(async () => setDiffReport(await reviewPromptDiff(leftProfile, rightProfile)))}>
+              Review Diff
+            </button>
+            <button type="button" onClick={() => void runLabAction(async () => setDiagnosticReport(await runLocalModelDiagnostics()))}>
+              Diagnose Local
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                void runLabAction(async () => {
+                  setUsageSummary(await fetchModelUsageSummary());
+                  setRecentUsage((await fetchRecentModelUsage(10)).records);
+                })
+              }
+            >
+              Load Usage
+            </button>
+          </div>
+        </div>
+        <div className="studio-grid compact-dashboard-grid">
+          <DashboardCard title="Prompt Diff" value={diffReport ? String(diffReport.changed_sections.length) : "empty"}>
+            <p>{diffReport ? `${diffReport.blockers.length} blockers, token delta ${diffReport.token_delta}` : "No diff report."}</p>
+          </DashboardCard>
+          <DashboardCard title="Local Diagnostics" value={diagnosticReport?.pass_fail ?? "empty"}>
+            <p>{diagnosticReport ? `${diagnosticReport.provider_id}, base URL ${diagnosticReport.base_url_configured ? "configured" : "not needed"}` : "No diagnostic run."}</p>
+          </DashboardCard>
+          <DashboardCard title="Usage Calls" value={usageSummary ? String(usageSummary.total_calls) : "empty"}>
+            <p>{usageSummary ? `p50 ${usageSummary.latency_p50_ms}ms / p95 ${usageSummary.latency_p95_ms}ms / cost ${usageSummary.total_cost_estimated}` : "Usage tracking may be disabled."}</p>
+          </DashboardCard>
+          <DashboardCard title="Error Rate" value={usageSummary ? `${Math.round(usageSummary.error_rate * 100)}%` : "empty"}>
+            <p>{usageSummary ? `${usageSummary.failures} failures` : "No usage summary."}</p>
+          </DashboardCard>
+        </div>
+        <ItemList
+          emptyText="No recent usage records."
+          items={recentUsage.map((record) => (
+            <span key={record.usage_id}>
+              {record.provider_id}/{record.model_id} {record.use_case}: {record.success ? "ok" : record.error_type ?? "failed"}
+            </span>
+          ))}
+        />
+      </section>
+
+      <PromptLabPanelIndex />
+
+      <SettingsPrivacyPanel summary={summary} error="" onSelectPromptProfile={onSelectPromptProfile} promptLabOnly />
+    </section>
+  );
+}
+
+function PromptLabPanelIndex() {
+  const panels = [
+    "Provider Capabilities",
+    "Provider Benchmark",
+    "Prompt A/B Test",
+    "Narrator Style Lab",
+    "NPC Voice Style Lab",
+    "Structured Output Reliability",
+    "Context Inspector",
+    "Prompt Diff",
+    "Model Compatibility Matrix",
+    "Routing Rule Editor",
+    "Prompt Regression",
+    "Local Model Diagnostics",
+    "Token Budget Profiles",
+    "Model Usage Dashboard"
+  ];
+  return (
+    <section className="studio-section">
+      <h4>Prompt Lab Panels</h4>
+      <div className="template-grid">
+        {panels.map((panel) => (
+          <span className="badge" key={panel}>{panel}</span>
+        ))}
+      </div>
+      <p className="muted">Real provider calls are not launched automatically from this page. Hidden/debug fields remain redacted in normal UI.</p>
+    </section>
+  );
+}
+
 function SettingsPrivacyPanel({
   summary,
   error,
-  onSelectPromptProfile
+  onSelectPromptProfile,
+  promptLabOnly = false
 }: {
   summary: StudioConfigSummary | null;
   error: string;
   onSelectPromptProfile: (profileId: string) => void;
+  promptLabOnly?: boolean;
 }) {
+  const [profileAId, setProfileAId] = useState<string>("");
+  const [profileBId, setProfileBId] = useState<string>("");
+  const [useCase, setUseCase] = useState<PromptABUseCase>("narrator");
+  const [abReport, setABReport] = useState<PromptABTestReport | null>(null);
+  const [abError, setABError] = useState<string>("");
+  const [styleReport, setStyleReport] = useState<NarratorStyleReport | null>(null);
+  const [styleError, setStyleError] = useState<string>("");
+  const [styleGenreTone, setStyleGenreTone] = useState<string>("grounded");
+  const [styleSensoryFocus, setStyleSensoryFocus] = useState<string>("balanced");
+  const [styleResponseLength, setStyleResponseLength] = useState<string>("medium");
+  const [voiceReport, setVoiceReport] = useState<NPCVoiceStyleReport | null>(null);
+  const [voiceError, setVoiceError] = useState<string>("");
+  const [voiceNPCId, setVoiceNPCId] = useState<string>("harlan");
+  const [voiceTone, setVoiceTone] = useState<string>("calm");
+  const [voiceCatchphrase, setVoiceCatchphrase] = useState<string>("steady now");
+  const [contextSnapshot, setContextSnapshot] = useState<ContextSnapshot | null>(null);
+  const [contextError, setContextError] = useState<string>("");
+  const [contextType, setContextType] = useState<ContextInspectType>("narrator");
+  const [contextNPCId, setContextNPCId] = useState<string>("npc_sample");
+  const [contextIncludeRaw, setContextIncludeRaw] = useState<boolean>(false);
+  const [compatibilityMatrix, setCompatibilityMatrix] = useState<ModelCompatibilityMatrix | null>(null);
+  const [compatibilityError, setCompatibilityError] = useState<string>("");
+  const [routingSummary, setRoutingSummary] = useState<ProviderRoutingSummary | null>(null);
+  const [routingPreview, setRoutingPreview] = useState<ProviderRoutingPreview | null>(null);
+  const [routingError, setRoutingError] = useState<string>("");
+  const [routingUseCase, setRoutingUseCase] = useState<ProviderRoutingUseCase>("narrator");
+  const [routingPrimaryProvider, setRoutingPrimaryProvider] = useState<string>("local_stub");
+  const [routingPrimaryModel, setRoutingPrimaryModel] = useState<string>("local_stub");
+  const [routingFallbackProvider, setRoutingFallbackProvider] = useState<string>("mock");
+  const [routingFallbackModel, setRoutingFallbackModel] = useState<string>("mock");
+  const [routingRequireJson, setRoutingRequireJson] = useState<boolean>(false);
+  const [routingRequireLocalOnly, setRoutingRequireLocalOnly] = useState<boolean>(true);
+  const [budgetProfiles, setBudgetProfiles] = useState<TokenBudgetProfile[]>([]);
+  const [selectedBudgetProfileId, setSelectedBudgetProfileId] = useState<string>("narrator_balanced");
+  const [budgetUseCase, setBudgetUseCase] = useState<TokenBudgetUseCase>("narrator");
+  const [budgetMaxTokens, setBudgetMaxTokens] = useState<number>(900);
+  const [budgetReport, setBudgetReport] = useState<BudgetReport | null>(null);
+  const [budgetError, setBudgetError] = useState<string>("");
+  const profiles = summary?.prompt_profiles ?? [];
+  const effectiveProfileAId = profileAId || summary?.selected_prompt_profile_id || profiles[0]?.id || "";
+  const effectiveProfileBId = profileBId || profiles.find((profile) => profile.id !== effectiveProfileAId)?.id || effectiveProfileAId;
+
+  async function handleRunABTest() {
+    if (!effectiveProfileAId || !effectiveProfileBId) {
+      setABError("Select two prompt profiles first.");
+      return;
+    }
+    setABError("");
+    try {
+      const report = await runPromptABTest({
+        profile_a_id: effectiveProfileAId,
+        profile_b_id: effectiveProfileBId,
+        provider_id: "fake",
+        use_case: useCase
+      });
+      setABReport(report);
+    } catch (err) {
+      setABReport(null);
+      setABError(toErrorMessage(err));
+    }
+  }
+
+  async function handleRunNarratorStyle() {
+    if (!effectiveProfileAId) {
+      setStyleError("Select a prompt profile first.");
+      return;
+    }
+    setStyleError("");
+    try {
+      const report = await runNarratorStyleExperiment({
+        prompt_profile_id: effectiveProfileAId,
+        provider_id: "fake",
+        genre_tone: styleGenreTone,
+        sensory_focus: styleSensoryFocus,
+        response_length: styleResponseLength
+      });
+      setStyleReport(report);
+    } catch (err) {
+      setStyleReport(null);
+      setStyleError(toErrorMessage(err));
+    }
+  }
+
+  async function handleRunNPCVoiceStyle() {
+    if (!voiceNPCId.trim()) {
+      setVoiceError("Enter an NPC id first.");
+      return;
+    }
+    setVoiceError("");
+    try {
+      const report = await runNPCVoiceStyleExperiment({
+        npc_id: voiceNPCId.trim(),
+        rp_prompt_profile_id: effectiveProfileAId,
+        provider_id: "fake",
+        voice_profile_variant: {
+          tone: voiceTone,
+          sentence_length: "mixed",
+          vocabulary_style: "plain",
+          catchphrases: voiceCatchphrase ? [voiceCatchphrase] : [],
+          speech_habits: ["measured"],
+          emotional_tells: ["soft pause"]
+        },
+        example_dialogue_set: [`${voiceNPCId}: ${voiceCatchphrase || "I answer carefully."}`],
+        dialogue_test_cases: [
+          {
+            id: "local_voice_sample",
+            player_line: "What do you know?",
+            expected_emotional_tone: voiceTone,
+            unknown_fact_terms: ["unknown forbidden fact"],
+            hidden_terms: ["the mayor forged the charter"]
+          }
+        ]
+      });
+      setVoiceReport(report);
+    } catch (err) {
+      setVoiceReport(null);
+      setVoiceError(toErrorMessage(err));
+    }
+  }
+
+  async function handleInspectContext() {
+    setContextError("");
+    try {
+      const snapshot = await inspectPromptLabContext({
+        context_type: contextType,
+        npc_id: contextNPCId || null,
+        location_id: "start",
+        player_input: "look around",
+        include_debug_raw: contextIncludeRaw
+      });
+      setContextSnapshot(snapshot);
+    } catch (err) {
+      setContextSnapshot(null);
+      setContextError(toErrorMessage(err));
+    }
+  }
+
+  async function handleLoadCompatibilityMatrix(recompute = false) {
+    setCompatibilityError("");
+    try {
+      const matrix = recompute
+        ? await recomputeModelCompatibilityMatrix()
+        : await fetchModelCompatibilityMatrix();
+      setCompatibilityMatrix(matrix);
+    } catch (err) {
+      setCompatibilityMatrix(null);
+      setCompatibilityError(toErrorMessage(err));
+    }
+  }
+
+  function currentRoutingRule(): ProviderRoutingRule {
+    return {
+      use_case: routingUseCase,
+      primary_provider_id: routingPrimaryProvider.trim(),
+      primary_model_id: routingPrimaryModel.trim(),
+      fallback_provider_id: routingFallbackProvider.trim() || null,
+      fallback_model_id: routingFallbackModel.trim() || null,
+      require_json_support: routingRequireJson || routingUseCase !== "narrator" && routingUseCase !== "RP_dialogue",
+      require_local_only: routingRequireLocalOnly,
+      enabled: true
+    };
+  }
+
+  async function handlePreviewRoutingRule() {
+    setRoutingError("");
+    try {
+      const preview = await previewProviderRoutingRule(currentRoutingRule());
+      setRoutingPreview(preview);
+    } catch (err) {
+      setRoutingPreview(null);
+      setRoutingError(toErrorMessage(err));
+    }
+  }
+
+  async function handleSaveRoutingRule() {
+    setRoutingError("");
+    try {
+      const existingRules = routingSummary?.rules.filter((rule) => rule.use_case !== routingUseCase) ?? [];
+      const saved = await saveProviderRoutingConfig({ rules: [...existingRules, currentRoutingRule()] });
+      setRoutingSummary(saved);
+      setRoutingPreview(null);
+    } catch (err) {
+      setRoutingError(toErrorMessage(err));
+    }
+  }
+
+  async function handleLoadRoutingSummary() {
+    setRoutingError("");
+    try {
+      const loaded = await fetchProviderRoutingSummary();
+      setRoutingSummary(loaded);
+    } catch (err) {
+      setRoutingSummary(null);
+      setRoutingError(toErrorMessage(err));
+    }
+  }
+
+  async function handleLoadBudgetProfiles() {
+    setBudgetError("");
+    try {
+      const response = await fetchTokenBudgetProfiles();
+      setBudgetProfiles(response.profiles);
+      if (response.profiles.length > 0) {
+        const selected = response.profiles.find((profile) => profile.id === selectedBudgetProfileId) ?? response.profiles[0];
+        setSelectedBudgetProfileId(selected.id);
+        setBudgetUseCase(selected.use_case);
+        setBudgetMaxTokens(selected.max_total_tokens);
+      }
+    } catch (err) {
+      setBudgetError(toErrorMessage(err));
+    }
+  }
+
+  async function handleEstimateBudget() {
+    setBudgetError("");
+    try {
+      const baseProfile = budgetProfiles.find((profile) => profile.id === selectedBudgetProfileId) ?? {
+        id: "custom_ui_budget",
+        use_case: budgetUseCase,
+        max_total_tokens: budgetMaxTokens,
+        reserved_output_tokens: 240,
+        max_memory_tokens: 160,
+        max_lore_tokens: 120,
+        max_recent_events_tokens: 160,
+        max_dialogue_examples_tokens: 120,
+        priority_order: ["safety_constraints", "player_input", "action_result", "visible_facts", "dialogue_profile", "npc_known_facts", "recent_events", "memory", "lore", "dialogue_examples"],
+        overflow_policy: "trim_low_priority" as const
+      };
+      const profile = { ...baseProfile, use_case: budgetUseCase, max_total_tokens: budgetMaxTokens };
+      const sections = contextSnapshot?.sections ?? [];
+      const report = await estimateTokenBudget(profile, sections);
+      setBudgetReport(report);
+    } catch (err) {
+      setBudgetReport(null);
+      setBudgetError(toErrorMessage(err));
+    }
+  }
+
   return (
     <section className="studio-section privacy-panel">
       <div className="authoring-pane-header">
         <div>
-          <h3>Settings / Local Privacy</h3>
-          <p className="muted">Safe configuration summary without API keys, raw env, or full local paths.</p>
+          <h3>{promptLabOnly ? "Prompt Profiles / Experiments" : "Settings / Local Privacy"}</h3>
+          <p className="muted">
+            {promptLabOnly
+              ? "Prompt profiles and experiment controls. Reports stay redacted and are never applied automatically."
+              : "Safe configuration summary without API keys, raw env, or full local paths."}
+          </p>
         </div>
         <StatusBadge label={summary?.local_only ? "Local only" : "Unavailable"} enabled={Boolean(summary?.local_only)} />
       </div>
@@ -3084,6 +3578,488 @@ function SettingsPrivacyPanel({
                   ))}
               </div>
             </div>
+          </section>
+          <section className="studio-section">
+            <div className="authoring-pane-header">
+              <div>
+                <h4>Prompt Lab A/B</h4>
+                <p className="muted">Compare prompt profiles with fake provider output. Results are redacted and are never applied automatically.</p>
+              </div>
+              <button type="button" onClick={() => void handleRunABTest()}>
+                Run A/B
+              </button>
+            </div>
+            <ErrorPanel message={abError} compact />
+            <div className="template-grid">
+              <label>
+                Profile A
+                <select value={effectiveProfileAId} onChange={(event) => setProfileAId(event.target.value)}>
+                  {profiles.map((profile) => (
+                    <option key={profile.id} value={profile.id}>
+                      {profile.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Profile B
+                <select value={effectiveProfileBId} onChange={(event) => setProfileBId(event.target.value)}>
+                  {profiles.map((profile) => (
+                    <option key={profile.id} value={profile.id}>
+                      {profile.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Use case
+                <select value={useCase} onChange={(event) => setUseCase(event.target.value as PromptABUseCase)}>
+                  <option value="narrator">Narrator</option>
+                  <option value="RP_dialogue">RP dialogue</option>
+                  <option value="intent_parser">Intent parser</option>
+                  <option value="memory_summary">Memory summary</option>
+                </select>
+              </label>
+            </div>
+            {abReport ? (
+              <div className="studio-grid compact-dashboard-grid">
+                <DashboardCard title="Result" value={abReport.pass_fail}>
+                  <p>{abReport.run_id}</p>
+                </DashboardCard>
+                <DashboardCard title="Schema" value={Object.values(abReport.schema_reliability).join(" / ") || "n/a"}>
+                  <p>Reliability by profile</p>
+                </DashboardCard>
+                <DashboardCard title="Hidden leaks" value={String(abReport.hidden_leak_flags.length)}>
+                  <p>Hidden details are redacted from this report.</p>
+                </DashboardCard>
+                <DashboardCard title="Latency" value={`${abReport.latency_cost_summary.average_latency_ms ?? 0}ms`}>
+                  <p>Estimated cost {abReport.latency_cost_summary.estimated_cost ?? 0}</p>
+                </DashboardCard>
+              </div>
+            ) : (
+              <p className="muted">Run a local A/B test to compare style, schema reliability, hidden leak flags, and latency.</p>
+            )}
+            {abReport && (
+              <ItemList
+                emptyText="No case results."
+                items={abReport.cases.map((caseResult) => (
+                  <span key={caseResult.case_id}>
+                    {caseResult.case_id}: {caseResult.variant_a.profile_id} {caseResult.variant_a.ok ? "ok" : "fail"} /{" "}
+                    {caseResult.variant_b.profile_id} {caseResult.variant_b.ok ? "ok" : "fail"}
+                  </span>
+                ))}
+              />
+            )}
+          </section>
+          <section className="studio-section">
+            <div className="authoring-pane-header">
+              <div>
+                <h4>Narrator Style Lab</h4>
+                <p className="muted">Test narrator style parameters with fake output and deterministic safety checks.</p>
+              </div>
+              <button type="button" onClick={() => void handleRunNarratorStyle()}>
+                Run Style
+              </button>
+            </div>
+            <ErrorPanel message={styleError} compact />
+            <div className="template-grid">
+              <label>
+                Profile
+                <select value={effectiveProfileAId} onChange={(event) => setProfileAId(event.target.value)}>
+                  {profiles.map((profile) => (
+                    <option key={profile.id} value={profile.id}>
+                      {profile.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Genre tone
+                <input value={styleGenreTone} onChange={(event) => setStyleGenreTone(event.target.value)} />
+              </label>
+              <label>
+                Sensory focus
+                <input value={styleSensoryFocus} onChange={(event) => setStyleSensoryFocus(event.target.value)} />
+              </label>
+              <label>
+                Response length
+                <select value={styleResponseLength} onChange={(event) => setStyleResponseLength(event.target.value)}>
+                  <option value="short">Short</option>
+                  <option value="medium">Medium</option>
+                  <option value="long">Long</option>
+                </select>
+              </label>
+            </div>
+            {styleReport ? (
+              <>
+                <div className="studio-grid compact-dashboard-grid">
+                  <DashboardCard title="Result" value={styleReport.pass_fail}>
+                    <p>{styleReport.run_id}</p>
+                  </DashboardCard>
+                  <DashboardCard title="Style score" value={String(styleReport.style_score)}>
+                    <p>{styleReport.output_summary_safe || "No output summary"}</p>
+                  </DashboardCard>
+                  <DashboardCard title="Latency" value={`${styleReport.latency_ms}ms`}>
+                    <p>Provider {styleReport.provider_id}</p>
+                  </DashboardCard>
+                  <DashboardCard title="Blockers" value={String(styleReport.blockers.length)}>
+                    <p>Hidden text remains redacted.</p>
+                  </DashboardCard>
+                </div>
+                <ItemList
+                  emptyText="No findings."
+                  items={styleReport.findings.map((finding) => (
+                    <span key={finding.check}>
+                      {finding.check}: {finding.passed ? "pass" : finding.severity}
+                    </span>
+                  ))}
+                />
+              </>
+            ) : (
+              <p className="muted">Run a local narrator style experiment to check style match, hidden leaks, invented items, consistency, and action suggestions.</p>
+            )}
+          </section>
+          <section className="studio-section">
+            <div className="authoring-pane-header">
+              <div>
+                <h4>NPC Voice Style Lab</h4>
+                <p className="muted">Compare NPC voice settings with fake dialogue output. Examples are style-only and do not become facts.</p>
+              </div>
+              <button type="button" onClick={() => void handleRunNPCVoiceStyle()}>
+                Run Voice
+              </button>
+            </div>
+            <ErrorPanel message={voiceError} compact />
+            <div className="template-grid">
+              <label>
+                NPC id
+                <input value={voiceNPCId} onChange={(event) => setVoiceNPCId(event.target.value)} />
+              </label>
+              <label>
+                RP profile
+                <select value={effectiveProfileAId} onChange={(event) => setProfileAId(event.target.value)}>
+                  {profiles.map((profile) => (
+                    <option key={profile.id} value={profile.id}>
+                      {profile.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Tone
+                <input value={voiceTone} onChange={(event) => setVoiceTone(event.target.value)} />
+              </label>
+              <label>
+                Catchphrase
+                <input value={voiceCatchphrase} onChange={(event) => setVoiceCatchphrase(event.target.value)} />
+              </label>
+            </div>
+            {voiceReport ? (
+              <>
+                <div className="studio-grid compact-dashboard-grid">
+                  <DashboardCard title="Result" value={voiceReport.pass_fail}>
+                    <p>{voiceReport.run_id}</p>
+                  </DashboardCard>
+                  <DashboardCard title="Voice score" value={String(voiceReport.voice_consistency_score)}>
+                    <p>{voiceReport.output_summaries_safe[0] || "No output summary"}</p>
+                  </DashboardCard>
+                  <DashboardCard title="Latency" value={`${voiceReport.latency_ms}ms`}>
+                    <p>Provider {voiceReport.provider_id}</p>
+                  </DashboardCard>
+                  <DashboardCard title="Blockers" value={String(voiceReport.blockers.length)}>
+                    <p>Unknown and hidden facts remain redacted.</p>
+                  </DashboardCard>
+                </div>
+                <ItemList
+                  emptyText="No findings."
+                  items={voiceReport.findings.map((finding) => (
+                    <span key={`${finding.case_id}-${finding.check}`}>
+                      {finding.case_id} / {finding.check}: {finding.passed ? "pass" : finding.severity}
+                    </span>
+                  ))}
+                />
+              </>
+            ) : (
+              <p className="muted">Run a local NPC voice experiment to check consistency, catchphrases, tone, unknown facts, hidden leaks, relationship values, and quest claims.</p>
+            )}
+          </section>
+          <section className="studio-section">
+            <div className="authoring-pane-header">
+              <div>
+                <h4>Context Builder Inspector</h4>
+                <p className="muted">Inspect prompt context sections, token estimates, visibility partitions, and exclusion reasons.</p>
+              </div>
+              <button type="button" onClick={() => void handleInspectContext()}>
+                Inspect Context
+              </button>
+            </div>
+            <ErrorPanel message={contextError} compact />
+            <div className="template-grid">
+              <label>
+                Context type
+                <select value={contextType} onChange={(event) => setContextType(event.target.value as ContextInspectType)}>
+                  <option value="narrator">Narrator</option>
+                  <option value="dialogue">Dialogue</option>
+                  <option value="group_rp">Group RP</option>
+                  <option value="intent_parser">Intent parser</option>
+                  <option value="memory_summary">Memory summary</option>
+                  <option value="character_import">Character import</option>
+                </select>
+              </label>
+              <label>
+                NPC id
+                <input value={contextNPCId} onChange={(event) => setContextNPCId(event.target.value)} />
+              </label>
+              <label>
+                Debug raw redacted
+                <input
+                  type="checkbox"
+                  checked={contextIncludeRaw}
+                  onChange={(event) => setContextIncludeRaw(event.target.checked)}
+                />
+              </label>
+            </div>
+            {contextSnapshot ? (
+              <>
+                <div className="studio-grid compact-dashboard-grid">
+                  <DashboardCard title="Context" value={contextSnapshot.context_type}>
+                    <p>{contextSnapshot.snapshot_id}</p>
+                  </DashboardCard>
+                  <DashboardCard title="Tokens" value={String(contextSnapshot.total_token_estimate)}>
+                    <p>{contextSnapshot.sections.length} sections</p>
+                  </DashboardCard>
+                  <DashboardCard title="Raw prompt" value={contextSnapshot.raw_prompt_included ? "redacted" : "hidden"}>
+                    <p>Hidden/debug sections stay redacted by default.</p>
+                  </DashboardCard>
+                </div>
+                <ItemList
+                  emptyText="No context sections."
+                  items={contextSnapshot.sections.map((section, index) => (
+                    <span key={`${section.section_type}-${index}`}>
+                      {section.section_type} [{section.visibility_level}] {section.token_estimate} tokens
+                      {section.excluded_reasons.length ? ` (${section.excluded_reasons.join(", ")})` : ""}:{" "}
+                      {section.safe_summary}
+                    </span>
+                  ))}
+                />
+                {contextSnapshot.raw_prompt_redacted && (
+                  <details className="timeline-event">
+                    <summary>Redacted debug raw prompt</summary>
+                    <pre>{contextSnapshot.raw_prompt_redacted}</pre>
+                  </details>
+                )}
+              </>
+            ) : (
+              <p className="muted">Run the inspector to see context composition without exposing hidden content to normal UI.</p>
+            )}
+          </section>
+          <section className="studio-section">
+            <div className="authoring-pane-header">
+              <div>
+                <h4>Token Budget Manager</h4>
+                <p className="muted">Estimate and trim context sections while preserving safety constraints and hidden redaction.</p>
+              </div>
+              <div className="button-row">
+                <button type="button" onClick={() => void handleLoadBudgetProfiles()}>
+                  Load Profiles
+                </button>
+                <button type="button" onClick={() => void handleEstimateBudget()}>
+                  Estimate Budget
+                </button>
+              </div>
+            </div>
+            <ErrorPanel message={budgetError} compact />
+            <div className="template-grid">
+              <label>
+                Budget profile
+                <select value={selectedBudgetProfileId} onChange={(event) => setSelectedBudgetProfileId(event.target.value)}>
+                  {(budgetProfiles.length ? budgetProfiles : [{ id: "custom_ui_budget", use_case: budgetUseCase } as TokenBudgetProfile]).map((profile) => (
+                    <option key={profile.id} value={profile.id}>{profile.id}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Use case
+                <select value={budgetUseCase} onChange={(event) => setBudgetUseCase(event.target.value as TokenBudgetUseCase)}>
+                  <option value="narrator">Narrator</option>
+                  <option value="dialogue">Dialogue</option>
+                  <option value="group_rp">Group RP</option>
+                  <option value="intent_parser">Intent parser</option>
+                  <option value="memory_summary">Memory summary</option>
+                  <option value="character_import">Character import</option>
+                </select>
+              </label>
+              <label>
+                Max total tokens
+                <input type="number" min={64} value={budgetMaxTokens} onChange={(event) => setBudgetMaxTokens(Number(event.target.value))} />
+              </label>
+            </div>
+            {budgetReport ? (
+              <>
+                <div className="studio-grid compact-dashboard-grid">
+                  <DashboardCard title="Input" value={String(budgetReport.input_token_estimate)}>
+                    <p>{budgetReport.profile.id}</p>
+                  </DashboardCard>
+                  <DashboardCard title="Final" value={String(budgetReport.final_context_tokens)}>
+                    <p>Available {budgetReport.available_context_tokens}</p>
+                  </DashboardCard>
+                  <DashboardCard title="Trimmed" value={String(budgetReport.trimmed_sections.length)}>
+                    <p>{budgetReport.trimmed_sections.join(", ") || "None"}</p>
+                  </DashboardCard>
+                  <DashboardCard title="Dropped" value={String(budgetReport.dropped_sections.length)}>
+                    <p>{budgetReport.blockers.join(", ") || "No blockers"}</p>
+                  </DashboardCard>
+                </div>
+                <ItemList
+                  emptyText="No budget sections."
+                  items={budgetReport.sections.slice(0, 12).map((section, index) => (
+                    <span key={`${section.section_type}-${index}`}>
+                      {section.section_type}: {section.original_tokens} {"->"} {section.final_tokens}
+                      {section.protected ? " protected" : section.dropped ? " dropped" : section.trimmed_tokens ? " trimmed" : ""}
+                    </span>
+                  ))}
+                />
+              </>
+            ) : (
+              <p className="muted">Use the latest Context Inspector snapshot or the backend sample context to estimate budget trimming.</p>
+            )}
+          </section>
+          <section className="studio-section">
+            <div className="authoring-pane-header">
+              <div>
+                <h4>Model Compatibility Matrix</h4>
+                <p className="muted">Summarize declared capabilities, local benchmark reports, schema reliability, and safe latency metadata.</p>
+              </div>
+              <div className="button-row">
+                <button type="button" onClick={() => void handleLoadCompatibilityMatrix(false)}>
+                  Load Matrix
+                </button>
+                <button type="button" onClick={() => void handleLoadCompatibilityMatrix(true)}>
+                  Recompute
+                </button>
+              </div>
+            </div>
+            <ErrorPanel message={compatibilityError} compact />
+            {compatibilityMatrix ? (
+              <>
+                <div className="studio-grid compact-dashboard-grid">
+                  <DashboardCard title="Models" value={String(compatibilityMatrix.source_summary.declared_model_count ?? 0)}>
+                    <p>{compatibilityMatrix.matrix_id}</p>
+                  </DashboardCard>
+                  <DashboardCard title="Use cases" value={String(compatibilityMatrix.use_cases.length)}>
+                    <p>{compatibilityMatrix.generated_at}</p>
+                  </DashboardCard>
+                  <DashboardCard title="Warnings" value={String(compatibilityMatrix.warnings.length)}>
+                    <p>{compatibilityMatrix.warnings.join(", ") || "None"}</p>
+                  </DashboardCard>
+                  <DashboardCard title="Blockers" value={String(compatibilityMatrix.blockers.length)}>
+                    <p>No API keys or hidden prompts are shown.</p>
+                  </DashboardCard>
+                </div>
+                <div className="debug-event-list">
+                  {compatibilityMatrix.rows.slice(0, 24).map((row) => (
+                    <div
+                      className={`timeline-event ${row.unsupported ? "danger" : row.caution ? "warning" : "safe"}`}
+                      key={`${row.provider_id}-${row.model_id}-${row.use_case}`}
+                    >
+                      <strong>{row.provider_id}/{row.model_id}</strong>
+                      <span className="chip">{row.use_case}</span>
+                      <span className="badge">
+                        {row.unsupported ? "unsupported" : row.caution ? "caution" : row.recommended ? "recommended" : "supported"}
+                      </span>
+                      <p className="muted">{row.reason}</p>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <p className="muted">Load the matrix to compare provider/model fit without running real providers or exposing hidden cases.</p>
+            )}
+          </section>
+          <section className="studio-section">
+            <div className="authoring-pane-header">
+              <div>
+                <h4>Provider Routing Rules</h4>
+                <p className="muted">Select local provider/model preferences per use case. Rules do not call providers or change LLM permissions.</p>
+              </div>
+              <div className="button-row">
+                <button type="button" onClick={() => void handleLoadRoutingSummary()}>
+                  Load Rules
+                </button>
+                <button type="button" onClick={() => void handlePreviewRoutingRule()}>
+                  Preview Rule
+                </button>
+                <button type="button" onClick={() => void handleSaveRoutingRule()}>
+                  Save Rule
+                </button>
+              </div>
+            </div>
+            <ErrorPanel message={routingError} compact />
+            <div className="template-grid">
+              <label>
+                Use case
+                <select value={routingUseCase} onChange={(event) => setRoutingUseCase(event.target.value as ProviderRoutingUseCase)}>
+                  <option value="intent_parser">Intent parser</option>
+                  <option value="narrator">Narrator</option>
+                  <option value="RP_dialogue">RP dialogue</option>
+                  <option value="memory_summary">Memory summary</option>
+                  <option value="character_import">Character import</option>
+                  <option value="lorebook_classification">Lorebook classification</option>
+                  <option value="quest_draft">Quest draft</option>
+                  <option value="structured_json">Structured JSON</option>
+                </select>
+              </label>
+              <label>
+                Primary provider
+                <input value={routingPrimaryProvider} onChange={(event) => setRoutingPrimaryProvider(event.target.value)} />
+              </label>
+              <label>
+                Primary model
+                <input value={routingPrimaryModel} onChange={(event) => setRoutingPrimaryModel(event.target.value)} />
+              </label>
+              <label>
+                Fallback provider
+                <input value={routingFallbackProvider} onChange={(event) => setRoutingFallbackProvider(event.target.value)} />
+              </label>
+              <label>
+                Fallback model
+                <input value={routingFallbackModel} onChange={(event) => setRoutingFallbackModel(event.target.value)} />
+              </label>
+              <label>
+                Require JSON
+                <input type="checkbox" checked={routingRequireJson} onChange={(event) => setRoutingRequireJson(event.target.checked)} />
+              </label>
+              <label>
+                Require local only
+                <input type="checkbox" checked={routingRequireLocalOnly} onChange={(event) => setRoutingRequireLocalOnly(event.target.checked)} />
+              </label>
+            </div>
+            {routingPreview && (
+              <div className="studio-grid compact-dashboard-grid">
+                <DashboardCard title="Validation" value={routingPreview.validation.ok ? "ok" : "blocked"}>
+                  <p>{[...routingPreview.validation.errors, ...routingPreview.validation.warnings].join(", ") || "No issues"}</p>
+                </DashboardCard>
+                <DashboardCard title="Selected" value={routingPreview.decision?.provider_id ?? "none"}>
+                  <p>{routingPreview.decision ? `${routingPreview.decision.model_id} (${routingPreview.decision.reason})` : "No model selected"}</p>
+                </DashboardCard>
+                <DashboardCard title="Fallback" value={routingPreview.decision?.used_fallback ? "used" : "not used"}>
+                  <p>Routing only returns metadata; provider factory remains the runtime entry.</p>
+                </DashboardCard>
+              </div>
+            )}
+            {routingSummary ? (
+              <ItemList
+                emptyText="No routing rules saved."
+                items={routingSummary.rules.map((rule) => (
+                  <span key={`${rule.use_case}-${rule.primary_provider_id}-${rule.primary_model_id}`}>
+                    {rule.use_case}: {rule.primary_provider_id}/{rule.primary_model_id}
+                    {rule.fallback_provider_id ? ` -> ${rule.fallback_provider_id}/${rule.fallback_model_id}` : ""}
+                  </span>
+                ))}
+              />
+            ) : (
+              <p className="muted">Load or save local routing rules to see the current safe summary.</p>
+            )}
           </section>
           <div className="studio-columns">
             <section>

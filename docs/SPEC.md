@@ -41,7 +41,9 @@ All handled player actions, system ticks, NPC planning ticks, and system consequ
 
 Authoring APIs edit content-pack YAML, not active `GameState`. Procedural
 quest generation and v1.4 content production generate drafts, candidates,
-packages, previews, and reports only.
+packages, previews, and reports only. v1.5 Prompt Lab generates diagnostics,
+benchmark reports, prompt diffs, usage summaries, context snapshots,
+compatibility matrices, and prompt experiment packages only.
 
 ## Current v1.0 Gameplay Loop
 
@@ -380,6 +382,58 @@ logic. Reserved `llm_assisted` fields are metadata only in the current
 implementation and must remain draft/candidate-only if a future assisted path
 is added.
 
+## v1.5 Local Model & Prompt Lab Scope
+
+v1.5 adds local Model & Prompt Lab tooling for comparing and debugging
+providers, models, Prompt Profiles, structured output, context building, token
+budgets, provider routing metadata, usage metrics, prompt regression, and
+prompt experiment packages.
+
+Included:
+
+- Model & Prompt Lab Boundary Contract.
+- Provider Capability Registry.
+- Provider Benchmark Harness.
+- Prompt Profile A/B Test.
+- Narrator Style Lab.
+- NPC Voice Style Lab.
+- Structured Output Reliability Test.
+- Cost / Latency Tracker and Model Usage Dashboard.
+- Context Builder Inspector.
+- Prompt Diff Tool.
+- Model Compatibility Matrix.
+- Provider Routing Rule Editor.
+- Prompt Regression Suite.
+- Local Model Diagnostics.
+- Token Budget Manager Pro.
+- Prompt Experiment Package.
+- Prompt Lab Frontend and CLI.
+
+Provider / Prompt Lab boundary:
+
+- All real provider construction remains behind `LLMProvider` /
+  `create_llm_provider`.
+- `ProviderRouter` may select provider/model ids and fallbacks, but cannot
+  store secrets or expand model authority.
+- Prompt Profiles may tune style, prompt variants, temperature, output hints,
+  and RP expression fields, but cannot enable hidden facts or state writes.
+- Benchmarks and prompt regressions default to fake/mock/local providers.
+- Real provider benchmarks require explicit `allow_real_provider=true`.
+- Local HTTP diagnostics require explicit `allow_real_local_check=true` when
+  using a real endpoint.
+- Structured output reliability records schema failures and metrics; it does
+  not create authoritative state.
+- Context snapshots classify normal, narrator-safe, NPC-known, debug-only, and
+  hidden-redacted sections.
+- Cost/latency usage records store metadata and token estimates only, not raw
+  prompts.
+- Prompt experiment packages reject API keys, raw env, hidden fact text, raw
+  `GameState`, raw `state_delta`, sensitive prompt snapshots, executables, and
+  path traversal.
+
+v1.5 does not change the gameplay loop. Prompt Lab reports are advisory local
+studio data and are never applied automatically to active saves or worlds.
+
 ## RP And World Engine Boundary
 
 The RP layer is above the world engine. It reads safe context from structured
@@ -691,6 +745,31 @@ event logging, provider abstraction, or content-only mod restrictions.
   production reports, player APIs, narrator prompts, or player UI.
 - Large-scale automatic campaign writing, literary-quality guarantees,
   automatic content repair, or full production task queue orchestration.
+
+## Not In v1.5
+
+- LLM world judge or benchmark-driven world adjudication.
+- LLM direct `GameState` mutation.
+- Prompt Lab output applied to active saves, active sessions, or active content
+  packs.
+- Prompt Profiles that grant hidden facts, NPC secrets, raw `GameState`, raw
+  `state_deltas`, or state-write authority.
+- Provider calls that bypass `LLMProvider`, `create_llm_provider`, or approved
+  provider routing.
+- Default benchmark/regression runs against real external APIs.
+- Logging or exporting full sensitive prompts.
+- API keys in frontend state, usage logs, Prompt Profiles, routing rules,
+  Prompt Experiment Packages, or exported packages.
+- Context Inspector hidden/debug content in normal UI, player UI, or narrator
+  prompts.
+- Compatibility Matrix automatically switching models or provider settings.
+- LLM judge deciding prompt regression pass/fail.
+- Local diagnostics sending world hidden facts or allowing local model output
+  to modify state.
+- Token Budget Manager removing safety/boundary instructions or adding hidden
+  facts.
+- Online model marketplace, cloud benchmark sharing, hosted telemetry, or
+  automatic model downloads.
 
 ## v1.0 Known Limitations
 

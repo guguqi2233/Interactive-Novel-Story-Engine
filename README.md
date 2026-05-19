@@ -9,12 +9,13 @@ This project is for local personal use. It is not designed as a hosted service.
 
 ## Current Version Scope
 
-v1.4 is Content Production Pipeline on top of v1.3 Advanced NPC Simulation,
-v1.2 Visual Authoring Pro, the v1.1 Roleplay Immersion Layer, and the v1.0
+v1.5 is Local Model & Prompt Lab on top of v1.4 Content Production Pipeline,
+v1.3 Advanced NPC Simulation, v1.2 Visual Authoring Pro, the v1.1 Roleplay Immersion Layer, and the v1.0
 Stable Local Studio Edition. v1.0 freezes the local contracts built through
 the v0.x series, v1.1 adds character voice and RP-safe dialogue, v1.2 expands
-local visual authoring, v1.3 adds bounded rule-driven NPC autonomy, and v1.4
-adds local batch content production without changing world authority:
+local visual authoring, v1.3 adds bounded rule-driven NPC autonomy, v1.4
+adds local batch content production, and v1.5 adds local provider/prompt
+diagnostics without changing world authority:
 
 - Multi-world content packs.
 - Structured `GameState`, `StateDelta`, `EventLog`, and SQLite save/load.
@@ -38,6 +39,11 @@ adds local batch content production without changing world authority:
 - Deterministic playtesting agents.
 - Narrative quality evals without an external LLM judge.
 - Local performance instrumentation and debug performance summaries.
+- Local Model & Prompt Lab for provider capability metadata, fake/default
+  benchmarks, Prompt A/B, style labs, structured-output reliability, usage
+  summaries, context inspection, prompt diff, model compatibility, provider
+  routing, prompt regression, local diagnostics, token budgets, and experiment
+  packages.
 - Advanced mod versioning checks.
 - Desktop launcher prototype documentation and script.
 - Local provider support with `local_stub` and configurable `local_http`.
@@ -142,6 +148,16 @@ NPC simulation is deterministic, finite, knowledge-scoped, and applied through
 `StateDelta` plus `Event`; it is not an LLM multi-agent simulator. v1.4
 production tools generate drafts, candidates, packages, previews, and reports;
 they do not directly modify active `GameState`.
+
+## v1.5 Documentation Map
+
+- `docs/MODEL_PROMPT_LAB_BOUNDARY.md`: v1.5 Model & Prompt Lab provider,
+  prompt profile, context, benchmark, and experiment boundary.
+- `docs/V1_5_ROADMAP.md`: v1.5 Local Model & Prompt Lab roadmap.
+- `docs/V1_5_LLM_BOUNDARY_AUDIT.md`: v1.5 LLM permission boundary audit.
+- `docs/V1_5_VISIBILITY_PROMPT_CONTEXT_AUDIT.md`: v1.5 visibility, prompt,
+  and context audit.
+- `docs/V1_5_SECURITY_AUDIT.md`: v1.5 security, provider, and API key audit.
 
 ## v1.4 Documentation Map
 
@@ -1683,6 +1699,276 @@ python -m pytest backend/tests/test_rp_regression_playtests.py
 Reports are safe summaries. They should not print hidden text and should not be
 treated as canonical story events.
 
+## v1.5 Local Model & Prompt Lab
+
+v1.5 Prompt Lab is a local workbench for comparing providers, models, prompt
+profiles, context builders, structured JSON reliability, token budgets, usage
+metadata, and prompt regression. It produces reports only. It does not change
+world facts, active `GameState`, active saves, or content packs.
+
+Prompt Lab endpoints are local studio tools. In the current implementation
+they reuse the benchmark/usage gates:
+
+- benchmark-style APIs require `ENABLE_DEBUG_API=true`,
+  `ENABLE_PERF_LOGGING=true`, or `ENABLE_USAGE_TRACKING=true`
+- usage APIs require `ENABLE_DEBUG_API=true` or `ENABLE_USAGE_TRACKING=true`
+- there is no separate `ENABLE_PROMPT_LAB_API` setting yet
+
+### Provider Capability
+
+Open the Prompt Lab page in the frontend and click **Load Capabilities**, or
+call:
+
+```text
+GET /prompt-lab/provider-capabilities
+```
+
+The registry shows provider/model metadata such as JSON support, local-only
+status, recommended use cases, and whether a key is configured as a boolean.
+It does not call a provider and does not return API keys.
+
+### Provider Benchmark
+
+Run local fake/default benchmark from the frontend **Prompt Lab** page, or use:
+
+```powershell
+cd backend
+python -m app.tools.prompt_lab benchmark-provider --provider fake
+```
+
+Real provider benchmarks are not default. They require explicit
+`--allow-real-provider` / `allow_real_provider=true` and should be used only
+with safe, redacted eval cases.
+
+API:
+
+```text
+POST /prompt-lab/providers/benchmark
+GET  /prompt-lab/providers/benchmark/{run_id}
+```
+
+### Prompt A/B Test
+
+Use the Prompt Lab A/B panel to select two profiles and a use case
+(`narrator`, `RP_dialogue`, `intent_parser`, or `memory_summary`), then run the
+local fake-provider comparison.
+
+API:
+
+```text
+POST /prompt-lab/prompt-profiles/ab-test
+GET  /prompt-lab/prompt-profiles/ab-test/{run_id}
+```
+
+Prompt Profiles can change style and variants only. They cannot enable hidden
+facts or state modification.
+
+### Narrator Style Lab
+
+Use **Narrator Style Lab** to compare prompt profile, genre tone, sensory focus,
+response length, prose density, perspective, and scene mood effects. Checks
+include hidden leak, invented key item, contradiction with `ActionResult`,
+style match, and suggested action validity.
+
+```text
+POST /prompt-lab/narrator-style/run
+GET  /prompt-lab/narrator-style/{run_id}
+```
+
+Style experiments do not write output into active play.
+
+### NPC Voice Style Lab
+
+Use **NPC Voice Style Lab** to compare an NPC id, RP prompt profile, voice
+profile variant, catchphrases, and example dialogue. The report checks voice
+consistency, unknown fact mentions, hidden leaks, relationship invention, and
+quest completion invention.
+
+```text
+POST /prompt-lab/npc-voice-style/run
+GET  /prompt-lab/npc-voice-style/{run_id}
+```
+
+Example dialogue remains style-only and does not add NPC knowledge.
+
+### Structured Output Reliability Test
+
+Run structured JSON checks with fake provider by default:
+
+```powershell
+cd backend
+python -m app.tools.prompt_lab structured-output --provider fake --schema PlayerIntent
+```
+
+API:
+
+```text
+POST /prompt-lab/structured-output/run
+```
+
+Reports include valid JSON rate, schema valid rate, retry success rate,
+invalid field rate, refusal/empty rate, and hidden-policy violation rate. They
+do not modify `GameState`.
+
+### Cost / Latency Tracker
+
+Enable local usage tracking when you want safe metadata:
+
+```powershell
+$env:ENABLE_USAGE_TRACKING="true"
+```
+
+Usage records contain provider/model/use case, duration, estimated tokens,
+estimated cost, success/failure, and error type. They do not store raw prompts,
+API keys, hidden fact text, raw `GameState`, or raw `state_deltas`.
+
+APIs:
+
+```text
+GET /prompt-lab/usage/summary
+GET /prompt-lab/usage/recent
+GET /prompt-lab/usage/by-use-case
+```
+
+### Context Builder Inspector
+
+Use the **Context Builder Inspector** panel to inspect context composition,
+token estimates, visibility partitions, and exclusion reasons.
+
+```text
+POST /prompt-lab/context/inspect
+```
+
+Context sections are classified as normal, narrator-safe, NPC-known,
+debug-only, or hidden-redacted. Raw prompt output is off by default and remains
+redacted when explicitly enabled for local debug.
+
+### Prompt Diff Tool
+
+Use **Prompt Diff** to compare prompt profiles, RP prompt profiles, context
+snapshots, or prompt templates.
+
+```text
+POST /prompt-lab/prompt-diff/review
+```
+
+If `hidden_fact_policy` or `state_modification_policy` is relaxed, the report
+marks a blocker. Hidden text and API keys are redacted.
+
+### Model Compatibility Matrix
+
+Load the matrix from the Prompt Lab page or call:
+
+```text
+GET  /prompt-lab/model-compatibility
+POST /prompt-lab/model-compatibility/recompute
+```
+
+The matrix combines declared capabilities, benchmark reports, structured
+output reliability, usage summaries, and hidden leak findings. It is advisory
+and does not automatically switch providers or models.
+
+CLI:
+
+```powershell
+cd backend
+python -m app.tools.prompt_lab compatibility-matrix
+```
+
+### Provider Routing
+
+Use the Routing Rule Editor in Prompt Lab to choose provider/model/fallback per
+use case. Rules can require JSON support or local-only models.
+
+```text
+GET  /prompt-lab/provider-routing
+POST /prompt-lab/provider-routing/validate
+POST /prompt-lab/provider-routing/preview
+POST /prompt-lab/provider-routing/save
+```
+
+Routing rules contain provider/model ids and constraints only. They do not
+store API keys and do not bypass `LLMProvider`.
+
+### Prompt Regression
+
+Run local prompt regression with fake providers:
+
+```powershell
+cd backend
+python -m app.tools.prompt_lab prompt-regression
+```
+
+API:
+
+```text
+POST /prompt-lab/regression/run
+```
+
+Regression covers intent parser schema, narrator consistency, RP dialogue
+boundary, NPC voice consistency, memory summary schema, hidden leak cases, and
+structured JSON reliability. Pass/fail is deterministic; an LLM does not judge
+the result.
+
+### Local Model Diagnostics
+
+Run local stub diagnostics:
+
+```powershell
+cd backend
+python -m app.tools.prompt_lab local-diagnostics --provider local_stub
+```
+
+For a real local HTTP endpoint, pass `--allow-real-local-check` explicitly.
+Diagnostics use safe smoke prompts and do not send world facts.
+
+API:
+
+```text
+POST /prompt-lab/local-model/diagnose
+```
+
+### Token Budget
+
+Load or estimate token budgets in the Prompt Lab page, or run:
+
+```powershell
+cd backend
+python -m app.tools.prompt_lab token-budget-report --profile narrator_balanced
+```
+
+APIs:
+
+```text
+GET  /prompt-lab/token-budget/profiles
+POST /prompt-lab/token-budget/estimate
+```
+
+Token budgets protect safety constraints, trim low-priority context, and drop
+hidden-redacted sections rather than adding hidden facts.
+
+### Model Usage Dashboard
+
+The Prompt Lab page shows calls by provider/use case, latency p50/p95,
+estimated token usage, estimated cost, error rate, and recent failures. It does
+not display prompt text or API keys.
+
+### Prompt Experiment Package
+
+Prompt experiment packages bundle Prompt Profiles, RP prompt profiles, test
+cases, benchmark configs, regression configs, provider requirements, and a
+redaction policy for local reproduction.
+
+```text
+POST /prompt-lab/experiment-packages/export
+POST /prompt-lab/experiment-packages/import-dry-run
+POST /prompt-lab/experiment-packages/import-apply
+```
+
+Packages reject API keys, raw env, hidden fact text, raw `GameState`, raw
+`state_delta`, sensitive prompt snapshots, executables, and path traversal.
+Import validates first and does not auto-enable profiles.
+
 ## Import / Export
 
 v0.7 added local archive import/export for worlds, mods, and saves. v0.8 adds
@@ -1769,6 +2055,16 @@ playtest scenario, benchmark, health score, and coverage schemas.
   content, or automatically overwrite worlds.
 - Production generators do not guarantee literary quality and do not call real
   LLMs by default.
+- v1.5 Prompt Lab is a local diagnostics/evaluation surface. It does not
+  change world facts, active saves, active sessions, or content packs.
+- Prompt Lab benchmarks, A/B tests, style labs, structured-output tests, and
+  regressions use fake/mock/local defaults. Real provider calls require
+  explicit opt-in.
+- Prompt Lab reports and packages must not contain API keys, raw prompts,
+  hidden fact text, raw `GameState`, or raw `state_deltas`.
+- Model Compatibility Matrix and Provider Routing are advisory/configuration
+  surfaces; they do not automatically switch production providers or expand
+  LLM authority.
 - Economy is lightweight and does not model dynamic supply/demand.
 - Faction conflict does not simulate war or diplomacy AI.
 - Desktop packaging is currently a local launcher prototype and documentation,
