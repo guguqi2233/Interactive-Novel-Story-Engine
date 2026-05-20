@@ -9,6 +9,10 @@ import {
   AuthoringWorldSummary,
   AuthoringWorkflowPreset,
   AuthoringProjectSummary,
+  ActionModDraft,
+  ActionModPreviewResponse,
+  DeclarativeActionDefinition,
+  DeclarativeOutcome,
   ReferenceIndex,
   ReferenceIndexItem,
   ReferenceKind,
@@ -20,6 +24,8 @@ import {
   DebugNPCSimulationDetail,
   DebugNPCSimulationDryRunResponse,
   DebugNPCSimulationSummary,
+  ModuleActionDryRunResponse,
+  ModuleDebugSummary,
   NPCBehaviorTimelineResponse,
   DebugPerformanceRecentResponse,
   DebugPerformanceSummaryResponse,
@@ -36,6 +42,7 @@ import {
   applyRPScenarioTemplate,
   deleteSave,
   dryRunNPCSimulationTick,
+  dryRunGameplayModuleAction,
   dryRunScriptPackageBuild,
   dryRunSaveTimelineReplay,
   buildScriptPackage,
@@ -75,6 +82,9 @@ import {
   fetchAuthoringWorlds,
   fetchAuthoringWorkflowPresets,
   fetchAuthoringProjectSummary,
+  previewActionModDraft,
+  validateActionModDraft,
+  exportActionModDraft,
   fetchImportExportProfiles,
   fetchProductionPipelineSummary,
   fetchModelCompatibilityMatrix,
@@ -106,6 +116,8 @@ import {
   fetchNPCSimulationDebug,
   fetchNPCSimulationDebugDetail,
   fetchNPCSimulationDebugTicks,
+  fetchGameplayModuleDebug,
+  fetchGameplayModuleDebugDetail,
   fetchNPCBehaviorTimeline,
   fetchNPCSimulationPresets,
   fetchPlaytest,
@@ -393,6 +405,7 @@ type AuthoringToolId =
   | "npc_pack_generator"
   | "quest_pack_generator"
   | "location_clusters"
+  | "action_mods"
   | "merge_assistant"
   | "diff_review"
   | "library"
@@ -417,6 +430,7 @@ const AUTHORING_TOOL_NAV: { id: AuthoringToolId; label: string; description: str
   { id: "npc_pack_generator", label: "NPC Pack", description: "batch NPC draft generation" },
   { id: "quest_pack_generator", label: "Quest Pack", description: "batch questline drafts" },
   { id: "location_clusters", label: "Location Clusters", description: "map cluster templates" },
+  { id: "action_mods", label: "Action Mods", description: "declarative action editor" },
   { id: "merge_assistant", label: "Merge Assistant", description: "branch conflict review" },
   { id: "diff_review", label: "Diff Review", description: "content change review" },
   { id: "library", label: "Library", description: "local content packages" },
@@ -531,6 +545,11 @@ export function App() {
   const [npcBehaviorTurnFrom, setNPCBehaviorTurnFrom] = useState<string>("");
   const [npcBehaviorTurnTo, setNPCBehaviorTurnTo] = useState<string>("");
   const [npcBehaviorFilter, setNPCBehaviorFilter] = useState<string>("all");
+  const [moduleDebugSummaries, setModuleDebugSummaries] = useState<ModuleDebugSummary[]>([]);
+  const [selectedModuleDebugId, setSelectedModuleDebugId] = useState<string>("");
+  const [moduleDebugDetail, setModuleDebugDetail] = useState<ModuleDebugSummary | null>(null);
+  const [moduleDebugDryRun, setModuleDebugDryRun] = useState<ModuleActionDryRunResponse | null>(null);
+  const [moduleDebugError, setModuleDebugError] = useState<string>("");
   const [saves, setSaves] = useState<SaveSummary[]>([]);
   const [selectedSaveId, setSelectedSaveId] = useState<string>("");
   const [migrationStatusBySaveId, setMigrationStatusBySaveId] = useState<Record<string, SaveMigrationStatus>>({});
@@ -622,6 +641,7 @@ export function App() {
       void refreshPlayerGraphs(response.session_id);
       void refreshDebugGraphs(response.session_id);
       void refreshNPCSimulationDebugger(response.session_id);
+      void refreshGameplayModuleDebugger();
     } catch (err) {
       setError(toErrorMessage(err));
     } finally {
@@ -1368,6 +1388,55 @@ export function App() {
     }
   }
 
+  async function refreshGameplayModuleDebugger(nextModuleId = selectedModuleDebugId) {
+    setModuleDebugError("");
+    try {
+      const response = await fetchGameplayModuleDebug();
+      setModuleDebugSummaries(response.modules);
+      const selectedId = nextModuleId || response.modules[0]?.module_id || "";
+      setSelectedModuleDebugId(selectedId);
+      if (selectedId) {
+        setModuleDebugDetail(await fetchGameplayModuleDebugDetail(selectedId));
+      } else {
+        setModuleDebugDetail(null);
+      }
+    } catch (err) {
+      setModuleDebugSummaries([]);
+      setModuleDebugDetail(null);
+      setModuleDebugError(toErrorMessage(err));
+    }
+  }
+
+  async function handleSelectGameplayModule(moduleId: string) {
+    setSelectedModuleDebugId(moduleId);
+    setModuleDebugDryRun(null);
+    setModuleDebugError("");
+    if (!moduleId) {
+      setModuleDebugDetail(null);
+      return;
+    }
+    try {
+      setModuleDebugDetail(await fetchGameplayModuleDebugDetail(moduleId));
+    } catch (err) {
+      setModuleDebugDetail(null);
+      setModuleDebugError(toErrorMessage(err));
+    }
+  }
+
+  async function handleGameplayModuleDryRun(actionId: string) {
+    if (!selectedModuleDebugId) {
+      setModuleDebugError("Select a module before running action dry-run.");
+      return;
+    }
+    setModuleDebugError("");
+    try {
+      setModuleDebugDryRun(await dryRunGameplayModuleAction(selectedModuleDebugId, actionId));
+    } catch (err) {
+      setModuleDebugDryRun(null);
+      setModuleDebugError(toErrorMessage(err));
+    }
+  }
+
   async function refreshNPCBehaviorTimeline(nextSessionId = sessionId, nextNPCId = selectedSimulationNPCId) {
     if (!nextSessionId || !nextNPCId) {
       setNPCBehaviorTimeline(null);
@@ -1691,6 +1760,9 @@ export function App() {
             <button type="button" onClick={() => void refreshNPCSimulationDebugger()} disabled={!sessionId || isLoading}>
               Refresh NPC Simulation
             </button>
+            <button type="button" onClick={() => void refreshGameplayModuleDebugger()} disabled={isLoading}>
+              Refresh Gameplay Modules
+            </button>
             <button
               type="button"
               onClick={() => void refreshSaveTimeline()}
@@ -1801,6 +1873,17 @@ export function App() {
               onBehaviorTurnToChange={setNPCBehaviorTurnTo}
               onBehaviorFilterChange={setNPCBehaviorFilter}
               disabled={!sessionId || isLoading}
+            />
+            <GameplayModuleDebugger
+              modules={moduleDebugSummaries}
+              selectedModuleId={selectedModuleDebugId}
+              detail={moduleDebugDetail}
+              dryRun={moduleDebugDryRun}
+              error={moduleDebugError}
+              onSelectModule={(moduleId) => void handleSelectGameplayModule(moduleId)}
+              onRefresh={() => void refreshGameplayModuleDebugger()}
+              onDryRun={(actionId) => void handleGameplayModuleDryRun(actionId)}
+              disabled={isLoading}
             />
             <section className="debug-group">
               <h2>Social Consequences</h2>
@@ -6036,6 +6119,15 @@ function AuthoringPanel({
           </AuthoringSection>
 
           <AuthoringSection
+            toolId="action_mods"
+            activeTool={activeAuthoringTool}
+            title="Action Mod Editor"
+            description="Create declarative local actions, preview effects, validate DSL paths, and export module packages."
+          >
+            <ActionModEditorPanel worldId={selectedWorldId} />
+          </AuthoringSection>
+
+          <AuthoringSection
             toolId="merge_assistant"
             activeTool={activeAuthoringTool}
             title="Merge Assistant"
@@ -6306,6 +6398,281 @@ function GroupRPSceneEditorPanel({
       <ErrorPanel message={error} />
     </section>
   );
+}
+
+function ActionModEditorPanel({ worldId }: { worldId: string }) {
+  const referenceIndex = useReferenceIndex(worldId);
+  const [draft, setDraft] = useState<ActionModDraft>(() => defaultActionModDraft());
+  const [selectedActionIndex, setSelectedActionIndex] = useState<number>(0);
+  const [preview, setPreview] = useState<ActionModPreviewResponse | null>(null);
+  const [jsonError, setJsonError] = useState<string>("");
+  const [message, setMessage] = useState<string>("");
+  const [error, setError] = useState<string>("");
+  const [isBusy, setIsBusy] = useState<boolean>(false);
+
+  const selectedAction = draft.actions[selectedActionIndex] ?? draft.actions[0];
+  const validation = preview ? actionModValidationAsAuthoring(preview.validation) : null;
+
+  function updateDraft(update: Partial<ActionModDraft>) {
+    setPreview(null);
+    setDraft((current) => ({ ...current, ...update }));
+  }
+
+  function updateSelectedAction(update: (action: DeclarativeActionDefinition) => DeclarativeActionDefinition) {
+    setPreview(null);
+    setDraft((current) => ({
+      ...current,
+      actions: current.actions.map((action, index) => index === selectedActionIndex ? update(action) : action)
+    }));
+  }
+
+  async function runRequest(kind: "preview" | "validate" | "export") {
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      if (kind === "export") {
+        const response = await exportActionModDraft(draft);
+        setPreview({ local_only: response.local_only, draft, validation: response.validation, writes_to_disk: false, executes_code: false, active_game_state_modified: false, normalized_yaml: "" });
+        setMessage(response.exported ? `Module package ready: ${response.file_name}` : "Export blocked by validation errors.");
+        return;
+      }
+      const response = kind === "preview" ? await previewActionModDraft(draft) : await validateActionModDraft(draft);
+      setPreview(response);
+      setMessage(response.validation.ok ? `${kind === "preview" ? "Preview" : "Validation"} passed.` : "Validation found blocking errors.");
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  function addAction() {
+    const nextAction = defaultDeclarativeAction(`module.action_${draft.actions.length + 1}`);
+    setDraft((current) => ({ ...current, actions: [...current.actions, nextAction] }));
+    setSelectedActionIndex(draft.actions.length);
+  }
+
+  function removeSelectedAction() {
+    if (draft.actions.length <= 1) {
+      return;
+    }
+    setDraft((current) => ({ ...current, actions: current.actions.filter((_, index) => index !== selectedActionIndex) }));
+    setSelectedActionIndex(0);
+  }
+
+  return (
+    <section className="mod-manager-panel authoring-zone">
+      <div className="authoring-pane-header">
+        <div>
+          <h2>Action Mod Editor</h2>
+          <p className="muted">Declarative YAML only. No execute_code field, no scripts, no active GameState writes.</p>
+        </div>
+        <AuthoringActionBar
+          onPreview={() => void runRequest("preview")}
+          onValidate={() => void runRequest("validate")}
+          onSave={() => void runRequest("export")}
+          previewLabel="Preview"
+          validateLabel="Validate"
+          saveLabel="Export Module"
+          disabled={isBusy}
+        />
+      </div>
+
+      <div className="template-grid">
+        <TextInput label="Module id" value={draft.module_id} onChange={(value) => updateDraft({ module_id: value })} />
+        <TextInput label="Module name" value={draft.name} onChange={(value) => updateDraft({ name: value })} />
+        <TextInput label="Version" value={draft.version} onChange={(value) => updateDraft({ version: value })} />
+      </div>
+
+      <div className="authoring-workspace compact">
+        <aside className="entity-list">
+          <button type="button" onClick={addAction} disabled={isBusy}>Add Action</button>
+          <button type="button" onClick={removeSelectedAction} disabled={isBusy || draft.actions.length <= 1}>Remove</button>
+          {draft.actions.map((action, index) => (
+            <button
+              type="button"
+              key={`${action.id}:${index}`}
+              className={index === selectedActionIndex ? "active" : ""}
+              onClick={() => setSelectedActionIndex(index)}
+            >
+              {action.label || action.id}
+            </button>
+          ))}
+        </aside>
+
+        {selectedAction && (
+          <section className="authoring-editor-pane">
+            <div className="template-grid">
+              <TextInput label="Action id" value={selectedAction.id} onChange={(value) => updateSelectedAction((action) => ({ ...action, id: value, event_type: action.event_type || `${value}.resolved` }))} />
+              <TextInput label="Label" value={selectedAction.label} onChange={(value) => updateSelectedAction((action) => ({ ...action, label: value }))} />
+              <TextInput label="Aliases" value={selectedAction.aliases.join(", ")} onChange={(value) => updateSelectedAction((action) => ({ ...action, aliases: commaList(value) }))} />
+              <label>Category<select value={selectedAction.category} onChange={(event) => updateSelectedAction((action) => ({ ...action, category: event.target.value }))}>{["general", "magic", "hacking", "crafting", "investigation", "travel", "stealth", "combat", "social", "faction", "domain"].map((category) => <option key={category} value={category}>{category}</option>)}</select></label>
+              <NumberInput label="Time cost" value={selectedAction.time_cost} onChange={(value) => updateSelectedAction((action) => ({ ...action, time_cost: Math.max(0, value) }))} />
+              <TextInput label="Event type" value={selectedAction.event_type} onChange={(value) => updateSelectedAction((action) => ({ ...action, event_type: value }))} />
+            </div>
+
+            <div className="template-grid">
+              <label>Target kind<select value={selectedAction.target_specs[0]?.kind ?? "current_location"} onChange={(event) => updateSelectedAction((action) => ({ ...action, target_specs: [{ ...(action.target_specs[0] ?? { required: true, allowed_ids: [] }), kind: event.target.value as DeclarativeActionDefinition["target_specs"][number]["kind"] }] }))}>{["self", "current_location", "location", "object", "npc"].map((kind) => <option key={kind} value={kind}>{kind}</option>)}</select></label>
+              <label><input type="checkbox" checked={selectedAction.target_specs[0]?.required ?? true} onChange={(event) => updateSelectedAction((action) => ({ ...action, target_specs: [{ ...(action.target_specs[0] ?? { kind: "current_location", allowed_ids: [] }), required: event.target.checked }] }))} /> Target required</label>
+              <ReferencePicker label="Allowed item target" kind="item" index={referenceIndex} value={selectedAction.target_specs[0]?.allowed_ids[0] ?? ""} onChange={(value) => updateSelectedAction((action) => ({ ...action, target_specs: [{ ...(action.target_specs[0] ?? { kind: "object", required: true }), allowed_ids: value ? [value] : [] }] }))} />
+              <ReferencePicker label="Required visible fact" kind="fact" index={referenceIndex} value={selectedAction.affordance_requirements.required_visible_facts[0] ?? ""} onChange={(value) => updateSelectedAction((action) => ({ ...action, affordance_requirements: { ...action.affordance_requirements, required_visible_facts: value ? [value] : [] } }))} />
+            </div>
+
+            <div className="template-grid">
+              <TextInput label="StateDelta path" value={selectedAction.outcomes.success?.state_delta_templates[0]?.path ?? ""} onChange={(value) => updateSelectedSuccessOutcome(selectedAction, updateSelectedAction, { path: value })} />
+              <label>StateDelta op<select value={selectedAction.outcomes.success?.state_delta_templates[0]?.operation ?? "set"} onChange={(event) => updateSelectedSuccessOutcome(selectedAction, updateSelectedAction, { operation: event.target.value as DeclarativeActionDefinition["state_delta_templates"][number]["operation"] })}>{["set", "inc", "add", "remove"].map((op) => <option key={op} value={op}>{op}</option>)}</select></label>
+              <TextInput label="Visible facts" value={(selectedAction.outcomes.success?.visible_facts ?? []).join(", ")} onChange={(value) => updateSelectedOutcomeList(updateSelectedAction, "visible_facts", commaList(value))} />
+              <TextInput label="Hidden facts" value={(selectedAction.outcomes.success?.hidden_facts ?? []).join(", ")} onChange={(value) => updateSelectedOutcomeList(updateSelectedAction, "hidden_facts", commaList(value))} />
+              <label><input type="checkbox" checked={selectedAction.outcomes.success?.hidden_outcome ?? false} onChange={(event) => updateSelectedOutcomeFlag(updateSelectedAction, "hidden_outcome", event.target.checked)} /> Hidden outcome</label>
+              <label><input type="checkbox" checked={selectedAction.visibility_policy.include_target_in_visible_facts} onChange={(event) => updateSelectedAction((action) => ({ ...action, visibility_policy: { ...action.visibility_policy, include_target_in_visible_facts: event.target.checked } }))} /> Include target in visible result</label>
+              <label><input type="checkbox" checked={selectedAction.visibility_policy.include_current_location_in_visible_facts} onChange={(event) => updateSelectedAction((action) => ({ ...action, visibility_policy: { ...action.visibility_policy, include_current_location_in_visible_facts: event.target.checked } }))} /> Include current location</label>
+            </div>
+
+            <label>
+              Preconditions JSON
+              <textarea className="yaml-editor short" value={JSON.stringify(selectedAction.preconditions, null, 2)} onChange={(event) => updateJsonList(event.target.value, (items) => updateSelectedAction((action) => ({ ...action, preconditions: items })), setJsonError)} />
+            </label>
+            <label>
+              Checks JSON
+              <textarea className="yaml-editor short" value={JSON.stringify(selectedAction.checks, null, 2)} onChange={(event) => updateJsonList(event.target.value, (items) => updateSelectedAction((action) => ({ ...action, checks: items })), setJsonError)} />
+            </label>
+          </section>
+        )}
+
+        <section className="authoring-preview-side">
+          <PreviewResultPanel title="Action Mod Validation" validation={validation} previewContent={preview?.normalized_yaml} />
+          {jsonError && <ErrorPanel message={jsonError} compact />}
+          <SuccessPanel message={message} />
+          <ErrorPanel message={error} />
+        </section>
+      </div>
+    </section>
+  );
+}
+
+function defaultActionModDraft(): ActionModDraft {
+  return {
+    module_id: "local_action_mod",
+    name: "Local Action Mod",
+    version: "0.1.0",
+    actions: [defaultDeclarativeAction("module.pray")]
+  };
+}
+
+function defaultDeclarativeAction(actionId: string): DeclarativeActionDefinition {
+  return {
+    id: actionId,
+    label: "Pray",
+    aliases: ["pray"],
+    category: "general",
+    target_specs: [{ kind: "current_location", required: true, allowed_ids: [] }],
+    affordance_requirements: { required_visible_facts: [], required_flags: {} },
+    time_cost: 1,
+    preconditions: [],
+    checks: [],
+    outcomes: { success: defaultDeclarativeOutcome() },
+    state_delta_templates: [],
+    event_type: `${actionId}.resolved`,
+    visibility_policy: {
+      hidden_outcome_player_visible: false,
+      include_target_in_visible_facts: true,
+      include_current_location_in_visible_facts: true
+    },
+    narrator_hints: { style: "", safe_summary: "", hidden_summary: "" }
+  };
+}
+
+function defaultDeclarativeOutcome(): DeclarativeOutcome {
+  return {
+    success_level: "success",
+    reason: "Resolved by declarative local rules.",
+    state_delta_templates: [{ operation: "set", path: "flags.local_action_resolved", value: true }],
+    visible_facts: [],
+    hidden_facts: [],
+    hidden_outcome: false
+  };
+}
+
+function updateSelectedSuccessOutcome(
+  selectedAction: DeclarativeActionDefinition,
+  updateSelectedAction: (update: (action: DeclarativeActionDefinition) => DeclarativeActionDefinition) => void,
+  templatePatch: Partial<DeclarativeActionDefinition["state_delta_templates"][number]>
+) {
+  const currentOutcome = selectedAction.outcomes.success ?? defaultDeclarativeOutcome();
+  const currentTemplate = currentOutcome.state_delta_templates[0] ?? defaultDeclarativeOutcome().state_delta_templates[0];
+  updateSelectedAction((action) => ({
+    ...action,
+    outcomes: {
+      ...action.outcomes,
+      success: {
+        ...(action.outcomes.success ?? defaultDeclarativeOutcome()),
+        state_delta_templates: [{ ...currentTemplate, ...templatePatch }]
+      }
+    }
+  }));
+}
+
+function updateSelectedOutcomeList(
+  updateSelectedAction: (update: (action: DeclarativeActionDefinition) => DeclarativeActionDefinition) => void,
+  key: "visible_facts" | "hidden_facts",
+  value: string[]
+) {
+  updateSelectedAction((action) => ({
+    ...action,
+    outcomes: {
+      ...action.outcomes,
+      success: {
+        ...(action.outcomes.success ?? defaultDeclarativeOutcome()),
+        [key]: value
+      }
+    }
+  }));
+}
+
+function updateSelectedOutcomeFlag(
+  updateSelectedAction: (update: (action: DeclarativeActionDefinition) => DeclarativeActionDefinition) => void,
+  key: "hidden_outcome",
+  value: boolean
+) {
+  updateSelectedAction((action) => ({
+    ...action,
+    outcomes: {
+      ...action.outcomes,
+      success: {
+        ...(action.outcomes.success ?? defaultDeclarativeOutcome()),
+        [key]: value
+      }
+    }
+  }));
+}
+
+function updateJsonList(
+  raw: string,
+  onValid: (items: Record<string, unknown>[]) => void,
+  setError: (message: string) => void
+) {
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed) || parsed.some((item) => item === null || typeof item !== "object" || Array.isArray(item))) {
+      setError("JSON must be an array of objects.");
+      return;
+    }
+    setError("");
+    onValid(parsed as Record<string, unknown>[]);
+  } catch {
+    setError("Invalid JSON.");
+  }
+}
+
+function actionModValidationAsAuthoring(report: ActionModPreviewResponse["validation"]): AuthoringValidation {
+  return {
+    world_id: report.module_id,
+    ok: report.ok,
+    errors: report.errors,
+    warnings: report.warnings,
+    suggestions: []
+  };
 }
 
 function DialogueSceneEditorPanel({
@@ -13987,6 +14354,124 @@ function DebugEventSummary({ events, emptyText }: { events: DebugEvent[]; emptyT
         </details>
       ))}
     </div>
+  );
+}
+
+function GameplayModuleDebugger({
+  modules,
+  selectedModuleId,
+  detail,
+  dryRun,
+  error,
+  onSelectModule,
+  onRefresh,
+  onDryRun,
+  disabled
+}: {
+  modules: ModuleDebugSummary[];
+  selectedModuleId: string;
+  detail: ModuleDebugSummary | null;
+  dryRun: ModuleActionDryRunResponse | null;
+  error: string;
+  onSelectModule: (moduleId: string) => void;
+  onRefresh: () => void;
+  onDryRun: (actionId: string) => void;
+  disabled: boolean;
+}) {
+  const selectedActionId = detail?.actions[0]?.id ?? "";
+  return (
+    <section className="debug-group gameplay-module-debugger">
+      <header className="panel-header">
+        <div>
+          <h2>Gameplay Module Debugger</h2>
+          <p className="muted">Local debug only. Dry-run previews StateDelta/Event output without applying it.</p>
+        </div>
+        <button type="button" onClick={onRefresh} disabled={disabled}>Refresh</button>
+      </header>
+      {error && <p className="error">{error}</p>}
+      {error.toLowerCase().includes("debug") && <p className="muted">debug disabled</p>}
+      {modules.length === 0 && !error ? (
+        <p className="muted">No gameplay modules discovered.</p>
+      ) : (
+        <div className="form-row">
+          <label>
+            Module
+            <select value={selectedModuleId} onChange={(event) => onSelectModule(event.target.value)} disabled={disabled}>
+              {modules.map((module) => (
+                <option key={module.module_id} value={module.module_id}>{module.name}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+      )}
+      {detail && (
+        <div className="debug-grid">
+          <dl>
+            <dt>Module</dt>
+            <dd>{detail.module_id}</dd>
+            <dt>Version</dt>
+            <dd>{detail.version}</dd>
+            <dt>Type</dt>
+            <dd>{detail.module_type}</dd>
+            <dt>Calls LLM</dt>
+            <dd>{detail.calls_llm ? "yes" : "no"}</dd>
+            <dt>Hidden details</dt>
+            <dd>{detail.hidden_details_redacted ? "redacted" : "debug"}</dd>
+          </dl>
+          <div>
+            <h3>Actions</h3>
+            <ItemList
+              emptyText="No declarative actions."
+              items={detail.actions.map((action) => (
+                <div key={action.id}>
+                  <strong>{action.label}</strong>
+                  <span className="muted"> {action.id}</span>
+                  <button type="button" onClick={() => onDryRun(action.id)} disabled={disabled}>Dry-run</button>
+                  <pre>{JSON.stringify({
+                    aliases: action.aliases,
+                    target_types: action.target_types,
+                    preconditions: action.precondition_count,
+                    checks: action.check_count,
+                    state_delta_templates: action.state_delta_templates
+                  }, null, 2)}</pre>
+                </div>
+              ))}
+            />
+          </div>
+          <div>
+            <h3>Permissions</h3>
+            <pre>{JSON.stringify(detail.permissions, null, 2)}</pre>
+          </div>
+          <div>
+            <h3>State Extensions</h3>
+            <pre>{JSON.stringify(detail.state_schema_extensions, null, 2)}</pre>
+          </div>
+        </div>
+      )}
+      {dryRun && (
+        <div>
+          <h3>Dry-run Result</h3>
+          <dl>
+            <dt>Action</dt>
+            <dd>{dryRun.action_id}</dd>
+            <dt>Outcome</dt>
+            <dd>{dryRun.selected_outcome}</dd>
+            <dt>State unchanged</dt>
+            <dd>{dryRun.state_unchanged ? "yes" : "no"}</dd>
+            <dt>Hidden facts</dt>
+            <dd>{dryRun.hidden_facts_redacted ? "redacted" : "debug"}</dd>
+          </dl>
+          <pre>{JSON.stringify({
+            preconditions: dryRun.preconditions_result,
+            checks: dryRun.checks_result,
+            state_delta_preview: dryRun.state_delta_preview,
+            event_preview: dryRun.event_preview,
+            visibility_summary: dryRun.visibility_summary
+          }, null, 2)}</pre>
+        </div>
+      )}
+      {!selectedActionId && detail && <p className="muted">No action available for dry-run.</p>}
+    </section>
   );
 }
 

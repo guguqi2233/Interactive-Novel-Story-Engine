@@ -176,6 +176,56 @@ export type DebugNPCSimulationDryRunResponse = {
   state_unchanged: boolean;
 };
 
+export type ModuleDebugActionSummary = {
+  id: string;
+  label: string;
+  category: string;
+  aliases: string[];
+  event_type: string;
+  target_types: string[];
+  precondition_count: number;
+  check_count: number;
+  effect_count: number;
+  state_delta_templates: string[];
+};
+
+export type ModuleDebugSummary = {
+  local_only: boolean;
+  module_id: string;
+  name: string;
+  version: string;
+  module_type: string;
+  permissions: Record<string, boolean>;
+  state_schema_extensions: Record<string, unknown>[];
+  event_types: Record<string, unknown>[];
+  actions: ModuleDebugActionSummary[];
+  hidden_details_redacted: boolean;
+  contains_api_key: boolean;
+  calls_llm: boolean;
+};
+
+export type ModuleDebugListResponse = {
+  local_only: boolean;
+  modules: ModuleDebugSummary[];
+};
+
+export type ModuleActionDryRunResponse = {
+  local_only: boolean;
+  dry_run: boolean;
+  state_unchanged: boolean;
+  module_id: string;
+  action_id: string;
+  preconditions_result: Record<string, unknown>[];
+  checks_result: Record<string, unknown>[];
+  selected_outcome: string;
+  state_delta_preview: StateDelta[];
+  event_preview: Record<string, unknown>;
+  visibility_summary: Record<string, unknown>;
+  hidden_facts_redacted: boolean;
+  contains_api_key: boolean;
+  calls_llm: boolean;
+};
+
 export type NPCBehaviorTimelineEntry = {
   turn: number;
   event_id: string;
@@ -3035,6 +3085,29 @@ export async function dryRunNPCSimulationTick(sessionId: string): Promise<DebugN
   );
 }
 
+export async function fetchGameplayModuleDebug(): Promise<ModuleDebugListResponse> {
+  return requestJson<ModuleDebugListResponse>("/debug/modules");
+}
+
+export async function fetchGameplayModuleDebugDetail(moduleId: string): Promise<ModuleDebugSummary> {
+  return requestJson<ModuleDebugSummary>(`/debug/modules/${encodeURIComponent(moduleId)}`);
+}
+
+export async function dryRunGameplayModuleAction(
+  moduleId: string,
+  actionId: string,
+  inputText = ""
+): Promise<ModuleActionDryRunResponse> {
+  return requestJson<ModuleActionDryRunResponse>(
+    `/debug/modules/${encodeURIComponent(moduleId)}/actions/${encodeURIComponent(actionId)}/dry-run`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ input_text: inputText })
+    }
+  );
+}
+
 function behaviorTimelineQuery(turnFrom?: number | null, turnTo?: number | null): string {
   const query = new URLSearchParams();
   if (turnFrom !== undefined && turnFrom !== null) {
@@ -4584,6 +4657,116 @@ export type GroupRPScenePreviewResponse = {
 export type GroupRPSceneSaveResponse = GroupRPScenePreviewResponse & {
   saved: boolean;
 };
+
+export type DeclarativeActionTargetSpec = {
+  kind: "self" | "current_location" | "location" | "object" | "npc";
+  required: boolean;
+  allowed_ids: string[];
+};
+
+export type DeclarativeStateDeltaTemplate = {
+  operation: "set" | "inc" | "add" | "remove";
+  path: string;
+  value?: unknown;
+  reason?: string | null;
+  metadata?: Record<string, string>;
+};
+
+export type DeclarativeOutcome = {
+  success_level: "success" | "partial_success" | "failure" | "invalid";
+  reason: string;
+  state_delta_templates: DeclarativeStateDeltaTemplate[];
+  visible_facts: string[];
+  hidden_facts: string[];
+  hidden_outcome: boolean;
+};
+
+export type DeclarativeActionDefinition = {
+  id: string;
+  label: string;
+  aliases: string[];
+  category: string;
+  target_specs: DeclarativeActionTargetSpec[];
+  affordance_requirements: {
+    required_visible_facts: string[];
+    required_flags: Record<string, string | number | boolean>;
+  };
+  time_cost: number;
+  preconditions: Record<string, unknown>[];
+  checks: Record<string, unknown>[];
+  outcomes: Record<string, DeclarativeOutcome>;
+  state_delta_templates: DeclarativeStateDeltaTemplate[];
+  event_type: string;
+  visibility_policy: {
+    hidden_outcome_player_visible: boolean;
+    include_target_in_visible_facts: boolean;
+    include_current_location_in_visible_facts: boolean;
+  };
+  narrator_hints: {
+    style: string;
+    safe_summary: string;
+    hidden_summary: string;
+  };
+};
+
+export type ActionModDraft = {
+  module_id: string;
+  name: string;
+  version: string;
+  actions: DeclarativeActionDefinition[];
+};
+
+export type ActionModValidationReport = {
+  module_id: string;
+  ok: boolean;
+  errors: AuthoringValidationIssue[];
+  warnings: AuthoringValidationIssue[];
+};
+
+export type ActionModPreviewResponse = {
+  local_only: boolean;
+  draft: ActionModDraft;
+  validation: ActionModValidationReport;
+  writes_to_disk: boolean;
+  executes_code: boolean;
+  active_game_state_modified: boolean;
+  normalized_yaml: string;
+};
+
+export type ActionModExportResponse = {
+  local_only: boolean;
+  exported: boolean;
+  file_name: string;
+  archive_base64: string;
+  validation: ActionModValidationReport;
+  contains_api_key: boolean;
+  writes_to_disk: boolean;
+  executes_code: boolean;
+};
+
+export async function previewActionModDraft(draft: ActionModDraft): Promise<ActionModPreviewResponse> {
+  return requestJson<ActionModPreviewResponse>("/authoring/action-mods/preview", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(draft)
+  });
+}
+
+export async function validateActionModDraft(draft: ActionModDraft): Promise<ActionModPreviewResponse> {
+  return requestJson<ActionModPreviewResponse>("/authoring/action-mods/validate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(draft)
+  });
+}
+
+export async function exportActionModDraft(draft: ActionModDraft): Promise<ActionModExportResponse> {
+  return requestJson<ActionModExportResponse>("/authoring/action-mods/export", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(draft)
+  });
+}
 
 export async function fetchExampleDialogues(worldId: string): Promise<ExampleDialogueListResponse> {
   return requestJson<ExampleDialogueListResponse>(

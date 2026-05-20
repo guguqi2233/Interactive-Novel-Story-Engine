@@ -7,11 +7,15 @@ from app.core.state_delta import apply_delta
 from app.core.world_state import (
     ActorCondition,
     CombatStatus,
+    CombatEncounterDefinition,
+    CombatStatusEffect,
     FactionState,
     GameState,
     LocationState,
     NPCState,
     ReputationState,
+    WeaponProfile,
+    WorldObjectState,
 )
 from app.db.repository import SQLiteSaveRepository
 from app.engine.action_dispatcher import ActionDispatcher
@@ -269,6 +273,21 @@ def test_guarded_status_is_consumed_and_reduces_damage() -> None:
     assert "guarded" not in state.npcs["bandit"].status_effects
 
 
+def test_weapon_tag_affects_attack_damage() -> None:
+    unarmed_state = make_combat_state()
+    weapon_state = make_combat_state()
+    weapon_state.objects["blade"] = WorldObjectState(id="blade", owner_id="player", portable=True, tags=["sharp"])
+    weapon_state.player.inventory.append("blade")
+    weapon_state.weapon_profiles["sharp"] = WeaponProfile(id="sharp", tags=["sharp"], attack_bonus=2, damage_bonus=2)
+
+    unarmed_result, _ = resolve_attack(unarmed_state, "player", "bandit", Random(0))
+    weapon_result, _ = resolve_attack(weapon_state, "player", "bandit", Random(0))
+
+    assert unarmed_result.damage is not None
+    assert weapon_result.damage is not None
+    assert weapon_result.damage.damage > unarmed_result.damage.damage
+
+
 def test_stunned_actor_cannot_attack() -> None:
     state = make_combat_state()
     state.player.status_effects.append("stunned")
@@ -320,6 +339,21 @@ def test_non_lethal_attack_does_not_mark_dead() -> None:
     assert loop.state.npcs["bandit"].alive is True
 
 
+def test_non_lethal_weapon_profile_does_not_kill() -> None:
+    state = make_combat_state()
+    state.npcs["bandit"].hp = 1
+    state.objects["sap"] = WorldObjectState(id="sap", owner_id="player", portable=True, tags=["non_lethal"])
+    state.player.inventory.append("sap")
+    state.weapon_profiles["sap"] = WeaponProfile(id="sap", tags=["non_lethal"], damage_bonus=10, non_lethal=True)
+
+    _, deltas = resolve_attack(state, "player", "bandit", Random(0))
+    for delta in deltas:
+        state = apply_delta(state, delta)
+
+    assert state.npcs["bandit"].condition == ActorCondition.INCAPACITATED
+    assert state.npcs["bandit"].alive is True
+
+
 def test_flee_failure_has_consequence() -> None:
     state = make_combat_state()
     state.npcs["bandit"].hostile_to.append("player")
@@ -351,3 +385,16 @@ def test_visible_state_combat_summary_hides_hidden_combatant() -> None:
     assert visible_state.active_combat is not None
     assert "bandit" in visible_state.active_combat.visible_combatants
     assert "witness" not in visible_state.active_combat.visible_combatants
+
+
+def test_save_load_preserves_combat_expansion_schema() -> None:
+    state = make_combat_state()
+    state.weapon_profiles["blade"] = WeaponProfile(id="blade", tags=["sharp"], damage_bonus=1)
+    state.combat_status_effects["guarded"] = CombatStatusEffect(id="guarded", label="Guarded", defense_modifier=2)
+    state.combat_encounters["ambush"] = CombatEncounterDefinition(id="ambush", location_id="square", combatant_ids=["player", "bandit"], difficulty_tags=["ambush"])
+
+    loaded = GameState.model_validate_json(state.model_dump_json())
+
+    assert loaded.weapon_profiles["blade"].damage_bonus == 1
+    assert loaded.combat_status_effects["guarded"].defense_modifier == 2
+    assert loaded.combat_encounters["ambush"].difficulty_tags == ["ambush"]

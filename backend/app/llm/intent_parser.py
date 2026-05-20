@@ -5,14 +5,21 @@ from app.llm.schemas import PlayerActionType, PlayerIntent
 
 
 class IntentParser:
-    def __init__(self, provider: LLMProvider, prompt_profile: PromptProfile | None = None) -> None:
+    def __init__(
+        self,
+        provider: LLMProvider,
+        prompt_profile: PromptProfile | None = None,
+        available_action_aliases: list[str] | None = None,
+    ) -> None:
         self._provider = provider
         self._prompt_profile = prompt_profile
+        self._available_action_aliases = available_action_aliases or []
 
     def parse(self, player_text: str) -> PlayerIntent:
         messages = build_intent_parser_messages(
             player_text,
             prompt_variant=self._prompt_profile.intent_parser_prompt_variant if self._prompt_profile else "default",
+            available_action_aliases=self._available_action_aliases,
         )
         temperature = (
             self._prompt_profile.temperature_overrides.intent_parser

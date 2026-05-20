@@ -44,6 +44,171 @@ Post-v1.0 compatibility policy:
 Content packs still do not configure LLM providers, execute scripts, or modify
 active runtime `GameState` directly.
 
+## v1.6 Gameplay Module Package Notes
+
+v1.6 gameplay modules are separate local module packages, not ordinary world
+content files. They may live under `gameplay_modules/{module_id}` and are
+loaded by the gameplay module loader. Importing a module package is not the
+same as enabling it for a save.
+
+Gameplay module packages are declarative and non-executable. They must not
+contain `.env`, API keys, databases, logs, caches, executable files, provider
+credentials, or arbitrary scripts. Import dry-run validates the manifest,
+actions, permissions, checksums, save compatibility, executable rejection, and
+module quality gate before any apply.
+
+### GameplayModuleManifest schema
+
+`GameplayModuleManifest` declares:
+
+- `id`
+- `name`
+- `version`
+- `module_type`: `action_pack`, `rule_pack`, `gameplay_system`, or `hybrid`
+- `engine_version_min`
+- `schema_version`
+- `dependencies`
+- `conflicts`
+- `required_systems`
+- `provided_actions`: `id`, `action_type`, optional `handler`
+- `provided_rules`: `id`, `rule_type`
+- `state_schema_extensions`
+- `event_types`
+- `permissions`
+- `save_compatibility`
+- `quality_tests`
+
+Dangerous permissions default to false and are rejected when enabled:
+
+- `execute_code`
+- `access_network`
+- `access_filesystem`
+- `call_llm`
+- `modify_game_state_directly`
+
+`save_compatibility` includes:
+
+- `safe_to_add_mid_save`
+- `migration_required`
+- `requires_new_game`
+- `migration_defaults`
+
+### DeclarativeActionDefinition schema
+
+`DeclarativeActionDefinition` is the safe Action Mod format. It includes:
+
+- `id`
+- `label`
+- `aliases`
+- `category`
+- `target_specs`
+- `affordance_requirements`
+- `time_cost`
+- `preconditions`
+- `checks`
+- `outcomes`
+- `state_delta_templates`
+- `event_type`
+- `visibility_policy`
+- `narrator_hints`
+
+Declarative actions are data only. They do not run scripts, import modules,
+read files, call networks, or call LLM providers. Runtime handlers compile
+effects into `StateDelta` values and return an `Event`.
+
+### Action DSL schema
+
+Action DSL entries are restricted schemas:
+
+- `ActionPrecondition`: actor location, target existence, target visibility,
+  actor item/status, target tags, combat status, NPC known fact, and fact
+  visibility checks.
+- `ActionCheck`: skill, reputation, relationship, item, deterministic random
+  threshold, or fixed success checks.
+- `ActionEffect`: state delta template, fact discovery, status addition, item
+  consumption, time advancement, or event marker.
+
+Path templates are validated against an allowlist. Effects produce
+`StateDelta` values and do not apply them directly.
+
+### SpellDefinition schema
+
+`SpellDefinition` supports the lightweight Magic System:
+
+- `id`
+- `name`
+- `school`
+- `cost`
+- `target_types`
+- `preconditions`
+- `checks`
+- `effects`
+- `failure_effects`
+- `visibility_policy`
+- `crime_policy`
+- `aliases`
+- `hidden_effect`
+
+Magic resources live in `MagicResourceState` with `mana`, `max_mana`,
+`focus`, `max_focus`, cooldowns, and active effects.
+
+### RecipeDefinition schema
+
+`RecipeDefinition` supports the Crafting System:
+
+- `id`
+- `output_item_id`
+- `required_items`
+- `consumed_items`
+- `required_station_tags`
+- `required_skill`
+- `time_cost`
+- `failure_policy`
+- `aliases`
+
+Crafting stations use `CraftingStationState` with location, tags, visibility,
+hidden status, and discovery metadata.
+
+### FactionMissionDefinition schema
+
+`FactionMissionDefinition` supports the Faction Mission System:
+
+- `id`
+- `faction_id`
+- `mission_type`
+- `title`
+- `description`
+- `min_reputation`
+- `max_reputation`
+- `required_conflict_tags`
+- `required_known_fact_ids`
+- `prerequisite_mission_ids`
+- `blocked_by_player_crime`
+- `hidden`
+- `quest_id`
+- `reward`
+- `failure_reputation_delta`
+- `tags`
+
+Hidden faction missions do not enter player UI until the faction and mission
+are visible through normal rules.
+
+### DomainState schema
+
+Domain / Base Management state uses:
+
+- `DomainState`: id, name, location, owner, claimed state, treasury, risk,
+  facility ids, staff assignment ids, and tags.
+- `FacilityState`: domain id, facility type, level, income, upkeep, staff
+  slots, and tags.
+- `BaseInventoryState`: domain item ids and currency.
+- `StaffAssignmentState`: NPC assignment, facility, role, and active status.
+- `DomainUpgradeDefinition`: target facility level, cost, income/upkeep
+  deltas, and required tags.
+
+Domain actions still use inventory/economy rules and `StateDelta`; the module
+does not implement a large-scale city or MMO economy.
+
 ## Directory Layout
 
 ```text

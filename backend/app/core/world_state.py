@@ -69,6 +69,226 @@ class PlayerState(BaseModel):
     stealth_modifier: int = 0
 
 
+class MagicResourceState(BaseModel):
+    mana: int = Field(default=0, ge=0)
+    max_mana: int = Field(default=0, ge=0)
+    focus: int = Field(default=0, ge=0)
+    max_focus: int = Field(default=0, ge=0)
+    cooldowns: dict[str, int] = Field(default_factory=dict)
+    active_effects: list[str] = Field(default_factory=list)
+
+
+class HackableState(BaseModel):
+    id: str
+    target_type: str = "terminal"
+    location_id: str | None = None
+    security_state: str = "locked"
+    access_level: int = Field(default=0, ge=0)
+    difficulty: int = Field(default=10, ge=0)
+    monitored: bool = False
+    hidden: bool = False
+    discovered_by: list[str] = Field(default_factory=list)
+    linked_fact_ids: list[str] = Field(default_factory=list)
+    alarm_level: int = Field(default=0, ge=0)
+    intrusion_trace: int = Field(default=0, ge=0)
+    disabled: bool = False
+    tags: list[str] = Field(default_factory=list)
+
+
+class HackingToolState(BaseModel):
+    id: str
+    owner_id: str = "player"
+    power: int = Field(default=0, ge=0)
+    uses_remaining: int | None = Field(default=None, ge=0)
+    tags: list[str] = Field(default_factory=list)
+
+
+class NetworkNodeState(BaseModel):
+    id: str
+    connected_target_ids: list[str] = Field(default_factory=list)
+    alert_level: int = Field(default=0, ge=0)
+    compromised: bool = False
+    hidden: bool = False
+    discovered_by: list[str] = Field(default_factory=list)
+
+
+class CraftingStationState(BaseModel):
+    id: str
+    location_id: str
+    tags: list[str] = Field(default_factory=list)
+    visible: bool = True
+    hidden: bool = False
+    discovered_by: list[str] = Field(default_factory=list)
+
+
+class EvidenceState(BaseModel):
+    id: str
+    fact_id: str | None = None
+    location_id: str | None = None
+    discovered: bool = False
+    visible: bool = True
+    hidden: bool = False
+    discovered_by: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+
+
+class TestimonyState(BaseModel):
+    id: str
+    npc_id: str
+    fact_ids: list[str] = Field(default_factory=list)
+    contradiction_ids: list[str] = Field(default_factory=list)
+    known_to_player: bool = False
+    hidden: bool = False
+    tags: list[str] = Field(default_factory=list)
+
+
+class HypothesisStatus(StrEnum):
+    DRAFT = "draft"
+    WEAK = "weak"
+    VALID = "valid"
+    ACCUSED = "accused"
+    CORRECT = "correct"
+    WRONG = "wrong"
+
+
+class HypothesisState(BaseModel):
+    id: str
+    suspect_id: str | None = None
+    required_evidence_ids: list[str] = Field(default_factory=list)
+    supporting_fact_ids: list[str] = Field(default_factory=list)
+    status: HypothesisStatus = HypothesisStatus.DRAFT
+    correct_suspect_id: str | None = None
+    quest_id: str | None = None
+    quest_objective_id: str | None = None
+    hidden_truth_fact_id: str | None = None
+    known_to_player: bool = False
+
+
+class SurvivalState(BaseModel):
+    actor_id: str = "player"
+    fatigue: int = Field(default=0, ge=0, le=100)
+    hunger: int = Field(default=0, ge=0, le=100)
+    thirst: int = Field(default=0, ge=0, le=100)
+    exposure: int = Field(default=0, ge=0, le=100)
+    last_rest_turn: int | None = Field(default=None, ge=0)
+
+
+class TravelRouteState(BaseModel):
+    id: str
+    from_location_id: str
+    to_location_id: str
+    time_cost: int = Field(default=0, ge=0)
+    fatigue_cost: int = Field(default=0, ge=0)
+    hunger_cost: int = Field(default=0, ge=0)
+    thirst_cost: int = Field(default=0, ge=0)
+    risk_level: int = Field(default=0, ge=0)
+    weather_tags: list[str] = Field(default_factory=list)
+    hidden: bool = False
+    discovered_by: list[str] = Field(default_factory=list)
+
+
+class WeatherState(BaseModel):
+    location_id: str
+    condition: str = "clear"
+    severity: int = Field(default=0, ge=0, le=100)
+    tags: list[str] = Field(default_factory=list)
+
+
+class CampState(BaseModel):
+    id: str
+    location_id: str
+    established_by: str = "player"
+    quality: int = Field(default=0, ge=0, le=100)
+    active: bool = True
+
+
+class FacilityState(BaseModel):
+    id: str
+    domain_id: str
+    facility_type: str
+    level: int = Field(default=1, ge=1)
+    income: int = Field(default=0, ge=0)
+    upkeep: int = Field(default=0, ge=0)
+    staff_slots: int = Field(default=0, ge=0)
+    tags: list[str] = Field(default_factory=list)
+
+
+class BaseInventoryState(BaseModel):
+    domain_id: str
+    item_ids: list[str] = Field(default_factory=list)
+    currency: int = Field(default=0, ge=0)
+
+
+class StaffAssignmentState(BaseModel):
+    id: str
+    domain_id: str
+    npc_id: str
+    facility_id: str | None = None
+    role: str = "worker"
+    active: bool = True
+
+
+class DomainUpgradeDefinition(BaseModel):
+    id: str
+    facility_type: str
+    target_level: int = Field(default=2, ge=2)
+    cost: int = Field(default=0, ge=0)
+    income_delta: int = 0
+    upkeep_delta: int = 0
+    required_tags: list[str] = Field(default_factory=list)
+
+
+class DomainState(BaseModel):
+    id: str
+    name: str = ""
+    location_id: str
+    owner_id: str = "player"
+    claimed: bool = False
+    treasury: int = Field(default=0, ge=0)
+    risk_level: int = Field(default=0, ge=0, le=100)
+    facility_ids: list[str] = Field(default_factory=list)
+    staff_assignment_ids: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+
+
+class StealthState(BaseModel):
+    actor_id: str = "player"
+    hidden: bool = False
+    stealth_score: int = Field(default=0, ge=0, le=100)
+    shadowing_target_id: str | None = None
+    distracted_npc_ids: list[str] = Field(default_factory=list)
+    decoy_item_id: str | None = None
+    last_noise_event_id: str | None = None
+    last_detection_result: str | None = None
+
+
+class NoiseEvent(BaseModel):
+    id: str
+    location_id: str
+    source_actor_id: str = "player"
+    volume: int = Field(default=0, ge=0, le=100)
+    turn: int = Field(default=0, ge=0)
+    attracts_npc_ids: list[str] = Field(default_factory=list)
+    hidden_source: bool = False
+
+
+class CoverState(BaseModel):
+    id: str
+    location_id: str
+    cover_level: int = Field(default=0, ge=0, le=10)
+    light_level: int = Field(default=5, ge=0, le=10)
+    tags: list[str] = Field(default_factory=list)
+
+
+class DetectionCheckResult(BaseModel):
+    observer_id: str | None = None
+    detected: bool = False
+    score: int = Field(default=0, ge=0)
+    difficulty: int = Field(default=0, ge=0)
+    hidden_observer: bool = False
+    safe_summary: str = ""
+
+
 class NPCGoalStatus(StrEnum):
     INACTIVE = "inactive"
     ACTIVE = "active"
@@ -538,6 +758,44 @@ class FactionState(BaseModel):
     tags: list[str] = Field(default_factory=list)
 
 
+class FactionMissionReward(BaseModel):
+    reputation_delta: int = 0
+    currency: int = Field(default=0, ge=0)
+    item_ids: list[str] = Field(default_factory=list)
+
+
+class FactionMissionDefinition(BaseModel):
+    id: str
+    faction_id: str
+    mission_type: str
+    title: str
+    description: str = ""
+    min_reputation: int = 0
+    max_reputation: int | None = None
+    required_conflict_tags: list[str] = Field(default_factory=list)
+    required_known_fact_ids: list[str] = Field(default_factory=list)
+    prerequisite_mission_ids: list[str] = Field(default_factory=list)
+    blocked_by_player_crime: bool = False
+    hidden: bool = False
+    quest_id: str | None = None
+    reward: FactionMissionReward = Field(default_factory=FactionMissionReward)
+    failure_reputation_delta: int = 0
+    tags: list[str] = Field(default_factory=list)
+
+
+class FactionMissionState(BaseModel):
+    id: str
+    definition_id: str
+    faction_id: str
+    status: str = "available"
+    quest_id: str | None = None
+    accepted_turn: int | None = Field(default=None, ge=0)
+    completed_turn: int | None = Field(default=None, ge=0)
+    failed_turn: int | None = Field(default=None, ge=0)
+    hidden: bool = False
+    known_to_player: bool = False
+
+
 class RumorStatus(StrEnum):
     ACTIVE = "active"
     STALE = "stale"
@@ -688,6 +946,38 @@ class RelationshipState(BaseModel):
     known_by_player: bool = False
 
 
+class SocialMoveDefinition(BaseModel):
+    id: str
+    move_type: str
+    label: str = ""
+    required_fact_ids: list[str] = Field(default_factory=list)
+    required_leverage_ids: list[str] = Field(default_factory=list)
+    currency_cost: int = Field(default=0, ge=0)
+    difficulty: int = Field(default=0, ge=0)
+    tags: list[str] = Field(default_factory=list)
+
+
+class SocialMoveResult(BaseModel):
+    move_type: str
+    target_id: str | None = None
+    success: bool = False
+    revealed_fact_ids: list[str] = Field(default_factory=list)
+    relationship_delta: int = 0
+    suspicion_delta: int = 0
+    safe_summary: str = ""
+
+
+class LeverageState(BaseModel):
+    id: str
+    target_npc_id: str
+    fact_id: str
+    known_by_player: bool = False
+    strength: int = Field(default=0, ge=0, le=100)
+    used: bool = False
+    hidden: bool = False
+    tags: list[str] = Field(default_factory=list)
+
+
 class CombatStatus(StrEnum):
     ACTIVE = "active"
     ENDED = "ended"
@@ -699,6 +989,43 @@ class CombatantStance(StrEnum):
     CAUTIOUS = "cautious"
     FLEEING = "fleeing"
     INCAPACITATED = "incapacitated"
+
+
+class CombatStance(StrEnum):
+    AGGRESSIVE = "aggressive"
+    DEFENSIVE = "defensive"
+    CAUTIOUS = "cautious"
+    FLEEING = "fleeing"
+    INCAPACITATED = "incapacitated"
+
+
+class WeaponProfile(BaseModel):
+    id: str
+    tags: list[str] = Field(default_factory=list)
+    damage_bonus: int = 0
+    attack_bonus: int = 0
+    non_lethal: bool = False
+    allowed_stances: list[CombatStance] = Field(default_factory=list)
+
+
+class CombatStatusEffect(BaseModel):
+    id: str
+    label: str = ""
+    blocks_action: bool = False
+    defense_modifier: int = 0
+    damage_modifier: int = 0
+    duration_turns: int | None = Field(default=None, ge=0)
+    tags: list[str] = Field(default_factory=list)
+
+
+class CombatEncounterDefinition(BaseModel):
+    id: str
+    location_id: str | None = None
+    combatant_ids: list[str] = Field(default_factory=list)
+    difficulty_tags: list[str] = Field(default_factory=list)
+    public_combat: bool = True
+    hidden: bool = False
+    tags: list[str] = Field(default_factory=list)
 
 
 class CombatantState(BaseModel):
@@ -735,13 +1062,40 @@ class GameState(BaseModel):
     quests: dict[str, QuestState] = Field(default_factory=dict)
     delayed_consequences: list[dict[str, Any]] = Field(default_factory=list)
     factions: dict[str, FactionState] = Field(default_factory=dict)
+    faction_mission_definitions: dict[str, FactionMissionDefinition] = Field(default_factory=dict)
+    faction_missions: dict[str, FactionMissionState] = Field(default_factory=dict)
     rumors: dict[str, RumorState] = Field(default_factory=dict)
     crimes: dict[str, CrimeState] = Field(default_factory=dict)
     witnesses: dict[str, WitnessRecord] = Field(default_factory=dict)
     social_consequences: dict[str, SocialConsequenceState] = Field(default_factory=dict)
     social_flags: dict[str, bool | int | float | str] = Field(default_factory=dict)
     relationships: dict[str, RelationshipState] = Field(default_factory=dict)
+    social_moves: dict[str, SocialMoveDefinition] = Field(default_factory=dict)
+    leverages: dict[str, LeverageState] = Field(default_factory=dict)
     combats: dict[str, CombatState] = Field(default_factory=dict)
+    weapon_profiles: dict[str, WeaponProfile] = Field(default_factory=dict)
+    combat_status_effects: dict[str, CombatStatusEffect] = Field(default_factory=dict)
+    combat_encounters: dict[str, CombatEncounterDefinition] = Field(default_factory=dict)
+    magic_resources: dict[str, MagicResourceState] = Field(default_factory=dict)
+    hackables: dict[str, HackableState] = Field(default_factory=dict)
+    hacking_tools: dict[str, HackingToolState] = Field(default_factory=dict)
+    network_nodes: dict[str, NetworkNodeState] = Field(default_factory=dict)
+    crafting_stations: dict[str, CraftingStationState] = Field(default_factory=dict)
+    evidence: dict[str, EvidenceState] = Field(default_factory=dict)
+    testimonies: dict[str, TestimonyState] = Field(default_factory=dict)
+    hypotheses: dict[str, HypothesisState] = Field(default_factory=dict)
+    survival: dict[str, SurvivalState] = Field(default_factory=dict)
+    travel_routes: dict[str, TravelRouteState] = Field(default_factory=dict)
+    weather: dict[str, WeatherState] = Field(default_factory=dict)
+    camps: dict[str, CampState] = Field(default_factory=dict)
+    domains: dict[str, DomainState] = Field(default_factory=dict)
+    facilities: dict[str, FacilityState] = Field(default_factory=dict)
+    base_inventories: dict[str, BaseInventoryState] = Field(default_factory=dict)
+    staff_assignments: dict[str, StaffAssignmentState] = Field(default_factory=dict)
+    domain_upgrades: dict[str, DomainUpgradeDefinition] = Field(default_factory=dict)
+    stealth: dict[str, StealthState] = Field(default_factory=dict)
+    noise_events: dict[str, NoiseEvent] = Field(default_factory=dict)
+    cover_states: dict[str, CoverState] = Field(default_factory=dict)
     scene_mood_presets: dict[str, SceneMoodPreset] = Field(default_factory=dict)
     example_dialogues: dict[str, ExampleDialogue] = Field(default_factory=dict)
 
@@ -765,7 +1119,34 @@ def migrate_game_state_payload(payload: dict[str, Any]) -> dict[str, Any]:
     migrated.setdefault("social_consequences", {})
     migrated.setdefault("social_flags", {})
     migrated.setdefault("relationships", {})
+    migrated.setdefault("social_moves", {})
+    migrated.setdefault("leverages", {})
     migrated.setdefault("combats", {})
+    migrated.setdefault("faction_mission_definitions", {})
+    migrated.setdefault("faction_missions", {})
+    migrated.setdefault("weapon_profiles", {})
+    migrated.setdefault("combat_status_effects", {})
+    migrated.setdefault("combat_encounters", {})
+    migrated.setdefault("magic_resources", {})
+    migrated.setdefault("hackables", {})
+    migrated.setdefault("hacking_tools", {})
+    migrated.setdefault("network_nodes", {})
+    migrated.setdefault("crafting_stations", {})
+    migrated.setdefault("evidence", {})
+    migrated.setdefault("testimonies", {})
+    migrated.setdefault("hypotheses", {})
+    migrated.setdefault("survival", {})
+    migrated.setdefault("travel_routes", {})
+    migrated.setdefault("weather", {})
+    migrated.setdefault("camps", {})
+    migrated.setdefault("domains", {})
+    migrated.setdefault("facilities", {})
+    migrated.setdefault("base_inventories", {})
+    migrated.setdefault("staff_assignments", {})
+    migrated.setdefault("domain_upgrades", {})
+    migrated.setdefault("stealth", {})
+    migrated.setdefault("noise_events", {})
+    migrated.setdefault("cover_states", {})
     migrated.setdefault("scene_mood_presets", {})
     migrated.setdefault("example_dialogues", {})
     return migrated

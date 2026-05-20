@@ -12,6 +12,8 @@ from app.engine.actions.schemas import ActionResult, SuccessLevel
 from app.engine.rules.inventory import item_is_accessible
 from app.engine.rules.knowledge import get_npc_context_for_dialogue
 from app.engine.rules.life_state import can_talk
+from app.engine.rules.social_manipulation import SocialManipulationActionHandler
+from app.engine.rules.stealth import StealthActionHandler
 from app.engine.rules.time import make_time_delta
 from app.engine.rules.visibility import get_visible_facts
 from app.llm.schemas import PlayerActionType, PlayerIntent
@@ -160,11 +162,13 @@ def default_action_handlers() -> list[ActionHandler]:
         SearchActionHandler(),
         LockpickActionHandler(),
         SneakActionHandler(),
+        StealthActionHandler(),
         AttackActionHandler(),
         DefendActionHandler(),
         FleeActionHandler(),
         BuyActionHandler(),
         SellActionHandler(),
+        SocialManipulationActionHandler(),
         MoveActionHandler(),
         TalkActionHandler(),
         UseItemActionHandler(),

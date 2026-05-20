@@ -9,13 +9,14 @@ This project is for local personal use. It is not designed as a hosted service.
 
 ## Current Version Scope
 
-v1.5 is Local Model & Prompt Lab on top of v1.4 Content Production Pipeline,
-v1.3 Advanced NPC Simulation, v1.2 Visual Authoring Pro, the v1.1 Roleplay Immersion Layer, and the v1.0
+v1.6 is Advanced Gameplay Modules on top of v1.5 Local Model & Prompt Lab,
+v1.4 Content Production Pipeline, v1.3 Advanced NPC Simulation, v1.2 Visual Authoring Pro, the v1.1 Roleplay Immersion Layer, and the v1.0
 Stable Local Studio Edition. v1.0 freezes the local contracts built through
 the v0.x series, v1.1 adds character voice and RP-safe dialogue, v1.2 expands
 local visual authoring, v1.3 adds bounded rule-driven NPC autonomy, v1.4
-adds local batch content production, and v1.5 adds local provider/prompt
-diagnostics without changing world authority:
+adds local batch content production, v1.5 adds local provider/prompt
+diagnostics, and v1.6 adds local declarative gameplay modules without
+changing world authority:
 
 - Multi-world content packs.
 - Structured `GameState`, `StateDelta`, `EventLog`, and SQLite save/load.
@@ -142,12 +143,37 @@ diagnostics without changing world authority:
 - Production Pipeline Dashboard.
 - Content Production CLI.
 - Batch Quality Gate.
+- Gameplay Module Boundary Contract.
+- Gameplay Module Manifest and safe module loader.
+- Declarative Action Mod System.
+- Action Registry Extension.
+- Action DSL Preconditions / Checks / Effects.
+- Action Mod Validation and Action Mod Editor.
+- Magic, Hacking, Crafting, Investigation / Deduction, Travel / Survival,
+  Stealth, Combat, Social Manipulation, Faction Mission, and Domain / Base
+  Management modules.
+- Gameplay Module Quality Gate.
+- Gameplay Module Regression Playtests.
+- Gameplay Module Debugger.
+- Gameplay Module Import / Export.
 
 The LLM is still not the world judge. Rule outcomes are decided by local code.
 NPC simulation is deterministic, finite, knowledge-scoped, and applied through
 `StateDelta` plus `Event`; it is not an LLM multi-agent simulator. v1.4
 production tools generate drafts, candidates, packages, previews, and reports;
-they do not directly modify active `GameState`.
+they do not directly modify active `GameState`. v1.6 gameplay modules resolve
+through `ActionRegistry` and deterministic rule handlers; Action Mods are
+declarative data and cannot execute arbitrary code.
+
+## v1.6 Documentation Map
+
+- `docs/GAMEPLAY_MODULE_BOUNDARY.md`: v1.6 gameplay module, Action Mod,
+  StateDelta, EventLog, Visibility, import/export, and no-code boundary.
+- `docs/V1_6_ROADMAP.md`: v1.6 Advanced Gameplay Modules roadmap.
+- `docs/V1_6_LLM_BOUNDARY_AUDIT.md`: v1.6 LLM permission boundary audit.
+- `docs/V1_6_VISIBILITY_GAMEPLAY_MOD_AUDIT.md`: v1.6 visibility, gameplay,
+  and module audit.
+- `docs/V1_6_SECURITY_AUDIT.md`: v1.6 security, module, and import audit.
 
 ## v1.5 Documentation Map
 
@@ -243,6 +269,7 @@ VITE_API_BASE_URL=http://127.0.0.1:8000
 MEMORY_BACKEND=sqlite
 AUTHORING_ROOT=worlds
 MODS_ROOT=mods
+MODULE_ROOT=gameplay_modules
 TEMPLATE_ROOT=templates
 PACKAGE_IMPORT_ROOT=imports
 CONTENT_LIBRARY_ROOT=
@@ -257,14 +284,14 @@ does not make the model a world judge. Use `openai` only when you explicitly
 want real API calls and have set the API key through the environment. API keys
 must never be committed, logged, or placed in frontend code.
 
-`AUTHORING_ROOT`, `MODS_ROOT`, `TEMPLATE_ROOT`, `PACKAGE_IMPORT_ROOT`,
+`AUTHORING_ROOT`, `MODS_ROOT`, `MODULE_ROOT`, `TEMPLATE_ROOT`, `PACKAGE_IMPORT_ROOT`,
 `CONTENT_LIBRARY_ROOT`, and `MEMORY_BACKEND` document the intended local
 configuration surface. Some runtime paths still use the current repository
 defaults; v1.4 Local Content Library Pro currently derives its roots from the
 local import/export service rather than a dedicated `CONTENT_LIBRARY_ROOT`
 runtime setting.
 
-There is currently no separate `ENABLE_QUALITY_API` setting. v0.9-v1.4 quality
+There is currently no separate `ENABLE_QUALITY_API` setting. v0.9-v1.6 quality
 tools reuse local-only debug/eval/playtest/performance/authoring gates where
 implemented; some analyzer endpoints are local-only and should not be exposed
 outside a trusted localhost setup.
@@ -1968,6 +1995,153 @@ POST /prompt-lab/experiment-packages/import-apply
 Packages reject API keys, raw env, hidden fact text, raw `GameState`, raw
 `state_delta`, sensitive prompt snapshots, executables, and path traversal.
 Import validates first and does not auto-enable profiles.
+
+## v1.6 Advanced Gameplay Modules
+
+v1.6 gameplay modules are local, declarative, and rule-driven. They extend the
+engine through `ActionRegistry`, structured `ActionResult`, `StateDelta`, and
+`EventLog`. They do not execute arbitrary code, call the LLM as a referee, or
+modify active `GameState` directly.
+
+### Action Mod Editor
+
+Enable local authoring APIs on a trusted machine:
+
+```env
+ENABLE_AUTHORING_API=true
+```
+
+Open the local Studio frontend and use the Action Mod Editor to create or edit
+declarative actions. The editor supports action id, label, aliases, category,
+target specs, affordance requirements, time cost, preconditions, checks,
+outcomes, StateDelta templates, event type, and visibility policy.
+
+Validation/export APIs:
+
+```text
+POST /authoring/action-mods/preview
+POST /authoring/action-mods/validate
+POST /authoring/action-mods/export
+```
+
+The editor is not a code editor. It cannot enable `execute_code`, access
+network resources, read `.env`, or write active saves.
+
+### Import Gameplay Module
+
+Gameplay module packages are local zip/base64 packages with a package
+manifest, module manifest, declarative actions, rule configs, quality tests,
+docs, example content, and checksums.
+
+API:
+
+```text
+POST /modules/import-dry-run
+POST /modules/import-apply
+POST /modules/export
+```
+
+CLI:
+
+```powershell
+cd backend
+python -m app.tools.module_package import-dry-run --archive ..\module_package.b64
+python -m app.tools.module_package import-apply --archive ..\module_package.b64 --confirm-apply
+python -m app.tools.module_package export --module-id sample_magic --output ..\sample_magic.b64
+```
+
+Import dry-run writes nothing. Apply requires explicit confirmation and a
+passing validation/quality path. Package import rejects zip slip, executable
+files, unsafe permissions, `.env`, API keys, databases, logs, caches, and
+checksum mismatches.
+
+### Module Quality Gate
+
+Run the quality gate before exporting or enabling a module:
+
+```powershell
+cd backend
+python -m app.tools.module_quality_gate --module-id sample_magic
+```
+
+API:
+
+```text
+POST /quality/modules/{module_id}/gate/run
+```
+
+The gate checks manifest validity, safe permissions, action validation,
+state-schema extensions, save compatibility, hidden leak risk, regression
+metadata, forbidden paths, and executable-code rejection. It is advisory/gating
+tooling; it does not auto-fix or modify active saves.
+
+### Debug Module Action
+
+Enable debug APIs only for local trusted debugging:
+
+```env
+ENABLE_DEBUG_API=true
+```
+
+Debug APIs:
+
+```text
+GET  /debug/modules
+GET  /debug/modules/{module_id}
+POST /debug/modules/{module_id}/actions/{action_id}/dry-run
+```
+
+Dry-run returns precondition results, check results, selected outcome,
+StateDelta preview, Event preview, and visibility summary. It does not apply
+deltas, append events, or send debug data to narrator/player APIs.
+
+### Gameplay Module Families
+
+Current v1.6 modules are lightweight rule systems:
+
+- Magic: `cast_spell`, mana/focus, spell targets, effects, failure effects,
+  visibility policy, and crime policy.
+- Hacking: terminals, security doors, cameras, logs, traces, alarms, and
+  cyber-crime consequences.
+- Crafting: recipes, materials, tools, stations, time cost, repair, and
+  dismantle.
+- Investigation / Deduction: evidence, testimony, hypotheses, accusations,
+  contradictions, and rule-driven conclusions.
+- Travel / Survival: travel routes, fatigue, hunger, thirst, exposure, camps,
+  forage, food, water, and weather effects.
+- Stealth: hiding, shadowing, distraction, noise, decoys, cover, light, and
+  detection checks.
+- Combat: weapon tags, combat stance, bleeding/stunned/guarded status,
+  non-lethal attack, flee risk, and public assault consequences.
+- Social Manipulation: persuade, threaten, bribe, deceive, provoke, comfort,
+  blackmail, and extract-information, bounded by NPC knowledge.
+- Faction Missions: reputation-gated missions, accept/complete/fail,
+  rewards, consequences, and quest integration.
+- Domain / Base Management: claim base, facilities, staff, storage, upgrades,
+  income, upkeep, and bounded risk events.
+
+These systems are intentionally lightweight. They do not implement arbitrary
+scripts, tactical-grid combat, real network simulation, complex industry, a
+full city/base sim, or LLM-decided outcomes.
+
+### Module Regression Playtests
+
+Module regression playtests run deterministic scenarios for action success,
+action failure, invalid targets, hidden targets, save/load, replay, and quality
+gate coverage. They use temporary state and mock/fake/local defaults.
+
+Representative tests are included in:
+
+```text
+backend/tests/test_gameplay_module_regression.py
+backend/tests/test_v16_gameplay_modules_integration.py
+```
+
+Run all tests with:
+
+```powershell
+python -m pytest
+```
 
 ## Import / Export
 

@@ -1,7 +1,7 @@
 # World Engine
 
-This document describes the local world engine as of v1.5 Local Model & Prompt
-Lab on top of v1.4 Content Production Pipeline, v1.3 Advanced NPC Simulation,
+This document describes the local world engine as of v1.6 Advanced Gameplay
+Modules on top of v1.5 Local Model & Prompt Lab, v1.4 Content Production Pipeline, v1.3 Advanced NPC Simulation,
 v1.2 Visual Authoring Pro, the v1.1 Roleplay Immersion Layer, and v1.0 Stable
 Local Studio Edition. The engine is the only source of truth for world state,
 rules, consequences, persistence, and visibility. The LLM layer may parse
@@ -50,6 +50,12 @@ The current state model includes:
 - Combat and life state: combatants, hp, condition, stance, and status effects.
 - Memory: memory records are persisted separately and are not authoritative
   facts.
+- Gameplay module state: optional v1.6 fields for magic resources, hacking
+  targets/tools/network nodes, crafting stations, investigation evidence and
+  hypotheses, survival/travel/weather/camps, stealth/noise/cover, faction
+  missions, domain/base management, and combat/social extensions. These fields
+  are still ordinary `GameState` data and may only change through
+  `StateDelta`.
 
 Old save JSON is loaded through Pydantic defaults, compatibility-friendly
 model fields, and the v0.6+ save migration system. Missing v0.3-v0.6 fields
@@ -2263,3 +2269,292 @@ APIs:
 - `POST /prompt-lab/experiment-packages/export`
 - `POST /prompt-lab/experiment-packages/import-dry-run`
 - `POST /prompt-lab/experiment-packages/import-apply`
+
+## v1.6 Advanced Gameplay Modules
+
+v1.6 adds a local, declarative gameplay module layer. Modules can add
+rule-driven actions and optional state fields, but they do not become trusted
+code plugins. The runtime chain remains:
+
+`ActionRegistry -> ActionHandler/rule module -> ActionResult -> StateDelta -> EventLog -> Visibility / NPC Knowledge`
+
+The LLM may narrate an already resolved result. It does not decide action
+success, damage, spell effects, hacking outcomes, crafting output,
+deduction truth, social manipulation results, faction mission completion, or
+domain income.
+
+### Gameplay Module Boundary
+
+`docs/GAMEPLAY_MODULE_BOUNDARY.md` defines the v1.6 boundary. The policy layer
+in `app.engine.gameplay_modules` defines gameplay modules, action mods,
+declarative actions, module state extensions, module event types, debug data,
+affordances, and permissions.
+
+Allowed module behavior:
+
+- register actions through `ActionRegistry`
+- declare affordances, preconditions, checks, effects, event types, and
+  save-migration defaults
+- return structured `ActionResult`, `StateDelta`, and `Event` values
+- expose debug traces only through debug-gated APIs
+
+Forbidden module behavior:
+
+- arbitrary code execution
+- direct `GameState` mutation
+- direct database writes
+- `.env`, API key, network, or arbitrary filesystem access
+- LLM adjudication
+- Visibility, NPC Knowledge, StateDelta, or EventLog bypass
+
+### Gameplay Module Manifest
+
+`GameplayModuleManifest` is loaded by `GameplayModuleLoader` from local
+`gameplay_modules/{module_id}/module.yaml` style directories. It declares:
+
+- id, name, version, module type, engine minimum, and schema version
+- dependencies, conflicts, required systems
+- provided actions and rules
+- state schema extensions and event types
+- permissions, all dangerous permissions defaulting to false
+- save compatibility and migration defaults
+- declared quality tests
+
+The loader validates dependencies, conflicts, permissions, save compatibility,
+safe identifiers, state schema extensions, executable-file rejection, and path
+boundaries. Loading manifests does not execute module code.
+
+### Declarative Action Mod System
+
+`DeclarativeActionDefinition` describes new actions as data:
+
+- id, label, aliases, category
+- target specs and affordance requirements
+- time cost
+- preconditions and checks
+- outcomes, state delta templates, event type
+- visibility policy and narrator hints
+
+`DeclarativeActionHandler` validates targets, evaluates conditions/checks,
+selects an outcome, builds `StateDelta` values, and returns a structured
+`ActionResult` plus `Event`. It never mutates `GameState` directly and never
+calls the LLM.
+
+### Action Registry Extension
+
+The action registry now supports core and module actions through one surface:
+
+- `register_core_action`
+- `register_module_action`
+- `unregister_module_action`
+- `list_available_actions`
+- `get_action_definition`
+- alias conflict detection
+
+Intent parsing and suggested actions can discover enabled module actions, but
+disabled module actions cannot be invoked. Suggested module actions must still
+be based on player-visible affordances.
+
+### Action DSL Preconditions / Checks / Effects
+
+The v1.6 Action DSL is a constrained schema, not an expression language. It
+supports whitelisted preconditions such as actor location, target existence,
+target visibility, item/status possession, tags, combat status, NPC known
+facts, and fact visibility.
+
+Checks include skill, reputation, relationship, item, deterministic random
+threshold, and fixed success checks.
+
+Effects compile to `StateDelta` values only. Supported effects include
+state-delta templates, fact discovery, status changes, item consumption,
+time advancement, and event markers. Path templates are validated against a
+whitelist. The DSL performs no IO, imports, loops, reflection, script
+execution, or LLM calls.
+
+Known v1.6 audit note: `ADD_FACT_DISCOVERY` is powerful and must remain
+covered by validation and hidden-leak tests so action mods cannot expose
+hidden facts through `player_visible_facts` unless rules explicitly allow the
+discovery.
+
+### Action Mod Validation
+
+`action_mod_validator` validates action ids, aliases, categories, target
+specs, preconditions, checks, effects, StateDelta paths, event types,
+visibility policies, hidden-output handling, dangerous permissions, and save
+compatibility. It is called from module validation, authoring APIs, package
+flows, and the module quality gate.
+
+### Action Mod Authoring UI
+
+The frontend Action Mod Editor is a local authoring tool for declarative
+actions. It edits action fields, target specs, affordance requirements,
+preconditions, checks, outcomes, StateDelta templates, event type, and
+visibility policy. It uses validation before export and does not expose an
+arbitrary code editor.
+
+APIs:
+
+- `POST /authoring/action-mods/preview`
+- `POST /authoring/action-mods/validate`
+- `POST /authoring/action-mods/export`
+
+These routes are gated by `ENABLE_AUTHORING_API`.
+
+### Magic System
+
+The magic module defines `SpellDefinition`, `MagicResourceState`,
+`SpellCastResult`, and `MagicModuleConfig`. The `cast_spell` action checks
+spell targets, preconditions, resource cost, deterministic checks, effects,
+failure effects, visibility policy, and optional crime policy.
+
+Spell effects and resource consumption are returned as `StateDelta` values.
+Public illegal casts can create crime/witness/faction consequences. Hidden
+magic effects stay hidden unless visibility rules reveal them.
+
+### Hacking System
+
+The hacking module defines `HackableState`, `HackingToolState`,
+`NetworkNodeState`, and `HackingAttemptResult`. Supported actions include
+terminal hacking, security door bypass, camera disabling, log access, and
+trace planting.
+
+Failures can create intrusion traces, alarms, or cyber-crime consequences.
+Hidden logs and hidden devices remain subject to Visibility.
+
+### Crafting System
+
+The crafting module defines `RecipeDefinition`, `CraftingStationState`, and
+`CraftingAttemptResult`. Supported actions include `craft_item`,
+`repair_item`, and `dismantle_item`.
+
+Crafting consumes materials, preserves non-consumed tools, requires station
+tags when configured, advances time, and creates outputs through
+`StateDelta`. Recipe failure is rule-driven.
+
+### Investigation / Deduction System
+
+The investigation module defines `EvidenceState`, `TestimonyState`,
+`HypothesisState`, and `DeductionAttemptResult`. Actions cover evidence
+examination, testimony comparison, hypothesis formation, suspect accusation,
+and timeline reconstruction.
+
+Players can only form valid hypotheses from known evidence/facts. Accusation
+results are rule-driven; hidden truth facts do not leak before discovery.
+
+### Travel / Survival System
+
+The survival module defines `SurvivalState`, `TravelRouteState`,
+`WeatherState`, and `CampState`. Actions include route travel, rest, camp,
+forage, food consumption, and water consumption.
+
+Actions consume time and update fatigue, hunger, thirst, exposure, location,
+and inventory through `StateDelta`. Weather and route risks are deterministic
+or seeded.
+
+### Stealth Expansion
+
+The stealth module defines `StealthState`, `NoiseEvent`, `CoverState`, and
+`DetectionCheckResult`. Actions include hide, sneak-follow, distract,
+create-noise, set-decoy, and shadow-NPC.
+
+Detection is rule-based using stealth score, light, cover, noise, alertness,
+and suspicion. Hidden observers are redacted from player narration unless
+discovered.
+
+### Combat Expansion
+
+The combat expansion adds `WeaponProfile`, `CombatEncounterDefinition`,
+`CombatStatusEffect`, and `CombatStance` support. It covers weapon tags,
+aggressive/defensive/cautious/fleeing stances, bleeding/stunned/guarded
+status effects, non-lethal attacks, flee risk, and public combat
+consequences.
+
+Combat results are deterministic rule outcomes, not LLM judgments.
+
+### Social Manipulation System
+
+The social manipulation module defines `SocialMoveDefinition`,
+`SocialMoveResult`, and `LeverageState`. Actions include persuade, threaten,
+bribe, deceive, provoke, comfort, blackmail, and extract-information.
+
+Rules depend on relationships, emotional state, known facts, leverage,
+evidence, and faction reputation. NPCs cannot reveal unknown facts.
+
+### Faction Mission System
+
+`FactionMissionDefinition`, `FactionMissionState`, and
+`FactionMissionReward` support local faction missions such as courier,
+sabotage, investigation, protection, negotiation, bounty, and infiltration.
+
+Mission availability is rule-driven by faction reputation, faction conflict,
+known facts, prior missions, and player crime status. Accept, complete, and
+fail operations create StateDeltas and Events and can integrate with quests.
+
+### Domain / Base Management
+
+Domain/base management uses `DomainState`, `FacilityState`,
+`BaseInventoryState`, `StaffAssignmentState`, and `DomainUpgradeDefinition`.
+Actions include claim-base, build-facility, assign-staff, upgrade-facility,
+store-item, withdraw-item, and collect-income.
+
+Domain ticks can handle income, upkeep, staff status, and bounded risk events.
+The system remains lightweight and does not implement city-scale simulation.
+
+### Gameplay Module Quality Gate
+
+`GameplayModuleQualityGateReport` checks manifest validity, permissions,
+action validation, state schema extensions, save compatibility, action tests,
+hidden leak coverage, regression metadata, forbidden paths, and executable
+code rejection.
+
+API / CLI:
+
+- `POST /quality/modules/{module_id}/gate/run`
+- `python -m app.tools.module_quality_gate --module-id <module_id>`
+
+The quality route is local-only and gated by the existing quality/debug/eval
+configuration. Reports use normal-safe redaction.
+
+### Gameplay Module Regression Playtests
+
+`GameplayModuleRegressionScenario` and `GameplayModuleRegressionReport` run
+deterministic module playtests for action success, action failure, invalid
+target, hidden target, save/load, replay, and quality gate scenarios. Current
+sample coverage includes magic, hacking, and crafting flows.
+
+Regression tests use temporary state and mock/fake/local_stub-style
+dependencies. They do not modify real user saves and do not call real LLM APIs.
+
+### Gameplay Module Debugger
+
+The module debugger exposes local debug-only summaries and dry-runs:
+
+- `GET /debug/modules`
+- `GET /debug/modules/{module_id}`
+- `POST /debug/modules/{module_id}/actions/{action_id}/dry-run`
+
+Dry-runs return precondition/check results, selected outcome, StateDelta
+preview, Event preview, and visibility summary. They do not modify
+`GameState`. Hidden facts are redacted by default, and player APIs never
+return module debug data.
+
+### Gameplay Module Import / Export
+
+`GameplayModulePackageManifest` packages a module manifest, action
+definitions, rule configs, quality tests, example content, docs, and
+checksums. Export excludes `.env`, API keys, databases, logs, caches, and
+executable files. Import dry-run validates manifest, actions, permissions,
+checksums, save compatibility, executable rejection, zip-slip protection, and
+the module quality gate.
+
+APIs / CLI:
+
+- `POST /modules/export`
+- `POST /modules/import-dry-run`
+- `POST /modules/import-apply`
+- `python -m app.tools.module_package export --module-id <module_id>`
+- `python -m app.tools.module_package import-dry-run --archive <package.b64>`
+- `python -m app.tools.module_package import-apply --archive <package.b64> --confirm-apply`
+
+Import apply requires explicit confirmation and does not auto-enable untrusted
+modules.

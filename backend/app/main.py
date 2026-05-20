@@ -153,6 +153,31 @@ from app.db.migration_service import MigrationService
 from app.db.repository import SaveRepositoryError, SQLiteSaveRepository
 from app.db.save_service import SaveService
 from app.engine.content.authoring_service import AuthoringError, ContentAuthoringService
+from app.engine.action_mod_validator import (
+    ActionModDraft,
+    ActionModExportResponse,
+    ActionModPreviewResponse,
+    preview_action_mod_draft,
+    export_action_mod_draft,
+)
+from app.engine.gameplay_module_debugger import (
+    ModuleActionDryRunRequest,
+    ModuleActionDryRunResponse,
+    ModuleDebugListResponse,
+    ModuleDebugSummary,
+    dry_run_module_action,
+    get_module_debug_summary,
+    list_module_debug_summaries,
+)
+from app.engine.gameplay_module_loader import GameplayModuleLoaderError
+from app.engine.gameplay_module_packages import (
+    GameplayModulePackageExport,
+    GameplayModulePackageImportReport,
+    GameplayModulePackageImportRequest,
+    export_gameplay_module_package,
+    import_gameplay_module_package_apply,
+    import_gameplay_module_package_dry_run,
+)
 from app.engine.content.authoring_boundary import (
     AuthoringBoundaryCheckRequest,
     AuthoringBoundaryCheckResponse,
@@ -565,6 +590,9 @@ from app.quality.health_score import (
     WorldHealthScore,
     build_world_health_score,
     empty_world_health_score,
+)
+from app.quality.gameplay_module_quality import (
+    run_gameplay_module_quality_gate,
 )
 from app.quality.gate import QualityGateConfig, QualityGateResult, run_quality_gate
 from app.quality.mod_compat_stress import (
@@ -1221,6 +1249,10 @@ def get_worlds_root() -> str:
 
 def get_mods_root() -> str:
     return str(getattr(app.state, "mods_root", "mods"))
+
+
+def get_gameplay_modules_root() -> str:
+    return str(getattr(app.state, "gameplay_modules_root", "gameplay_modules"))
 
 
 def get_authoring_service() -> ContentAuthoringService:
@@ -1892,6 +1924,37 @@ def get_debug_faction_graph(session_id: str) -> FactionGraph:
     if game_loop is None:
         raise HTTPException(status_code=404, detail=f"Unknown game session: {session_id}")
     return build_faction_graph(game_loop.state, debug=True)
+
+
+@app.get("/debug/modules", response_model=ModuleDebugListResponse)
+def get_debug_gameplay_modules() -> ModuleDebugListResponse:
+    require_debug_api()
+    try:
+        return list_module_debug_summaries(get_gameplay_modules_root())
+    except GameplayModuleLoaderError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/debug/modules/{module_id}", response_model=ModuleDebugSummary)
+def get_debug_gameplay_module(module_id: str) -> ModuleDebugSummary:
+    require_debug_api()
+    try:
+        return get_module_debug_summary(module_id, get_gameplay_modules_root())
+    except GameplayModuleLoaderError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/debug/modules/{module_id}/actions/{action_id}/dry-run", response_model=ModuleActionDryRunResponse)
+def dry_run_debug_gameplay_module_action(
+    module_id: str,
+    action_id: str,
+    request: ModuleActionDryRunRequest,
+) -> ModuleActionDryRunResponse:
+    require_debug_api()
+    try:
+        return dry_run_module_action(module_id, action_id, request, modules_root=get_gameplay_modules_root())
+    except (GameplayModuleLoaderError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/debug/sessions/{session_id}/npc-simulation", response_model=DebugNPCSimulationListResponse)
@@ -2640,6 +2703,13 @@ def run_quality_gate_api(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     get_quality_gate_results().append(result)
     return result
+
+
+@app.post("/quality/modules/{module_id}/gate/run", response_model=dict[str, Any])
+def run_gameplay_module_quality_gate_api(module_id: str) -> dict[str, Any]:
+    require_quality_api()
+    report = run_gameplay_module_quality_gate(module_id, modules_root=get_gameplay_modules_root())
+    return _quality_api_payload(report)
 
 
 def _build_world_health_source_reports(world_id: str) -> list[WorldQualityReport]:
@@ -3680,6 +3750,49 @@ def read_authoring_project_summary(
         return get_authoring_project_summary(world_id=world_id, branch_id=branch_id)
     except (AuthoringError, ImportExportError, LocalContentLibraryError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/authoring/action-mods/preview", response_model=ActionModPreviewResponse)
+def preview_authoring_action_mod(request: ActionModDraft) -> ActionModPreviewResponse:
+    require_authoring_api()
+    return preview_action_mod_draft(request)
+
+
+@app.post("/authoring/action-mods/validate", response_model=ActionModPreviewResponse)
+def validate_authoring_action_mod(request: ActionModDraft) -> ActionModPreviewResponse:
+    require_authoring_api()
+    return preview_action_mod_draft(request)
+
+
+@app.post("/authoring/action-mods/export", response_model=ActionModExportResponse)
+def export_authoring_action_mod(request: ActionModDraft) -> ActionModExportResponse:
+    require_authoring_api()
+    return export_action_mod_draft(request)
+
+
+@app.post("/modules/export", response_model=GameplayModulePackageExport)
+def export_gameplay_module_package_api(module_id: str) -> GameplayModulePackageExport:
+    require_authoring_api()
+    try:
+        return export_gameplay_module_package(module_id, modules_root=get_gameplay_modules_root())
+    except (GameplayModuleLoaderError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/modules/import-dry-run", response_model=GameplayModulePackageImportReport)
+def dry_run_gameplay_module_package_import_api(
+    request: GameplayModulePackageImportRequest,
+) -> GameplayModulePackageImportReport:
+    require_authoring_api()
+    return import_gameplay_module_package_dry_run(request)
+
+
+@app.post("/modules/import-apply", response_model=GameplayModulePackageImportReport)
+def apply_gameplay_module_package_import_api(
+    request: GameplayModulePackageImportRequest,
+) -> GameplayModulePackageImportReport:
+    require_authoring_api()
+    return import_gameplay_module_package_apply(request, modules_root=get_gameplay_modules_root())
 
 
 @app.get("/production/pipeline-summary", response_model=ProductionPipelineSummary)

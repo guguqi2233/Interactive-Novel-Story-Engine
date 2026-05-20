@@ -43,7 +43,11 @@ Authoring APIs edit content-pack YAML, not active `GameState`. Procedural
 quest generation and v1.4 content production generate drafts, candidates,
 packages, previews, and reports only. v1.5 Prompt Lab generates diagnostics,
 benchmark reports, prompt diffs, usage summaries, context snapshots,
-compatibility matrices, and prompt experiment packages only.
+compatibility matrices, and prompt experiment packages only. v1.6 gameplay
+modules add rule-driven actions and optional state fields through
+`ActionRegistry`, declarative definitions, validation, and module packages;
+they still cannot bypass `StateDelta`, `EventLog`, Visibility, NPC Knowledge,
+or the LLM boundary.
 
 ## Current v1.0 Gameplay Loop
 
@@ -434,6 +438,64 @@ Provider / Prompt Lab boundary:
 v1.5 does not change the gameplay loop. Prompt Lab reports are advisory local
 studio data and are never applied automatically to active saves or worlds.
 
+## v1.6 Advanced Gameplay Modules Scope
+
+v1.6 adds local, validated gameplay modules and declarative Action Mods for
+extending the deterministic rule layer. Modules can add actions and optional
+state schema extensions, but they do not execute arbitrary code and do not
+turn the LLM into a gameplay referee.
+
+Included:
+
+- Gameplay Module Boundary Contract.
+- Gameplay Module Manifest and safe manifest-only loader.
+- Declarative Action Mod System.
+- Action Registry Extension for core and module actions.
+- Action DSL Preconditions / Checks / Effects.
+- Action Mod Validation.
+- Action Mod Authoring UI.
+- Magic System.
+- Hacking System.
+- Crafting System.
+- Investigation / Deduction System.
+- Travel / Survival System.
+- Stealth Expansion.
+- Combat Expansion.
+- Social Manipulation System.
+- Faction Mission System.
+- Domain / Base Management.
+- Gameplay Module Quality Gate.
+- Gameplay Module Regression Playtests.
+- Gameplay Module Debugger.
+- Gameplay Module Import / Export.
+
+Module / Action Mod safety boundary:
+
+- All gameplay actions resolve through `ActionRegistry` or trusted rule
+  handlers.
+- Action Mods are declarative YAML/JSON-like data, not code plugins.
+- Preconditions, checks, and effects are schema-limited and path-whitelisted.
+- Effects compile to `StateDelta` values and are not applied directly by
+  module definitions.
+- Every consequential module action records an `Event`.
+- Module import/export rejects zip slip, executable files, unsafe
+  permissions, sensitive files, API keys, logs, databases, and caches.
+- Module debug dry-runs are gated by `ENABLE_DEBUG_API` and do not mutate
+  state.
+- Module quality gate and regression playtests are deterministic and do not
+  call real LLM APIs.
+
+Current v1.6 module state areas include magic resources, hackable targets,
+hacking tools, network nodes, crafting stations, evidence/testimony/hypothesis
+state, survival/travel/weather/camps, stealth/noise/cover, combat stance and
+status expansion, social leverage, faction missions, and domain/base
+management.
+
+Known v1.6 limitation: declarative fact-discovery effects are powerful and
+must remain guarded by action mod validation and hidden-leak tests so a module
+cannot expose hidden facts to `player_visible_facts` unless discovery is
+explicitly allowed by rules.
+
 ## RP And World Engine Boundary
 
 The RP layer is above the world engine. It reads safe context from structured
@@ -770,6 +832,28 @@ event logging, provider abstraction, or content-only mod restrictions.
   facts.
 - Online model marketplace, cloud benchmark sharing, hosted telemetry, or
   automatic model downloads.
+
+## Not In v1.6
+
+- Arbitrary code plugin execution.
+- LLM world judge or LLM-decided gameplay results.
+- LLM direct `GameState` mutation.
+- Action Mod direct database writes, save writes, filesystem reads, `.env`
+  reads, API key reads, or network access.
+- Action Mod bypass of `ActionRegistry`, `StateDelta`, `EventLog`,
+  Visibility, NPC Knowledge, validation, or quality gate checks.
+- Magic, hacking, crafting, investigation, survival, stealth, combat, social,
+  faction, or domain modules bypassing deterministic rule adjudication.
+- Online mod marketplace, remote module download, cloud sync, accounts, or
+  multiplayer module collaboration.
+- Automatic enablement of untrusted modules.
+- Automatic application of modules to active saves without compatibility and
+  migration review.
+- Large-scale war simulation, full tactical combat, MMO economy, or complex
+  city/base simulation.
+- Module debug traces, dry-run output, raw StateDelta previews, hidden facts,
+  hidden witnesses, hidden NPCs, or module secrets in player APIs, narrator
+  prompts, or ordinary UI.
 
 ## v1.0 Known Limitations
 

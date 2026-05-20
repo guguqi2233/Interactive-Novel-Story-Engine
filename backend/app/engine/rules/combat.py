@@ -12,6 +12,7 @@ from app.core.world_state import (
     GameState,
     NPCState,
     PlayerState,
+    WeaponProfile,
 )
 from app.engine.rules.life_state import apply_damage as apply_life_damage
 from app.engine.rules.life_state import can_act
@@ -79,8 +80,9 @@ def resolve_attack_with_options(
 
     attacker = state.player
     target = state.npcs[target_id]
+    weapon = _equipped_weapon_profile(state, attacker)
     roll = rng.randint(1, 10)
-    attack_score = roll + attacker.attack
+    attack_score = roll + attacker.attack + (weapon.attack_bonus if weapon else 0)
     defense_score = 6 + target.defense + _defense_bonus(target)
 
     if attack_score >= defense_score + 6:
@@ -95,6 +97,8 @@ def resolve_attack_with_options(
     else:
         outcome = AttackOutcome.MISS
         damage = 0
+    if weapon is not None and damage > 0:
+        damage = max(0, damage + weapon.damage_bonus)
     if "guarded" in target.status_effects and damage > 0:
         damage = max(damage - 2, 0)
 
@@ -121,7 +125,8 @@ def resolve_attack_with_options(
 
     damage_result: DamageResult | None = None
     if damage > 0:
-        damage_result, damage_deltas = apply_damage(state, target_id, damage, lethal=lethal)
+        effective_lethal = lethal and not (weapon.non_lethal if weapon else False)
+        damage_result, damage_deltas = apply_damage(state, target_id, damage, lethal=effective_lethal)
         deltas.extend(damage_deltas)
     if "guarded" in target.status_effects and outcome != AttackOutcome.MISS:
         deltas.append(
@@ -341,4 +346,21 @@ def _defense_bonus(target: NPCState) -> int:
         bonus += 1
     if "guarded" in target.status_effects:
         bonus += 2
+    if "stunned" in target.status_effects:
+        bonus -= 2
     return bonus
+
+
+def _equipped_weapon_profile(state: GameState, attacker: PlayerState) -> WeaponProfile | None:
+    for item_id in attacker.inventory:
+        profile = state.weapon_profiles.get(item_id)
+        if profile is not None:
+            return profile
+        item = state.objects.get(item_id)
+        if item is None:
+            continue
+        for tag in item.tags:
+            tagged_profile = state.weapon_profiles.get(tag)
+            if tagged_profile is not None:
+                return tagged_profile
+    return None

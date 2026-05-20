@@ -10,9 +10,10 @@ target. It is not the world judge. In v1.0 this boundary is frozen as a stable
 local studio contract, v1.1 extends it to RP dialogue, v1.2 extends local
 visual authoring, v1.3 adds deterministic NPC simulation, v1.4 adds local
 content production, and v1.5 adds Model & Prompt Lab diagnostics without
-expanding LLM authority: model output can affect language-facing draft fields
-or lab reports only after schema validation and consistency checks, and cannot
-directly modify `GameState`.
+expanding LLM authority. v1.6 adds Advanced Gameplay Modules without changing
+the LLM boundary: model output can affect language-facing draft fields or lab
+reports only after schema validation and consistency checks, and cannot
+directly modify `GameState` or decide gameplay outcomes.
 
 ## Provider Boundary
 
@@ -956,3 +957,67 @@ The LLM can render prose or draft authoring candidates, but it cannot create can
   reference labels are local authoring/debug data, not player or prompt input.
 - Add static regression tests that fail if v1.2 visual authoring modules import
   concrete LLM providers or call `generate_text` / `generate_json`.
+
+## v1.6 Gameplay Modules LLM Boundary
+
+v1.6 Advanced Gameplay Modules are deterministic rule modules and declarative
+Action Mods. They do not call the LLM to judge results, and they do not give
+Prompt Profiles or provider routing any new world authority.
+
+The runtime boundary is:
+
+`ActionRegistry -> ActionHandler/rule module -> ActionResult -> StateDelta -> EventLog -> Visibility / NPC Knowledge -> Narrator`
+
+### What The LLM May Do
+
+- Parse player language into a candidate `PlayerIntent`.
+- Render prose after the gameplay module has already returned a structured
+  `ActionResult`.
+- Help draft module/action content in local authoring contexts, with schema
+  validation, preview, and explicit save/export.
+
+### What The LLM Must Not Do
+
+- Decide whether a gameplay action succeeds or fails.
+- Decide spell effects, hacking outcomes, crafting outputs, deduction truth,
+  stealth detection, combat hit/damage/death, social manipulation results,
+  faction mission completion, travel risk, survival consequences, or domain
+  income.
+- Produce `StateDelta` values that bypass rule validation.
+- Modify `GameState`, saves, databases, content packs, or module packages
+  directly.
+- See hidden facts, NPC secrets, hidden witnesses, debug module traces, raw
+  module StateDelta previews, or raw `GameState` in ordinary prompts.
+- Enable module permissions such as `call_llm`, `execute_code`,
+  `access_network`, or direct state mutation.
+
+### Module-Specific Boundary
+
+- Declarative Action Mods are data. They do not import provider code and do
+  not call `generate_text` or `generate_json`.
+- Magic, hacking, crafting, investigation, survival, stealth, combat, social
+  manipulation, faction missions, and domain/base management resolve through
+  local handlers, DSL checks, seeded RNG where applicable, and structured
+  deltas/events.
+- Narrator receives only player-safe action results and visible facts. It may
+  describe "the spell fizzles" or "the terminal raises an alarm", but those
+  outcomes are already decided before narration.
+- Module debug APIs and dry-run traces are gated by `ENABLE_DEBUG_API` and are
+  not prompt inputs.
+- Module quality and regression tools use deterministic checks and
+  mock/fake/local_stub defaults; they do not use an LLM judge.
+
+### Prompt/Profile Interaction
+
+Prompt Profiles and RP Prompt Profiles remain expression controls only. They
+cannot:
+
+- make hidden module state visible
+- grant NPCs unknown facts
+- change Action DSL policy
+- alter module permission validation
+- turn LLM output into canonical action effects
+
+Provider routing and Model Compatibility Matrix entries may choose a model for
+language-facing use cases, but they cannot route around `LLMProvider`, module
+rules, schema validation, StateDelta, EventLog, Visibility, or NPC Knowledge.

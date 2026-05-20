@@ -27,9 +27,13 @@ def build_intent_parser_messages(
     player_text: str,
     *,
     prompt_variant: str = "default",
+    available_action_aliases: list[str] | None = None,
 ) -> list[dict[str, str]]:
+    alias_note = ""
+    if available_action_aliases:
+        alias_note = "\n\nEnabled local action aliases:\n- " + "\n- ".join(sorted(set(available_action_aliases)))
     return [
-        {"role": "system", "content": INTENT_PARSER_SYSTEM_PROMPT},
+        {"role": "system", "content": INTENT_PARSER_SYSTEM_PROMPT + alias_note},
         {"role": "user", "content": str({"player_text": player_text, "prompt_variant": prompt_variant})},
     ]
 
