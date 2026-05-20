@@ -1,0 +1,2 @@
+"""Desktop studio safety helpers."""
+

@@ -1,12 +1,13 @@
 # World Engine
 
-This document describes the local world engine as of v1.6 Advanced Gameplay
-Modules on top of v1.5 Local Model & Prompt Lab, v1.4 Content Production Pipeline, v1.3 Advanced NPC Simulation,
-v1.2 Visual Authoring Pro, the v1.1 Roleplay Immersion Layer, and v1.0 Stable
-Local Studio Edition. The engine is the only source of truth for world state,
-rules, consequences, persistence, and visibility. The LLM layer may parse
-intent, render narration, and summarize memory, but it does not decide rule
-outcomes or mutate `GameState`.
+This document describes the local world engine as of v1.7 Polished Desktop
+Studio on top of v1.6 Advanced Gameplay Modules, v1.5 Local Model & Prompt
+Lab, v1.4 Content Production Pipeline, v1.3 Advanced NPC Simulation, v1.2
+Visual Authoring Pro, the v1.1 Roleplay Immersion Layer, and v1.0 Stable Local
+Studio Edition. The engine is the only source of truth for world state, rules,
+consequences, persistence, and visibility. The LLM layer may parse intent,
+render narration, and summarize memory, but it does not decide rule outcomes
+or mutate `GameState`.
 
 ## Core Boundary
 
@@ -2558,3 +2559,182 @@ APIs / CLI:
 
 Import apply requires explicit confirmation and does not auto-enable untrusted
 modules.
+
+## v1.7 Polished Desktop Studio
+
+v1.7 improves the local desktop-style studio experience around the existing
+backend API and React frontend. It is a local prototype layer, not a formal
+installer or public desktop release. It does not add cloud sync, accounts,
+auto-update, code signing, marketplace features, or direct desktop-shell access
+to `GameState`.
+
+The desktop boundary is defined in `docs/DESKTOP_STUDIO_BOUNDARY.md` and the
+packaging checklist is in `docs/DESKTOP_PACKAGING.md`. The core rule remains:
+desktop tools are convenience surfaces around existing backend services. They
+cannot bypass `StateDelta`, `EventLog`, validation gates, visibility, provider
+factory boundaries, or package safety checks.
+
+### Desktop Studio Boundary
+
+The v1.7 desktop boundary separates:
+
+- `desktop_shell`
+- `backend_process`
+- `frontend_app`
+- `local_workspace`
+- `safe_config_summary`
+- `secret_config`
+- `backup_bundle`
+- `export_bundle`
+- `crash_report`
+- `local_log`
+
+API keys and provider credentials belong only to backend secret config such as
+ignored local environment variables or `.env`. The frontend must never read or
+receive API keys, raw env, raw provider secrets, database passwords, raw
+prompts, hidden facts, or raw crash/log dumps.
+
+### Desktop Launcher Pro
+
+The launcher scripts are:
+
+- `scripts/start_local_studio.ps1`
+- `scripts/start_local_studio.sh`
+
+They check Python, Node/npm, dependencies, ports, `.env` presence, database
+configuration, workspace status, optional built frontend output, and previous
+crash-report count. They can run preflight-only diagnostics, start backend and
+frontend local processes, write local logs under ignored `logs/`, and open the
+local frontend URL.
+
+The scripts do not hardcode API keys, do not print API keys, do not inject
+`LLM_API_KEY` into frontend env, and do not modify `GameState`, saves, content
+packs, modules, databases, or prompt profiles. Windows PowerShell profile
+signature warnings are treated as non-blocking local shell policy warnings.
+
+### Project Selector And Recent Projects
+
+`ProjectWorkspace` and `RecentProjectEntry` provide safe summaries for local
+workspace selection and recent-project navigation. APIs currently include:
+
+- `GET /studio/workspaces`
+- `POST /studio/workspaces`
+- `POST /studio/workspaces/select`
+- `GET /studio/workspaces/current`
+- `GET /studio/recent-projects`
+- `DELETE /studio/recent-projects/{workspace_id}`
+- `POST /studio/recent-projects/clear`
+
+Workspace paths are validated against path traversal and unsafe path
+components, then exposed to the frontend only as `path_redacted`. The service
+stores references and summaries only; it does not import unknown content,
+read `.env`, or modify active saves.
+
+### Local Config Manager
+
+`LocalConfigManager` exposes safe configuration summaries through:
+
+- `GET /studio/config/summary`
+- `GET /studio/config/issues`
+- `POST /studio/config/generate-template`
+
+Safe summaries may show provider type, model id, local API flags, database
+configured yes/no, redacted path hints, and whether an API key is configured
+as a boolean. They do not show API key values, raw env, database passwords, or
+full sensitive paths. Generated templates are `.env.example`-style output and
+do not write real secrets.
+
+### Local Update Notes
+
+`LocalUpdateNotesIndex` reads local release-note documents and exposes:
+
+- `GET /studio/update-notes`
+
+This is an offline local index. It does not fetch remote URLs, check online
+versions, download patches, or execute scripts.
+
+### Desktop Health Check
+
+`DesktopHealthCheckReport` is available through:
+
+- `GET /studio/health`
+- `POST /studio/health/check`
+
+It reports backend availability, optional frontend reachability, database
+configured/reachable status, safe config status, current workspace status,
+world directory status, authoring/debug API flags, provider safe summary, and
+recent-error placeholder status. It does not call providers, reveal secrets,
+return hidden facts, or mutate state.
+
+### Workspace Templates
+
+`WorkspaceTemplate` supports local workspace creation from safe templates:
+
+- `GET /studio/workspace-templates`
+- `POST /studio/workspaces/create-from-template`
+
+Templates create local folders and safe starter files such as
+`config.template.env`. They do not copy `.env`, write API keys, execute
+scripts, download remote templates, or overwrite existing non-empty
+workspaces.
+
+### Crash Report Local Viewer
+
+`CrashReportService` stores local redacted crash reports behind debug-gated
+APIs:
+
+- `GET /debug/crash-reports`
+- `GET /debug/crash-reports/{id}`
+- `DELETE /debug/crash-reports/{id}`
+
+Reports contain timestamp, component, error type, safe message, redacted stack,
+and safe context summary. API keys, Authorization headers, raw env, raw
+prompts, hidden fact text, and database passwords are redacted or excluded.
+Reports are not uploaded.
+
+### Startup Diagnostics
+
+`StartupDiagnosticReport` is available through:
+
+- `python -m backend.app.tools.startup_diagnostics`
+
+The diagnostics check Python, Node/npm, backend imports, frontend dependency
+folder presence, port availability, `.env` presence, database path
+accessibility, current workspace status, optional built frontend output, and
+previous crash reports. The report is a local safe summary and does not read
+or print API key values.
+
+### Desktop Settings UI
+
+The frontend has v1.7 studio panels for safe local desktop settings/status:
+config summaries, workspace/recent project summaries, update notes, health
+checks, crash reports, and workspace templates. The UI must not store API
+keys, raw env, raw prompts, or full sensitive paths. It does not write `.env`
+or provider secrets.
+
+### Planned Or Partial v1.7 Surfaces
+
+The v1.7 roadmap also names Log Viewer, Error Recovery Wizard, Backup /
+Restore, One-click Quality Gate, One-click Export World Pack, and Offline Help
+Docs. Current code and policy establish the boundaries for these flows, but
+their full runtime APIs are not all complete in the current implementation.
+
+Current boundary expectations for these partial surfaces:
+
+- Log views must be debug-gated, read only local `logs/`, reject path
+  traversal, and redact secrets, raw prompts, and hidden facts.
+- Error recovery plans must default to safe recommendations and not
+  automatically modify saves, worlds, databases, or `.env`.
+- Backups must default to excluding `.env`, API keys, logs, caches, databases,
+  frontend build outputs, desktop build outputs, and executables.
+- Restore must dry-run first, validate manifest/checksums, reject zip slip and
+  executables, detect conflicts, and require explicit confirmation.
+- One-click Quality Gate is a local aggregation concept over existing quality
+  gates and must not call real LLMs or auto-fix content.
+- One-click World Export must run validation and safe export profiles before
+  packaging, and must not include secrets or hidden authoring text by default.
+- Offline Help must read local docs only and must not load remote content.
+
+These are intentionally described as local-only tools. They are not cloud
+sync, account-based collaboration, online help, or automatic publishing
+features.

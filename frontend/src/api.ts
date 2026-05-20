@@ -2060,6 +2060,61 @@ export type StudioStatus = {
   playtest_summary: StudioPlaytestSummary;
 };
 
+export type ProjectWorkspace = {
+  workspace_id: string;
+  name: string;
+  path_redacted: string;
+  world_count: number;
+  last_opened_at?: string | null;
+  engine_version: string;
+  schema_version: string;
+  safe_status: "ok" | "missing" | "invalid" | "unsafe_path";
+};
+
+export type WorkspaceListResponse = {
+  local_only: boolean;
+  workspaces: ProjectWorkspace[];
+};
+
+export type WorkspaceTemplateType =
+  | "blank_studio"
+  | "novel_project"
+  | "world_project"
+  | "RP_project"
+  | "script_package_project"
+  | "module_development_project"
+  | "campaign_project";
+
+export type WorkspaceTemplate = {
+  template_id: WorkspaceTemplateType;
+  name: string;
+  description: string;
+  directories: string[];
+  default_config_template: string;
+  starter_world: boolean;
+  docs_links: string[];
+  recommended_workflow_presets: string[];
+};
+
+export type WorkspaceTemplateListResponse = {
+  local_only: boolean;
+  templates: WorkspaceTemplate[];
+};
+
+export type RecentProjectEntry = {
+  workspace_id: string;
+  display_name: string;
+  path_redacted: string;
+  last_opened_at: string;
+  last_world_id?: string | null;
+  safe_status: "ok" | "missing" | "invalid" | "unsafe_path";
+};
+
+export type RecentProjectsResponse = {
+  local_only: boolean;
+  projects: RecentProjectEntry[];
+};
+
 export type StudioConfigSummary = {
   local_only: boolean;
   llm_provider: string;
@@ -2076,6 +2131,87 @@ export type StudioConfigSummary = {
   selected_prompt_profile_id: string;
   prompt_profiles: PromptProfile[];
   privacy_notes: string[];
+};
+
+export type LocalConfigIssue = {
+  code: string;
+  severity: "info" | "warning" | "error";
+  message: string;
+  safe_field: string;
+};
+
+export type LocalConfigSummary = {
+  local_only: boolean;
+  provider_type: string;
+  model_id: string;
+  debug_api_enabled: boolean;
+  authoring_api_enabled: boolean;
+  eval_api_enabled: boolean;
+  playtest_api_enabled: boolean;
+  usage_tracking_enabled: boolean;
+  database_configured: boolean;
+  database_path_hint: string;
+  api_key_configured: boolean;
+  local_paths_redacted: Record<string, string>;
+  issues: LocalConfigIssue[];
+};
+
+export type LocalEnvTemplateResponse = {
+  local_only: boolean;
+  file_name: string;
+  template: string;
+  contains_real_secret: boolean;
+  writes_to_disk: boolean;
+};
+
+export type LocalReleaseNoteSummary = {
+  version: string;
+  title: string;
+  path: string;
+  summary: string;
+  upgrade_notes: string[];
+  known_limitations: string[];
+};
+
+export type LocalUpdateNotesIndex = {
+  local_only: boolean;
+  current_version: string;
+  release_notes: LocalReleaseNoteSummary[];
+  warnings: string[];
+};
+
+export type DesktopHealthStatus = "pass" | "warning" | "error";
+
+export type DesktopHealthCheckItem = {
+  check_id: string;
+  label: string;
+  status: DesktopHealthStatus;
+  message: string;
+  safe_detail?: string | null;
+};
+
+export type DesktopHealthCheckReport = {
+  local_only: boolean;
+  overall_status: DesktopHealthStatus;
+  checks: DesktopHealthCheckItem[];
+  provider_config: LocalConfigSummary;
+  current_workspace?: ProjectWorkspace | null;
+  recent_errors: string[];
+};
+
+export type CrashReport = {
+  id: string;
+  timestamp: string;
+  component: string;
+  error_type: string;
+  safe_message: string;
+  stack_redacted: string;
+  context_safe_summary: Record<string, string>;
+};
+
+export type CrashReportListResponse = {
+  local_only: boolean;
+  reports: CrashReport[];
 };
 
 export type PromptProfileTemperatureOverrides = {
@@ -2682,6 +2818,110 @@ export async function fetchStudioStatus(): Promise<StudioStatus> {
 
 export async function fetchStudioConfigSummary(): Promise<StudioConfigSummary> {
   return requestJson<StudioConfigSummary>("/studio/config-summary");
+}
+
+export async function fetchLocalConfigSummary(): Promise<LocalConfigSummary> {
+  return requestJson<LocalConfigSummary>("/studio/config/summary");
+}
+
+export async function fetchLocalConfigIssues(): Promise<LocalConfigIssue[]> {
+  return requestJson<LocalConfigIssue[]>("/studio/config/issues");
+}
+
+export async function generateLocalEnvTemplate(): Promise<LocalEnvTemplateResponse> {
+  return requestJson<LocalEnvTemplateResponse>("/studio/config/generate-template", {
+    method: "POST"
+  });
+}
+
+export async function fetchLocalUpdateNotes(): Promise<LocalUpdateNotesIndex> {
+  return requestJson<LocalUpdateNotesIndex>("/studio/update-notes");
+}
+
+export async function fetchDesktopHealth(): Promise<DesktopHealthCheckReport> {
+  return requestJson<DesktopHealthCheckReport>("/studio/health");
+}
+
+export async function runDesktopHealthCheck(): Promise<DesktopHealthCheckReport> {
+  return requestJson<DesktopHealthCheckReport>("/studio/health/check", {
+    method: "POST"
+  });
+}
+
+export async function fetchCrashReports(): Promise<CrashReportListResponse> {
+  return requestJson<CrashReportListResponse>("/debug/crash-reports");
+}
+
+export async function fetchCrashReport(reportId: string): Promise<CrashReport> {
+  return requestJson<CrashReport>(`/debug/crash-reports/${encodeURIComponent(reportId)}`);
+}
+
+export async function deleteCrashReport(reportId: string): Promise<{ local_only: boolean; deleted: boolean }> {
+  return requestJson<{ local_only: boolean; deleted: boolean }>(`/debug/crash-reports/${encodeURIComponent(reportId)}`, {
+    method: "DELETE"
+  });
+}
+
+export async function fetchStudioWorkspaces(): Promise<WorkspaceListResponse> {
+  return requestJson<WorkspaceListResponse>("/studio/workspaces");
+}
+
+export async function fetchWorkspaceTemplates(): Promise<WorkspaceTemplateListResponse> {
+  return requestJson<WorkspaceTemplateListResponse>("/studio/workspace-templates");
+}
+
+export async function addStudioWorkspace(path: string, name?: string): Promise<ProjectWorkspace> {
+  return requestJson<ProjectWorkspace>("/studio/workspaces", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ path, name })
+  });
+}
+
+export async function createWorkspaceFromTemplate(
+  templateId: WorkspaceTemplateType,
+  path: string,
+  name?: string
+): Promise<ProjectWorkspace> {
+  return requestJson<ProjectWorkspace>("/studio/workspaces/create-from-template", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ template_id: templateId, path, name })
+  });
+}
+
+export async function selectStudioWorkspace(workspaceId: string, lastWorldId?: string): Promise<ProjectWorkspace> {
+  return requestJson<ProjectWorkspace>("/studio/workspaces/select", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ workspace_id: workspaceId, last_world_id: lastWorldId })
+  });
+}
+
+export async function fetchCurrentStudioWorkspace(): Promise<ProjectWorkspace> {
+  return requestJson<ProjectWorkspace>("/studio/workspaces/current");
+}
+
+export async function fetchRecentProjects(): Promise<RecentProjectsResponse> {
+  return requestJson<RecentProjectsResponse>("/studio/recent-projects");
+}
+
+export async function removeRecentProject(workspaceId: string): Promise<{ local_only: boolean; removed: boolean }> {
+  return requestJson<{ local_only: boolean; removed: boolean }>(`/studio/recent-projects/${encodeURIComponent(workspaceId)}`, {
+    method: "DELETE"
+  });
+}
+
+export async function clearRecentProjects(): Promise<{ local_only: boolean; cleared: boolean }> {
+  return requestJson<{ local_only: boolean; cleared: boolean }>("/studio/recent-projects/clear", {
+    method: "POST"
+  });
 }
 
 export async function fetchPromptProfiles(): Promise<PromptProfileListResponse> {

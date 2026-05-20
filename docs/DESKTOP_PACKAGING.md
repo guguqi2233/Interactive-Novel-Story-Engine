@@ -1,315 +1,180 @@
-# Desktop Startup Reliability
+# Desktop Packaging Safety Pass
 
 ## Status
 
-v1.0 keeps desktop packaging as a local studio launcher prototype and focuses
-on startup reliability. The launcher scripts check Python, Node/npm, installed
-dependencies, `.env` guidance, `DATABASE_URL`, occupied ports, backend and
-frontend health, studio status, and safe local feature flags. They are not a
-formal installer, signed application, auto-updater, or public distribution
-package.
+v1.7 keeps desktop packaging as a local-only studio prototype. The supported
+workflow is still a transparent launcher that starts the FastAPI backend and
+the Vite frontend. There is no formal installer, code signing, automatic
+update channel, cloud sync, account system, marketplace, or telemetry upload.
 
-No Tauri or Electron dependency is introduced in v1.0. The current safest
-path is still a transparent local launcher that starts the existing FastAPI
-backend and Vite frontend without changing backend API semantics.
+The desktop layer is a convenience shell around the backend API. It must not
+modify `GameState`, write saves, apply content, or enable gameplay modules
+outside the existing backend services and validation gates.
 
-## Recommended Scheme
+## Supported Local Launcher
 
-Use the local launcher scripts:
+Use the local launcher scripts from the repository root:
 
 - Windows: `scripts/start_local_studio.ps1`
 - macOS/Linux-style shells: `scripts/start_local_studio.sh`
 
-The scripts start:
-
-- backend: `python -m uvicorn app.main:app --host 127.0.0.1 --port 8000`
-- frontend dev mode: `npm run dev -- --host 127.0.0.1 --port 5173`
-- frontend built preview mode: `npm run preview -- --host 127.0.0.1 --port 5173`
-- browser: `http://127.0.0.1:5173`, unless disabled
-
-Logs are written to `logs/`, which is ignored by git.
-
-## Windows Launcher
-
-Run from the repository root:
+The launchers can run safe startup diagnostics before starting services:
 
 ```powershell
-.\scripts\start_local_studio.ps1
-```
-
-Useful options:
-
-```powershell
-.\scripts\start_local_studio.ps1 -NoBrowser
-.\scripts\start_local_studio.ps1 -BackendPort 8000 -FrontendPort 5173
-.\scripts\start_local_studio.ps1 -UseBuiltFrontend
-.\scripts\start_local_studio.ps1 -SkipDependencyCheck
+python -m backend.app.tools.startup_diagnostics
 .\scripts\start_local_studio.ps1 -PreflightOnly
 ```
 
-`-UseBuiltFrontend` requires:
-
-```powershell
-cd frontend
-npm run build
-```
-
-The Windows script checks for:
-
-- `python`
-- `npm`
-- repository `pyproject.toml`
-- `frontend/package.json`
-- `frontend/node_modules`
-- importable backend dependencies: `fastapi`, `uvicorn`, `pydantic`, and
-  `app.main`
-- `.env` presence, with a safe prompt to copy `.env.example` if missing
-- non-empty `DATABASE_URL`, defaulting to `sqlite:///./world_engine.db`
-- backend and frontend port availability before startup
-- `frontend/dist/index.html` when `-UseBuiltFrontend` is used
-
-After launch it checks:
-
-- backend `/health`
-- backend `/studio/status`
-- frontend URL availability
-
-The checks are readiness hints, not formal process supervision. If a check times
-out, inspect `logs/desktop-backend.err.log` or `logs/desktop-frontend.err.log`.
-
-## Shell Launcher
-
-For macOS/Linux-style shells:
-
 ```bash
-bash scripts/start_local_studio.sh
-```
-
-Useful options:
-
-```bash
-bash scripts/start_local_studio.sh --no-browser
-bash scripts/start_local_studio.sh --backend-port 8000 --frontend-port 5173
-bash scripts/start_local_studio.sh --use-built-frontend
-bash scripts/start_local_studio.sh --skip-dependency-check
+python -m backend.app.tools.startup_diagnostics
 bash scripts/start_local_studio.sh --preflight-only
-bash scripts/start_local_studio.sh --health-timeout-seconds 45
 ```
 
-The shell script is a convenience prototype. Windows PowerShell remains the
-primary supported local desktop launcher for this repository. On macOS and
-Linux, browser opening depends on `open` or `xdg-open`; if neither is present,
-the script prints the URL for manual opening.
+The scripts start the backend, the frontend dev server or built preview, write
+local logs under `logs/`, and optionally open `http://127.0.0.1:5173`.
 
-The shell script performs the same preflight class as the Windows script:
-Python, npm, dependency folders, backend imports, `DATABASE_URL`, port
-availability, `.env` guidance, built frontend presence when requested, and
-post-launch health checks.
+## Packaging Safety Checklist
 
-## Runtime Status Output
+Before any local desktop bundle or handoff archive is created, verify:
 
-The launchers print safe local status:
-
-- backend URL
-- frontend URL
-- frontend mode
-- log directory
-- `LLM_PROVIDER`
-- `ENABLE_AUTHORING_API`
-- `ENABLE_DEBUG_API`
-- `ENABLE_PERF_LOGGING`
-- `VITE_API_BASE_URL`
-- backend `/health` status
-- backend `/studio/status` reachability
-- frontend availability
-- database URL configured, without printing secret environment dumps
-- warnings for `LLM_PROVIDER=openai` without `LLM_API_KEY`
-- warnings for `LLM_PROVIDER=local_http` without `LOCAL_LLM_BASE_URL`
-
-They do not print `LLM_API_KEY`, environment dumps, database contents, prompts,
-raw `GameState`, or raw `state_deltas`.
-
-## Environment Variables
-
-The launchers read or set safe local defaults:
-
-- `DATABASE_URL`
-  - default: `sqlite:///./world_engine.db`
-  - local SQLite files are ignored by git.
-- `LLM_PROVIDER`
-  - default: `mock`
-  - use real providers only when explicitly configured in the shell.
-- `LLM_API_KEY`
-  - not set by the scripts.
-  - not embedded into frontend code.
-  - must stay in a local shell environment or ignored `.env`.
-- `LOCAL_LLM_BASE_URL`, `LOCAL_LLM_MODEL`, `LOCAL_LLM_TIMEOUT_SECONDS`,
-  `LOCAL_LLM_JSON_MODE`
-  - passed through for local model provider experiments.
-  - not secret by default, but still not exposed as frontend `VITE_` variables.
-- `ENABLE_DEBUG_API`
-  - default: `true` for local development.
-- `ENABLE_AUTHORING_API`
-  - default: `false`.
-- `ENABLE_PERF_LOGGING`
-  - default: `false`.
-- `VITE_API_BASE_URL`
-  - default: `http://127.0.0.1:8000`.
-
-## Secret Handling
-
-The prototype must not:
-
-- commit `.env`;
-- write API keys to source, docs examples, frontend assets, logs, or saves;
-- pass `LLM_API_KEY` into Vite as a `VITE_` variable;
-- store credentials in `frontend/dist`;
-- include `.env` in any desktop build output;
-- upload telemetry.
-
-If a user sets `LLM_PROVIDER=openai`, they must provide `LLM_API_KEY` through
-their own local shell or ignored `.env` workflow. The launcher does not assign
-or print it.
-
-## Common Startup Problems
-
-### Port Occupied
-
-If the backend or frontend port is already in use, the launcher exits before
-starting a second copy. Stop the existing process or choose different ports:
-
-```powershell
-.\scripts\start_local_studio.ps1 -BackendPort 8010 -FrontendPort 5174
-```
-
-```bash
-bash scripts/start_local_studio.sh --backend-port 8010 --frontend-port 5174
-```
-
-### Missing Environment
-
-The launcher can run with safe defaults, but `.env` is the expected local place
-for durable configuration. Create it from the example and keep it untracked:
-
-```powershell
-Copy-Item .env.example .env
-```
-
-```bash
-cp .env.example .env
-```
-
-### Missing npm Install
-
-If `frontend/node_modules` is missing, install frontend dependencies:
-
-```bash
-cd frontend
-npm install
-```
-
-### Missing API Key
-
-`LLM_PROVIDER=mock` and `local_stub` need no API key. If
-`LLM_PROVIDER=openai`, provide `LLM_API_KEY` in your local shell or ignored
-`.env`; do not add it to frontend files, docs, commits, or logs.
-
-### Local Model Unavailable
-
-If `LLM_PROVIDER=local_http`, set `LOCAL_LLM_BASE_URL` and make sure the local
-model service is running before using LLM-backed flows. The launcher warns when
-the URL is missing but does not start any model service.
-
-### Health Check Timeout
-
-If `/health`, `/studio/status`, or the frontend URL times out, inspect:
-
-- `logs/desktop-backend.err.log`
-- `logs/desktop-frontend.err.log`
-
-The scripts are startup helpers, not process supervisors. Close the spawned
-backend/frontend terminals or processes manually when finished.
-
-## Platform Notes
-
-- Windows: PowerShell is the primary launcher path for v1.0. Use
-  `-PreflightOnly` to check dependencies without starting processes.
-- macOS: use `bash scripts/start_local_studio.sh`; browser opening depends on
-  the `open` command.
-- Linux: use `bash scripts/start_local_studio.sh`; browser opening depends on
-  `xdg-open`.
-- All platforms: this is a local-only prototype. It does not create a signed
-  app, installer, auto-update channel, account system, or cloud sync.
+1. `python -m pytest` passes.
+2. `cd frontend && npm.cmd run build` passes on Windows, or the platform
+   equivalent `npm run build` passes.
+3. `git ls-files` does not include local secrets or generated outputs:
+   `.env`, database files, logs, crash reports, backups, caches,
+   `node_modules`, `frontend/dist`, `desktop-dist`, `desktop_build`,
+   `desktop-build`, `desktop-release`, or `release`.
+4. Scripts do not contain real `sk-...` API keys or provider secrets.
+5. Frontend build artifacts do not contain `.env` contents, `LLM_API_KEY`,
+   `OPENAI_API_KEY`, `Authorization` headers, raw prompts, or raw env dumps.
+6. Exported bundles use safe export profiles and exclude `.env`, API keys,
+   database connection config, logs, cache directories, and executable files.
+7. Crash reports and log views are local-only and redacted.
+8. Backups exclude `.env`, API keys, raw env, logs, caches, frontend build
+   outputs, and desktop build outputs by default.
+9. The launcher only passes `VITE_API_BASE_URL` to the frontend; it never
+   injects API keys into `VITE_` variables.
+10. No desktop workflow calls a real LLM provider unless the user explicitly
+    configures the backend provider for normal local use.
 
 ## Git Ignore Expectations
 
-The repository ignores local and desktop build artifacts:
+`.gitignore` must exclude local secrets, runtime files, and desktop build
+outputs:
 
 - `.env`
-- `*.db`
+- `frontend/.env`
+- `*.db`, `*.sqlite`, `*.sqlite3`, and journal files
+- `*.log`
 - `logs/`
+- `crash-reports/`
+- `backups/`
+- `.cache/`, `cache/`, and `caches/`
 - `node_modules/`
 - `dist/`
 - `frontend/dist/`
 - `desktop-dist/`
-- `release/`
-- `src-tauri/target/`
-- `src-tauri/gen/`
+- `desktop_build/`
 - `desktop-build/`
 - `desktop-release/`
 - `electron-dist/`
 - `tauri-dist/`
+- `release/`
 - `installers/`
-- Python and pytest caches
-- TypeScript build info
+- `src-tauri/target/`
+- `src-tauri/gen/`
 - common installer artifacts such as `*.msi`, `*.dmg`, `*.AppImage`, `*.deb`,
-  `*.rpm`, and `*.pkg`
+  `*.rpm`, `*.pkg`, and `*.exe`
 
-Before any future formal installer milestone, run a bundle scan to confirm no
-secret files or API keys are included.
+The repository should not track generated desktop outputs. If a future formal
+packaging milestone needs checked-in metadata, add a narrow exception for that
+metadata only, not for produced bundles.
+
+## Frontend Build Safety
+
+The Vite frontend only receives `VITE_API_BASE_URL` from the launcher. API keys,
+provider secrets, raw env values, database URLs, prompt text, hidden facts,
+debug memory, and raw `state_deltas` must not be written to frontend source or
+`frontend/dist`.
+
+Recommended local scan after a build:
+
+```powershell
+rg -n "sk-|LLM_API_KEY|OPENAI_API_KEY|Authorization|DATABASE_URL|raw env" frontend/dist scripts README.md docs/DESKTOP_PACKAGING.md
+```
+
+Fake test keys that are explicitly named as fake test fixtures may appear in
+tests, but real-looking keys must block release.
+
+## Launcher Safety
+
+The launcher scripts may:
+
+- check Python, Node/npm, dependencies, ports, `.env` presence, database path,
+  workspace status, build output presence, and prior crash report count;
+- start backend and frontend local processes;
+- write stdout/stderr logs to ignored local `logs/`;
+- print safe status summaries and recovery hints.
+
+The launcher scripts must not:
+
+- hardcode API keys;
+- print API keys or raw env;
+- pass `LLM_API_KEY` into the frontend;
+- modify `GameState`, saves, world packs, content packs, modules, or packages;
+- install dependencies unless a future explicit user-confirmed option is added;
+- upload telemetry or crash reports;
+- start a real LLM service.
+
+## Backup, Export, And Crash Reports
+
+Backups and world exports are local bundle workflows, not cloud sync. They must
+default to safe profiles and exclude `.env`, API keys, raw env, logs, caches,
+database connection secrets, frontend build outputs, desktop build outputs,
+and executable files.
+
+Crash reports are local-only. They may store redacted exception type, component,
+safe message, redacted stack, and safe context summary. They must not include
+API keys, raw prompts, hidden fact text, raw env, or database passwords.
+
+Current v1.7 implementation note: the desktop boundary policy, crash report
+viewer, health check, startup diagnostics, workspace selector, update notes,
+and launcher scripts are implemented. Dedicated desktop Backup / Restore,
+Log Viewer, Error Recovery Wizard, One-click Quality Gate, One-click World
+Export, and Offline Help runtime flows are still partial or boundary-level in
+the current code. Do not describe those flows as complete desktop runtime
+features until their APIs/CLI/UI are implemented and tested.
 
 ## Tauri / Electron Review
 
-### Tauri
+Tauri and Electron remain future options only. v1.7 does not add either runtime
+or produce an installer. A future desktop shell must preserve the same boundary:
+the shell calls backend APIs and cannot become a second engine, a privileged
+state editor, or a secret store exposed to frontend code.
 
-Tauri remains the preferred candidate for a future smaller desktop shell. It
-would require Rust tooling, sidecar backend packaging, local data directory
-rules, and an explicit secret handling design.
+## Not In v1.7
 
-### Electron
-
-Electron remains viable if Node-based process management becomes more valuable
-than bundle size. It would still need the same local data and secret policies.
-
-### Current v1.0 Decision
-
-Do not add Tauri or Electron yet. The local authoring, migration, graph,
-evaluation, performance, and provider flows are still changing, so a script
-launcher remains easier to audit and safer for local-only development.
-
-## Not In This Prototype
-
-v1.0 does not include:
+v1.7 does not include:
 
 - formal installer generation;
 - code signing;
-- auto-update;
+- automatic updates;
+- online marketplace;
 - account login;
 - cloud sync;
-- Tauri or Electron dependency setup;
-- frontend storage of provider keys;
-- backend API semantic changes;
-- automatic process shutdown when the browser closes.
+- telemetry upload;
+- bundling `.env` or API keys;
+- frontend direct reads of `.env`;
+- desktop shell direct `GameState` writes.
 
-## Future Path
+## Final Packaging Gate
 
-Recommended next steps:
+A v1.7 desktop packaging safety pass is acceptable only when:
 
-1. Keep using the launcher while v1.0 local studio workflows stabilize.
-2. Add explicit status/stop commands if long-running local processes become
-   confusing.
-3. Move SQLite, logs, worlds, and mods to an OS-specific app data directory
-   before formal packaging.
-4. Decide Tauri vs Electron only after file-dialog, process-lifecycle, and
-   distribution requirements are clearer.
-5. Add automated bundle scanning before any installer milestone.
+- tests and frontend build pass;
+- `.gitignore` covers all local secret/runtime/build outputs listed above;
+- `git ls-files` confirms excluded outputs are not tracked;
+- script and repository scans find no real API keys;
+- documentation states the local-only prototype limits clearly;
+- no generated bundle contains `.env`, API keys, logs, caches, database files,
+  raw prompts, raw env, hidden facts, or executable plugin code.

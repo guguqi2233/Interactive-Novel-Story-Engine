@@ -9,13 +9,16 @@ This project is for local personal use. It is not designed as a hosted service.
 
 ## Current Version Scope
 
-v1.6 is Advanced Gameplay Modules on top of v1.5 Local Model & Prompt Lab,
-v1.4 Content Production Pipeline, v1.3 Advanced NPC Simulation, v1.2 Visual Authoring Pro, the v1.1 Roleplay Immersion Layer, and the v1.0
-Stable Local Studio Edition. v1.0 freezes the local contracts built through
-the v0.x series, v1.1 adds character voice and RP-safe dialogue, v1.2 expands
-local visual authoring, v1.3 adds bounded rule-driven NPC autonomy, v1.4
-adds local batch content production, v1.5 adds local provider/prompt
-diagnostics, and v1.6 adds local declarative gameplay modules without
+v1.7 is Polished Desktop Studio on top of v1.6 Advanced Gameplay Modules,
+v1.5 Local Model & Prompt Lab, v1.4 Content Production Pipeline, v1.3
+Advanced NPC Simulation, v1.2 Visual Authoring Pro, the v1.1 Roleplay
+Immersion Layer, and the v1.0 Stable Local Studio Edition. v1.0 freezes the
+local contracts built through the v0.x series, v1.1 adds character voice and
+RP-safe dialogue, v1.2 expands local visual authoring, v1.3 adds bounded
+rule-driven NPC autonomy, v1.4 adds local batch content production, v1.5 adds
+local provider/prompt diagnostics, v1.6 adds local declarative gameplay
+modules, and v1.7 improves local desktop startup, project selection,
+diagnostics, update notes, crash reports, and packaging safety without
 changing world authority:
 
 - Multi-world content packs.
@@ -156,6 +159,16 @@ changing world authority:
 - Gameplay Module Regression Playtests.
 - Gameplay Module Debugger.
 - Gameplay Module Import / Export.
+- Desktop Studio Boundary Contract.
+- Desktop Launcher Pro scripts.
+- Project Selector and Recent Projects.
+- Local Config Manager safe summaries.
+- Local Update Notes.
+- Desktop Health Check.
+- Workspace Templates.
+- Crash Report Local Viewer.
+- Desktop Startup Diagnostics.
+- Desktop Packaging Safety Pass.
 
 The LLM is still not the world judge. Rule outcomes are decided by local code.
 NPC simulation is deterministic, finite, knowledge-scoped, and applied through
@@ -163,7 +176,21 @@ NPC simulation is deterministic, finite, knowledge-scoped, and applied through
 production tools generate drafts, candidates, packages, previews, and reports;
 they do not directly modify active `GameState`. v1.6 gameplay modules resolve
 through `ActionRegistry` and deterministic rule handlers; Action Mods are
-declarative data and cannot execute arbitrary code.
+declarative data and cannot execute arbitrary code. v1.7 desktop tools are
+local convenience layers around backend APIs; they do not directly write
+`GameState`, read frontend secrets, or turn the desktop shell into a second
+engine.
+
+## v1.7 Documentation Map
+
+- `docs/DESKTOP_STUDIO_BOUNDARY.md`: v1.7 desktop shell, backend, frontend,
+  local config, backup/export, log, crash, and secret boundary.
+- `docs/DESKTOP_PACKAGING.md`: local launcher, packaging safety checklist,
+  `.gitignore` expectations, and prototype limits.
+- `docs/V1_7_ROADMAP.md`: v1.7 Polished Desktop Studio roadmap.
+- `docs/V1_7_LLM_BOUNDARY_AUDIT.md`: v1.7 LLM permission boundary audit.
+- `docs/V1_7_LOCAL_DATA_PRIVACY_AUDIT.md`: v1.7 local data/privacy audit.
+- `docs/V1_7_SECURITY_AUDIT.md`: v1.7 security and desktop packaging audit.
 
 ## v1.6 Documentation Map
 
@@ -218,8 +245,8 @@ declarative data and cannot execute arbitrary code.
 - `docs/V1_0_API_CONTRACT.md`: frozen v1.0 API contract.
 - `docs/V1_0_SAVE_MIGRATION_GUARANTEE.md`: migration guarantees and matrix.
 - `docs/V1_0_MOD_CONTRACT.md`: content-only mod packaging contract.
-- `docs/DESKTOP_PACKAGING.md`: local startup scripts and desktop prototype
-  limitations.
+- `docs/DESKTOP_PACKAGING.md`: local startup scripts, startup diagnostics,
+  desktop prototype limits, and packaging safety checklist.
 - `docs/END_TO_END_LOCAL_WORKFLOW.md`: start-to-finish local workflow.
 - `docs/UPGRADE_GUIDE_V0_TO_V1.md`: upgrade notes from v0.x to v1.0.
 - `docs/V1_0_RELEASE_CRITERIA.md`: release blockers and tag checklist.
@@ -263,6 +290,7 @@ LOCAL_LLM_JSON_MODE=true
 ENABLE_DEBUG_API=true
 ENABLE_AUTHORING_API=false
 ENABLE_PERF_LOGGING=false
+ENABLE_USAGE_TRACKING=false
 ENABLE_PLAYTEST_API=false
 ENABLE_EVAL_API=false
 VITE_API_BASE_URL=http://127.0.0.1:8000
@@ -273,6 +301,9 @@ MODULE_ROOT=gameplay_modules
 TEMPLATE_ROOT=templates
 PACKAGE_IMPORT_ROOT=imports
 CONTENT_LIBRARY_ROOT=
+WORKSPACE_ROOT=
+LOG_DIR=logs
+BACKUP_DIR=backups
 ```
 
 `LLM_PROVIDER=mock` is the local development default. `local_stub` is a
@@ -295,6 +326,12 @@ There is currently no separate `ENABLE_QUALITY_API` setting. v0.9-v1.6 quality
 tools reuse local-only debug/eval/playtest/performance/authoring gates where
 implemented; some analyzer endpoints are local-only and should not be exposed
 outside a trusted localhost setup.
+
+`WORKSPACE_ROOT`, `LOG_DIR`, and `BACKUP_DIR` document v1.7 Desktop Studio
+local path intentions. Current services still default to the current
+workspace/repository and ignored local `logs/` unless a specific script or
+future settings integration uses these values. Do not put secrets in these
+paths, and do not expose them as frontend `VITE_*` variables.
 
 ## Start the Backend
 
@@ -348,14 +385,16 @@ configured, a redacted database hint, and local privacy notes. It does not show
 the API key, raw `.env`, full sensitive paths, or raw state. The frontend does
 not edit `.env`.
 
-## Local Studio Launcher Prototype
+## Local Studio Launcher Pro
 
-v1.0 keeps the desktop app shell as a local launcher prototype. The scripts
-check Python and Node/npm dependencies, verify backend imports, check installed
-frontend dependencies, warn if `.env` is missing, check `DATABASE_URL`, fail
-early when backend/frontend ports are occupied, start the backend, start the
-frontend in dev mode or built-preview mode, run local health checks, print safe
-status, and open the local frontend URL:
+v1.7 keeps the desktop app shell local and upgrades the launcher into a more
+reliable local startup surface. It is still not a formal installer. The scripts
+run safe startup diagnostics, check Python 3.11+, Node/npm, backend imports,
+installed frontend dependencies, `.env` presence, `DATABASE_URL`, workspace
+status, frontend build presence, previous crash reports, and backend/frontend
+port availability. They then start the backend, start the frontend in dev mode
+or built-preview mode, run local health checks, print safe status, and open the
+local frontend URL:
 
 ```powershell
 .\scripts\start_local_studio.ps1
@@ -365,11 +404,29 @@ status, and open the local frontend URL:
 bash scripts/start_local_studio.sh
 ```
 
+Help:
+
+```powershell
+.\scripts\start_local_studio.ps1 -Help
+```
+
+```bash
+bash scripts/start_local_studio.sh --help
+```
+
+Safe startup diagnostics can also run directly:
+
+```powershell
+python -m backend.app.tools.startup_diagnostics
+python -m backend.app.tools.startup_diagnostics --json
+```
+
 The launcher reads local environment variables and applies safe defaults for
 `DATABASE_URL`, `LLM_PROVIDER`, `ENABLE_DEBUG_API`, `ENABLE_AUTHORING_API`,
 `ENABLE_PERF_LOGGING`, and `VITE_API_BASE_URL`. It does not set, print, or
-embed `LLM_API_KEY`. If `.env` is missing, it continues with safe defaults and
-suggests copying `.env.example` for local customization.
+embed `LLM_API_KEY`, and it only passes `VITE_API_BASE_URL` to the frontend
+process. If `.env` is missing, it continues with safe defaults and suggests
+copying `.env.example` for local customization.
 
 Common startup checks and fixes:
 
@@ -393,7 +450,9 @@ cd ..
 ```
 
 Use `.\scripts\start_local_studio.ps1 -PreflightOnly` to check configuration
-without starting backend/frontend processes. After launch, the scripts check:
+without starting backend/frontend processes. Use `-SkipStartupDiagnostics` or
+`--skip-startup-diagnostics` only when you want the older launcher checks
+without the v1.7 diagnostics report. After launch, the scripts check:
 
 - `GET /health`
 - `GET /studio/status`
@@ -405,8 +464,167 @@ usually uses `xdg-open` to launch a browser automatically. Neither script
 creates a formal installer, signs code, enables auto-update, syncs to cloud, or
 packages secrets.
 
-See `docs/DESKTOP_PACKAGING.md` for the Tauri/Electron/local-launcher review
-and packaging safety notes.
+If Windows PowerShell prints a profile signing warning before the launcher
+output appears, treat it as a local PowerShell profile policy warning rather
+than a studio failure. Run with `powershell -NoProfile -ExecutionPolicy Bypass`
+if you need to suppress profile loading.
+
+Launcher logs go to `logs/`, which is ignored by git. The launcher does not
+modify `GameState`, saves, databases, worlds, modules, prompt profiles, or
+content packs.
+
+Desktop packaging remains a local prototype. Before sharing any local bundle,
+run `python -m pytest`, `cd frontend && npm.cmd run build`, confirm
+`git ls-files` does not include `.env`, databases, logs, crash reports,
+backups, caches, `frontend/dist`, or desktop build outputs, and scan scripts
+and built assets for real API keys. See `docs/DESKTOP_PACKAGING.md` for the
+full packaging safety checklist and Tauri/Electron/local-launcher review.
+
+## v1.7 Desktop Studio Workflows
+
+v1.7 desktop workflows are local-only convenience features around backend APIs.
+They do not replace validation gates, do not write active `GameState`, do not
+upload data, and do not expose API keys to the frontend.
+
+### Select A Project
+
+Use the Project Selector in the Studio UI, or call:
+
+```text
+GET  /studio/workspaces
+POST /studio/workspaces
+POST /studio/workspaces/select
+GET  /studio/workspaces/current
+```
+
+Workspace paths are validated and returned to the frontend as redacted path
+summaries. Adding a workspace stores a reference only; it does not import
+unknown content or modify active saves.
+
+### Recent Projects
+
+The Studio Home page can show recent project summaries:
+
+```text
+GET    /studio/recent-projects
+DELETE /studio/recent-projects/{workspace_id}
+POST   /studio/recent-projects/clear
+```
+
+Recent entries contain display name, redacted path, last-opened time, optional
+last world id, and safe status. They do not store API keys, raw env, or full
+sensitive paths.
+
+### Local Config Manager
+
+Use Settings / Local Config to inspect safe configuration:
+
+```text
+GET  /studio/config/summary
+GET  /studio/config/issues
+POST /studio/config/generate-template
+```
+
+The summary shows provider type/model, local feature flags, database
+configured yes/no, redacted path hints, and whether an API key is configured
+as a boolean. It never returns the key value or raw `.env`. The template
+endpoint returns an `.env.example`-style template and does not write secrets.
+
+### Logs And Error Recovery
+
+v1.7 defines the Log Viewer and Error Recovery Wizard boundaries, but the
+current runtime implementation is not a complete log/recovery workflow yet.
+The required boundary is:
+
+- log views must be debug-gated, read only local `logs/`, reject path
+  traversal, and redact API keys, raw prompts, Authorization headers, and
+  hidden facts;
+- recovery steps must default to safe recommendations and require explicit
+  confirmation before any risky local operation.
+
+Use the launcher logs in ignored `logs/` for now and keep recovery actions
+manual unless a future backend endpoint makes the operation explicit.
+
+### Backup / Restore
+
+v1.7 documents and tests the desktop backup/restore safety boundary, but the
+dedicated desktop Backup / Restore runtime is not complete in the current
+code. The required safe behavior is:
+
+- backup defaults exclude `.env`, API keys, logs, caches, databases, frontend
+  build outputs, desktop build outputs, and executable files;
+- restore must dry-run first, validate manifest/checksums, reject zip slip and
+  executable files, detect conflicts, and require explicit confirmation.
+
+Existing save and package import/export tools still apply their own validation
+and migration checks.
+
+### One-click Quality Gate And World Export
+
+Dedicated v1.7 one-click desktop workflows are not complete yet. Use the
+existing quality and export tooling:
+
+```powershell
+python -m app.tools.quality_gate
+python -m app.tools.validate_world worlds/mist_valley
+```
+
+World export must use safe profiles and validation. Safe exports must not
+include `.env`, API keys, logs, caches, database connection config, hidden
+authoring text by default, or executable files.
+
+### Offline Help And Update Notes
+
+Release/update notes are indexed locally:
+
+```text
+GET /studio/update-notes
+```
+
+This reads local docs only. It does not check the network, download patches,
+or run update scripts. A complete searchable Offline Help Docs page is still a
+future polish item; use local `docs/` and this README as the source of truth.
+
+### Desktop Health Check
+
+Run health checks from the Studio UI or through:
+
+```text
+GET  /studio/health
+POST /studio/health/check
+```
+
+Health checks report backend status, optional frontend reachability, database
+configured/reachable status, safe config status, workspace/world directory
+status, authoring/debug API state, provider safe summary, and recent-error
+placeholder status. They do not call real providers and do not return secrets.
+
+### Workspace Templates
+
+Create local workspaces from templates:
+
+```text
+GET  /studio/workspace-templates
+POST /studio/workspaces/create-from-template
+```
+
+Templates can create folder structures and safe starter files. They do not
+copy `.env`, write API keys, execute scripts, download remote templates, or
+overwrite existing non-empty workspaces.
+
+### Crash Report Local Viewer
+
+Crash reports are local and debug-gated:
+
+```text
+GET    /debug/crash-reports
+GET    /debug/crash-reports/{id}
+DELETE /debug/crash-reports/{id}
+```
+
+Reports include safe message, redacted stack, component, error type, and safe
+context summary. API keys, Authorization headers, raw env, raw prompts,
+hidden fact text, and database passwords are redacted or omitted.
 
 ## Scenario Templates
 

@@ -47,7 +47,9 @@ compatibility matrices, and prompt experiment packages only. v1.6 gameplay
 modules add rule-driven actions and optional state fields through
 `ActionRegistry`, declarative definitions, validation, and module packages;
 they still cannot bypass `StateDelta`, `EventLog`, Visibility, NPC Knowledge,
-or the LLM boundary.
+or the LLM boundary. v1.7 desktop studio tools add local launcher,
+workspace/config/health/crash/update-note convenience around the backend API;
+they do not become a second engine, secret store, or direct state editor.
 
 ## Current v1.0 Gameplay Loop
 
@@ -496,6 +498,59 @@ must remain guarded by action mod validation and hidden-leak tests so a module
 cannot expose hidden facts to `player_visible_facts` unless discovery is
 explicitly allowed by rules.
 
+## v1.7 Polished Desktop Studio Scope
+
+v1.7 adds a local desktop-studio polish layer around the existing backend and
+frontend. The goal is safer local startup, project navigation, configuration
+visibility, health diagnostics, update notes, crash report inspection, and
+packaging safety without changing world authority.
+
+Included in the current implementation:
+
+- Desktop Studio Boundary Contract.
+- Desktop Launcher Pro scripts for PowerShell and shell environments.
+- Startup Diagnostics CLI.
+- Project Selector and Recent Projects.
+- Local Config Manager safe summaries and `.env.example`-style template
+  generation.
+- Local Update Notes index.
+- Desktop Health Check.
+- Workspace Templates.
+- Crash Report Local Viewer.
+- Desktop packaging safety documentation and `.gitignore` hardening.
+- Frontend studio panels for the implemented v1.7 local surfaces.
+- v1.7 LLM, local data/privacy, and security/packaging audit docs.
+
+Current partial or boundary-only surfaces:
+
+- Log Viewer: policy-level redaction exists, but full runtime log viewer API
+  is not complete in the current code.
+- Error Recovery Wizard: recovery concepts remain roadmap/boundary level in
+  the current code.
+- Backup / Restore: desktop boundary and packaging rules define exclusions and
+  restore requirements, but full v1.7 backup/restore runtime is not complete.
+- One-click Quality Gate and One-click World Export: existing quality/export
+  systems remain available, but dedicated v1.7 one-click desktop workflows are
+  not complete.
+- Offline Help Docs: local docs exist and update notes are indexed, but a full
+  searchable offline help index is not complete.
+
+Desktop local-only boundary:
+
+- The desktop shell and launcher must use backend APIs and scripts only.
+- The desktop layer must not directly mutate `GameState`, saves, databases,
+  world packs, modules, prompt profiles, or content packs.
+- Frontend code must not read `.env`, API keys, raw env, provider secrets,
+  database passwords, raw prompts, raw logs, raw crash dumps, or hidden facts.
+- Config summaries may show safe booleans and labels only.
+- Logs and crash reports are local-only and redacted.
+- Backups and exports must default to excluding `.env`, API keys, logs,
+  caches, database connection config, frontend build outputs, desktop build
+  outputs, and executable files.
+- Desktop packaging remains a local prototype. v1.7 does not produce a formal
+  installer, signed application, automatic updater, cloud sync, account
+  system, marketplace, telemetry pipeline, or online docs updater.
+
 ## RP And World Engine Boundary
 
 The RP layer is above the world engine. It reads safe context from structured
@@ -854,6 +909,30 @@ event logging, provider abstraction, or content-only mod restrictions.
 - Module debug traces, dry-run output, raw StateDelta previews, hidden facts,
   hidden witnesses, hidden NPCs, or module secrets in player APIs, narrator
   prompts, or ordinary UI.
+
+## Not In v1.7
+
+- Formal desktop installer, code signing, or automatic update channel.
+- Cloud sync, accounts, multiplayer collaboration, online marketplace,
+  telemetry upload, hosted crash reporting, or remote help/update fetching.
+- Desktop shell direct `GameState` writes.
+- Frontend direct `.env`, API key, raw env, database password, or provider
+  secret access.
+- Launcher scripts that hardcode API keys or inject provider secrets into
+  frontend `VITE_*` variables.
+- Backup/export defaults that include `.env`, API keys, database connection
+  config, logs, caches, frontend build outputs, desktop build outputs, or
+  executable files.
+- Crash reports or logs uploaded to a network service.
+- Health/config/settings APIs returning raw env, API key values, hidden facts,
+  raw prompts, raw `GameState`, raw `state_deltas`, or full sensitive paths.
+- Workspace templates that copy `.env`, execute scripts, download remote
+  content, or overwrite existing non-empty workspaces.
+- Error recovery steps that automatically delete, overwrite, migrate, or
+  repair user data without explicit confirmation and validation.
+- Log Viewer, Backup / Restore, One-click Quality Gate, One-click Export, and
+  Offline Help being described as complete runtime features until their
+  dedicated services are fully implemented and tested.
 
 ## v1.0 Known Limitations
 

@@ -7,11 +7,43 @@ FRONTEND_PORT="5173"
 NO_BROWSER="false"
 USE_BUILT_FRONTEND="false"
 SKIP_DEPENDENCY_CHECK="false"
+SKIP_STARTUP_DIAGNOSTICS="false"
 PREFLIGHT_ONLY="false"
 HEALTH_TIMEOUT_SECONDS="30"
 
+show_help() {
+  cat <<'EOF'
+Local Studio Launcher Pro
+
+Usage:
+  bash scripts/start_local_studio.sh [options]
+
+Options:
+  --backend-host <host>              Backend host. Default: 127.0.0.1
+  --backend-port <port>              Backend port. Default: 8000
+  --frontend-port <port>             Frontend port. Default: 5173
+  --use-built-frontend               Serve frontend/dist with npm preview instead of Vite dev.
+  --no-browser                       Do not open the browser automatically.
+  --skip-dependency-check            Skip Python/npm/dependency/port checks.
+  --skip-startup-diagnostics         Skip the safe startup diagnostics CLI.
+  --preflight-only                   Run checks and exit without starting processes.
+  --health-timeout-seconds <seconds> Health-check timeout. Default: 30
+  --help                             Show this help.
+
+Safety:
+  The launcher never reads, prints, or injects LLM_API_KEY into frontend env.
+  It only passes VITE_API_BASE_URL to the frontend process.
+  It writes logs to local logs/, which is ignored by git.
+  It does not modify GameState, saves, databases, worlds, or content packs.
+EOF
+}
+
 while [ "$#" -gt 0 ]; do
   case "$1" in
+    --help|-h)
+      show_help
+      exit 0
+      ;;
     --backend-host)
       BACKEND_HOST="${2:?missing backend host}"
       shift 2
@@ -34,6 +66,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --skip-dependency-check)
       SKIP_DEPENDENCY_CHECK="true"
+      shift
+      ;;
+    --skip-startup-diagnostics)
+      SKIP_STARTUP_DIAGNOSTICS="true"
       shift
       ;;
     --preflight-only)
@@ -71,6 +107,24 @@ require_path() {
   local message="$2"
   if [ ! -e "${path}" ]; then
     echo "${message}" >&2
+    exit 1
+  fi
+}
+
+require_python_version() {
+  local version
+  version="$(python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+  python -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' || {
+    echo "Python 3.11+ is required. Found Python ${version}." >&2
+    exit 1
+  }
+}
+
+require_npm_available() {
+  local version
+  version="$(npm --version)"
+  if [ -z "${version}" ]; then
+    echo "npm was found but did not report a version." >&2
     exit 1
   fi
 }
@@ -128,9 +182,21 @@ export ENABLE_PERF_LOGGING="${ENABLE_PERF_LOGGING:-false}"
 export VITE_API_BASE_URL="${VITE_API_BASE_URL:-http://${BACKEND_HOST}:${BACKEND_PORT}}"
 export PYTHONPATH="backend${PYTHONPATH:+:${PYTHONPATH}}"
 
+if [ "${SKIP_STARTUP_DIAGNOSTICS}" != "true" ]; then
+  echo "Running safe startup diagnostics..."
+  if ! (
+    cd "${REPO_ROOT}"
+    PYTHONPATH="backend${PYTHONPATH:+:${PYTHONPATH}}" python -m backend.app.tools.startup_diagnostics --backend-port "${BACKEND_PORT}" --frontend-port "${FRONTEND_PORT}"
+  ); then
+    echo "Startup diagnostics reported blockers or warnings. Review the report above before continuing."
+  fi
+fi
+
 if [ "${SKIP_DEPENDENCY_CHECK}" != "true" ]; then
   require_command "python" "Install Python 3.11+ and make sure it is available on PATH."
+  require_python_version
   require_command "npm" "Install Node.js/npm and run npm install in frontend/."
+  require_npm_available
   require_path "${REPO_ROOT}/pyproject.toml" "pyproject.toml was not found. Run the launcher from this repository."
   require_path "${FRONTEND_ROOT}/package.json" "frontend/package.json was not found."
   require_path "${FRONTEND_ROOT}/node_modules" "frontend/node_modules was not found. Run: cd frontend && npm install"
@@ -164,7 +230,7 @@ else
 fi
 
 FRONTEND_URL="http://127.0.0.1:${FRONTEND_PORT}"
-echo "Local studio prototype starting."
+echo "Local Studio Launcher Pro starting."
 echo "Backend:  http://${BACKEND_HOST}:${BACKEND_PORT}"
 echo "Frontend: ${FRONTEND_URL}"
 echo "Frontend mode: ${FRONTEND_MODE}"
@@ -176,6 +242,8 @@ echo "Debug API:     ${ENABLE_DEBUG_API}"
 echo "Perf logging:  ${ENABLE_PERF_LOGGING}"
 echo "VITE_API_BASE_URL: ${VITE_API_BASE_URL}"
 echo "LLM_API_KEY is not read by this script and is never written to logs by the launcher."
+echo "Frontend env safety: only VITE_API_BASE_URL is passed to the frontend process."
+echo "State safety: launcher does not modify GameState, saves, databases, worlds, or content packs."
 if [ "${LLM_PROVIDER}" = "openai" ] && [ -z "${LLM_API_KEY:-}" ]; then
   echo "Warning: LLM_PROVIDER=openai but LLM_API_KEY is not set. Use mock/local_stub for offline local startup."
 fi

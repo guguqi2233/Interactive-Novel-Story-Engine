@@ -93,6 +93,14 @@ import {
   fetchTokenBudgetProfiles,
   fetchRecentModelUsage,
   fetchProviderRoutingSummary,
+  fetchStudioWorkspaces,
+  fetchWorkspaceTemplates,
+  addStudioWorkspace,
+  createWorkspaceFromTemplate,
+  selectStudioWorkspace,
+  fetchRecentProjects,
+  removeRecentProject,
+  clearRecentProjects,
   fetchReferenceIndex,
   fetchLocalContentLibrary,
   searchLocalContentLibrary,
@@ -128,6 +136,15 @@ import {
   fetchSessionDebugEvents,
   fetchSessionTimelineReplay,
   fetchStudioConfigSummary,
+  fetchLocalConfigSummary,
+  fetchLocalConfigIssues,
+  generateLocalEnvTemplate,
+  fetchLocalUpdateNotes,
+  fetchDesktopHealth,
+  runDesktopHealthCheck,
+  fetchCrashReports,
+  fetchCrashReport,
+  deleteCrashReport,
   fetchStudioStatus,
   fetchContentCoverage,
   reviewContentDiff,
@@ -154,6 +171,10 @@ import {
   ProviderRoutingRule,
   ProviderRoutingSummary,
   ProviderRoutingUseCase,
+  ProjectWorkspace,
+  WorkspaceTemplate,
+  WorkspaceTemplateType,
+  RecentProjectEntry,
   PromptDiffReport,
   PromptRegressionReport,
   PlaytestReport,
@@ -230,6 +251,12 @@ import {
   QuestTriggerNode,
   startGame,
   StudioConfigSummary,
+  LocalConfigIssue,
+  LocalConfigSummary,
+  LocalEnvTemplateResponse,
+  LocalUpdateNotesIndex,
+  DesktopHealthCheckReport,
+  CrashReport,
   StudioStatus,
   submitPlayerInput,
   TimelineReplayResponse,
@@ -550,6 +577,10 @@ export function App() {
   const [moduleDebugDetail, setModuleDebugDetail] = useState<ModuleDebugSummary | null>(null);
   const [moduleDebugDryRun, setModuleDebugDryRun] = useState<ModuleActionDryRunResponse | null>(null);
   const [moduleDebugError, setModuleDebugError] = useState<string>("");
+  const [crashReports, setCrashReports] = useState<CrashReport[]>([]);
+  const [selectedCrashReportId, setSelectedCrashReportId] = useState<string>("");
+  const [selectedCrashReport, setSelectedCrashReport] = useState<CrashReport | null>(null);
+  const [crashReportError, setCrashReportError] = useState<string>("");
   const [saves, setSaves] = useState<SaveSummary[]>([]);
   const [selectedSaveId, setSelectedSaveId] = useState<string>("");
   const [migrationStatusBySaveId, setMigrationStatusBySaveId] = useState<Record<string, SaveMigrationStatus>>({});
@@ -563,7 +594,20 @@ export function App() {
   const [studioStatus, setStudioStatus] = useState<StudioStatus | null>(null);
   const [studioStatusError, setStudioStatusError] = useState<string>("");
   const [studioConfigSummary, setStudioConfigSummary] = useState<StudioConfigSummary | null>(null);
+  const [localConfigSummary, setLocalConfigSummary] = useState<LocalConfigSummary | null>(null);
+  const [localConfigIssues, setLocalConfigIssues] = useState<LocalConfigIssue[]>([]);
+  const [localEnvTemplate, setLocalEnvTemplate] = useState<LocalEnvTemplateResponse | null>(null);
+  const [localUpdateNotes, setLocalUpdateNotes] = useState<LocalUpdateNotesIndex | null>(null);
+  const [localUpdateNotesError, setLocalUpdateNotesError] = useState<string>("");
+  const [desktopHealth, setDesktopHealth] = useState<DesktopHealthCheckReport | null>(null);
+  const [desktopHealthError, setDesktopHealthError] = useState<string>("");
   const [studioConfigError, setStudioConfigError] = useState<string>("");
+  const [projectWorkspaces, setProjectWorkspaces] = useState<ProjectWorkspace[]>([]);
+  const [workspaceTemplates, setWorkspaceTemplates] = useState<WorkspaceTemplate[]>([]);
+  const [recentProjects, setRecentProjects] = useState<RecentProjectEntry[]>([]);
+  const [currentWorkspaceId, setCurrentWorkspaceId] = useState<string>("");
+  const [workspaceError, setWorkspaceError] = useState<string>("");
+  const [workspaceMessage, setWorkspaceMessage] = useState<string>("");
   const [narrativeEvalReports, setNarrativeEvalReports] = useState<NarrativeEvalReport[]>([]);
   const [selectedNarrativeEval, setSelectedNarrativeEval] = useState<NarrativeEvalReport | null>(null);
   const [narrativeEvalError, setNarrativeEvalError] = useState<string>("");
@@ -588,6 +632,12 @@ export function App() {
     void refreshSaves();
     void refreshStudioStatus();
     void refreshStudioConfigSummary();
+    void refreshLocalConfig();
+    void refreshLocalUpdateNotes();
+    void refreshDesktopHealth();
+    void refreshProjectWorkspaces();
+    void refreshWorkspaceTemplates();
+    void refreshRecentProjects();
     void refreshNarrativeEvals();
     void refreshPerformance();
     void refreshPlaytests();
@@ -642,6 +692,7 @@ export function App() {
       void refreshDebugGraphs(response.session_id);
       void refreshNPCSimulationDebugger(response.session_id);
       void refreshGameplayModuleDebugger();
+      void refreshCrashReports();
     } catch (err) {
       setError(toErrorMessage(err));
     } finally {
@@ -668,6 +719,162 @@ export function App() {
     } catch (err) {
       setStudioConfigSummary(null);
       setStudioConfigError(toErrorMessage(err));
+    }
+  }
+
+  async function refreshLocalConfig() {
+    setStudioConfigError("");
+    try {
+      const [summary, issues] = await Promise.all([fetchLocalConfigSummary(), fetchLocalConfigIssues()]);
+      setLocalConfigSummary(summary);
+      setLocalConfigIssues(issues);
+    } catch (err) {
+      setLocalConfigSummary(null);
+      setLocalConfigIssues([]);
+      setStudioConfigError(toErrorMessage(err));
+    }
+  }
+
+  async function handleGenerateLocalEnvTemplate() {
+    setStudioConfigError("");
+    try {
+      const response = await generateLocalEnvTemplate();
+      setLocalEnvTemplate(response);
+    } catch (err) {
+      setLocalEnvTemplate(null);
+      setStudioConfigError(toErrorMessage(err));
+    }
+  }
+
+  async function refreshLocalUpdateNotes() {
+    setLocalUpdateNotesError("");
+    try {
+      const response = await fetchLocalUpdateNotes();
+      setLocalUpdateNotes(response);
+    } catch (err) {
+      setLocalUpdateNotes(null);
+      setLocalUpdateNotesError(toErrorMessage(err));
+    }
+  }
+
+  async function refreshDesktopHealth() {
+    setDesktopHealthError("");
+    try {
+      const response = await fetchDesktopHealth();
+      setDesktopHealth(response);
+    } catch (err) {
+      setDesktopHealth(null);
+      setDesktopHealthError(toErrorMessage(err));
+    }
+  }
+
+  async function handleRunDesktopHealthCheck() {
+    setDesktopHealthError("");
+    try {
+      const response = await runDesktopHealthCheck();
+      setDesktopHealth(response);
+    } catch (err) {
+      setDesktopHealth(null);
+      setDesktopHealthError(toErrorMessage(err));
+    }
+  }
+
+  async function refreshProjectWorkspaces() {
+    setWorkspaceError("");
+    try {
+      const response = await fetchStudioWorkspaces();
+      setProjectWorkspaces(response.workspaces);
+      setCurrentWorkspaceId((current) => current || response.workspaces[0]?.workspace_id || "");
+    } catch (err) {
+      setProjectWorkspaces([]);
+      setWorkspaceError(toErrorMessage(err));
+    }
+  }
+
+  async function refreshWorkspaceTemplates() {
+    setWorkspaceError("");
+    try {
+      const response = await fetchWorkspaceTemplates();
+      setWorkspaceTemplates(response.templates);
+    } catch (err) {
+      setWorkspaceTemplates([]);
+      setWorkspaceError(toErrorMessage(err));
+    }
+  }
+
+  async function refreshRecentProjects() {
+    setWorkspaceError("");
+    try {
+      const response = await fetchRecentProjects();
+      setRecentProjects(response.projects);
+    } catch (err) {
+      setRecentProjects([]);
+      setWorkspaceError(toErrorMessage(err));
+    }
+  }
+
+  async function handleAddWorkspace(path: string, name?: string) {
+    setWorkspaceError("");
+    setWorkspaceMessage("");
+    try {
+      const workspace = await addStudioWorkspace(path, name || undefined);
+      await refreshProjectWorkspaces();
+      setCurrentWorkspaceId(workspace.workspace_id);
+      setWorkspaceMessage("Workspace reference added. Active save and GameState were not changed.");
+    } catch (err) {
+      setWorkspaceError(toErrorMessage(err));
+    }
+  }
+
+  async function handleCreateWorkspaceFromTemplate(templateId: WorkspaceTemplateType, path: string, name?: string) {
+    setWorkspaceError("");
+    setWorkspaceMessage("");
+    try {
+      const workspace = await createWorkspaceFromTemplate(templateId, path, name || undefined);
+      await refreshProjectWorkspaces();
+      await refreshRecentProjects();
+      setCurrentWorkspaceId(workspace.workspace_id);
+      setWorkspaceMessage("Workspace created from local template. No secrets were copied and GameState was not changed.");
+    } catch (err) {
+      setWorkspaceError(toErrorMessage(err));
+    }
+  }
+
+  async function handleSelectWorkspace(workspaceId: string) {
+    setWorkspaceError("");
+    setWorkspaceMessage("");
+    try {
+      const workspace = await selectStudioWorkspace(workspaceId);
+      setCurrentWorkspaceId(workspace.workspace_id);
+      await refreshProjectWorkspaces();
+      await refreshRecentProjects();
+      setWorkspaceMessage("Workspace selected. This changes the studio reference only.");
+    } catch (err) {
+      setWorkspaceError(toErrorMessage(err));
+    }
+  }
+
+  async function handleRemoveRecentProject(workspaceId: string) {
+    setWorkspaceError("");
+    setWorkspaceMessage("");
+    try {
+      await removeRecentProject(workspaceId);
+      await refreshRecentProjects();
+      setWorkspaceMessage("Recent project reference removed.");
+    } catch (err) {
+      setWorkspaceError(toErrorMessage(err));
+    }
+  }
+
+  async function handleClearRecentProjects() {
+    setWorkspaceError("");
+    setWorkspaceMessage("");
+    try {
+      await clearRecentProjects();
+      setRecentProjects([]);
+      setWorkspaceMessage("Recent project list cleared.");
+    } catch (err) {
+      setWorkspaceError(toErrorMessage(err));
     }
   }
 
@@ -1407,6 +1614,46 @@ export function App() {
     }
   }
 
+  async function refreshCrashReports(nextReportId = selectedCrashReportId) {
+    setCrashReportError("");
+    try {
+      const response = await fetchCrashReports();
+      setCrashReports(response.reports);
+      const selectedId = nextReportId || response.reports[0]?.id || "";
+      setSelectedCrashReportId(selectedId);
+      if (selectedId) {
+        setSelectedCrashReport(await fetchCrashReport(selectedId));
+      } else {
+        setSelectedCrashReport(null);
+      }
+    } catch (err) {
+      setCrashReports([]);
+      setSelectedCrashReport(null);
+      setCrashReportError(toErrorMessage(err));
+    }
+  }
+
+  async function handleSelectCrashReport(reportId: string) {
+    setSelectedCrashReportId(reportId);
+    setCrashReportError("");
+    try {
+      setSelectedCrashReport(await fetchCrashReport(reportId));
+    } catch (err) {
+      setSelectedCrashReport(null);
+      setCrashReportError(toErrorMessage(err));
+    }
+  }
+
+  async function handleDeleteCrashReport(reportId: string) {
+    setCrashReportError("");
+    try {
+      await deleteCrashReport(reportId);
+      await refreshCrashReports("");
+    } catch (err) {
+      setCrashReportError(toErrorMessage(err));
+    }
+  }
+
   async function handleSelectGameplayModule(moduleId: string) {
     setSelectedModuleDebugId(moduleId);
     setModuleDebugDryRun(null);
@@ -1637,6 +1884,15 @@ export function App() {
           <StudioHome
             status={studioStatus}
             configSummary={studioConfigSummary}
+            localConfigSummary={localConfigSummary}
+            localConfigIssues={localConfigIssues}
+            localEnvTemplate={localEnvTemplate}
+            localUpdateNotes={localUpdateNotes}
+            desktopHealth={desktopHealth}
+            workspaces={projectWorkspaces}
+            workspaceTemplates={workspaceTemplates}
+            recentProjects={recentProjects}
+            currentWorkspaceId={currentWorkspaceId}
             saves={saves}
             narrativeEvalReports={narrativeEvalReports}
             selectedNarrativeEval={selectedNarrativeEval}
@@ -1651,7 +1907,11 @@ export function App() {
             worldHealth={worldHealth}
             contentCoverage={contentCoverage}
             error={studioStatusError}
+            workspaceError={workspaceError}
+            workspaceMessage={workspaceMessage}
             configError={studioConfigError}
+            updateNotesError={localUpdateNotesError}
+            desktopHealthError={desktopHealthError}
             narrativeEvalError={narrativeEvalError}
             performanceError={performanceError}
             playtestError={playtestError}
@@ -1661,6 +1921,12 @@ export function App() {
             onRefresh={() => {
               void refreshStudioStatus();
               void refreshStudioConfigSummary();
+              void refreshLocalConfig();
+              void refreshLocalUpdateNotes();
+              void refreshDesktopHealth();
+              void refreshProjectWorkspaces();
+              void refreshWorkspaceTemplates();
+              void refreshRecentProjects();
               void refreshSaves();
               void refreshNarrativeEvals();
               void refreshPerformance();
@@ -1668,6 +1934,15 @@ export function App() {
               void refreshWorldHealth();
               void refreshContentCoverage();
             }}
+            onAddWorkspace={(path, name) => void handleAddWorkspace(path, name)}
+            onCreateWorkspaceFromTemplate={(templateId, path, name) => void handleCreateWorkspaceFromTemplate(templateId, path, name)}
+            onSelectWorkspace={(workspaceId) => void handleSelectWorkspace(workspaceId)}
+            onRemoveRecentProject={(workspaceId) => void handleRemoveRecentProject(workspaceId)}
+            onClearRecentProjects={() => void handleClearRecentProjects()}
+            onRefreshLocalConfig={() => void refreshLocalConfig()}
+            onGenerateLocalEnvTemplate={() => void handleGenerateLocalEnvTemplate()}
+            onRefreshUpdateNotes={() => void refreshLocalUpdateNotes()}
+            onRunDesktopHealthCheck={() => void handleRunDesktopHealthCheck()}
             onSelectPromptProfile={(profileId) => void handleSelectPromptProfile(profileId)}
             onRunNarrativeEval={() => void handleRunNarrativeEval()}
             onSelectNarrativeEval={(runId) => void handleSelectNarrativeEval(runId)}
@@ -1762,6 +2037,9 @@ export function App() {
             </button>
             <button type="button" onClick={() => void refreshGameplayModuleDebugger()} disabled={isLoading}>
               Refresh Gameplay Modules
+            </button>
+            <button type="button" onClick={() => void refreshCrashReports()} disabled={isLoading}>
+              Refresh Crash Reports
             </button>
             <button
               type="button"
@@ -1885,6 +2163,15 @@ export function App() {
               onDryRun={(actionId) => void handleGameplayModuleDryRun(actionId)}
               disabled={isLoading}
             />
+            <CrashReportViewer
+              reports={crashReports}
+              selectedReportId={selectedCrashReportId}
+              selectedReport={selectedCrashReport}
+              error={crashReportError}
+              onRefresh={() => void refreshCrashReports()}
+              onSelect={(reportId) => void handleSelectCrashReport(reportId)}
+              onDelete={(reportId) => void handleDeleteCrashReport(reportId)}
+            />
             <section className="debug-group">
               <h2>Social Consequences</h2>
               <DebugEventSummary events={socialDebugEvents} emptyText="No social events." />
@@ -1915,6 +2202,15 @@ export function App() {
 function StudioHome({
   status,
   configSummary,
+  localConfigSummary,
+  localConfigIssues,
+  localEnvTemplate,
+  localUpdateNotes,
+  desktopHealth,
+  workspaces,
+  workspaceTemplates,
+  recentProjects,
+  currentWorkspaceId,
   saves,
   narrativeEvalReports,
   selectedNarrativeEval,
@@ -1929,7 +2225,11 @@ function StudioHome({
   worldHealth,
   contentCoverage,
   error,
+  workspaceError,
+  workspaceMessage,
   configError,
+  updateNotesError,
+  desktopHealthError,
   narrativeEvalError,
   performanceError,
   playtestError,
@@ -1951,11 +2251,29 @@ function StudioHome({
   onRefreshWorldHealth,
   onRunContentCoverage,
   onRefreshContentCoverage,
+  onAddWorkspace,
+  onCreateWorkspaceFromTemplate,
+  onSelectWorkspace,
+  onRemoveRecentProject,
+  onClearRecentProjects,
+  onRefreshLocalConfig,
+  onGenerateLocalEnvTemplate,
+  onRefreshUpdateNotes,
+  onRunDesktopHealthCheck,
   onSelectPromptProfile,
   onNavigate
 }: {
   status: StudioStatus | null;
   configSummary: StudioConfigSummary | null;
+  localConfigSummary: LocalConfigSummary | null;
+  localConfigIssues: LocalConfigIssue[];
+  localEnvTemplate: LocalEnvTemplateResponse | null;
+  localUpdateNotes: LocalUpdateNotesIndex | null;
+  desktopHealth: DesktopHealthCheckReport | null;
+  workspaces: ProjectWorkspace[];
+  workspaceTemplates: WorkspaceTemplate[];
+  recentProjects: RecentProjectEntry[];
+  currentWorkspaceId: string;
   saves: SaveSummary[];
   narrativeEvalReports: NarrativeEvalReport[];
   selectedNarrativeEval: NarrativeEvalReport | null;
@@ -1970,7 +2288,11 @@ function StudioHome({
   worldHealth: WorldHealthScore | null;
   contentCoverage: ContentCoverageReport | null;
   error: string;
+  workspaceError: string;
+  workspaceMessage: string;
   configError: string;
+  updateNotesError: string;
+  desktopHealthError: string;
   narrativeEvalError: string;
   performanceError: string;
   playtestError: string;
@@ -2005,12 +2327,23 @@ function StudioHome({
   onRefreshWorldHealth: () => void;
   onRunContentCoverage: () => void;
   onRefreshContentCoverage: () => void;
+  onAddWorkspace: (path: string, name?: string) => void;
+  onCreateWorkspaceFromTemplate: (templateId: WorkspaceTemplateType, path: string, name?: string) => void;
+  onSelectWorkspace: (workspaceId: string) => void;
+  onRemoveRecentProject: (workspaceId: string) => void;
+  onClearRecentProjects: () => void;
+  onRefreshLocalConfig: () => void;
+  onGenerateLocalEnvTemplate: () => void;
+  onRefreshUpdateNotes: () => void;
+  onRunDesktopHealthCheck: () => void;
   onSelectPromptProfile: (profileId: string) => void;
   onNavigate: (mode: "studio" | "play" | "authoring", toolId?: AuthoringToolId) => void;
 }) {
   const recentSaves = status?.recent_saves.length ? status.recent_saves : saves.slice(0, 5);
   const validationSummaries = status?.validation_summaries ?? [];
   const unhealthyWorlds = validationSummaries.filter((item) => !item.ok).length;
+  const [workspacePath, setWorkspacePath] = useState<string>("");
+  const [workspaceName, setWorkspaceName] = useState<string>("");
 
   return (
     <section className="studio-home">
@@ -2022,6 +2355,34 @@ function StudioHome({
       />
 
       <ErrorPanel message={error} />
+      <ProjectSelectorPanel
+        workspaces={workspaces}
+        templates={workspaceTemplates}
+        currentWorkspaceId={currentWorkspaceId}
+        pathValue={workspacePath}
+        nameValue={workspaceName}
+        error={workspaceError}
+        message={workspaceMessage}
+        onPathChange={setWorkspacePath}
+        onNameChange={setWorkspaceName}
+        onSelect={onSelectWorkspace}
+        onAdd={() => {
+          onAddWorkspace(workspacePath, workspaceName || undefined);
+          setWorkspacePath("");
+          setWorkspaceName("");
+        }}
+        onCreateFromTemplate={(templateId, path, name) => {
+          onCreateWorkspaceFromTemplate(templateId, path, name);
+          setWorkspacePath("");
+          setWorkspaceName("");
+        }}
+      />
+      <RecentProjectsPanel
+        projects={recentProjects}
+        onOpen={onSelectWorkspace}
+        onRemove={onRemoveRecentProject}
+        onClear={onClearRecentProjects}
+      />
 
       <div className="studio-grid">
         <DashboardCard title="Backend" value={status?.backend_status ?? "unavailable"}>
@@ -2174,7 +2535,32 @@ function StudioHome({
         onRefresh={onRefreshScenarioRegressions}
       />
 
-      <SettingsPrivacyPanel summary={configSummary} error={configError} onSelectPromptProfile={onSelectPromptProfile} />
+      <SettingsPrivacyPanel
+        summary={configSummary}
+        localConfigSummary={localConfigSummary}
+        localConfigIssues={localConfigIssues}
+        localEnvTemplate={localEnvTemplate}
+        currentWorkspace={workspaces.find((workspace) => workspace.workspace_id === currentWorkspaceId) ?? null}
+        recentProjectCount={recentProjects.length}
+        error={configError}
+        onSelectPromptProfile={onSelectPromptProfile}
+        onRefreshLocalConfig={onRefreshLocalConfig}
+        onGenerateLocalEnvTemplate={onGenerateLocalEnvTemplate}
+        onClearRecentProjects={onClearRecentProjects}
+      />
+
+      <DesktopHealthCheckPanel
+        report={desktopHealth}
+        error={desktopHealthError}
+        onRun={onRunDesktopHealthCheck}
+        onOpenRecovery={() => onNavigate("studio")}
+      />
+
+      <LocalUpdateNotesPanel
+        index={localUpdateNotes}
+        error={updateNotesError}
+        onRefresh={onRefreshUpdateNotes}
+      />
 
       <LocalOnlyNotice>
         Dashboard data is a safe local summary. It does not include API keys, raw GameState,
@@ -3331,13 +3717,29 @@ function PromptLabPanelIndex() {
 
 function SettingsPrivacyPanel({
   summary,
+  localConfigSummary,
+  localConfigIssues,
+  localEnvTemplate,
+  currentWorkspace,
+  recentProjectCount = 0,
   error,
   onSelectPromptProfile,
+  onRefreshLocalConfig = () => undefined,
+  onGenerateLocalEnvTemplate = () => undefined,
+  onClearRecentProjects = () => undefined,
   promptLabOnly = false
 }: {
   summary: StudioConfigSummary | null;
+  localConfigSummary?: LocalConfigSummary | null;
+  localConfigIssues?: LocalConfigIssue[];
+  localEnvTemplate?: LocalEnvTemplateResponse | null;
+  currentWorkspace?: ProjectWorkspace | null;
+  recentProjectCount?: number;
   error: string;
   onSelectPromptProfile: (profileId: string) => void;
+  onRefreshLocalConfig?: () => void;
+  onGenerateLocalEnvTemplate?: () => void;
+  onClearRecentProjects?: () => void;
   promptLabOnly?: boolean;
 }) {
   const [profileAId, setProfileAId] = useState<string>("");
@@ -3378,6 +3780,9 @@ function SettingsPrivacyPanel({
   const [budgetMaxTokens, setBudgetMaxTokens] = useState<number>(900);
   const [budgetReport, setBudgetReport] = useState<BudgetReport | null>(null);
   const [budgetError, setBudgetError] = useState<string>("");
+  const [compactDisplay, setCompactDisplay] = useState<boolean>(false);
+  const [showRedactionBadges, setShowRedactionBadges] = useState<boolean>(true);
+  const [logTailSize, setLogTailSize] = useState<number>(200);
   const profiles = summary?.prompt_profiles ?? [];
   const effectiveProfileAId = profileAId || summary?.selected_prompt_profile_id || profiles[0]?.id || "";
   const effectiveProfileBId = profileBId || profiles.find((profile) => profile.id !== effectiveProfileAId)?.id || effectiveProfileAId;
@@ -3594,6 +3999,148 @@ function SettingsPrivacyPanel({
       <ErrorPanel message={error} compact />
       {summary ? (
         <>
+          {!promptLabOnly && (
+            <section className="studio-section">
+              <div className="section-heading-row">
+                <div>
+                  <h4>Local Config Manager</h4>
+                  <p className="muted">Safe backend config summary. Secrets and raw env are never returned.</p>
+                </div>
+                <div className="button-row">
+                  <button type="button" onClick={onRefreshLocalConfig}>
+                    Refresh Config
+                  </button>
+                  <button type="button" onClick={onGenerateLocalEnvTemplate}>
+                    Generate Template
+                  </button>
+                </div>
+              </div>
+              {localConfigSummary ? (
+                <div className="studio-grid compact-dashboard-grid">
+                  <DashboardCard title="Provider" value={localConfigSummary.provider_type}>
+                    <p>{localConfigSummary.model_id}</p>
+                  </DashboardCard>
+                  <DashboardCard title="Database" value={localConfigSummary.database_configured ? "configured" : "missing"}>
+                    <p>{localConfigSummary.database_path_hint}</p>
+                  </DashboardCard>
+                  <DashboardCard title="API Key" value={localConfigSummary.api_key_configured ? "configured" : "not set"}>
+                    <p>Value stays backend-only</p>
+                  </DashboardCard>
+                  <DashboardCard title="Local APIs" value="safe summary">
+                    <p>
+                      Authoring {localConfigSummary.authoring_api_enabled ? "on" : "off"},
+                      Debug {localConfigSummary.debug_api_enabled ? "on" : "off"}
+                    </p>
+                  </DashboardCard>
+                </div>
+              ) : (
+                <EmptyState title="No local config summary." detail="Refresh to load the safe backend config summary." />
+              )}
+              <div className="studio-columns">
+                <section>
+                  <h4>Config Issues</h4>
+                  <ItemList
+                    emptyText="No config issues reported."
+                    items={(localConfigIssues ?? []).map((issue) => (
+                      <span key={`${issue.code}-${issue.safe_field}`}>
+                        {issue.severity}: {issue.safe_field} - {issue.message}
+                      </span>
+                    ))}
+                  />
+                </section>
+                <section>
+                  <h4>Generated Template</h4>
+                  {localEnvTemplate ? (
+                    <details>
+                      <summary>{localEnvTemplate.file_name} preview</summary>
+                      <pre>{localEnvTemplate.template}</pre>
+                    </details>
+                  ) : (
+                    <p className="muted">Generate a safe .env.example-like template with blank secrets.</p>
+                  )}
+                </section>
+              </div>
+            </section>
+          )}
+          {!promptLabOnly && (
+            <section className="studio-section desktop-settings-section">
+              <div className="section-heading-row">
+                <div>
+                  <h4>Desktop Settings</h4>
+                  <p className="muted">Local UI preferences and safe desktop summaries. This panel cannot write .env or provider secrets.</p>
+                </div>
+                <StatusBadge label="secrets hidden" enabled />
+              </div>
+              <div className="studio-grid compact-dashboard-grid">
+                <DashboardCard title="Workspace" value={currentWorkspace?.name ?? "none"}>
+                  <p>{currentWorkspace?.path_redacted ?? "No workspace selected"}</p>
+                  <p className="muted">{currentWorkspace ? `${currentWorkspace.world_count} world pack(s)` : "Add or create a workspace first."}</p>
+                </DashboardCard>
+                <DashboardCard title="Provider" value={localConfigSummary?.provider_type ?? summary.llm_provider}>
+                  <p>{localConfigSummary?.model_id ?? "model hidden or unavailable"}</p>
+                  <p className="muted">Safe summary only; API key values are backend-only.</p>
+                </DashboardCard>
+                <DashboardCard title="Logs" value="redacted">
+                  <p>logs/.../local studio logs</p>
+                  <p className="muted">Tail size {logTailSize} lines; raw prompts and secrets stay redacted.</p>
+                </DashboardCard>
+                <DashboardCard title="Backup Defaults" value="safe">
+                  <p>Includes worlds, saves, templates, modules, metadata.</p>
+                  <p className="muted">Excludes .env, API keys, logs, cache, node_modules, dist.</p>
+                </DashboardCard>
+              </div>
+              <div className="template-grid">
+                <label>
+                  Log tail size
+                  <input
+                    type="number"
+                    min={50}
+                    max={2000}
+                    step={50}
+                    value={logTailSize}
+                    onChange={(event) => setLogTailSize(Number(event.target.value))}
+                  />
+                </label>
+                <label className="checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={compactDisplay}
+                    onChange={(event) => setCompactDisplay(event.target.checked)}
+                  />
+                  Compact local-only display
+                </label>
+                <label className="checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={showRedactionBadges}
+                    onChange={(event) => setShowRedactionBadges(event.target.checked)}
+                  />
+                  Show redaction badges
+                </label>
+              </div>
+              <div className="studio-columns">
+                <section>
+                  <h4>API Status</h4>
+                  <StatusDot label="Authoring" enabled={summary.authoring_api_enabled} />
+                  <StatusDot label="Debug" enabled={summary.debug_api_enabled} />
+                  <StatusDot label="Eval" enabled={summary.eval_api_enabled} />
+                  <StatusDot label="Playtest" enabled={summary.playtest_api_enabled} />
+                  <StatusDot label="Quality" enabled={summary.eval_api_enabled || summary.playtest_api_enabled || summary.performance_logging_enabled} />
+                </section>
+                <section>
+                  <h4>Local Data Controls</h4>
+                  <p className="muted">Recent project references: {recentProjectCount}. Paths shown to the browser are redacted.</p>
+                  <button type="button" onClick={onClearRecentProjects} disabled={recentProjectCount === 0}>
+                    Clear Recent Projects
+                  </button>
+                </section>
+              </div>
+              <div className="privacy-note-grid">
+                <p>{showRedactionBadges ? "Redaction active: API keys, raw env, raw prompts, hidden facts, and full sensitive paths are not displayed." : "Redaction is always active even when badges are hidden."}</p>
+                <p>{compactDisplay ? "Compact display preference is local UI state only." : "Standard display preference is local UI state only."}</p>
+              </div>
+            </section>
+          )}
           <div className="studio-grid compact-dashboard-grid">
             <DashboardCard title="Provider" value={summary.llm_provider}>
               <p>{summary.provider_status}</p>
@@ -5215,6 +5762,325 @@ function PreviewResultPanel({
 
 function confirmDangerousAction(message: string): boolean {
   return window.confirm(message);
+}
+
+function ProjectSelectorPanel({
+  workspaces,
+  templates,
+  currentWorkspaceId,
+  pathValue,
+  nameValue,
+  error,
+  message,
+  onPathChange,
+  onNameChange,
+  onSelect,
+  onAdd,
+  onCreateFromTemplate
+}: {
+  workspaces: ProjectWorkspace[];
+  templates: WorkspaceTemplate[];
+  currentWorkspaceId: string;
+  pathValue: string;
+  nameValue: string;
+  error: string;
+  message: string;
+  onPathChange: (value: string) => void;
+  onNameChange: (value: string) => void;
+  onSelect: (workspaceId: string) => void;
+  onAdd: () => void;
+  onCreateFromTemplate: (templateId: WorkspaceTemplateType, path: string, name?: string) => void;
+}) {
+  const currentWorkspace = workspaces.find((workspace) => workspace.workspace_id === currentWorkspaceId) ?? null;
+  const [selectedTemplateId, setSelectedTemplateId] = useState<WorkspaceTemplateType>("blank_studio");
+  const selectedTemplate = templates.find((template) => template.template_id === selectedTemplateId) ?? templates[0] ?? null;
+  return (
+    <section className="studio-section">
+      <div className="section-heading-row">
+        <div>
+          <h3>Project Selector</h3>
+          <p className="muted">Switch the local studio workspace reference without modifying active saves.</p>
+        </div>
+        <StatusBadge label={currentWorkspace?.safe_status ?? "no workspace"} enabled={currentWorkspace?.safe_status === "ok"} />
+      </div>
+      {workspaces.length === 0 ? (
+        <EmptyState title="No workspace references." detail="Add a local workspace folder to start using the selector." />
+      ) : (
+        <div className="template-grid">
+          <label>
+            Current workspace
+            <select value={currentWorkspaceId} onChange={(event) => onSelect(event.target.value)}>
+              {workspaces.map((workspace) => (
+                <option key={workspace.workspace_id} value={workspace.workspace_id}>
+                  {workspace.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          {currentWorkspace && (
+            <dl className="metadata-list">
+              <dt>Path</dt>
+              <dd>{currentWorkspace.path_redacted}</dd>
+              <dt>Worlds</dt>
+              <dd>{currentWorkspace.world_count}</dd>
+              <dt>Last opened</dt>
+              <dd>{currentWorkspace.last_opened_at ?? "not opened yet"}</dd>
+              <dt>Schema</dt>
+              <dd>{currentWorkspace.schema_version}</dd>
+            </dl>
+          )}
+        </div>
+      )}
+      <div className="template-grid">
+        <label>
+          Add local workspace path
+          <input
+            value={pathValue}
+            onChange={(event) => onPathChange(event.target.value)}
+            placeholder="D:\\KF\\world or another trusted local workspace"
+          />
+        </label>
+        <label>
+          Display name
+          <input value={nameValue} onChange={(event) => onNameChange(event.target.value)} placeholder="Optional" />
+        </label>
+      </div>
+      <div className="authoring-action-bar">
+        <button type="button" onClick={onAdd} disabled={!pathValue.trim()}>
+          Add Workspace
+        </button>
+      </div>
+      <div className="template-preview">
+        <div className="section-heading-row">
+          <div>
+            <h3>Create From Template</h3>
+            <p className="muted">Create a local workspace skeleton. Templates never copy .env files or API keys.</p>
+          </div>
+        </div>
+        <div className="template-grid">
+          <label>
+            Template
+            <select
+              value={selectedTemplate?.template_id ?? selectedTemplateId}
+              onChange={(event) => setSelectedTemplateId(event.target.value as WorkspaceTemplateType)}
+            >
+              {templates.map((template) => (
+                <option key={template.template_id} value={template.template_id}>
+                  {template.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          {selectedTemplate && (
+            <dl className="metadata-list">
+              <dt>Description</dt>
+              <dd>{selectedTemplate.description}</dd>
+              <dt>Directories</dt>
+              <dd>{selectedTemplate.directories.join(", ")}</dd>
+              <dt>Starter world</dt>
+              <dd>{selectedTemplate.starter_world ? "included" : "not included"}</dd>
+              <dt>Workflows</dt>
+              <dd>{selectedTemplate.recommended_workflow_presets.join(", ") || "none"}</dd>
+            </dl>
+          )}
+        </div>
+        <div className="authoring-action-bar">
+          <button
+            type="button"
+            onClick={() => selectedTemplate && onCreateFromTemplate(selectedTemplate.template_id, pathValue, nameValue || selectedTemplate.name)}
+            disabled={!selectedTemplate || !pathValue.trim()}
+          >
+            Create Workspace
+          </button>
+        </div>
+      </div>
+      <SuccessPanel message={message} compact />
+      <ErrorPanel message={error} compact />
+    </section>
+  );
+}
+
+function RecentProjectsPanel({
+  projects,
+  onOpen,
+  onRemove,
+  onClear
+}: {
+  projects: RecentProjectEntry[];
+  onOpen: (workspaceId: string) => void;
+  onRemove: (workspaceId: string) => void;
+  onClear: () => void;
+}) {
+  return (
+    <section className="studio-section">
+      <div className="section-heading-row">
+        <div>
+          <h3>Recent Projects</h3>
+          <p className="muted">Reopen trusted local workspace references. Paths are redacted.</p>
+        </div>
+        <button type="button" onClick={onClear} disabled={projects.length === 0}>
+          Clear
+        </button>
+      </div>
+      {projects.length === 0 ? (
+        <EmptyState title="No recent projects." detail="Select a workspace to add it to this local-only list." />
+      ) : (
+        <ul className="compact-list">
+          {projects.map((project) => (
+            <li key={project.workspace_id}>
+              <strong>{project.display_name}</strong>
+              <span className="muted"> - {project.path_redacted}</span>
+              <span className="muted">
+                {" "}
+                - {project.last_world_id ? `last world ${project.last_world_id}` : "no world selected"}
+              </span>
+              <span className="muted"> - {project.last_opened_at}</span>
+              <div className="authoring-action-bar">
+                <button type="button" onClick={() => onOpen(project.workspace_id)}>
+                  Open
+                </button>
+                <button type="button" onClick={() => onRemove(project.workspace_id)}>
+                  Remove
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function LocalUpdateNotesPanel({
+  index,
+  error,
+  onRefresh
+}: {
+  index: LocalUpdateNotesIndex | null;
+  error: string;
+  onRefresh: () => void;
+}) {
+  const notes = index?.release_notes ?? [];
+  return (
+    <section className="studio-section">
+      <div className="section-heading-row">
+        <div>
+          <h3>Local Update Notes</h3>
+          <p className="muted">Offline release notes from local docs. No network access or remote update checks.</p>
+        </div>
+        <div className="authoring-action-bar">
+          <StatusBadge label={index?.current_version ?? "unknown"} enabled={Boolean(index)} />
+          <button type="button" onClick={onRefresh}>Refresh</button>
+        </div>
+      </div>
+      <ErrorPanel message={error} compact />
+      {index?.warnings.length ? (
+        <div className="warning-list">
+          {index.warnings.slice(0, 6).map((warning) => (
+            <p key={warning}>{warning}</p>
+          ))}
+        </div>
+      ) : null}
+      {notes.length === 0 ? (
+        <EmptyState title="No release notes found." detail="Add local docs/V*_RELEASE_NOTES.md files to populate this index." />
+      ) : (
+        <div className="template-grid">
+          {notes.slice(0, 8).map((note) => (
+            <article className="local-update-note-card" key={note.path}>
+              <div className="section-heading-row">
+                <div>
+                  <h4>{note.version} - {note.title}</h4>
+                  <p className="muted">{note.path}</p>
+                </div>
+              </div>
+              <p>{note.summary}</p>
+              {note.upgrade_notes.length > 0 && (
+                <>
+                  <h5>Upgrade Notes</h5>
+                  <ul className="compact-list">
+                    {note.upgrade_notes.slice(0, 3).map((item) => <li key={item}>{item}</li>)}
+                  </ul>
+                </>
+              )}
+              {note.known_limitations.length > 0 && (
+                <>
+                  <h5>Known Limitations</h5>
+                  <ul className="compact-list">
+                    {note.known_limitations.slice(0, 3).map((item) => <li key={item}>{item}</li>)}
+                  </ul>
+                </>
+              )}
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function DesktopHealthCheckPanel({
+  report,
+  error,
+  onRun,
+  onOpenRecovery
+}: {
+  report: DesktopHealthCheckReport | null;
+  error: string;
+  onRun: () => void;
+  onOpenRecovery: () => void;
+}) {
+  const checks = report?.checks ?? [];
+  const blockers = checks.filter((check) => check.status === "error").length;
+  const warnings = checks.filter((check) => check.status === "warning").length;
+  return (
+    <section className="studio-section desktop-health-panel">
+      <div className="section-heading-row">
+        <div>
+          <h3>Desktop Health Check</h3>
+          <p className="muted">Local diagnostics for backend, database, config, workspace, APIs, and provider setup.</p>
+        </div>
+        <div className="authoring-action-bar">
+          <StatusBadge label={report?.overall_status ?? "not run"} enabled={report?.overall_status === "pass"} />
+          <button type="button" onClick={onRun}>Run Check</button>
+          <button type="button" onClick={onOpenRecovery}>Recovery</button>
+        </div>
+      </div>
+      <ErrorPanel message={error} compact />
+      <div className="studio-grid compact-dashboard-grid">
+        <DashboardCard title="Overall" value={report?.overall_status ?? "none"}>
+          <p>{report ? "Safe local report generated" : "Run a desktop health check"}</p>
+        </DashboardCard>
+        <DashboardCard title="Errors" value={String(blockers)}>
+          <p>Blocking local issues</p>
+        </DashboardCard>
+        <DashboardCard title="Warnings" value={String(warnings)}>
+          <p>Review recommended</p>
+        </DashboardCard>
+        <DashboardCard title="Workspace" value={report?.current_workspace?.safe_status ?? "none"}>
+          <p>{report?.current_workspace?.path_redacted ?? "No selected workspace"}</p>
+        </DashboardCard>
+      </div>
+      {checks.length === 0 ? (
+        <EmptyState title="No health report yet." detail="Run the local health check to inspect desktop setup." />
+      ) : (
+        <div className="desktop-health-list">
+          {checks.map((check) => (
+            <article className={`desktop-health-item ${check.status}`} key={check.check_id}>
+              <div className="section-heading-row">
+                <strong>{check.label}</strong>
+                <span className={`status-pill ${check.status}`}>{check.status}</span>
+              </div>
+              <p>{check.message}</p>
+              {check.safe_detail && <p className="muted">{check.safe_detail}</p>}
+            </article>
+          ))}
+        </div>
+      )}
+      <LocalOnlyNotice>
+        Health reports do not include API keys, raw env, full sensitive paths, hidden facts, or raw prompts.
+      </LocalOnlyNotice>
+    </section>
+  );
 }
 
 type ImportPackageKind = "world" | "mod" | "save";
@@ -14471,6 +15337,81 @@ function GameplayModuleDebugger({
         </div>
       )}
       {!selectedActionId && detail && <p className="muted">No action available for dry-run.</p>}
+    </section>
+  );
+}
+
+function CrashReportViewer({
+  reports,
+  selectedReportId,
+  selectedReport,
+  error,
+  onRefresh,
+  onSelect,
+  onDelete
+}: {
+  reports: CrashReport[];
+  selectedReportId: string;
+  selectedReport: CrashReport | null;
+  error: string;
+  onRefresh: () => void;
+  onSelect: (reportId: string) => void;
+  onDelete: (reportId: string) => void;
+}) {
+  return (
+    <section className="debug-group crash-report-viewer">
+      <header className="panel-header">
+        <div>
+          <h2>Crash Report Viewer</h2>
+          <p className="muted">Local reports only. Details are redacted and never uploaded.</p>
+        </div>
+        <button type="button" onClick={onRefresh}>Refresh</button>
+      </header>
+      {error && <p className="error">{error}</p>}
+      {error.toLowerCase().includes("debug") && <p className="muted">debug disabled</p>}
+      {reports.length === 0 && !error ? (
+        <p className="muted">No local crash reports recorded.</p>
+      ) : (
+        <div className="form-row">
+          <label>
+            Report
+            <select value={selectedReportId} onChange={(event) => onSelect(event.target.value)}>
+              {reports.map((report) => (
+                <option key={report.id} value={report.id}>
+                  {report.timestamp} - {report.component} - {report.error_type}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      )}
+      {selectedReport && (
+        <div className="debug-grid">
+          <dl>
+            <dt>Component</dt>
+            <dd>{selectedReport.component}</dd>
+            <dt>Error</dt>
+            <dd>{selectedReport.error_type}</dd>
+            <dt>Timestamp</dt>
+            <dd>{selectedReport.timestamp}</dd>
+            <dt>Message</dt>
+            <dd>{selectedReport.safe_message}</dd>
+          </dl>
+          <div>
+            <h3>Context</h3>
+            <pre>{JSON.stringify(selectedReport.context_safe_summary, null, 2)}</pre>
+          </div>
+          <div>
+            <h3>Redacted Stack</h3>
+            <pre>{selectedReport.stack_redacted}</pre>
+          </div>
+          <div className="authoring-action-bar">
+            <button type="button" onClick={() => onDelete(selectedReport.id)}>
+              Delete Local Report
+            </button>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

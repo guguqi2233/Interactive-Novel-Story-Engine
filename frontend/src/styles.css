@@ -762,6 +762,13 @@ textarea {
   font-size: 15px;
 }
 
+.section-heading-row {
+  align-items: flex-start;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+}
+
 .quick-actions {
   display: flex;
   flex-wrap: wrap;
@@ -788,6 +795,53 @@ textarea {
 
 .status-dot.disabled {
   background: #b45309;
+}
+
+.desktop-health-list {
+  display: grid;
+  gap: 10px;
+}
+
+.desktop-health-item {
+  border: 1px solid #d6dce2;
+  border-radius: 6px;
+  background: #ffffff;
+  padding: 10px;
+}
+
+.desktop-health-item.pass {
+  border-left: 4px solid #2f855a;
+}
+
+.desktop-health-item.warning {
+  border-left: 4px solid #b45309;
+}
+
+.desktop-health-item.error {
+  border-left: 4px solid #c53030;
+}
+
+.status-pill {
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.status-pill.pass {
+  background: #e6f4ec;
+  color: #276749;
+}
+
+.status-pill.warning {
+  background: #fff7e6;
+  color: #92400e;
+}
+
+.status-pill.error {
+  background: #ffecec;
+  color: #9b2c2c;
 }
 
 .graph-panel {
@@ -1446,6 +1500,49 @@ textarea {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 12px;
+}
+
+.local-update-note-card {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #d6dce2;
+  border-radius: 6px;
+  background: #ffffff;
+  padding: 12px;
+}
+
+.local-update-note-card h4,
+.local-update-note-card h5 {
+  margin: 0;
+}
+
+.desktop-settings-section {
+  border-left: 4px solid #3b6ea8;
+}
+
+.checkbox-row {
+  align-items: center;
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+}
+
+.checkbox-row input {
+  width: auto;
+}
+
+.privacy-note-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.privacy-note-grid p {
+  border: 1px solid #d6dce2;
+  border-radius: 6px;
+  background: #f8fafc;
+  margin: 0;
+  padding: 10px;
 }
 
 .template-preview {

@@ -5,11 +5,50 @@ param(
     [switch]$UseBuiltFrontend,
     [switch]$NoBrowser,
     [switch]$SkipDependencyCheck,
+    [switch]$SkipStartupDiagnostics,
     [switch]$PreflightOnly,
+    [switch]$Help,
     [int]$HealthTimeoutSeconds = 30
 )
 
 $ErrorActionPreference = "Stop"
+
+function Show-Help {
+    Write-Host @"
+Local Studio Launcher Pro
+
+Usage:
+  .\scripts\start_local_studio.ps1 [options]
+
+Options:
+  -BackendHost <host>             Backend host. Default: 127.0.0.1
+  -BackendPort <port>             Backend port. Default: 8000
+  -FrontendPort <port>            Frontend port. Default: 5173
+  -UseBuiltFrontend               Serve frontend/dist with npm preview instead of Vite dev.
+  -NoBrowser                      Do not open the browser automatically.
+  -SkipDependencyCheck            Skip Python/npm/dependency/port checks.
+  -SkipStartupDiagnostics         Skip the safe startup diagnostics CLI.
+  -PreflightOnly                  Run checks and exit without starting processes.
+  -HealthTimeoutSeconds <seconds> Health-check timeout. Default: 30
+  -Help                           Show this help.
+
+Safety:
+  The launcher never reads, prints, or injects LLM_API_KEY into frontend env.
+  It only passes VITE_API_BASE_URL to the frontend process.
+  It writes logs to local logs/, which is ignored by git.
+  It does not modify GameState, saves, databases, worlds, or content packs.
+
+PowerShell note:
+  If PowerShell prints a profile signing warning before this script starts,
+  it is usually a local profile policy warning and not a launcher failure.
+  Run with powershell -NoProfile -ExecutionPolicy Bypass when needed.
+"@
+}
+
+if ($Help) {
+    Show-Help
+    exit 0
+}
 
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $FrontendRoot = Join-Path $RepoRoot "frontend"
@@ -28,6 +67,23 @@ function Assert-Dependency {
     )
     if (-not (Test-CommandAvailable $Name)) {
         throw "Missing required command '$Name'. $InstallHint"
+    }
+}
+
+function Assert-PythonVersion {
+    $version = & python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
+    $parts = $version.Trim().Split(".")
+    $major = [int]$parts[0]
+    $minor = [int]$parts[1]
+    if ($major -lt 3 -or ($major -eq 3 -and $minor -lt 11)) {
+        throw "Python 3.11+ is required. Found Python $version."
+    }
+}
+
+function Assert-NpmAvailable {
+    $version = & npm --version
+    if ([string]::IsNullOrWhiteSpace($version)) {
+        throw "npm was found but did not report a version."
     }
 }
 
@@ -114,9 +170,28 @@ if (-not $env:VITE_API_BASE_URL) {
     $env:VITE_API_BASE_URL = "http://${BackendHost}:${BackendPort}"
 }
 
+if (-not $SkipStartupDiagnostics) {
+    Push-Location $RepoRoot
+    try {
+        $env:PYTHONPATH = "backend"
+        Write-Host "Running safe startup diagnostics..."
+        python -m backend.app.tools.startup_diagnostics --backend-port $BackendPort --frontend-port $FrontendPort
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "Startup diagnostics reported blockers or warnings. Review the report above before continuing."
+        }
+    } catch {
+        Write-Host "Startup diagnostics could not run: $($_.Exception.Message)"
+        Write-Host "Continuing with launcher checks. No secrets were read or printed by the launcher."
+    } finally {
+        Pop-Location
+    }
+}
+
 if (-not $SkipDependencyCheck) {
     Assert-Dependency "python" "Install Python 3.11+ and make sure it is available on PATH."
+    Assert-PythonVersion
     Assert-Dependency "npm" "Install Node.js/npm and run npm install in frontend/."
+    Assert-NpmAvailable
     Assert-PathExists (Join-Path $RepoRoot "pyproject.toml") "pyproject.toml was not found. Run the launcher from this repository."
     Assert-PathExists (Join-Path $FrontendRoot "package.json") "frontend/package.json was not found."
     Assert-PathExists (Join-Path $FrontendRoot "node_modules") "frontend/node_modules was not found. Run: cd frontend; npm install"
@@ -172,7 +247,7 @@ npm run dev -- --host 127.0.0.1 --port $FrontendPort
 }
 
 $FrontendUrl = "http://127.0.0.1:$FrontendPort"
-Write-Host "Local studio prototype starting."
+Write-Host "Local Studio Launcher Pro starting."
 Write-Host "Backend:  http://${BackendHost}:${BackendPort}"
 Write-Host "Frontend: $FrontendUrl"
 Write-Host "Frontend mode: $FrontendMode"
@@ -184,6 +259,9 @@ Write-Host "Debug API:     $($env:ENABLE_DEBUG_API)"
 Write-Host "Perf logging:  $($env:ENABLE_PERF_LOGGING)"
 Write-Host "VITE_API_BASE_URL: $($env:VITE_API_BASE_URL)"
 Write-Host "LLM_API_KEY is not read by this script and is never written to logs by the launcher."
+Write-Host "Frontend env safety: only VITE_API_BASE_URL is passed to the frontend process."
+Write-Host "State safety: launcher does not modify GameState, saves, databases, worlds, or content packs."
+Write-Host "PowerShell profile note: profile signing warnings are non-blocking launcher environment warnings."
 if ($env:LLM_PROVIDER -eq "openai" -and -not $env:LLM_API_KEY) {
     Write-Host "Warning: LLM_PROVIDER=openai but LLM_API_KEY is not set. Use mock/local_stub for offline local startup."
 }

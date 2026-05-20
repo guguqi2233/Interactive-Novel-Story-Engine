@@ -13,7 +13,9 @@ content production, and v1.5 adds Model & Prompt Lab diagnostics without
 expanding LLM authority. v1.6 adds Advanced Gameplay Modules without changing
 the LLM boundary: model output can affect language-facing draft fields or lab
 reports only after schema validation and consistency checks, and cannot
-directly modify `GameState` or decide gameplay outcomes.
+directly modify `GameState` or decide gameplay outcomes. v1.7 adds local
+Desktop Studio convenience, diagnostics, packaging safety, workspace
+selection, and local configuration views without adding new LLM authority.
 
 ## Provider Boundary
 
@@ -1021,3 +1023,70 @@ cannot:
 Provider routing and Model Compatibility Matrix entries may choose a model for
 language-facing use cases, but they cannot route around `LLMProvider`, module
 rules, schema validation, StateDelta, EventLog, Visibility, or NPC Knowledge.
+
+## v1.7 Desktop Studio LLM Boundary
+
+v1.7 desktop tools are local operational and packaging surfaces. They do not
+call the LLM to diagnose, repair, validate, package, restore, or modify the
+world. They do not make the desktop shell a world judge or a state editor.
+
+The following v1.7 modules and scripts are deterministic local code paths and
+must not call `LLMProvider`, concrete provider classes, `generate_text`, or
+`generate_json`:
+
+- Desktop Studio Boundary policy.
+- Desktop Launcher Pro scripts.
+- Project Selector.
+- Recent Projects.
+- Local Config Manager.
+- Local Update Notes.
+- Desktop Health Check.
+- Workspace Templates.
+- Crash Report Local Viewer.
+- Startup Diagnostics CLI.
+- Desktop packaging safety checks.
+
+The roadmap also defines Log Viewer, Error Recovery Wizard, Backup / Restore,
+One-click Quality Gate, One-click Export World Pack, Offline Help Docs, and
+Desktop Settings surfaces. Where implemented or extended, these must remain
+local deterministic tools. They must not use an LLM to analyze logs, repair
+errors, select recovery actions, approve backups, judge quality gates, or
+decide export safety.
+
+### Desktop Tools Cannot Modify State Through LLM Output
+
+Desktop tools may start local processes, show safe status, summarize local
+workspace metadata, generate `.env.example`-style templates, list local update
+notes, run local diagnostics, and display redacted crash reports. They must
+not:
+
+- modify active `GameState`, saves, worlds, modules, prompt profiles, or
+  content packs outside existing backend services;
+- apply model text as a state patch;
+- run real provider calls as part of startup, health checks, crash viewing,
+  workspace selection, config summary, update notes, or packaging checks;
+- bypass validation gates, migration dry-runs, package validation, or quality
+  gates.
+
+If a future desktop feature offers model-assisted troubleshooting, it must be
+authoring/debug-only, opt-in, routed through `LLMProvider`, redacted by
+default, and prohibited from directly changing state.
+
+### Provider Secrets And Frontend Boundary
+
+Provider secrets remain backend-only:
+
+- `LLM_API_KEY` and provider credentials are read from local backend
+  environment / ignored `.env` only.
+- The frontend receives only safe variables such as `VITE_API_BASE_URL`.
+- Launcher scripts must not inject API keys into `VITE_*` variables.
+- Safe config summaries may expose `api_key_configured=true/false`, but never
+  the key value.
+- Crash reports, logs, update notes, health checks, usage summaries, prompt
+  reports, backups, exports, and desktop packages must not contain API key
+  values, raw env, raw prompts, hidden facts, or raw provider credentials.
+
+`LOCAL_LLM_BASE_URL` is configuration for backend provider construction only.
+It should not contain embedded credentials. Provider construction remains
+behind `create_llm_provider(settings)` / `LLMProvider`; desktop tools do not
+instantiate concrete providers.

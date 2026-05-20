@@ -152,6 +152,26 @@ from app.db.models import SaveGame
 from app.db.migration_service import MigrationService
 from app.db.repository import SaveRepositoryError, SQLiteSaveRepository
 from app.db.save_service import SaveService
+from app.desktop.local_config import (
+    LocalConfigIssue,
+    LocalConfigManager,
+    LocalConfigSummary,
+    LocalEnvTemplateResponse,
+)
+from app.desktop.health import DesktopHealthCheckReport, DesktopHealthCheckService
+from app.desktop.crash_reports import CrashReport, CrashReportListResponse, CrashReportService
+from app.desktop.update_notes import LocalUpdateNotesIndex, LocalUpdateNotesService
+from app.desktop.workspaces import (
+    ProjectWorkspace,
+    RecentProjectsResponse,
+    RecentProjectsService,
+    WorkspaceAddRequest,
+    WorkspaceCreateFromTemplateRequest,
+    WorkspaceListResponse,
+    WorkspaceSelectRequest,
+    WorkspaceTemplateListResponse,
+    WorkspaceService,
+)
 from app.engine.content.authoring_service import AuthoringError, ContentAuthoringService
 from app.engine.action_mod_validator import (
     ActionModDraft,
@@ -730,6 +750,9 @@ app.state.scenario_template_renderer = ScenarioTemplateRenderer()
 app.state.prompt_profile_store = get_default_prompt_profile_store()
 app.state.dialogue_manager = DialogueManager()
 app.state.group_dialogue_manager = GroupDialogueManager()
+app.state.workspace_service = WorkspaceService(default_workspace=Path.cwd())
+app.state.recent_projects_service = RecentProjectsService()
+app.state.crash_report_service = CrashReportService()
 
 
 @app.get("/health")
@@ -850,6 +873,144 @@ def get_studio_config_summary() -> StudioConfigSummaryResponse:
             "Mods are validated as local YAML/content packages and are not executed as code.",
         ],
     )
+
+
+def get_local_config_manager() -> LocalConfigManager:
+    sync_runtime_settings()
+    active_settings = getattr(app.state, "settings", settings)
+    return LocalConfigManager(active_settings)
+
+
+@app.get("/studio/config/summary", response_model=LocalConfigSummary)
+def get_local_config_summary() -> LocalConfigSummary:
+    return get_local_config_manager().get_safe_summary()
+
+
+@app.get("/studio/config/issues", response_model=list[LocalConfigIssue])
+def get_local_config_issues() -> list[LocalConfigIssue]:
+    return get_local_config_manager().validate_config()
+
+
+@app.post("/studio/config/generate-template", response_model=LocalEnvTemplateResponse)
+def generate_local_env_template() -> LocalEnvTemplateResponse:
+    return get_local_config_manager().generate_env_template()
+
+
+@app.get("/studio/update-notes", response_model=LocalUpdateNotesIndex)
+def get_local_update_notes() -> LocalUpdateNotesIndex:
+    return LocalUpdateNotesService(Path.cwd() / "docs").build_index()
+
+
+def _check_save_repository_reachable() -> None:
+    get_save_repository().list_saves()
+
+
+def get_desktop_health_service() -> DesktopHealthCheckService:
+    sync_runtime_settings()
+    active_settings = getattr(app.state, "settings", settings)
+    return DesktopHealthCheckService(
+        active_settings,
+        get_workspace_service(),
+        database_check=_check_save_repository_reachable,
+        project_root=Path.cwd(),
+    )
+
+
+@app.get("/studio/health", response_model=DesktopHealthCheckReport)
+def get_desktop_health() -> DesktopHealthCheckReport:
+    return get_desktop_health_service().run()
+
+
+@app.post("/studio/health/check", response_model=DesktopHealthCheckReport)
+def run_desktop_health_check() -> DesktopHealthCheckReport:
+    return get_desktop_health_service().run()
+
+
+def get_workspace_service() -> WorkspaceService:
+    service = getattr(app.state, "workspace_service", None)
+    if service is None:
+        service = WorkspaceService(default_workspace=Path.cwd())
+        app.state.workspace_service = service
+    return service
+
+
+def get_recent_projects_service() -> RecentProjectsService:
+    service = getattr(app.state, "recent_projects_service", None)
+    if service is None:
+        service = RecentProjectsService()
+        app.state.recent_projects_service = service
+    return service
+
+
+def get_crash_report_service() -> CrashReportService:
+    service = getattr(app.state, "crash_report_service", None)
+    if service is None:
+        service = CrashReportService()
+        app.state.crash_report_service = service
+    return service
+
+
+@app.get("/studio/workspaces", response_model=WorkspaceListResponse)
+def list_studio_workspaces() -> WorkspaceListResponse:
+    return WorkspaceListResponse(workspaces=get_workspace_service().list_workspaces())
+
+
+@app.post("/studio/workspaces", response_model=ProjectWorkspace)
+def add_studio_workspace(request: WorkspaceAddRequest) -> ProjectWorkspace:
+    try:
+        return get_workspace_service().add_workspace(request.path, name=request.name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/studio/workspace-templates", response_model=WorkspaceTemplateListResponse)
+def list_studio_workspace_templates() -> WorkspaceTemplateListResponse:
+    return WorkspaceTemplateListResponse(templates=get_workspace_service().list_templates())
+
+
+@app.post("/studio/workspaces/create-from-template", response_model=ProjectWorkspace)
+def create_studio_workspace_from_template(request: WorkspaceCreateFromTemplateRequest) -> ProjectWorkspace:
+    try:
+        workspace = get_workspace_service().create_from_template(request)
+        get_recent_projects_service().record_opened_project(workspace)
+        return workspace
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/studio/workspaces/select", response_model=ProjectWorkspace)
+def select_studio_workspace(request: WorkspaceSelectRequest) -> ProjectWorkspace:
+    try:
+        workspace = get_workspace_service().select_workspace(request.workspace_id, last_world_id=request.last_world_id)
+        get_recent_projects_service().record_opened_project(workspace, last_world_id=request.last_world_id)
+        return workspace
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/studio/workspaces/current", response_model=ProjectWorkspace)
+def get_current_studio_workspace() -> ProjectWorkspace:
+    workspace = get_workspace_service().get_current_workspace()
+    if workspace is None:
+        raise HTTPException(status_code=404, detail="No workspace selected.")
+    return workspace
+
+
+@app.get("/studio/recent-projects", response_model=RecentProjectsResponse)
+def list_recent_projects() -> RecentProjectsResponse:
+    return RecentProjectsResponse(projects=get_recent_projects_service().list_recent_projects())
+
+
+@app.delete("/studio/recent-projects/{workspace_id}")
+def remove_recent_project(workspace_id: str) -> dict[str, bool]:
+    removed = get_recent_projects_service().remove_recent_project(workspace_id)
+    return {"local_only": True, "removed": removed}
+
+
+@app.post("/studio/recent-projects/clear")
+def clear_recent_projects() -> dict[str, bool]:
+    get_recent_projects_service().clear_recent_projects()
+    return {"local_only": True, "cleared": True}
 
 
 @app.get("/studio/prompt-profiles", response_model=PromptProfileListResponse)
@@ -1884,6 +2045,27 @@ def get_debug_session_events(session_id: str) -> DebugEventListResponse:
     return DebugEventListResponse(
         events=[_debug_event_response(event) for event in game_loop.event_log.list_events()]
     )
+
+
+@app.get("/debug/crash-reports", response_model=CrashReportListResponse)
+def list_debug_crash_reports() -> CrashReportListResponse:
+    require_debug_api()
+    return CrashReportListResponse(reports=get_crash_report_service().list_crash_reports())
+
+
+@app.get("/debug/crash-reports/{report_id}", response_model=CrashReport)
+def read_debug_crash_report(report_id: str) -> CrashReport:
+    require_debug_api()
+    try:
+        return get_crash_report_service().read_crash_report(report_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Crash report not found") from exc
+
+
+@app.delete("/debug/crash-reports/{report_id}")
+def delete_debug_crash_report(report_id: str) -> dict[str, bool]:
+    require_debug_api()
+    return {"local_only": True, "deleted": get_crash_report_service().delete_crash_report(report_id)}
 
 
 @app.get("/debug/sessions/{session_id}/timeline", response_model=TimelineReplayResponse)
