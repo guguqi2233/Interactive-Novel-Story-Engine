@@ -11,6 +11,7 @@ from zipfile import ZIP_DEFLATED, BadZipFile, ZipFile
 
 from pydantic import BaseModel, Field, ValidationError
 
+from app.compatibility.contracts import PACKAGE_CONTRACT_VERSION
 from app.core.event_log import Event
 from app.core.world_state import GameState
 from app.db.migrations import CURRENT_ENGINE_VERSION, CURRENT_SAVE_SCHEMA_VERSION
@@ -44,6 +45,7 @@ class ExportManifest(BaseModel):
 class LocalPackageManifest(BaseModel):
     package_id: str
     package_type: str
+    contract_version: str = PACKAGE_CONTRACT_VERSION
     version: str = "0.8.16"
     engine_version_min: str = "0.8.0"
     schema_version: str = CURRENT_SAVE_SCHEMA_VERSION
@@ -53,6 +55,7 @@ class LocalPackageManifest(BaseModel):
     dependencies: list[str] = Field(default_factory=list)
     conflicts: list[str] = Field(default_factory=list)
     created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
+    redaction_policy: str = "safe_no_secrets"
     notes: str = ""
 
 
@@ -547,7 +550,14 @@ def _extract_safe_package(archive_bytes: bytes, target_root: Path) -> tuple[Expo
                 _validate_file_name(Path(name).name)
             try:
                 export_manifest = ExportManifest.model_validate_json(archive.read("export_manifest.json"))
-                package_manifest = LocalPackageManifest.model_validate_json(archive.read("local_package_manifest.json"))
+                raw_package_manifest = json.loads(archive.read("local_package_manifest.json").decode("utf-8"))
+                if "contract_version" not in raw_package_manifest:
+                    raise ImportExportError("Package manifest missing contract_version.")
+                package_manifest = LocalPackageManifest.model_validate(raw_package_manifest)
+                if package_manifest.contract_version != PACKAGE_CONTRACT_VERSION:
+                    raise ImportExportError(
+                        f"Unsupported package contract_version: {package_manifest.contract_version}"
+                    )
             except (ValidationError, KeyError) as exc:
                 raise ImportExportError(f"Invalid local package manifest: {exc}") from exc
             _validate_package_checksums(archive, package_manifest)

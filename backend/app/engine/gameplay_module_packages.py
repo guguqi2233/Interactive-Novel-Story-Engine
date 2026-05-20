@@ -13,6 +13,7 @@ from zipfile import ZIP_DEFLATED, BadZipFile, ZipFile
 
 from pydantic import BaseModel, Field
 
+from app.compatibility.contracts import PACKAGE_CONTRACT_VERSION
 from app.engine.actions.declarative import DeclarativeActionDefinition
 from app.engine.content.mod_loader import FORBIDDEN_CODE_SUFFIXES
 from app.engine.gameplay_module_debugger import _read_action_definitions
@@ -32,6 +33,7 @@ SECRET_TOKENS = ("api_key", "apikey", "secret_key", "private_key", "bearer ", "s
 class GameplayModulePackageManifest(BaseModel):
     package_id: str
     package_type: str = "gameplay_module"
+    contract_version: str = PACKAGE_CONTRACT_VERSION
     version: str = "1.0"
     created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
     module_manifest: GameplayModuleManifest
@@ -41,6 +43,7 @@ class GameplayModulePackageManifest(BaseModel):
     example_content: list[str] = Field(default_factory=list)
     docs: list[str] = Field(default_factory=list)
     checksums: dict[str, str] = Field(default_factory=dict)
+    redaction_policy: str = "safe_no_secrets"
 
 
 class GameplayModulePackageExport(BaseModel):
@@ -186,9 +189,14 @@ def _extract_package(archive_base64: str, root: Path) -> GameplayModulePackageMa
             _validate_archive_name(name)
         if "gameplay_module_package_manifest.json" not in names:
             raise GameplayModulePackageError("Gameplay module package manifest is missing.")
-        manifest = GameplayModulePackageManifest.model_validate_json(
-            archive.read("gameplay_module_package_manifest.json").decode("utf-8")
-        )
+        raw_manifest = json.loads(archive.read("gameplay_module_package_manifest.json").decode("utf-8"))
+        if "contract_version" not in raw_manifest:
+            raise GameplayModulePackageError("Gameplay module package manifest missing contract_version.")
+        manifest = GameplayModulePackageManifest.model_validate(raw_manifest)
+        if manifest.contract_version != PACKAGE_CONTRACT_VERSION:
+            raise GameplayModulePackageError(
+                f"Unsupported gameplay module package contract_version: {manifest.contract_version}"
+            )
         _validate_checksums(archive, manifest)
         for name in names:
             if name == "gameplay_module_package_manifest.json" or name.endswith("/"):

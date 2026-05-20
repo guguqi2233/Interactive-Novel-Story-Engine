@@ -33,8 +33,28 @@ class MigrationReport(BaseModel):
     applied_migrations: list[MigrationHistoryEntry] = Field(default_factory=list)
     dry_run: bool = False
     backup_save_id: str | None = None
+    pre_migration_checksum: str | None = None
     success: bool = True
     warnings: list[str] = Field(default_factory=list)
+
+
+class MigrationFailureReport(BaseModel):
+    save_id: str
+    source_version: str = "unknown"
+    target_version: str = CURRENT_SAVE_SCHEMA_VERSION
+    pre_migration_checksum: str | None = None
+    backup_save_id: str | None = None
+    success: bool = False
+    error: str
+    hidden_details_redacted: bool = True
+
+
+class MigrationRecoveryPlan(BaseModel):
+    save_id: str
+    can_restore_backup: bool
+    backup_save_id: str | None = None
+    recommended_steps: list[str] = Field(default_factory=list)
+    failure_report: MigrationFailureReport | None = None
 
 
 class SaveMigration(ABC):

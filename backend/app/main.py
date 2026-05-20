@@ -94,6 +94,7 @@ from app.api import (
     GroupParticipantContextResponse,
     LoadGameResponse,
     MigrationHistoryEntryResponse,
+    MigrationRecoveryPlanResponse,
     MigrationInfoResponse,
     MigrationListResponse,
     NarrativeEvalCaseResultResponse,
@@ -137,6 +138,13 @@ from app.api import (
     StudioValidationSummaryResponse,
 )
 from app.config import get_settings
+from app.compatibility.matrix import (
+    CompatibilityCheckRequest,
+    CompatibilityCheckResponse,
+    CompatibilityMatrix,
+    build_compatibility_matrix,
+    check_compatibility,
+)
 from app.core.event_log import Event
 from app.core.state_delta import StateDelta
 from app.core.instrumentation import (
@@ -2021,6 +2029,27 @@ def _migrate_save(save_id: str) -> SaveMigrationResponse:
     return _migration_response(report)
 
 
+@app.get("/saves/{save_id}/migration-recovery", response_model=MigrationRecoveryPlanResponse)
+def get_save_migration_recovery(save_id: str) -> MigrationRecoveryPlanResponse:
+    try:
+        plan = get_migration_service().recovery_plan(save_id)
+    except SaveRepositoryError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return MigrationRecoveryPlanResponse.model_validate(plan.model_dump(mode="json"))
+
+
+@app.post("/saves/{save_id}/restore-pre-migration-backup", response_model=MigrationRecoveryPlanResponse)
+def restore_pre_migration_backup(save_id: str, confirm_restore: bool = False) -> MigrationRecoveryPlanResponse:
+    try:
+        plan = get_migration_service().restore_pre_migration_backup(
+            save_id,
+            confirm_restore=confirm_restore,
+        )
+    except SaveRepositoryError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return MigrationRecoveryPlanResponse.model_validate(plan.model_dump(mode="json"))
+
+
 @app.get("/migrations", response_model=MigrationListResponse)
 def list_migrations() -> MigrationListResponse:
     return MigrationListResponse(
@@ -2034,6 +2063,16 @@ def list_migrations() -> MigrationListResponse:
             for migration in get_migration_service().list_available_migrations()
         ]
     )
+
+
+@app.get("/compatibility/matrix", response_model=CompatibilityMatrix)
+def get_compatibility_matrix() -> CompatibilityMatrix:
+    return build_compatibility_matrix()
+
+
+@app.post("/compatibility/check", response_model=CompatibilityCheckResponse)
+def post_compatibility_check(request: CompatibilityCheckRequest) -> CompatibilityCheckResponse:
+    return check_compatibility(request)
 
 
 @app.get("/debug/sessions/{session_id}/events", response_model=DebugEventListResponse)
@@ -3752,6 +3791,7 @@ def _migration_response(report: object) -> SaveMigrationResponse:
         backup_save_id=getattr(report, "backup_save_id"),
         success=getattr(report, "success"),
         warnings=getattr(report, "warnings"),
+        pre_migration_checksum=getattr(report, "pre_migration_checksum", None),
         applied_migrations=[
             MigrationHistoryEntryResponse(
                 migration_id=entry.migration_id,

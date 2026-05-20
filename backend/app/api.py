@@ -459,6 +459,26 @@ class SaveMigrationResponse(BaseModel):
     success: bool
     warnings: list[str] = Field(default_factory=list)
     applied_migrations: list[MigrationHistoryEntryResponse] = Field(default_factory=list)
+    pre_migration_checksum: str | None = None
+
+
+class MigrationFailureReportResponse(BaseModel):
+    save_id: str
+    source_version: str
+    target_version: str
+    pre_migration_checksum: str | None = None
+    backup_save_id: str | None = None
+    success: bool
+    error: str
+    hidden_details_redacted: bool = True
+
+
+class MigrationRecoveryPlanResponse(BaseModel):
+    save_id: str
+    can_restore_backup: bool
+    backup_save_id: str | None = None
+    recommended_steps: list[str] = Field(default_factory=list)
+    failure_report: MigrationFailureReportResponse | None = None
 
 
 class DebugEventResponse(BaseModel):

@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
+from app.compatibility.contracts import QUALITY_GATE_CONTRACT_VERSION
 from app.db.repository import SQLiteSaveRepository
 from app.engine.content.authoring_service import ContentAuthoringService
 from app.engine.content.world_loader import WorldLoader
@@ -42,6 +43,7 @@ class QualityGateProfile(StrEnum):
 
 
 class QualityGateConfig(BaseModel):
+    contract_version: str = QUALITY_GATE_CONTRACT_VERSION
     profile: QualityGateProfile = QualityGateProfile.STANDARD
     allow_warnings: bool = True
     fail_on_error: bool = True
@@ -60,7 +62,9 @@ class QualityGateReportLink(BaseModel):
 
 
 class QualityGateResult(BaseModel):
+    contract_version: str = QUALITY_GATE_CONTRACT_VERSION
     local_only: bool = True
+    target_type: str = "world"
     gate_id: str = Field(default_factory=lambda: f"quality-gate-{uuid4()}")
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     world_id: str
@@ -70,6 +74,7 @@ class QualityGateResult(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     skipped: list[str] = Field(default_factory=list)
     report_links: list[QualityGateReportLink] = Field(default_factory=list)
+    redaction_policy: str = "normal_report_redacts_hidden_details"
     health_score: int | None = None
     summary: dict[str, Any] = Field(default_factory=dict)
 

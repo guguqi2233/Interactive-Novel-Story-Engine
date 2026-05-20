@@ -4,6 +4,7 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
+from app.compatibility.contracts import MODULE_CONTRACT_VERSION
 from app.core.world_state import CURRENT_GAME_STATE_SCHEMA_VERSION
 from app.db.migrations import CURRENT_ENGINE_VERSION
 from app.engine.content.mod_loader import FORBIDDEN_CODE_SUFFIXES, compare_versions
@@ -68,6 +69,7 @@ class GameplayModuleManifest(BaseModel):
     name: str
     version: str
     module_type: str
+    contract_version: str = MODULE_CONTRACT_VERSION
     engine_version_min: str
     schema_version: str = CURRENT_GAME_STATE_SCHEMA_VERSION
     dependencies: list[str] = Field(default_factory=list)
@@ -112,6 +114,8 @@ class GameplayModuleManifest(BaseModel):
 
     @model_validator(mode="after")
     def validate_manifest(self) -> "GameplayModuleManifest":
+        if self.contract_version != MODULE_CONTRACT_VERSION:
+            raise ValueError(f"Unsupported gameplay module contract_version: {self.contract_version}")
         if not self.provided_actions and not self.provided_rules and not self.state_schema_extensions:
             raise ValueError("Gameplay module must provide actions, rules, or state schema extensions")
         return self

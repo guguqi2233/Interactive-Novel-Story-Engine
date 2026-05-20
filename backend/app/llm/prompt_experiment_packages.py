@@ -6,6 +6,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from app.compatibility.contracts import PACKAGE_CONTRACT_VERSION
 from app.engine.content.validator import ValidationReport, ValidationSeverity
 from app.llm.prompt_ab_test import PromptABTestCase
 from app.llm.prompt_profiles import PromptProfile, PromptProfileStore, RPPromptProfile
@@ -29,6 +30,7 @@ EXECUTABLE_SUFFIXES = {".bat", ".cmd", ".com", ".dll", ".exe", ".js", ".mjs", ".
 class PromptExperimentPackageManifest(BaseModel):
     package_id: str = Field(pattern=r"^[A-Za-z0-9_-]+$")
     name: str
+    contract_version: str = PACKAGE_CONTRACT_VERSION
     version: str = "1.0"
     prompt_profiles: list[PromptProfile] = Field(default_factory=list)
     rp_prompt_profiles: list[RPPromptProfile] = Field(default_factory=list)
@@ -151,6 +153,13 @@ def validate_prompt_experiment_package(package: PromptExperimentPackage) -> Vali
 
 
 def _validate_manifest(report: ValidationReport, manifest: PromptExperimentPackageManifest) -> None:
+    if manifest.contract_version != PACKAGE_CONTRACT_VERSION:
+        report.add(
+            ValidationSeverity.ERROR,
+            "prompt_experiment_package.contract_version",
+            f"Unsupported prompt experiment package contract_version: {manifest.contract_version}",
+            code="prompt_experiment_package_contract_version_unsupported",
+        )
     ids = {manifest.package_id}
     ids.update(manifest.provider_requirements)
     ids.update(profile.id for profile in manifest.prompt_profiles)

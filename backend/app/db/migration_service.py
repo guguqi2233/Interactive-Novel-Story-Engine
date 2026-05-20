@@ -3,6 +3,7 @@ import json
 
 from app.db.migrations import (
     CURRENT_SAVE_SCHEMA_VERSION,
+    MigrationRecoveryPlan,
     MigrationRegistry,
     MigrationReport,
     SaveMigration,
@@ -65,6 +66,13 @@ class MigrationService:
 
     def apply(self, save_id: str) -> MigrationReport:
         return self._repository.migrate_save(save_id, dry_run=False)
+
+    def recovery_plan(self, save_id: str) -> MigrationRecoveryPlan:
+        return self._repository.migration_recovery_plan(save_id)
+
+    def restore_pre_migration_backup(self, save_id: str, *, confirm_restore: bool = False) -> MigrationRecoveryPlan:
+        self._repository.restore_pre_migration_backup(save_id, confirm_restore=confirm_restore)
+        return self.recovery_plan(save_id)
 
 
 def _migration_info(migration: SaveMigration) -> MigrationInfo:

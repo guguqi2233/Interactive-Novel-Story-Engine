@@ -1,5 +1,6 @@
 import json
 import sqlite3
+import hashlib
 from pathlib import Path
 from time import perf_counter
 
@@ -9,9 +10,12 @@ from app.core.world_state import GameState, load_game_state_payload
 from app.db.migrations import (
     CURRENT_ENGINE_VERSION,
     CURRENT_SAVE_SCHEMA_VERSION,
+    MigrationFailureReport,
     MigrationRegistry,
     MigrationReport,
+    MigrationRecoveryPlan,
     create_default_registry,
+    detect_schema_version,
 )
 from app.db.models import SaveGame, StoredEvent, StoredMemory
 from app.llm.memory_store import MemoryRecord
@@ -297,6 +301,14 @@ class SQLiteSaveRepository:
         dry_run: bool = False,
         create_backup: bool = True,
     ) -> MigrationReport:
+        backup_save_id: str | None = None
+        pre_migration_checksum: str | None = None
+        if create_backup and not dry_run:
+            save = self.get_save(save_id)
+            if save.schema_version != CURRENT_SAVE_SCHEMA_VERSION:
+                backup_save_id = self.create_pre_migration_backup(save_id)
+                pre_migration_checksum = _sha256_text(save.state_json)
+
         with self._connect() as connection:
             try:
                 connection.execute("BEGIN")
@@ -307,18 +319,18 @@ class SQLiteSaveRepository:
                 if row is None:
                     raise SaveRepositoryError(f"Save not found: {save_id}")
                 save_data = dict(row)
-                backup_save_id = f"{save_id}.backup"
+                backup_save_id = backup_save_id or f"{save_id}.backup"
+                pre_migration_checksum = pre_migration_checksum or _sha256_text(str(save_data.get("state_json", "")))
                 migrated_data, report = self._migration_registry.migrate_to_latest(
                     save_id,
                     save_data,
                     dry_run=dry_run,
                     backup_save_id=backup_save_id if create_backup and not dry_run else None,
                 )
+                report.pre_migration_checksum = pre_migration_checksum
                 if dry_run:
                     connection.rollback()
                     return report
-                if create_backup and report.applied_migrations:
-                    self._create_backup_in_connection(connection, save_id, backup_save_id)
                 if report.applied_migrations:
                     connection.execute(
                         """
@@ -354,7 +366,116 @@ class SQLiteSaveRepository:
                 raise
             except Exception as exc:
                 connection.rollback()
+                if not dry_run:
+                    self._record_migration_failure(
+                        save_id,
+                        str(exc),
+                        backup_save_id=backup_save_id,
+                        pre_migration_checksum=pre_migration_checksum,
+                    )
                 raise SaveRepositoryError(f"Could not migrate save {save_id}: {exc}") from exc
+
+    def create_pre_migration_backup(self, save_id: str) -> str:
+        backup_save_id = f"{save_id}.backup"
+        with self._connect() as connection:
+            connection.execute("BEGIN")
+            try:
+                backup_save_id = self._create_backup_in_connection(connection, save_id, backup_save_id)
+                connection.commit()
+            except Exception:
+                connection.rollback()
+                raise
+        return backup_save_id
+
+    def _record_migration_failure(
+        self,
+        save_id: str,
+        error: str,
+        *,
+        backup_save_id: str | None,
+        pre_migration_checksum: str | None,
+    ) -> None:
+        try:
+            save = self.get_save(save_id)
+            source_version = detect_schema_version(dict(save.model_dump()))
+        except Exception:
+            source_version = "unknown"
+        failure = MigrationFailureReport(
+            save_id=save_id,
+            source_version=source_version,
+            pre_migration_checksum=pre_migration_checksum,
+            backup_save_id=backup_save_id,
+            error=_redact_failure_text(error),
+        )
+        with self._connect() as connection:
+            connection.execute(
+                "INSERT INTO migration_failures (save_id, failure_json) VALUES (?, ?)",
+                (save_id, failure.model_dump_json()),
+            )
+
+    def _latest_migration_failure(self, save_id: str) -> MigrationFailureReport | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT failure_json
+                FROM migration_failures
+                WHERE save_id = ?
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (save_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return MigrationFailureReport.model_validate_json(row["failure_json"])
+
+    def migration_recovery_plan(self, save_id: str) -> MigrationRecoveryPlan:
+        failure = self._latest_migration_failure(save_id)
+        backup_save_id = failure.backup_save_id if failure else f"{save_id}.pre-migration-backup"
+        can_restore = self._save_exists(backup_save_id)
+        steps = [
+            "Review the migration failure report.",
+            "Run migration dry-run after fixing the reported compatibility issue.",
+        ]
+        if can_restore:
+            steps.insert(1, "Restore the pre-migration backup if the working save is unusable.")
+        return MigrationRecoveryPlan(
+            save_id=save_id,
+            can_restore_backup=can_restore,
+            backup_save_id=backup_save_id if can_restore else None,
+            recommended_steps=steps,
+            failure_report=failure,
+        )
+
+    def restore_pre_migration_backup(self, save_id: str, *, confirm_restore: bool = False) -> SaveGame:
+        if not confirm_restore:
+            raise SaveRepositoryError("Restore pre-migration backup requires explicit confirmation.")
+        plan = self.migration_recovery_plan(save_id)
+        if not plan.backup_save_id:
+            raise SaveRepositoryError(f"No pre-migration backup available for save: {save_id}")
+        backup = self.get_save(plan.backup_save_id)
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE save_games
+                SET state_json = ?, engine_version = ?, schema_version = ?, world_id = ?,
+                    world_version = ?, content_pack_version = ?, enabled_mods = ?,
+                    migration_history = ?, updated_at = datetime('now')
+                WHERE save_id = ?
+                """,
+                (
+                    backup.state_json,
+                    backup.engine_version,
+                    backup.schema_version,
+                    backup.world_id,
+                    backup.world_version,
+                    backup.content_pack_version,
+                    backup.enabled_mods,
+                    backup.migration_history,
+                    save_id,
+                ),
+            )
+        return self.get_save(save_id)
 
     def delete_save(self, save_id: str) -> None:
         with self._connect() as connection:
@@ -503,6 +624,16 @@ class SQLiteSaveRepository:
             )
             connection.execute(
                 """
+                CREATE TABLE IF NOT EXISTS migration_failures (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    save_id TEXT NOT NULL,
+                    failure_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+                )
+                """
+            )
+            connection.execute(
+                """
                 CREATE INDEX IF NOT EXISTS idx_stored_memories_save_turn
                 ON stored_memories(save_id, created_turn)
                 """
@@ -586,7 +717,7 @@ class SQLiteSaveRepository:
         connection: sqlite3.Connection,
         save_id: str,
         backup_save_id: str,
-    ) -> None:
+    ) -> str:
         existing_backup = connection.execute(
             "SELECT 1 FROM save_games WHERE save_id = ?",
             (backup_save_id,),
@@ -663,10 +794,23 @@ class SQLiteSaveRepository:
                 """,
                 (row["memory_id"], backup_save_id, row["memory_json"], row["created_turn"]),
             )
+        return backup_save_id
 
 
 def _dump_model_json(model: GameState | Event | MemoryRecord) -> str:
     return model.model_dump_json()
+
+
+def _sha256_text(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _redact_failure_text(value: str) -> str:
+    redacted = value
+    for token in ["api_key", "apikey", "authorization", "bearer ", "sk-"]:
+        redacted = redacted.replace(token, "[redacted]")
+        redacted = redacted.replace(token.upper(), "[redacted]")
+    return redacted
 
 
 _SAVE_SELECT = """

@@ -4,6 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
+from app.compatibility.contracts import PROMPT_PROFILE_CONTRACT_VERSION
 from app.config import Settings, get_settings
 
 PromptVariant = Literal["default", "compact", "structured", "local_model"]
@@ -24,6 +25,7 @@ class PromptProfileTemperatureOverrides(BaseModel):
 
 
 class RPPromptProfile(BaseModel):
+    contract_version: str = PROMPT_PROFILE_CONTRACT_VERSION
     id: str = Field(default="default_rp", pattern=r"^[A-Za-z0-9_-]+$")
     name: str = "Default RP"
     description: str = "Grounded roleplay style that preserves world boundaries."
@@ -39,6 +41,8 @@ class RPPromptProfile(BaseModel):
 
     @model_validator(mode="after")
     def validate_rp_boundary(self) -> "RPPromptProfile":
+        if self.contract_version != PROMPT_PROFILE_CONTRACT_VERSION:
+            raise ValueError(f"Unsupported RPPromptProfile contract_version: {self.contract_version}")
         if self.hidden_fact_policy != "deny":
             raise ValueError("RPPromptProfile hidden_fact_policy must be deny")
         if self.state_modification_policy != "deny":
@@ -55,6 +59,7 @@ class RPPromptProfile(BaseModel):
 
 
 class PromptProfile(BaseModel):
+    contract_version: str = PROMPT_PROFILE_CONTRACT_VERSION
     id: str = Field(pattern=r"^[A-Za-z0-9_-]+$")
     name: str
     description: str = ""
@@ -84,6 +89,8 @@ class PromptProfile(BaseModel):
 
     @model_validator(mode="after")
     def validate_security_boundary(self) -> "PromptProfile":
+        if self.contract_version != PROMPT_PROFILE_CONTRACT_VERSION:
+            raise ValueError(f"Unsupported PromptProfile contract_version: {self.contract_version}")
         forbidden_text = " ".join(
             [
                 self.narrator_style,

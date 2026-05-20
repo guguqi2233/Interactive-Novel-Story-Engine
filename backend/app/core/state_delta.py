@@ -3,6 +3,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, TypeAdapter, field_validator
 
+from app.compatibility.contracts import STATEDELTA_CONTRACT_VERSION
 from app.core.world_state import GameState
 
 
@@ -21,9 +22,12 @@ class StateDelta(BaseModel):
     operation: StateDeltaOperation
     path: str
     value: Any = None
+    expected_old_value: Any = None
     caused_by_event_id: str | None = None
     reason: str | None = None
+    source: str | None = None
     metadata: dict[str, str] = Field(default_factory=dict)
+    contract_version: str = STATEDELTA_CONTRACT_VERSION
 
     @field_validator("path")
     @classmethod
@@ -181,6 +185,28 @@ def _validate_model_field_value(container: BaseModel, key: str, value: Any) -> A
         return TypeAdapter(field.annotation).validate_python(value)
     except Exception as exc:
         raise StateDeltaError(f"Invalid value for state path segment: {key}") from exc
+
+
+FORBIDDEN_CONTRACT_PATHS = {
+    "debug",
+    "debug_memory",
+    "raw_env",
+    "api_key",
+    "secrets",
+}
+
+
+def validate_stable_delta_contract(delta: StateDelta) -> None:
+    """Validate a delta against the stable v1.8 contract without applying it."""
+    if delta.contract_version != STATEDELTA_CONTRACT_VERSION:
+        raise StateDeltaError(f"Unsupported StateDelta contract_version: {delta.contract_version}")
+    if not isinstance(delta.operation, StateDeltaOperation):
+        raise StateDeltaError(f"Unsupported delta operation: {delta.operation}")
+    parts = delta.path.split(".")
+    if any(part in FORBIDDEN_CONTRACT_PATHS for part in parts):
+        raise StateDeltaError(f"Forbidden StateDelta path: {delta.path}")
+    if delta.path.startswith("player_visible_facts") and delta.metadata.get("hidden") == "true":
+        raise StateDeltaError("Hidden facts cannot be written to player_visible_facts by StateDelta contract")
 
 
 def _validate_dict_entry_delta(state: GameState, path: str) -> GameState:

@@ -4,6 +4,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.compatibility.contracts import ACTION_MOD_CONTRACT_VERSION
 from app.core.event_log import Event
 from app.core.state_delta import StateDelta, StateDeltaOperation
 from app.core.world_state import FactVisibility, GameState
@@ -131,6 +132,7 @@ class DeclarativeActionDefinition(BaseModel):
     label: str
     aliases: list[str] = Field(default_factory=list)
     category: DeclarativeActionCategory = DeclarativeActionCategory.GENERAL
+    contract_version: str = ACTION_MOD_CONTRACT_VERSION
     target_specs: list[DeclarativeActionTargetSpec] = Field(default_factory=list)
     affordance_requirements: DeclarativeAffordanceRequirement = Field(default_factory=DeclarativeAffordanceRequirement)
     time_cost: int = Field(default=0, ge=0)
@@ -147,6 +149,13 @@ class DeclarativeActionDefinition(BaseModel):
     def validate_safe_id(cls, value: str) -> str:
         if not value or any(part in value for part in ["/", "\\", ".."]):
             raise ValueError("Declarative action ids must be safe local identifiers")
+        return value
+
+    @field_validator("contract_version")
+    @classmethod
+    def validate_contract_version(cls, value: str) -> str:
+        if value != ACTION_MOD_CONTRACT_VERSION:
+            raise ValueError(f"Unsupported action mod contract_version: {value}")
         return value
 
 

@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.compatibility.contracts import EVENTLOG_CONTRACT_VERSION
 from app.core.state_delta import StateDelta
 
 
@@ -12,6 +13,7 @@ class EventLogError(ValueError):
 class Event(BaseModel):
     event_id: str
     turn: int = Field(ge=0)
+    event_type: str = "player_action"
     actor_id: str
     action_type: str
     result: str
@@ -20,13 +22,25 @@ class Event(BaseModel):
     input_text: str | None = None
     state_deltas: list[StateDelta] = Field(default_factory=list)
     allow_empty_delta: bool = False
+    visible_summary: str | None = None
+    debug_summary: str | None = None
     narrative_text: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    contract_version: str = EVENTLOG_CONTRACT_VERSION
 
     @model_validator(mode="after")
     def validate_state_delta_presence(self) -> "Event":
         if not self.state_deltas and not self.allow_empty_delta:
             raise ValueError("Event must include state_deltas unless allow_empty_delta is true")
+        if self.contract_version != EVENTLOG_CONTRACT_VERSION:
+            raise ValueError(f"Unsupported Event contract_version: {self.contract_version}")
+        if self.visible_to_player:
+            visible_text = " ".join(
+                value or ""
+                for value in [self.visible_summary, self.narrative_text, self.input_text]
+            ).lower()
+            if any(secret_term in visible_text for secret_term in ["api_key", "authorization:", "raw env"]):
+                raise ValueError("Player-visible events cannot contain secrets or raw env markers")
         return self
 
 

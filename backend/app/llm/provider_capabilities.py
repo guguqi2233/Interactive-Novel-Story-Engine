@@ -5,6 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from app.compatibility.contracts import PROVIDER_CONTRACT_VERSION
 from app.config import Settings
 
 
@@ -18,6 +19,7 @@ class ProviderType(StrEnum):
 
 
 class ProviderCapability(BaseModel):
+    contract_version: str = PROVIDER_CONTRACT_VERSION
     provider_id: str
     provider_type: ProviderType
     supports_text: bool = True
@@ -40,6 +42,7 @@ class ProviderCapability(BaseModel):
 
 
 class ModelCapability(BaseModel):
+    contract_version: str = PROVIDER_CONTRACT_VERSION
     provider_id: str
     provider_type: ProviderType
     model_id: str

@@ -9,16 +9,17 @@ This project is for local personal use. It is not designed as a hosted service.
 
 ## Current Version Scope
 
-v1.7 is Polished Desktop Studio on top of v1.6 Advanced Gameplay Modules,
-v1.5 Local Model & Prompt Lab, v1.4 Content Production Pipeline, v1.3
-Advanced NPC Simulation, v1.2 Visual Authoring Pro, the v1.1 Roleplay
-Immersion Layer, and the v1.0 Stable Local Studio Edition. v1.0 freezes the
-local contracts built through the v0.x series, v1.1 adds character voice and
-RP-safe dialogue, v1.2 expands local visual authoring, v1.3 adds bounded
-rule-driven NPC autonomy, v1.4 adds local batch content production, v1.5 adds
-local provider/prompt diagnostics, v1.6 adds local declarative gameplay
-modules, and v1.7 improves local desktop startup, project selection,
-diagnostics, update notes, crash reports, and packaging safety without
+v1.8 is Stable Contracts & Compatibility on top of v1.7 Polished Desktop
+Studio, v1.6 Advanced Gameplay Modules, v1.5 Local Model & Prompt Lab, v1.4
+Content Production Pipeline, v1.3 Advanced NPC Simulation, v1.2 Visual
+Authoring Pro, the v1.1 Roleplay Immersion Layer, and the v1.0 Stable Local
+Studio Edition. v1.0 freezes the local contracts built through the v0.x
+series, v1.1 adds character voice and RP-safe dialogue, v1.2 expands local
+visual authoring, v1.3 adds bounded rule-driven NPC autonomy, v1.4 adds local
+batch content production, v1.5 adds local provider/prompt diagnostics, v1.6
+adds local declarative gameplay modules, v1.7 improves local desktop startup,
+project selection, diagnostics, update notes, crash reports, and packaging
+safety, and v1.8 freezes pre-v2.0 contract and compatibility behavior without
 changing world authority:
 
 - Multi-world content packs.
@@ -169,6 +170,16 @@ changing world authority:
 - Crash Report Local Viewer.
 - Desktop Startup Diagnostics.
 - Desktop Packaging Safety Pass.
+- Compatibility Boundary Contract.
+- Stable GameState, StateDelta, and EventLog contracts.
+- Stable Content Pack, Save Migration, Module Manifest, Action Mod, Prompt
+  Profile, Provider Gateway, Package, Authoring API, Debug API, and Quality
+  Gate contracts.
+- Schema Version Compatibility Matrix.
+- Compatibility Test Suite.
+- Migration Failure Recovery.
+- Deprecated Field Policy and Backward Compatibility Shims.
+- Contract Docs Generator and v2.0 Compatibility Checklist.
 
 The LLM is still not the world judge. Rule outcomes are decided by local code.
 NPC simulation is deterministic, finite, knowledge-scoped, and applied through
@@ -179,7 +190,81 @@ through `ActionRegistry` and deterministic rule handlers; Action Mods are
 declarative data and cannot execute arbitrary code. v1.7 desktop tools are
 local convenience layers around backend APIs; they do not directly write
 `GameState`, read frontend secrets, or turn the desktop shell into a second
-engine.
+engine. v1.8 is not a new gameplay release; it stabilizes versioned contracts,
+compatibility gates, migration recovery, and package validation ahead of v2.0.
+
+## v1.8 Documentation Map
+
+- `docs/COMPATIBILITY_BOUNDARY.md`: v1.8 contract/version compatibility
+  boundary, migration rules, deprecated-field rules, shim limits, and package
+  compatibility requirements.
+- `docs/GAMESTATE_CONTRACT.md`, `docs/STATEDELTA_CONTRACT.md`, and
+  `docs/EVENTLOG_CONTRACT.md`: stable core runtime contracts.
+- `docs/CONTENT_PACK_SCHEMA_CONTRACT.md` and
+  `docs/SAVE_MIGRATION_CONTRACT.md`: stable content pack and save migration
+  contracts.
+- `docs/MODULE_MANIFEST_CONTRACT.md` and `docs/ACTION_MOD_CONTRACT.md`:
+  gameplay module and declarative action contracts.
+- `docs/PROMPT_PROFILE_CONTRACT.md` and
+  `docs/PROVIDER_GATEWAY_CONTRACT.md`: prompt/profile and provider gateway
+  contracts. Prompt profiles cannot expand LLM authority.
+- `docs/PACKAGE_CONTRACT.md`, `docs/AUTHORING_API_CONTRACT.md`,
+  `docs/DEBUG_API_CONTRACT.md`, and `docs/QUALITY_GATE_CONTRACT.md`: package,
+  local API, and quality report contracts.
+- `docs/DEPRECATION_POLICY.md`, `docs/DEPRECATED_FIELDS.md`,
+  `docs/CONTRACT_INDEX.md`, and `docs/SCHEMA_VERSION_MATRIX.md`: generated and
+  policy-level compatibility references.
+- `docs/V1_8_LLM_BOUNDARY_AUDIT.md`,
+  `docs/V1_8_VISIBILITY_COMPATIBILITY_AUDIT.md`, and
+  `docs/V1_8_SECURITY_AUDIT.md`: release-freeze audits.
+- `docs/V1_8_ACCEPTANCE_REPORT.md` and `docs/V1_8_RELEASE_NOTES.md`: v1.8
+  acceptance and release summary.
+
+## v1.8 Compatibility Workflows
+
+Run the compatibility matrix:
+
+```powershell
+python -m backend.app.tools.compatibility_matrix
+```
+
+Generate contract docs:
+
+```powershell
+python -m backend.app.tools.generate_contract_docs
+```
+
+Run the v2 compatibility checklist:
+
+```powershell
+python -m backend.app.tools.v2_compatibility_checklist
+```
+
+Run compatibility tests:
+
+```powershell
+python -m pytest backend/tests/compatibility
+```
+
+Deprecated fields are warning-backed compatibility metadata. They are not
+removed immediately, and removal requires a replacement, migration strategy,
+and contract review. Compatibility shims may fill safe defaults or rename known
+legacy fields, but they must not change hidden/visible classification or hide
+unsupported breaking changes.
+
+Migration failure recovery creates a pre-migration backup and checksum before
+apply, preserves the original save on failure, records a failed attempt, and
+offers an explicit restore path. It is not an automatic repair system for every
+corrupted save.
+
+Package import/export still requires validation, compatibility checks,
+checksum verification, zip-slip protection, executable rejection, and secret
+exclusion. Safe packages must not contain `.env`, API keys, logs, caches,
+databases, raw env, or hidden text by default.
+
+The LLM remains a narrator/parser/summarizer layer. v1.8 compatibility tools,
+migration recovery, shims, contract docs generation, and checklists do not call
+an LLM and do not let model output directly modify `GameState`.
 
 ## v1.7 Documentation Map
 

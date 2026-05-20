@@ -3,6 +3,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_validator
 
+from app.compatibility.contracts import GAMESTATE_CONTRACT_VERSION
+
 CURRENT_GAME_STATE_SCHEMA_VERSION = "0.6"
 
 
@@ -1048,6 +1050,8 @@ class CombatState(BaseModel):
 
 class GameState(BaseModel):
     schema_version: str = CURRENT_GAME_STATE_SCHEMA_VERSION
+    engine_version: str = "0.6.0"
+    contract_version: str = GAMESTATE_CONTRACT_VERSION
     world_id: str
     turn: int = 0
     current_time: GameTime = Field(default_factory=GameTime)
@@ -1112,6 +1116,8 @@ def migrate_game_state_payload(payload: dict[str, Any]) -> dict[str, Any]:
     """Fill fields added after v0.3 so older save JSON can be validated."""
     migrated = dict(payload)
     migrated.setdefault("schema_version", CURRENT_GAME_STATE_SCHEMA_VERSION)
+    migrated.setdefault("engine_version", "0.6.0")
+    migrated.setdefault("contract_version", GAMESTATE_CONTRACT_VERSION)
     migrated.setdefault("factions", {})
     migrated.setdefault("rumors", {})
     migrated.setdefault("crimes", {})
