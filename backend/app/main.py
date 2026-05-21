@@ -5963,6 +5963,12 @@ def get_project_repository():
     return repository
 
 
+def get_novel_repository(project_id: str):
+    from app.platform.novel_studio import get_novel_repository_for_project
+
+    return get_novel_repository_for_project(project_id, get_project_repository())
+
+
 @app.get("/projects")
 def list_narrative_projects() -> dict[str, Any]:
     require_authoring_api()
@@ -6122,3 +6128,297 @@ def run_narrative_project_quality_gate(project_id: str, request: dict[str, Any] 
     project = get_project_repository().load_project(project_id)
     config = ProjectQualityGateConfig.model_validate(request or {})
     return run_project_quality_gate(project.project_root, config).model_dump_normal()
+
+
+# v2.2 Novel Studio MVP APIs. These endpoints manage local Novel drafts only.
+# They do not modify World GameState, EventLog, content packs, provider secrets,
+# hidden facts, or raw env.
+@app.get("/projects/{project_id}/novel/manuscripts")
+def list_novel_manuscripts(project_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    try:
+        repo = get_novel_repository(project_id)
+        return {"project_id": project_id, "manuscripts": [item.model_dump(mode="json") for item in repo.list_manuscripts()]}
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/projects/{project_id}/novel/manuscripts")
+def create_novel_manuscript(project_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.novel_studio import NovelManuscript
+
+    try:
+        repo = get_novel_repository(project_id)
+        manuscript = NovelManuscript(project_id=project_id, **request)
+        return repo.create_manuscript(manuscript).model_dump(mode="json")
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/projects/{project_id}/novel/manuscripts/{manuscript_id}")
+def get_novel_manuscript(project_id: str, manuscript_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    try:
+        return get_novel_repository(project_id).load_manuscript(manuscript_id).model_dump(mode="json")
+    except (FileNotFoundError, ValueError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.patch("/projects/{project_id}/novel/manuscripts/{manuscript_id}")
+def patch_novel_manuscript(project_id: str, manuscript_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    try:
+        repo = get_novel_repository(project_id)
+        manuscript = repo.load_manuscript(manuscript_id).model_copy(update=request)
+        return repo.save_manuscript(manuscript).model_dump(mode="json")
+    except (FileNotFoundError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/projects/{project_id}/novel/chapters")
+def list_novel_chapters(project_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    repo = get_novel_repository(project_id)
+    return {"project_id": project_id, "chapters": [item.model_dump(mode="json") for item in repo.list_chapters()]}
+
+
+@app.post("/projects/{project_id}/novel/chapters")
+def create_novel_chapter(project_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.novel_studio import NovelChapter
+
+    try:
+        return get_novel_repository(project_id).create_chapter(NovelChapter(project_id=project_id, **request)).model_dump(mode="json")
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/projects/{project_id}/novel/chapters/{chapter_id}")
+def get_novel_chapter(project_id: str, chapter_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    try:
+        return get_novel_repository(project_id).load_chapter(chapter_id).model_dump(mode="json")
+    except (FileNotFoundError, ValueError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.patch("/projects/{project_id}/novel/chapters/{chapter_id}")
+def patch_novel_chapter(project_id: str, chapter_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    try:
+        repo = get_novel_repository(project_id)
+        chapter = repo.load_chapter(chapter_id).model_copy(update=request)
+        return repo.save_chapter(chapter).model_dump(mode="json")
+    except (FileNotFoundError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/projects/{project_id}/novel/chapters/reorder")
+def reorder_novel_chapters(project_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.novel_studio import ChapterSceneService
+
+    try:
+        chapters = ChapterSceneService(get_novel_repository(project_id)).reorder_chapters([str(item) for item in request.get("chapter_ids", [])])
+        return {"chapters": [item.model_dump(mode="json") for item in chapters]}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/projects/{project_id}/novel/scenes")
+def list_novel_scenes(project_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    repo = get_novel_repository(project_id)
+    return {"project_id": project_id, "scenes": [item.model_dump(mode="json") for item in repo.list_scenes()]}
+
+
+@app.post("/projects/{project_id}/novel/scenes")
+def create_novel_scene(project_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.novel_studio import ChapterSceneService, NovelScene
+
+    try:
+        return ChapterSceneService(get_novel_repository(project_id)).create_scene(NovelScene(project_id=project_id, **request)).model_dump(mode="json")
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.patch("/projects/{project_id}/novel/scenes/{scene_id}")
+def patch_novel_scene(project_id: str, scene_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.novel_studio import ChapterSceneService
+
+    try:
+        return ChapterSceneService(get_novel_repository(project_id)).update_scene(scene_id, request).model_dump(mode="json")
+    except (FileNotFoundError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/projects/{project_id}/novel/scenes/{scene_id}/move")
+def move_novel_scene(project_id: str, scene_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.novel_studio import ChapterSceneService
+
+    try:
+        return ChapterSceneService(get_novel_repository(project_id)).move_scene_to_chapter(scene_id, str(request.get("target_chapter_id"))).model_dump(mode="json")
+    except (FileNotFoundError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/projects/{project_id}/novel/outline")
+def list_novel_outlines(project_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    repo = get_novel_repository(project_id)
+    return {"project_id": project_id, "outlines": [item.model_dump(mode="json") for item in repo.list_outlines()]}
+
+
+@app.put("/projects/{project_id}/novel/outline")
+def save_novel_outline(project_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.novel_studio import NovelOutline
+
+    try:
+        return get_novel_repository(project_id).save_outline(NovelOutline(project_id=project_id, **request)).model_dump(mode="json")
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/projects/{project_id}/novel/outlines/{outline_id}/tree")
+def get_novel_outline_tree(project_id: str, outline_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.novel_studio import OutlineService
+
+    try:
+        return {"outline_id": outline_id, "tree": OutlineService(get_novel_repository(project_id)).get_outline_tree(outline_id)}
+    except (FileNotFoundError, ValueError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/projects/{project_id}/novel/outlines/{outline_id}/nodes")
+def add_novel_outline_node(project_id: str, outline_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.novel_studio import NovelOutlineNode, OutlineService
+
+    try:
+        return OutlineService(get_novel_repository(project_id)).add_outline_node(outline_id, NovelOutlineNode(**request)).model_dump(mode="json")
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.patch("/projects/{project_id}/novel/outlines/{outline_id}/nodes/{node_id}")
+def patch_novel_outline_node(project_id: str, outline_id: str, node_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.novel_studio import OutlineService
+
+    try:
+        return OutlineService(get_novel_repository(project_id)).update_outline_node(outline_id, node_id, request).model_dump(mode="json")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.delete("/projects/{project_id}/novel/outlines/{outline_id}/nodes/{node_id}")
+def delete_novel_outline_node(project_id: str, outline_id: str, node_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.novel_studio import OutlineService
+
+    try:
+        return OutlineService(get_novel_repository(project_id)).delete_outline_node(outline_id, node_id).model_dump(mode="json")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/projects/{project_id}/novel/outlines/{outline_id}/validate")
+def validate_novel_outline(project_id: str, outline_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.novel_studio import OutlineService
+
+    service = OutlineService(get_novel_repository(project_id))
+    return service.validate_outline(service.repository.load_outline(outline_id)).model_dump(mode="json")
+
+
+@app.get("/projects/{project_id}/novel/arcs")
+def list_novel_character_arcs(project_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    return {"arcs": [item.safe_summary() for item in get_novel_repository(project_id).list_character_arcs()]}
+
+
+@app.post("/projects/{project_id}/novel/arcs")
+def create_novel_character_arc(project_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.novel_studio import CharacterArc, CharacterArcService
+
+    try:
+        return CharacterArcService(get_novel_repository(project_id)).create_arc(CharacterArc(project_id=project_id, **request)).safe_summary()
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/projects/{project_id}/novel/plot-threads")
+def list_novel_plot_threads(project_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    return {"plot_threads": [item.model_dump(mode="json") for item in get_novel_repository(project_id).list_plot_threads()]}
+
+
+@app.post("/projects/{project_id}/novel/plot-threads")
+def create_novel_plot_thread(project_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.novel_studio import PlotThread, PlotThreadService
+
+    try:
+        return PlotThreadService(get_novel_repository(project_id)).create_thread(PlotThread(**request)).model_dump(mode="json")
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/projects/{project_id}/novel/foreshadowing")
+def list_novel_foreshadowing(project_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    return {"foreshadowing": [item.safe_summary() for item in get_novel_repository(project_id).list_foreshadowing()]}
+
+
+@app.post("/projects/{project_id}/novel/foreshadowing")
+def create_novel_foreshadowing(project_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.novel_studio import ForeshadowingItem, ForeshadowingService
+
+    try:
+        return ForeshadowingService(get_novel_repository(project_id)).create_item(ForeshadowingItem(**request)).safe_summary()
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/projects/{project_id}/novel/consistency/check")
+def check_novel_consistency(project_id: str, request: dict[str, Any] | None = None) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.novel_studio import NovelConsistencyChecker
+
+    return NovelConsistencyChecker(get_novel_repository(project_id)).check((request or {}).get("manuscript_id")).model_dump(mode="json")
+
+
+@app.post("/projects/{project_id}/novel/quality/run")
+def run_novel_quality(project_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    require_quality_api()
+    from app.platform.novel_studio import NovelConsistencyChecker, NovelQualityEvalCase, NovelQualityEvaluator
+
+    case = NovelQualityEvalCase(project_id=project_id, **request)
+    return NovelQualityEvaluator(NovelConsistencyChecker(get_novel_repository(project_id))).run(case).model_dump(mode="json")
+
+
+@app.post("/projects/{project_id}/novel/export")
+def export_novel(project_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.novel_studio import NovelExportRequest, NovelExportService
+
+    try:
+        return NovelExportService(get_novel_repository(project_id)).export(NovelExportRequest(**request)).model_dump(mode="json")
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/projects/{project_id}/novel/exports")
+def list_novel_exports(project_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    repo = get_novel_repository(project_id)
+    exports = sorted(path.name for path in repo._dir("exports").glob("*") if path.is_file())
+    return {"exports": exports}

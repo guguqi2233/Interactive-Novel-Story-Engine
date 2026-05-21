@@ -48,6 +48,7 @@ def run_project_quality_gate(project_path: str | Path, config: ProjectQualityGat
     validation = validate_project(project_path, profile="normal")
     result = ProjectQualityGateResult(project_id=validation.project_id)
     _add_validation(result, validation)
+    _try_novel_gate(project_path, result)
     if cfg.run_world_quality_gate and validation.project_id:
         _try_world_gate(project_path, result, cfg)
     if cfg.fail_on_warning and result.warnings:
@@ -98,3 +99,38 @@ def _try_world_gate(project_path: str | Path, result: ProjectQualityGateResult, 
         result.errors.extend(gate.errors)
         result.warnings.extend(gate.warnings)
 
+
+def _try_novel_gate(project_path: str | Path, result: ProjectQualityGateResult) -> None:
+    try:
+        from app.platform.novel_studio import NovelConsistencyChecker, NovelRepository
+    except Exception:
+        return
+    repo = NovelRepository(project_path)
+    if not (Path(project_path) / "novel" / "manuscripts").exists():
+        result.checks.append(ProjectQualityGateCheck(check_id="novel_quality_gate", status="skip", message="No Novel Studio section."))
+        return
+    try:
+        manuscripts = repo.list_manuscripts()
+        if not manuscripts:
+            result.checks.append(ProjectQualityGateCheck(check_id="novel_quality_gate", status="skip", message="No novel manuscripts."))
+            return
+        report = NovelConsistencyChecker(repo).check(manuscripts[0].manuscript_id)
+    except Exception as exc:
+        result.checks.append(ProjectQualityGateCheck(check_id="novel_quality_gate", status="fail", message="Novel quality gate failed."))
+        result.errors.append(redact_text(str(exc)))
+        result.blockers.append("novel_quality_gate: failed to run")
+        return
+    if report.status == "fail":
+        result.checks.append(ProjectQualityGateCheck(check_id="novel_quality_gate", status="fail", message="Novel consistency failed."))
+        for issue in report.issues:
+            if issue.severity in {"error", "blocker"}:
+                result.errors.append(f"{issue.code}: {issue.message}")
+                if issue.severity == "blocker":
+                    result.blockers.append(f"{issue.code}: {issue.message}")
+            else:
+                result.warnings.append(f"{issue.code}: {issue.message}")
+    elif report.status == "warning":
+        result.checks.append(ProjectQualityGateCheck(check_id="novel_quality_gate", status="warning", message="Novel consistency warnings."))
+        result.warnings.extend(f"{issue.code}: {issue.message}" for issue in report.issues)
+    else:
+        result.checks.append(ProjectQualityGateCheck(check_id="novel_quality_gate", status="pass", message="Novel consistency passed."))

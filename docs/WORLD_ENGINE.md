@@ -1,5 +1,39 @@
 # World Engine
 
+## v2.2 Novel Studio Integration
+
+v2.2 adds a Novel Studio MVP around the existing World Engine. Novel Studio can
+reference World Bible entries, timeline summaries, and player-visible EventLog
+summaries, but it does not become a world fact source.
+
+- Novel manuscripts, outlines, chapters, scenes, arcs, plot threads, and
+  foreshadowing are authoring drafts.
+- Novel-to-World conversion produces `WorldContentDraft` candidates only.
+- EventLog-to-Novel import is one-way and read-only against the EventLog.
+- Novel export and prompt context exclude hidden facts, debug data, raw
+  `state_deltas`, API keys, raw env, and provider secrets.
+- World Mode actions continue to be resolved by deterministic rules,
+  `StateDelta`, `GameState`, and `EventLog`.
+
+Novel Studio integration points are read-only or proposal-only from the World
+Engine perspective:
+
+- `CrossModeLink` can record that a world event, fact, NPC, or timeline entry
+  is related to a novel scene, outline node, or chapter draft. The link does
+  not dereference hidden targets into normal views and does not apply deltas.
+- `WorldContentDraft` is a candidate object for authoring review. It is not a
+  content-pack write, not a save migration, and not a `GameState` mutation.
+- EventLog-to-chapter import uses player-visible or narrator-safe event
+  summaries. It never imports raw `state_deltas`, debug events, hidden events,
+  or raw `GameState`.
+- Novel consistency and quality checks can report potential world-reference
+  issues, but they do not repair or rewrite World Mode state.
+
+The World Engine remains the only runtime fact engine. Novel manuscripts,
+outlines, chapters, scenes, character arcs, plot threads, foreshadowing items,
+and generated drafts are authoring artifacts until a separate future
+content-validation flow explicitly accepts candidate content.
+
 ## v2.1 NarrativeProject Integration
 
 v2.1 introduces `NarrativeProject` as a local project container above the

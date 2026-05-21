@@ -2,6 +2,32 @@
 
 ## NarrativeProject Relationship
 
+v2.2 Novel Studio can create Novel-to-World draft candidates from structured
+Novel references. These candidates are not content-pack files and are not
+runtime facts. They must pass explicit authoring review and content validation
+before any world YAML is changed.
+
+`WorldContentDraft` is the v2.2 bridge object between Novel authoring and
+future World content authoring. It can propose NPC, location, quest, fact,
+item, faction, or timeline-event content, but it remains outside the active
+content pack until a separate validation/apply flow accepts it.
+
+Rules for Novel-to-World drafts:
+
+- Drafts do not modify `worlds/` files.
+- Drafts do not modify active saves or `GameState`.
+- Drafts do not create authoritative world facts.
+- Hidden authoring notes and private character notes must not enter proposed
+  public fields.
+- Candidate content must pass the relevant schema/content validation before any
+  future import into a content pack.
+- `CrossModeLink` may record provenance, but links do not make hidden targets
+  visible and do not apply changes.
+
+EventLog-to-Novel import is the reverse direction: it reads player-visible or
+narrator-safe world event summaries to produce chapter draft proposals. It does
+not change EventLog, content packs, saves, or World facts.
+
 v2.1 projects can contain world content packs under:
 
 ```text

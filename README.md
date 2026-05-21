@@ -1,5 +1,29 @@
 # Local LLM Interactive Novel World Engine
 
+## v2.2 Novel Studio MVP
+
+v2.2 adds a local Novel Studio MVP on top of `NarrativeProject`. It supports
+manuscripts, outlines, chapters, scenes, character arcs, plot threads,
+foreshadowing, safe World Bible context, novel-scoped prompt profiles, optional
+draft generation through `LLMProvider`, Markdown/TXT export, EventLog-to-chapter
+draft import, Novel-to-World draft candidates, and deterministic quality checks.
+
+Novel Mode remains draft-only:
+
+- Novel drafts do not modify `GameState`.
+- Novel-to-World conversion creates candidates, not authoritative world facts.
+- EventLog-to-Novel import uses player-visible or narrator-safe summaries only.
+- Hidden facts, private notes, raw `state_deltas`, debug memory, API keys, raw
+  env, and provider secrets are excluded from normal Novel context and export.
+
+Useful local commands:
+
+```bash
+python -m pytest
+cd frontend
+npm.cmd run build
+```
+
 A local-first interactive novel world engine. The LLM is used for intent
 parsing, narration, and memory summarization, while the local engine owns
 world state, rule resolution, event logs, saves, visibility, social systems,
@@ -2747,3 +2771,106 @@ v2.1 audits:
 - `docs/V2_1_LLM_BOUNDARY_AUDIT.md`
 - `docs/V2_1_VISIBILITY_CROSS_MODE_AUDIT.md`
 - `docs/V2_1_SECURITY_AUDIT.md`
+
+## v2.2 Novel Studio MVP
+
+v2.2 upgrades the Novel card in the Project Shell from a placeholder into a
+local Novel Studio MVP. It is still an authoring/draft mode, not a complete
+publishing platform and not an online writing service. Enable local authoring
+APIs on a trusted machine, open the frontend, create/open a `NarrativeProject`,
+then choose the Novel mode from the project navigation.
+
+```powershell
+$env:ENABLE_AUTHORING_API = "true"
+```
+
+Novel Studio stores data under the project `novel/` section:
+
+```text
+project/
+  novel/
+    manuscripts/
+    outlines/
+    chapters/
+    scenes/
+    arcs/
+    plot_threads/
+    foreshadowing/
+    exports/
+```
+
+The frontend Novel page supports manuscript creation/selection, outline entry,
+chapter and scene lists, character-arc/plot/foreshadowing entry points, export
+entry, and disabled/coming-soon states for deeper editing surfaces. It does not
+read local files directly and does not show API keys, raw env, hidden facts, or
+debug details.
+
+Useful local Novel API routes:
+
+```text
+GET  /projects/{project_id}/novel/manuscripts
+POST /projects/{project_id}/novel/manuscripts
+GET  /projects/{project_id}/novel/manuscripts/{manuscript_id}
+PATCH /projects/{project_id}/novel/manuscripts/{manuscript_id}
+GET  /projects/{project_id}/novel/chapters
+POST /projects/{project_id}/novel/chapters
+PATCH /projects/{project_id}/novel/chapters/{chapter_id}
+POST /projects/{project_id}/novel/chapters/reorder
+GET  /projects/{project_id}/novel/scenes
+POST /projects/{project_id}/novel/scenes
+PATCH /projects/{project_id}/novel/scenes/{scene_id}
+POST /projects/{project_id}/novel/scenes/{scene_id}/move
+GET  /projects/{project_id}/novel/outline
+PUT  /projects/{project_id}/novel/outline
+GET  /projects/{project_id}/novel/outlines/{outline_id}/tree
+POST /projects/{project_id}/novel/outlines/{outline_id}/nodes
+PATCH /projects/{project_id}/novel/outlines/{outline_id}/nodes/{node_id}
+POST /projects/{project_id}/novel/outlines/{outline_id}/validate
+POST /projects/{project_id}/novel/consistency/check
+POST /projects/{project_id}/novel/quality/run
+POST /projects/{project_id}/novel/export
+GET  /projects/{project_id}/novel/exports
+```
+
+Typical MVP workflow:
+
+1. Create a project in the Project Shell.
+2. Open Novel mode and create a manuscript.
+3. Use the outline API/UI to create act, volume, chapter, scene, beat, or note
+   nodes.
+4. Create chapters and scenes, then edit draft text in the Chapter Editor.
+5. Run consistency checks for missing refs, order problems, foreshadowing
+   issues, hidden-reference risks, and authoring-note export risks.
+6. Export Markdown or TXT to `project/novel/exports/`.
+7. Use EventLog-to-chapter preview/apply to create chapter draft proposals from
+   player-visible or narrator-safe world events. Preview writes nothing; apply
+   requires explicit confirmation.
+8. Use Novel-to-World conversion to generate `WorldContentDraft` proposals.
+   These proposals do not write content packs and do not modify active
+   `GameState`.
+9. Run Novel quality evals for deterministic local checks. They are not an
+   external LLM judge and not an absolute literary score.
+
+Novel prompt and generation boundaries:
+
+- `NovelPromptContext` may contain only safe chapter/scene summaries, safe
+  character summaries, safe World Bible context, safe timeline summaries, and
+  style instructions.
+- Novel-scoped prompt profiles can adjust style and generation parameters only.
+  They cannot access hidden facts, modify state, override action results, or
+  bypass visibility.
+- Optional draft generation uses an injected `LLMProvider` / Provider Gateway
+  path and is tested with fake/mock/local providers.
+- Generated text is a `GeneratedNovelDraft` proposal. It is never a World fact,
+  never a `StateDelta`, and never an `EventLog` entry.
+
+v2.2 security limits:
+
+- Novel exports are Markdown/TXT only.
+- Export excludes authoring notes, hidden refs, debug memory, raw
+  `state_deltas`, API keys, provider profiles, provider secrets, and raw env.
+- `Novel -> World` remains draft/proposal/validation only.
+- `World -> Novel` reads EventLog/Timeline summaries without modifying
+  `EventLog`.
+- The MVP does not implement DOCX/EPUB export, online publishing,
+  collaboration, cloud sync, full Tavern Studio, or a World Engine rewrite.

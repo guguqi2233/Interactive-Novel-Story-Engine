@@ -74,6 +74,17 @@ import {
   createNarrativeProject,
   validateNarrativeProject,
   fetchNarrativeProjectModes,
+  fetchNovelManuscripts,
+  createNovelManuscript,
+  fetchNovelChapters,
+  createNovelChapter,
+  updateNovelChapter,
+  fetchNovelScenes,
+  createNovelScene,
+  exportNovelManuscript,
+  NovelManuscript,
+  NovelChapter,
+  NovelScene,
   fetchAuthoringMap,
   fetchItemEconomyAuthoring,
   fetchNPCGoalGraph,
@@ -4923,9 +4934,128 @@ function ProjectShell({
   const [projectId, setProjectId] = useState("local_project");
   const [name, setName] = useState("Local Narrative Project");
   const [root, setRoot] = useState("projects/local_project");
+  const [novelManuscripts, setNovelManuscripts] = useState<NovelManuscript[]>([]);
+  const [novelChapters, setNovelChapters] = useState<NovelChapter[]>([]);
+  const [novelScenes, setNovelScenes] = useState<NovelScene[]>([]);
+  const [novelError, setNovelError] = useState("");
+  const [novelMessage, setNovelMessage] = useState("");
+  const [newManuscriptId, setNewManuscriptId] = useState("manuscript");
+  const [newManuscriptTitle, setNewManuscriptTitle] = useState("Untitled Manuscript");
+  const [newChapterTitle, setNewChapterTitle] = useState("Chapter One");
+  const [selectedManuscriptId, setSelectedManuscriptId] = useState("");
+  const [selectedChapterId, setSelectedChapterId] = useState("");
+  const [chapterDraftText, setChapterDraftText] = useState("");
   const selected = projects.find((project) => project.project_id === selectedProjectId) ?? null;
   const novel = modeStatuses.find((status) => status.mode === "novel");
   const tavern = modeStatuses.find((status) => status.mode === "tavern");
+
+  async function loadNovelData() {
+    if (!selectedProjectId) {
+      return;
+    }
+    setNovelError("");
+    try {
+      const [manuscripts, chapters, scenes] = await Promise.all([
+        fetchNovelManuscripts(selectedProjectId),
+        fetchNovelChapters(selectedProjectId),
+        fetchNovelScenes(selectedProjectId)
+      ]);
+      setNovelManuscripts(manuscripts.manuscripts);
+      setNovelChapters(chapters.chapters);
+      setNovelScenes(scenes.scenes);
+      const firstManuscript = manuscripts.manuscripts[0]?.manuscript_id ?? "";
+      const firstChapter = chapters.chapters[0]?.chapter_id ?? "";
+      setSelectedManuscriptId((current) => current || firstManuscript);
+      setSelectedChapterId((current) => current || firstChapter);
+      const selectedChapter = chapters.chapters.find((chapter) => chapter.chapter_id === (selectedChapterId || firstChapter));
+      setChapterDraftText(selectedChapter?.draft_text ?? "");
+    } catch (err) {
+      setNovelError(toErrorMessage(err));
+    }
+  }
+
+  useEffect(() => {
+    void loadNovelData();
+  }, [selectedProjectId]);
+
+  async function handleCreateManuscript() {
+    setNovelError("");
+    setNovelMessage("");
+    try {
+      const manuscript = await createNovelManuscript(selectedProjectId, { manuscript_id: newManuscriptId, title: newManuscriptTitle });
+      setNovelMessage("Manuscript created. It is a Novel draft container, not World state.");
+      setSelectedManuscriptId(manuscript.manuscript_id);
+      await loadNovelData();
+    } catch (err) {
+      setNovelError(toErrorMessage(err));
+    }
+  }
+
+  async function handleCreateChapter() {
+    setNovelError("");
+    setNovelMessage("");
+    try {
+      const chapterId = `chapter_${novelChapters.length + 1}`;
+      const chapter = await createNovelChapter(selectedProjectId, {
+        chapter_id: chapterId,
+        manuscript_id: selectedManuscriptId || novelManuscripts[0]?.manuscript_id,
+        title: newChapterTitle,
+        order_index: novelChapters.length
+      });
+      setNovelMessage("Chapter draft created. It does not modify GameState.");
+      setSelectedChapterId(chapter.chapter_id);
+      await loadNovelData();
+    } catch (err) {
+      setNovelError(toErrorMessage(err));
+    }
+  }
+
+  async function handleSaveChapterDraft() {
+    if (!selectedChapterId) {
+      return;
+    }
+    setNovelError("");
+    setNovelMessage("");
+    try {
+      await updateNovelChapter(selectedProjectId, selectedChapterId, { draft_text: chapterDraftText });
+      setNovelMessage("Chapter draft saved locally.");
+      await loadNovelData();
+    } catch (err) {
+      setNovelError(toErrorMessage(err));
+    }
+  }
+
+  async function handleCreateScene() {
+    if (!selectedChapterId) {
+      return;
+    }
+    setNovelError("");
+    setNovelMessage("");
+    try {
+      await createNovelScene(selectedProjectId, { scene_id: `scene_${novelScenes.length + 1}`, chapter_id: selectedChapterId, title: "New Scene" });
+      setNovelMessage("Scene draft created.");
+      await loadNovelData();
+    } catch (err) {
+      setNovelError(toErrorMessage(err));
+    }
+  }
+
+  async function handleExport(format: "markdown" | "txt") {
+    const manuscriptId = selectedManuscriptId || novelManuscripts[0]?.manuscript_id;
+    if (!manuscriptId) {
+      return;
+    }
+    setNovelError("");
+    setNovelMessage("");
+    try {
+      const result = await exportNovelManuscript(selectedProjectId, { manuscript_id: manuscriptId, format });
+      setNovelMessage(`Novel ${format} export created with ${result.chapters_exported.length} chapter(s).`);
+    } catch (err) {
+      setNovelError(toErrorMessage(err));
+    }
+  }
+
+  const selectedChapter = novelChapters.find((chapter) => chapter.chapter_id === selectedChapterId) ?? null;
   return (
     <div className="studio-page">
       <PageHeader
@@ -4973,11 +5103,104 @@ function ProjectShell({
         </div>
       </section>
       <section className="card-grid">
-        <ProjectModeCard title="Novel" status={novel} message="Novel Studio MVP coming in v2.2" />
+        <ProjectModeCard title="Novel" status={novel} message="Novel Studio MVP coming in v2.2; local manuscripts, chapters, scenes, and safe export are now available." />
         <ProjectModeCard title="Tavern" status={tavern} message="Tavern Studio MVP coming in v2.3" />
         {modeStatuses.filter((status) => !["novel", "tavern"].includes(status.mode)).map((status) => (
           <ProjectModeCard key={status.mode} title={status.mode} status={status} message="Project mode entry is routed through the v2.1 Mode Router." />
         ))}
+      </section>
+      <section className="tool-card">
+        <h3>Novel Studio MVP</h3>
+        <p className="muted">Novel drafts remain project-local and never write World GameState. Hidden facts, raw env, and API keys are not shown here.</p>
+        <ErrorPanel message={novelError} compact />
+        <SuccessPanel message={novelMessage} compact />
+        <div className="form-grid">
+          <label>
+            Manuscript id
+            <input value={newManuscriptId} onChange={(event) => setNewManuscriptId(event.target.value)} />
+          </label>
+          <label>
+            Manuscript title
+            <input value={newManuscriptTitle} onChange={(event) => setNewManuscriptTitle(event.target.value)} />
+          </label>
+          <button type="button" disabled={!selectedProjectId} onClick={handleCreateManuscript}>Create Manuscript</button>
+        </div>
+        {novelManuscripts.length === 0 ? (
+          <EmptyState title="No manuscripts yet." detail="Create a manuscript to begin outlining and drafting." />
+        ) : (
+          <div className="form-grid">
+            <label>
+              Manuscript
+              <select value={selectedManuscriptId} onChange={(event) => setSelectedManuscriptId(event.target.value)}>
+                {novelManuscripts.map((manuscript) => (
+                  <option key={manuscript.manuscript_id} value={manuscript.manuscript_id}>{manuscript.title}</option>
+                ))}
+              </select>
+            </label>
+            <button type="button" onClick={() => void handleExport("markdown")}>Export Markdown</button>
+            <button type="button" onClick={() => void handleExport("txt")}>Export TXT</button>
+          </div>
+        )}
+        <div className="card-grid">
+          <div>
+            <h4>Chapters</h4>
+            <div className="form-grid">
+              <input value={newChapterTitle} onChange={(event) => setNewChapterTitle(event.target.value)} />
+              <button type="button" disabled={!selectedManuscriptId} onClick={handleCreateChapter}>Add Chapter</button>
+            </div>
+            <ItemList
+              emptyText="No chapters"
+              items={novelChapters.map((chapter) => (
+                <button
+                  key={chapter.chapter_id}
+                  type="button"
+                  className={chapter.chapter_id === selectedChapterId ? "selected-list-button" : ""}
+                  onClick={() => {
+                    setSelectedChapterId(chapter.chapter_id);
+                    setChapterDraftText(chapter.draft_text ?? "");
+                  }}
+                >
+                  {chapter.order_index + 1}. {chapter.title}
+                </button>
+              ))}
+            />
+          </div>
+          <div>
+            <h4>Chapter Editor</h4>
+            {selectedChapter ? (
+              <div className="stack">
+                <p className="muted">{selectedChapter.title}</p>
+                <textarea value={chapterDraftText} onChange={(event) => setChapterDraftText(event.target.value)} rows={8} />
+                <div className="button-row">
+                  <button type="button" onClick={handleSaveChapterDraft}>Save Draft</button>
+                  <button type="button" onClick={handleCreateScene}>Add Scene</button>
+                </div>
+              </div>
+            ) : (
+              <EmptyState title="Select a chapter." />
+            )}
+          </div>
+          <div>
+            <h4>Scenes</h4>
+            <ItemList
+              emptyText="No scenes"
+              items={novelScenes.filter((scene) => !selectedChapterId || scene.chapter_id === selectedChapterId).map((scene) => (
+                <span key={scene.scene_id}>{scene.title}</span>
+              ))}
+            />
+          </div>
+          <div>
+            <h4>Structure Tools</h4>
+            <ItemList
+              emptyText="No tools"
+              items={[
+                <span key="outline">Outline editor backend is available through local Novel API.</span>,
+                <span key="arcs">Character arcs, plot threads, and foreshadowing are project-local drafts.</span>,
+                <span key="quality">Novel consistency and quality checks are deterministic and local.</span>
+              ]}
+            />
+          </div>
+        </div>
       </section>
     </div>
   );

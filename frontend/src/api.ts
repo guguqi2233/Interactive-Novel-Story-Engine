@@ -5432,6 +5432,39 @@ export type NarrativeProjectValidationReport = {
   summary: Record<string, number>;
 };
 
+export type NovelManuscript = {
+  manuscript_id: string;
+  project_id: string;
+  title: string;
+  description?: string;
+  genre_tags?: string[];
+  target_style?: string;
+  chapter_refs?: string[];
+  default_prompt_profile_id?: string | null;
+};
+
+export type NovelChapter = {
+  chapter_id: string;
+  project_id: string;
+  manuscript_id?: string | null;
+  title: string;
+  order_index: number;
+  summary?: string;
+  draft_text?: string;
+  scene_refs?: string[];
+  status?: string;
+};
+
+export type NovelScene = {
+  scene_id: string;
+  project_id: string;
+  chapter_id: string;
+  title: string;
+  summary?: string;
+  draft_text?: string;
+  status?: string;
+};
+
 export async function fetchNarrativeProjects(): Promise<NarrativeProjectListResponse> {
   return requestJson<NarrativeProjectListResponse>("/projects");
 }
@@ -5463,6 +5496,58 @@ export async function validateNarrativeProject(projectId: string): Promise<Narra
 
 export async function fetchNarrativeProjectModes(projectId: string): Promise<NarrativeProjectModesResponse> {
   return requestJson<NarrativeProjectModesResponse>(`/projects/${encodeURIComponent(projectId)}/modes`);
+}
+
+export async function fetchNovelManuscripts(projectId: string): Promise<{ project_id: string; manuscripts: NovelManuscript[] }> {
+  return requestJson<{ project_id: string; manuscripts: NovelManuscript[] }>(`/projects/${encodeURIComponent(projectId)}/novel/manuscripts`);
+}
+
+export async function createNovelManuscript(projectId: string, input: { manuscript_id: string; title: string; description?: string }): Promise<NovelManuscript> {
+  return requestJson<NovelManuscript>(`/projects/${encodeURIComponent(projectId)}/novel/manuscripts`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input)
+  });
+}
+
+export async function fetchNovelChapters(projectId: string): Promise<{ project_id: string; chapters: NovelChapter[] }> {
+  return requestJson<{ project_id: string; chapters: NovelChapter[] }>(`/projects/${encodeURIComponent(projectId)}/novel/chapters`);
+}
+
+export async function createNovelChapter(projectId: string, input: { chapter_id: string; manuscript_id?: string; title: string; order_index?: number; draft_text?: string }): Promise<NovelChapter> {
+  return requestJson<NovelChapter>(`/projects/${encodeURIComponent(projectId)}/novel/chapters`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input)
+  });
+}
+
+export async function updateNovelChapter(projectId: string, chapterId: string, input: Partial<NovelChapter>): Promise<NovelChapter> {
+  return requestJson<NovelChapter>(`/projects/${encodeURIComponent(projectId)}/novel/chapters/${encodeURIComponent(chapterId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input)
+  });
+}
+
+export async function fetchNovelScenes(projectId: string): Promise<{ project_id: string; scenes: NovelScene[] }> {
+  return requestJson<{ project_id: string; scenes: NovelScene[] }>(`/projects/${encodeURIComponent(projectId)}/novel/scenes`);
+}
+
+export async function createNovelScene(projectId: string, input: { scene_id: string; chapter_id: string; title: string; draft_text?: string }): Promise<NovelScene> {
+  return requestJson<NovelScene>(`/projects/${encodeURIComponent(projectId)}/novel/scenes`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input)
+  });
+}
+
+export async function exportNovelManuscript(projectId: string, input: { manuscript_id: string; format: "markdown" | "txt"; chapter_ids?: string[] }): Promise<{ export_id: string; format: string; path: string; chapters_exported: string[] }> {
+  return requestJson<{ export_id: string; format: string; path: string; chapters_exported: string[] }>(`/projects/${encodeURIComponent(projectId)}/novel/export`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input)
+  });
 }
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {

@@ -32,6 +32,8 @@ Generated from local schema constants. This document contains no raw env, API ke
 - `ProjectMemoryRecord` / `ProjectMemoryLibrary`: `2.1` (non-authoritative project memory with mode filtering)
 - `CrossModeLink`: `2.1` (reference links only; no automatic conversion or visibility change)
 - `NovelProjectSection`, `NovelOutlineDraft`, `ChapterDraft`: `2.1` (Novel stub draft contracts)
+- `NovelManuscript`, `NovelOutline`, `NovelChapter`, `NovelScene`, `CharacterArc`, `PlotThread`, `ForeshadowingItem`: `2.2` (Novel Studio MVP draft contracts)
+- `NovelPromptContext`, `NovelWorldBibleContext`, `GeneratedNovelDraft`, `WorldContentDraft`, `NovelQualityReport`: `2.2` (Novel context, draft generation, conversion, and quality contracts)
 - `TavernProjectSection`, `TavernSessionDraft`, `TavernMessageDraft`, `RPProposalDraft`: `2.1` (Tavern stub/proposal contracts)
 - `WorldProjectSection`: `2.1` (project-aware World Mode adapter config)
 - `ProjectPackageManifest`: `2.1` (NarrativeProject import/export package manifest)

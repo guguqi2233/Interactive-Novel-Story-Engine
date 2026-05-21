@@ -10,8 +10,13 @@ from app.platform.narrative_project import NarrativeProject, validate_project_re
 
 PROJECT_MANIFEST = "project.yaml"
 PROJECT_DIRECTORIES = (
+    "novel/manuscripts",
     "novel/outlines",
     "novel/chapters",
+    "novel/scenes",
+    "novel/arcs",
+    "novel/plot_threads",
+    "novel/foreshadowing",
     "novel/drafts",
     "novel/exports",
     "tavern/characters",
@@ -127,4 +132,3 @@ def validate_project_workspace(project_root: str | Path, *, base_root: str | Pat
         missing=missing,
         errors=errors,
     )
-

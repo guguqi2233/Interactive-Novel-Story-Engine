@@ -62,8 +62,13 @@ class ModeRouter:
 
 
 class NovelProjectSection(ModeModel):
+    manuscripts_path: str = "novel/manuscripts"
     outlines_path: str = "novel/outlines"
     chapters_path: str = "novel/chapters"
+    scenes_path: str = "novel/scenes"
+    arcs_path: str = "novel/arcs"
+    plot_threads_path: str = "novel/plot_threads"
+    foreshadowing_path: str = "novel/foreshadowing"
     drafts_path: str = "novel/drafts"
     exports_path: str = "novel/exports"
     linked_character_library: str | None = None
@@ -71,7 +76,17 @@ class NovelProjectSection(ModeModel):
     linked_timeline: str | None = None
     default_prompt_profile_id: str | None = None
 
-    @field_validator("outlines_path", "chapters_path", "drafts_path", "exports_path")
+    @field_validator(
+        "manuscripts_path",
+        "outlines_path",
+        "chapters_path",
+        "scenes_path",
+        "arcs_path",
+        "plot_threads_path",
+        "foreshadowing_path",
+        "drafts_path",
+        "exports_path",
+    )
     @classmethod
     def validate_paths(cls, value: str) -> str:
         return validate_project_relative_path(value)
@@ -247,4 +262,3 @@ def resolve_project_world_path(project_root: str | Path, section: WorldProjectSe
     if not (candidate == base or base in candidate.parents):
         raise ValueError("Resolved world path escaped project content pack path")
     return candidate
-

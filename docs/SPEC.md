@@ -1,5 +1,59 @@
 # Project Specification
 
+## v2.2 Novel Studio MVP
+
+v2.2 upgrades Novel Mode from a safe v2.1 stub into a local drafting MVP inside
+`NarrativeProject`. It adds manuscripts, outlines, chapters, scenes, character
+arcs, plot threads, foreshadowing, safe World Bible context, novel-scoped
+prompt profiles, optional draft generation, Markdown/TXT export, EventLog to
+chapter draft import, Novel-to-World draft candidates, and deterministic novel
+quality checks.
+
+Novel Mode remains a draft system:
+
+- Novel drafts do not modify `GameState`.
+- Novel timeline links do not modify `EventLog`.
+- Novel -> World conversion creates `WorldContentDraft` candidates only.
+- EventLog -> Novel import reads player-visible or narrator-safe summaries
+  only.
+- Hidden facts, NPC secrets, private notes, debug memory, raw `state_deltas`,
+  API keys, provider secrets, and raw env are excluded from normal Novel
+  context, prompt context, export files, and quality reports.
+
+v2.2 does not implement a complete Tavern Studio, online publishing,
+collaboration, cloud sync, DOCX/EPUB export, or LLM literary judging.
+
+Novel Studio MVP data contracts:
+
+- `NovelManuscript`: project-local manuscript metadata, linked outlines,
+  chapters, characters, World Bible, timeline, and default prompt profile.
+- `NovelOutline` / `NovelOutlineNode`: act, volume, chapter, scene, beat, and
+  note nodes with stable ordering and reference validation.
+- `NovelChapter` / `NovelScene`: draft text, summaries, status, linked
+  timeline/character/fact refs, and authoring notes.
+- `CharacterArc`, `PlotThread`, and `ForeshadowingItem`: project-local writing
+  structures. They can reference shared libraries, but they do not modify World
+  NPCs, quests, or facts.
+- `WorldContentDraft`: Novel-to-World candidate content. It requires later
+  validation before any content-pack write.
+- `GeneratedNovelDraft`: optional LLM-assisted draft output. It remains a
+  Novel proposal and cannot become authoritative state.
+
+Novel APIs are local authoring/studio endpoints under
+`/projects/{project_id}/novel/...`. They are controlled by the same local
+authoring boundary as other project authoring tools. They must not return API
+keys, raw env, hidden facts, raw `GameState`, raw `state_deltas`, provider
+secrets, or debug memory.
+
+Novel-to-World and World-to-Novel flows are intentionally asymmetric:
+
+- `Novel -> World`: creates draft/proposal objects and optional
+  `CrossModeLink` references. It does not write content packs, create world
+  facts, or touch active saves.
+- `World -> Novel`: reads EventLog/Timeline summaries to produce chapter draft
+  proposals. Preview writes nothing; apply requires explicit confirmation and
+  writes only Novel draft fields.
+
 ## v2.1 Unified Narrative Project Layer
 
 v2.1 adds a local `NarrativeProject` layer above the v2.0 modular platform.

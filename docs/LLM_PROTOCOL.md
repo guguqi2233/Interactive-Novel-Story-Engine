@@ -1,5 +1,49 @@
 # LLM Protocol
 
+## v2.2 Novel Studio LLM Boundary
+
+v2.2 allows optional LLM-assisted Novel drafting through
+`NovelDraftGenerationService`, but this does not expand LLM authority.
+
+- The service accepts an injected `LLMProvider`; it must not instantiate
+  concrete providers directly.
+- Prompt input must be built from `NovelPromptContext`, which contains only
+  chapter/scene summaries, safe character summaries, safe World Bible context,
+  safe timeline summaries, and style instructions.
+- Novel-scoped `ProjectPromptProfile` values may affect style instructions and
+  generation preferences only.
+- Prompt profiles still cannot access hidden facts, modify state, override
+  action results, or bypass visibility.
+- Generated output is schema-validated as `GeneratedNovelDraft`.
+- Generated text is a Novel draft/proposal only. It is not a World fact, does
+  not modify `GameState`, and does not append `EventLog`.
+- Tests use fake/mock/local providers and do not call real APIs.
+
+Novel prompt context safety:
+
+- `NovelPromptContext` must not include hidden facts, NPC secrets, raw debug
+  memory, raw `state_deltas`, raw `GameState`, API keys, provider secrets, raw
+  env, or unredacted authoring-private notes.
+- World Bible and Lore/Fact context builders include flavor lore and safe
+  structured summaries only in normal mode. Hidden and authoring-only entries
+  are excluded unless an explicit authoring/debug view requests redacted notes.
+- Character context uses safe summaries and excludes
+  `private_notes_authoring_only`.
+- Timeline context uses safe summaries only. Hidden and authoring-only timeline
+  events are excluded.
+
+Novel draft generation rules:
+
+- `generate_scene_draft`, `rewrite_scene_style`, `summarize_chapter`, and
+  `expand_outline_node` may call only an injected `LLMProvider` / Provider
+  Gateway path.
+- Generated text is saved only when the caller provides explicit confirmation;
+  existing draft text must not be overwritten implicitly.
+- Schema failures must return clear errors or fail closed. Model output is not
+  trusted as world state.
+- Tests must use fake/mock/local providers and must not call OpenAI or other
+  real external APIs by default.
+
 ## v2.1 NarrativeProject LLM Boundary
 
 v2.1 adds a project layer for Novel, Tavern, World, Script/Mods, Providers,
