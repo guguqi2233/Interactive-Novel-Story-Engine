@@ -1,5 +1,17 @@
 # World Engine
 
+## v2.0 Platform Integration
+
+v2.0 adds platform services around the world engine without changing the engine
+authority model. Plugins, modules, packages, workspace projects, campaigns,
+timeline branches, and transfer packages are metadata and compatibility layers.
+They cannot directly mutate active GameState.
+
+Campaign and timeline services preserve EventLog lineage and keep hidden facts
+inside the active campaign/branch visibility boundary. Character transfer uses
+redacted packages and target-world mapping warnings. Package v2 import/export
+must pass checksum, compatibility, zip slip, executable, and secret checks.
+
 This document describes the local world engine as of v1.7 Polished Desktop
 Studio on top of v1.6 Advanced Gameplay Modules, v1.5 Local Model & Prompt
 Lab, v1.4 Content Production Pipeline, v1.3 Advanced NPC Simulation, v1.2

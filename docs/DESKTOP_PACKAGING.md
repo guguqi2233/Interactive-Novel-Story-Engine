@@ -1,5 +1,13 @@
 # Desktop Packaging Safety Pass
 
+## v2.0 Local Platform Packaging Notes
+
+v2.0 adds local package, plugin, module, workspace, campaign, and browser
+services. Desktop packaging remains a local prototype, not a formal installer,
+signed app, marketplace client, or auto-updater. Packages, backups, exports,
+logs, and crash reports must not include `.env`, API keys, databases, caches,
+or build outputs by default.
+
 ## Status
 
 v1.7 keeps desktop packaging as a local-only studio prototype. The supported

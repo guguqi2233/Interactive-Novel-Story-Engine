@@ -2591,3 +2591,41 @@ they are not absolute guarantees across all machines. Release checklist output
 does not auto-fix issues, does not commit or tag, does not upload reports, and
 does not call real providers by default. The v2.0 RC checklist is a readiness
 aid and does not mean v2.0 is complete.
+
+## v2.0 Modular Narrative RPG Platform
+
+v2.0 is the local modular platform milestone. It keeps the world engine as the
+fact source, keeps the LLM as a language layer, and adds stable local contracts
+for plugins, gameplay modules, package v2 import/export, content pack schema v2,
+save migration v2, provider gateway v2, and authoring extensions.
+
+Core local platform surfaces:
+
+- Plugin API: manifest-only local bundles; arbitrary code execution is not
+  enabled by default.
+- Module API: lifecycle and compatibility checks for gameplay modules and
+  declarative action mods.
+- Package Contract v2: checksum, zip slip, executable, secret, compatibility,
+  and redaction checks for local packages.
+- Content Pack Schema v2 and Save Migration v2: v1 compatibility through
+  warnings, shims, migrations, or safe failure.
+- Workspace Project, Multi-Campaign, Timeline Branching, Character Transfer,
+  and Long Campaign Management: metadata-oriented local platform services that
+  do not bypass `GameState`, `StateDelta`, `EventLog`, or Visibility.
+- Local Module Browser and Local Script Package Browser: offline browser APIs
+  for local modules and script packages.
+
+Useful v2.0 commands:
+
+```bash
+python -m backend.app.tools.v2_compatibility_checklist --json
+python -m backend.app.tools.v2_release_candidate_checklist --json
+python -m backend.app.tools.v2_release_checklist --json
+python -m pytest
+cd frontend && npm.cmd run build
+```
+
+v2.0 is still local-first. It does not add cloud sync, accounts, multi-user
+collaboration, an online marketplace, or LLM world judging. v1.x compatibility
+has explicit boundaries and should be verified with compatibility tests and
+package validation before migration or import.

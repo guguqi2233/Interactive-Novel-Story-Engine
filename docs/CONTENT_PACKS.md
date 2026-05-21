@@ -1,5 +1,17 @@
 # Content Pack Format
 
+## Content Pack Schema v2
+
+v2 content packs declare a `ContentPackV2Manifest` with `world_id`, `name`,
+`version`, `schema_version: 2`, `engine_version_min`, `contract_version`,
+`modules_required`, `content_files`, `migration_policy`, `visibility_policy`,
+and `package_metadata`.
+
+v1 packs remain supported only through explicit compatibility shims, warnings,
+or migrations. Unsupported versions fail safely. Hidden fields must remain
+hidden and must not enter player visible state during loading, migration,
+export, or validation.
+
 World content lives under `worlds/{world_id}`. Content packs are local YAML
 data. They are loaded and validated by the world loader before they become
 runtime `GameState`.

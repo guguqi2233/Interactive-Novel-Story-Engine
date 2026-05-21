@@ -5741,3 +5741,210 @@ def _authoring_validation_response(report: ValidationReport) -> AuthoringValidat
             for issue in report.suggestions
         ],
     )
+
+
+# v2.0 local platform APIs. These are intentionally metadata/manifest oriented:
+# they do not execute plugin/module code and do not mutate active GameState.
+@app.get("/plugins")
+def list_platform_plugins() -> dict[str, Any]:
+    from app.platform.plugin_api import PluginRegistry
+
+    return {"plugins": [item.model_dump(mode="json") for item in PluginRegistry().list_plugins()]}
+
+
+@app.post("/plugins/validate")
+def validate_platform_plugin(manifest: dict[str, Any]) -> dict[str, Any]:
+    from app.platform.plugin_api import PluginManifest, PluginRegistry
+
+    plugin = PluginManifest.model_validate(manifest)
+    return PluginRegistry().validate_plugin(plugin).model_dump(mode="json")
+
+
+@app.get("/modules/browser")
+def list_local_module_browser() -> dict[str, Any]:
+    from app.platform.browsers import LocalModuleBrowserService
+
+    return {"modules": [item.model_dump(mode="json") for item in LocalModuleBrowserService(get_mods_root()).list_items()]}
+
+
+@app.post("/modules/browser/{module_id}/enable-dry-run")
+def dry_run_enable_platform_module(module_id: str) -> dict[str, Any]:
+    from app.platform.module_api import ModuleRegistry
+
+    return ModuleRegistry(get_mods_root()).enable_dry_run(module_id).model_dump(mode="json")
+
+
+@app.post("/modules/browser/{module_id}/enable")
+def enable_platform_module(module_id: str, confirm_enable: bool = False) -> dict[str, Any]:
+    from app.platform.module_api import ModuleRegistry
+
+    return ModuleRegistry(get_mods_root()).enable(module_id, confirm_enable=confirm_enable).model_dump(mode="json")
+
+
+@app.post("/modules/browser/{module_id}/disable")
+def disable_platform_module(module_id: str, confirm_disable: bool = False) -> dict[str, Any]:
+    from app.platform.module_api import ModuleRegistry
+
+    return ModuleRegistry(get_mods_root()).disable(module_id, confirm_disable=confirm_disable).model_dump(mode="json")
+
+
+@app.post("/packages/v2/validate")
+def validate_package_v2(request: dict[str, Any]) -> dict[str, Any]:
+    from app.platform.package_v2 import PackageV2Validator
+
+    return PackageV2Validator().validate_archive(str(request.get("archive_base64", ""))).model_dump(mode="json")
+
+
+@app.post("/packages/v2/import-dry-run")
+def import_package_v2_dry_run(request: dict[str, Any]) -> dict[str, Any]:
+    from app.platform.package_v2 import PackageV2Importer
+
+    return PackageV2Importer().dry_run(str(request.get("archive_base64", ""))).model_dump(mode="json")
+
+
+@app.post("/packages/v2/import-apply")
+def import_package_v2_apply(request: dict[str, Any]) -> dict[str, Any]:
+    from app.platform.package_v2 import PackageV2Importer
+
+    return PackageV2Importer().apply(
+        str(request.get("archive_base64", "")),
+        confirm_apply=bool(request.get("confirm_apply", False)),
+    ).model_dump(mode="json")
+
+
+@app.post("/packages/v2/export")
+def export_package_v2(request: dict[str, Any]) -> dict[str, Any]:
+    from app.platform.package_v2 import PackageV2Exporter
+
+    raw_files = request.get("files", {})
+    files = {str(path): str(content).encode("utf-8") for path, content in raw_files.items()}
+    return PackageV2Exporter().export_files(
+        package_id=str(request.get("package_id", "package")),
+        package_type=request.get("package_type", "world"),
+        files=files,
+        schema_versions=request.get("schema_versions", {}),
+    ).model_dump(mode="json")
+
+
+@app.post("/workspace/project/init")
+def init_workspace_project(request: dict[str, Any]) -> dict[str, Any]:
+    from app.platform.workspace_project import WorkspaceProjectService
+
+    return WorkspaceProjectService(Path.cwd()).init_project(
+        str(request.get("workspace_id", "workspace")),
+        str(request.get("name", "Local Workspace")),
+    ).model_dump(mode="json")
+
+
+@app.post("/workspace/project/validate")
+def validate_workspace_project(request: dict[str, Any]) -> dict[str, Any]:
+    from app.platform.workspace_project import WorkspaceProjectManifest, WorkspaceProjectService
+
+    return WorkspaceProjectService(Path.cwd()).validate_project(WorkspaceProjectManifest.model_validate(request)).model_dump(mode="json")
+
+
+@app.get("/campaigns")
+def list_platform_campaigns() -> dict[str, Any]:
+    return {"campaigns": [item.model_dump(mode="json") for item in _get_v2_campaign_service().list()]}
+
+
+@app.post("/campaigns")
+def create_platform_campaign(request: dict[str, Any]) -> dict[str, Any]:
+    from app.platform.campaigns import CampaignMetadata
+
+    return _get_v2_campaign_service().create(CampaignMetadata.model_validate(request)).model_dump(mode="json")
+
+
+@app.post("/campaigns/{campaign_id}/select")
+def select_platform_campaign(campaign_id: str) -> dict[str, Any]:
+    return _get_v2_campaign_service().select(campaign_id).model_dump(mode="json")
+
+
+@app.get("/campaigns/{campaign_id}/timeline-branches")
+def list_timeline_branches(campaign_id: str) -> dict[str, Any]:
+    return {"branches": [item.model_dump(mode="json") for item in _get_v2_timeline_service().list_branches(campaign_id)]}
+
+
+@app.post("/campaigns/{campaign_id}/timeline-branches")
+def create_timeline_branch(campaign_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    from app.platform.timeline_branching import TimelineBranch
+
+    payload = dict(request)
+    payload["campaign_id"] = campaign_id
+    return _get_v2_timeline_service().create_branch(TimelineBranch.model_validate(payload)).model_dump(mode="json")
+
+
+@app.post("/timeline-branches/{branch_id}/switch")
+def switch_timeline_branch(branch_id: str) -> dict[str, Any]:
+    return _get_v2_timeline_service().switch(branch_id).model_dump(mode="json")
+
+
+@app.get("/timeline-branches/{branch_id}/diff")
+def diff_timeline_branch(branch_id: str, compared_to: str) -> dict[str, Any]:
+    return _get_v2_timeline_service().diff(branch_id, compared_to).model_dump(mode="json")
+
+
+@app.post("/characters/{character_id}/transfer/export")
+def export_character_transfer(character_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    from app.platform.character_transfer import CharacterTransferService
+
+    return CharacterTransferService().export_character(
+        character_id,
+        str(request.get("source_world_id", "world")),
+        public_identity=request.get("public_identity"),
+    ).model_dump(mode="json")
+
+
+@app.post("/characters/transfer/import-dry-run")
+def import_character_transfer_dry_run(request: dict[str, Any]) -> dict[str, Any]:
+    from app.platform.character_transfer import CharacterTransferPackage, CharacterTransferService
+
+    return CharacterTransferService().import_dry_run(
+        CharacterTransferPackage.model_validate(request.get("package", {})),
+        str(request.get("target_world_id", "target_world")),
+    ).model_dump(mode="json")
+
+
+@app.post("/characters/transfer/import-apply")
+def import_character_transfer_apply(request: dict[str, Any]) -> dict[str, Any]:
+    from app.platform.character_transfer import CharacterTransferPackage, CharacterTransferService
+
+    return CharacterTransferService().import_apply(
+        CharacterTransferPackage.model_validate(request.get("package", {})),
+        str(request.get("target_world_id", "target_world")),
+        confirm_apply=bool(request.get("confirm_apply", False)),
+    ).model_dump(mode="json")
+
+
+@app.get("/campaigns/{campaign_id}/chronicle")
+def get_campaign_chronicle(campaign_id: str) -> dict[str, Any]:
+    from app.platform.long_campaign import LongCampaignService
+
+    return LongCampaignService().chronicle(campaign_id).model_dump(mode="json")
+
+
+@app.get("/campaigns/{campaign_id}/health")
+def get_campaign_health(campaign_id: str) -> dict[str, Any]:
+    from app.platform.long_campaign import LongCampaignService
+
+    return LongCampaignService().health(campaign_id).model_dump(mode="json")
+
+
+def _get_v2_campaign_service():
+    from app.platform.campaigns import CampaignService
+
+    service = getattr(app.state, "v2_campaign_service", None)
+    if service is None:
+        service = CampaignService()
+        app.state.v2_campaign_service = service
+    return service
+
+
+def _get_v2_timeline_service():
+    from app.platform.timeline_branching import TimelineBranchService
+
+    service = getattr(app.state, "v2_timeline_service", None)
+    if service is None:
+        service = TimelineBranchService()
+        app.state.v2_timeline_service = service
+    return service

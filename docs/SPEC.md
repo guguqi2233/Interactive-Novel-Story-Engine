@@ -1,5 +1,17 @@
 # Project Specification
 
+## v2.0 Modular Narrative RPG Platform
+
+v2.0 formalizes the local studio as a modular narrative RPG platform. The scope
+includes stable local Plugin API, Module API, Package Contract v2, Content Pack
+Schema v2, Save Migration v2, Authoring Extension API, Provider Gateway v2,
+workspace projects, multi-campaign metadata, timeline branches, character
+transfer packages, and long-campaign summaries.
+
+v2.0 does not introduce an online marketplace, cloud sync, accounts, multi-user
+collaboration, arbitrary-code plugins by default, or LLM world authority. All
+state authority remains in GameState, StateDelta, EventLog, and Visibility.
+
 ## Goal
 
 Build a local-only LLM interactive fiction world engine. The LLM handles language-facing work: intent parsing, narrative rendering, memory summaries, and optional author-facing draft generation. The deterministic Python world engine owns canonical state, rules, causality, events, visibility, saves, social consequences, combat outcomes, authoring validation, and content-pack loading.

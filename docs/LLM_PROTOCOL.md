@@ -1,5 +1,14 @@
 # LLM Protocol
 
+## v2.0 Provider and Platform Boundary
+
+v2.0 keeps Provider Gateway as the stable model access boundary. Plugins,
+modules, authoring extensions, package import/export, campaign tools, timeline
+branching, and character transfer cannot grant the LLM authority to modify
+GameState or decide rules. Prompt/profile compatibility cannot enable hidden
+facts or state modification. Tests and release checklists use mock/local
+providers by default.
+
 ## Purpose
 
 The LLM protocol defines how this project talks to model providers without letting model output become trusted world state. All model calls pass through `LLMProvider`, and structured outputs are validated with Pydantic schemas.
