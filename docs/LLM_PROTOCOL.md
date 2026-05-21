@@ -1,5 +1,48 @@
 # LLM Protocol
 
+## v2.4 Cross-Mode Bridge LLM Boundary
+
+v2.4 Cross-Mode Bridge does not grant the LLM any new world authority. Cross
+mode pipelines may use LLM-assisted text generation only as a draft/proposal
+assistant, and the current bridge implementation defaults to structured,
+deterministic conversion and fake/mock/local providers in tests.
+
+Cross-mode LLM rules:
+
+- Novel -> World may produce draft/proposal candidates only. It cannot create
+  authoritative World facts, write content packs, or modify `GameState`.
+- World -> Novel may use safe EventLog/timeline summaries to create Novel
+  draft text only. It cannot modify EventLog or `GameState`.
+- Tavern -> World may create proposal/apply-plan text or structured proposal
+  metadata only. The LLM cannot decide whether a proposal is applied.
+- Tavern -> Novel may create Novel scene draft material only and must not
+  import hidden/debug memory, private persona, raw `state_deltas`, or NPC
+  secrets.
+- Novel -> Tavern may create Tavern character/RP/voice drafts only and must
+  exclude private notes in safe mode.
+- `CrossModeLink` cannot bypass validation or visibility filtering.
+- `CrossModeApplyPlan` must require explicit confirmation. LLM output cannot
+  disable confirmation.
+- Any World-changing apply path must use `StateDelta` and `EventLog`; LLM
+  output is never applied directly.
+
+Prompt/context exclusions for all cross-mode pipelines:
+
+- hidden facts
+- NPC secrets and NPC unknown facts
+- private authoring notes / private persona
+- raw debug memory
+- raw `GameState`
+- raw `state_deltas`
+- API keys
+- provider secrets
+- raw env
+
+Provider access remains unchanged: business code must use `LLMProvider` /
+Provider Gateway or an injected fake provider in tests. Cross-mode validation,
+conflict detection, import/export, audit, and quality-gate checks are
+deterministic local checks and do not use an external LLM judge.
+
 ## v2.3 Tavern Studio LLM Boundary
 
 v2.3 allows optional RP reply generation through

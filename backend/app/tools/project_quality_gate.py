@@ -16,10 +16,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--profile", choices=["fast", "standard", "strict"], default="standard")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--skip-world-quality-gate", action="store_true")
+    parser.add_argument("--include-cross-mode", action="store_true")
     args = parser.parse_args(argv)
     result = run_project_quality_gate(
         args.project_path,
-        ProjectQualityGateConfig(profile=args.profile, run_world_quality_gate=not args.skip_world_quality_gate),
+        ProjectQualityGateConfig(profile=args.profile, run_world_quality_gate=not args.skip_world_quality_gate, include_cross_mode=args.include_cross_mode),
     )
     if args.json:
         print(json.dumps(result.model_dump_normal(), indent=2, ensure_ascii=False))
@@ -33,4 +34,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

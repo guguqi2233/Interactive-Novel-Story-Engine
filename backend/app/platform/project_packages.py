@@ -32,6 +32,7 @@ class ProjectPackageManifest(BaseModel):
     checksums: dict[str, str] = Field(default_factory=dict)
     created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
     notes: str = ""
+    export_mode: Literal["normal", "authoring", "debug"] = "normal"
 
 
 class ProjectPackageReport(BaseModel):
@@ -50,11 +51,20 @@ class ProjectPackageExportResult(BaseModel):
     file_name: str
 
 
-def export_project(project_id: str, repository: ProjectRepository, *, sections: list[str] | None = None) -> ProjectPackageExportResult:
+def export_project(
+    project_id: str,
+    repository: ProjectRepository,
+    *,
+    sections: list[str] | None = None,
+    export_mode: Literal["normal", "authoring", "debug"] = "normal",
+    include_debug: bool = False,
+) -> ProjectPackageExportResult:
+    if export_mode == "debug" and not include_debug:
+        raise ValueError("debug export requires include_debug=True")
     project = repository.load_project(project_id)
     root = Path(project.project_root)
     files: dict[str, bytes] = {}
-    allowed_sections = sections or ["project.yaml", "novel", "tavern", "world/content_pack", "scripts", "providers/profiles", "quality/reports"]
+    allowed_sections = sections or ["project.yaml", "novel", "tavern", "world/content_pack", "scripts", "providers/profiles", "quality/reports", "cross_mode/drafts", "cross_mode/proposals", "cross_mode/reviews", "cross_mode/apply_plans", "cross_mode/audit"]
     for section in allowed_sections:
         source = root / section
         if source.is_file():
@@ -69,6 +79,7 @@ def export_project(project_id: str, repository: ProjectRepository, *, sections: 
         project_name=project.name,
         included_sections=sorted(files),
         checksums=checksums,
+        export_mode=export_mode,
     )
     buffer = BytesIO()
     with ZipFile(buffer, "w", ZIP_DEFLATED) as archive:
@@ -150,6 +161,10 @@ def _validate_archive(archive_base64: str, target_root: str | Path, repository: 
                         errors.append(f"Checksum mismatch: {path}")
                     if _looks_text(path, data) and contains_secret_text(data.decode("utf-8", errors="ignore")):
                         errors.append(f"Secret-like text found: {path}")
+                    if path.startswith("cross_mode/") and _looks_text(path, data):
+                        lowered = data.decode("utf-8", errors="ignore").lower()
+                        if "raw state_delta" in lowered or "raw_state_delta" in lowered or "debug memory" in lowered:
+                            errors.append(f"Forbidden cross-mode debug material: {path}")
                 return ProjectPackageReport(ok=not errors, manifest=manifest, errors=errors)
     except (BadZipFile, ValueError, json.JSONDecodeError) as exc:
         return ProjectPackageReport(ok=False, errors=[str(exc)])
@@ -158,11 +173,15 @@ def _validate_archive(archive_base64: str, target_root: str | Path, repository: 
 def _add_file(files: dict[str, bytes], path: Path, root: Path) -> None:
     rel = validate_relative_package_path(path.relative_to(root).as_posix())
     data = path.read_bytes()
-    if _looks_text(rel, data) and contains_secret_text(data.decode("utf-8", errors="ignore")):
-        return
+    if _looks_text(rel, data):
+        text = data.decode("utf-8", errors="ignore")
+        lowered = text.lower()
+        if contains_secret_text(text):
+            return
+        if rel.startswith("cross_mode/") and ("raw_state_delta" in lowered or "raw state_delta" in lowered or "debug memory" in lowered):
+            return
     files[rel] = data
 
 
 def _looks_text(path: str, data: bytes) -> bool:
     return Path(path).suffix.lower() in {".json", ".yaml", ".yml", ".txt", ".md", ".csv"} or b"\x00" not in data[:256]
-

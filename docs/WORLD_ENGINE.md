@@ -1,5 +1,39 @@
 # World Engine
 
+## v2.4 Cross-Mode Bridge Integration
+
+v2.4 adds Cross-Mode Bridge services around Novel, Tavern, and World, but it
+does not change World Engine authority. The World Engine remains the fact
+source for World Mode.
+
+Cross-mode bridge rules:
+
+- Novel and Tavern artifacts are drafts/proposals until validated and
+  explicitly applied through an allowed World path.
+- `CrossModeDraft`, `CrossModeProposal`, `CrossModeReview`, and
+  `CrossModeApplyPlan` are project-local authoring/review data. They are not
+  runtime facts.
+- `CrossModeLink` records references and review state only. It does not apply
+  deltas, create facts, or make hidden targets visible.
+- World -> Novel reads only player-visible or narrator-safe summaries and does
+  not modify EventLog or `GameState`.
+- Tavern -> World apply must pass validation, require explicit confirmation,
+  apply through `StateDelta`, and record `EventLog` when it performs an actual
+  World runtime change.
+- Novel/Tavern -> World draft/proposal flows do not write content packs,
+  `facts.yaml`, active saves, or `GameState` directly.
+- CrossMode audit records complement EventLog for authoring review; they do
+  not replace EventLog for World runtime changes.
+
+The current public Tavern -> World apply-confirmed API records an explicit
+CrossMode audit confirmation. A full runtime World apply is valid only through
+the service path that receives runtime `GameState`, `EventLog`, and validated
+StateDeltas together.
+
+Normal CrossMode reports, timeline views, validation output, quality-gate
+output, and import/export exclude hidden facts, NPC secrets, debug memory, raw
+`state_deltas`, raw env, API keys, and provider secrets.
+
 ## v2.3 Tavern Studio Integration
 
 v2.3 adds a local Tavern Studio MVP around the existing World Engine. Tavern

@@ -1,5 +1,56 @@
 # Local LLM Interactive Novel World Engine
 
+## v2.4 Cross-Mode Bridge
+
+v2.4 adds a local Cross-Mode Bridge between Novel, Tavern, and World inside
+`NarrativeProject`. It lets users create, review, validate, audit, and package
+cross-mode drafts/proposals while preserving the World Engine fact boundary.
+
+Cross-Mode Bridge is not an automatic intelligent merge system:
+
+- Novel and Tavern artifacts remain drafts/proposals until explicitly reviewed.
+- World Mode remains the authoritative runtime fact engine.
+- World-changing apply flows require validation, explicit confirmation,
+  `StateDelta`, `EventLog`, and CrossMode audit records.
+- Hidden facts, NPC secrets, debug memory, raw `state_deltas`, raw env, API
+  keys, and provider secrets are excluded from normal bridge views and exports.
+
+Using the local Project Shell:
+
+1. Open a `NarrativeProject` in the Project Shell.
+2. In Novel Studio, use the Cross-Mode Bridge panel to generate and review
+   Novel -> World drafts. These drafts do not write content packs or
+   `GameState`.
+3. Use World -> Novel preview to turn safe EventLog/timeline summaries into a
+   chapter/scene draft. Apply requires confirmation and writes only Novel draft
+   material.
+4. In Tavern Studio, use Tavern -> World proposal review to build an apply
+   plan, dry-run it, reject it, or record an explicit apply confirmation. A
+   real World runtime apply is valid only through the backend service path that
+   receives validated StateDeltas and records EventLog.
+5. Use World NPC -> Tavern sync review to compare safe NPC data with Tavern
+   character drafts. It does not overwrite World NPCs.
+6. Use Tavern -> Novel scene draft and Novel -> Tavern character draft flows to
+   create draft artifacts across authoring modes.
+7. Use CrossMode Timeline to inspect merged Novel/Tavern/World/proposal
+   timeline entries. Normal view excludes hidden/debug/authoring-only details.
+8. Use CrossModeLink Review to inspect broken links, duplicate links, stale
+   links, and hidden-target risks.
+9. Run CrossMode Validation and Project Quality Gate before release checks:
+
+```bash
+python -m backend.app.tools.validate_cross_mode <project_path>
+python -m backend.app.tools.project_quality_gate <project_path> --include-cross-mode
+```
+
+Useful v2.4 verification commands:
+
+```bash
+python -m pytest
+cd frontend
+npm.cmd run build
+```
+
 ## v2.3 Tavern Studio MVP
 
 v2.3 adds a local Tavern Studio MVP on top of `NarrativeProject`. It supports

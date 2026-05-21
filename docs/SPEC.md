@@ -1,5 +1,74 @@
 # Project Specification
 
+## v2.4 Cross-Mode Bridge
+
+v2.4 adds a local Cross-Mode Bridge across Novel, Tavern, and World inside
+`NarrativeProject`. It provides shared contracts and review surfaces for
+cross-mode drafts, proposals, reviews, apply plans, validation reports,
+conflict reports, timeline entries, import/export, and audit records.
+
+Cross-Mode Bridge is a bridge and review layer, not an automatic merge system:
+
+- Novel and Tavern can generate draft/proposal artifacts for other modes.
+- `CrossModeLink` remains a reference/review object. It never creates
+  authoritative facts by itself.
+- World Mode remains the only runtime fact engine.
+- World-changing flows must pass validation, require explicit confirmation,
+  use World Engine rules, apply through `StateDelta`, record `EventLog`, and
+  append CrossMode audit records.
+- Hidden facts, NPC secrets, debug memory, raw `state_deltas`, API keys,
+  provider secrets, and raw env are excluded from normal bridge reports,
+  prompts, exports, audit summaries, and frontend panels.
+
+v2.4 bridge data contracts:
+
+- `CrossModeDraft`: a proposed conversion artifact, such as Novel -> World
+  world-content draft, World -> Novel chapter draft, Tavern -> Novel scene
+  draft, or Novel -> Tavern character draft.
+- `CrossModeProposal`: a reviewable proposal created from a draft or an
+  existing Tavern/Novel/World candidate. Proposed StateDeltas are proposal
+  metadata only until a validated apply path consumes them.
+- `CrossModeReview`: reviewer status and notes for draft/proposal artifacts.
+- `CrossModeApplyPlan`: explicit apply plan with
+  `requires_confirmation=true` by default, dry-run result, expected changes,
+  validation status, and rollback notes.
+- `CrossModeAuditRecord`: append-only local audit metadata for draft creation,
+  proposal validation, review, dry-run, confirmed apply, reject, import/export,
+  conflict detection, and quality-gate runs.
+- `CrossModeConflictReport` and `CrossModeValidationReport`: normal/debug-safe
+  reports for broken refs, hidden-target risks, invalid apply plans, provider
+  secret risks, and blocker conflicts.
+
+Implemented bridge flows:
+
+- Novel -> World Draft Review creates `CrossModeDraft` /
+  `CrossModeProposal` records and world-content draft candidates. It does not
+  write content packs or `GameState`.
+- World -> Novel Chapter Import previews safe EventLog/timeline summaries and
+  can write only Novel draft scene/chapter material after explicit
+  confirmation. It does not modify EventLog or `GameState`.
+- Tavern -> World Proposal Review can build apply plans, dry-run them, reject
+  them, and record confirmed apply audit records. Runtime World mutation is
+  only valid through service-level StateDelta/EventLog inputs.
+- World NPC -> Tavern Sync Review creates diff/proposal/draft data and can
+  update Tavern drafts only. It does not overwrite World NPCs.
+- Tavern Session -> Novel Scene Draft and Novel Character -> Tavern Character
+  Draft create draft artifacts only.
+- Shared CrossMode Timeline, CrossModeLink Review, Conflict Detection,
+  CrossMode Validation, CrossMode Quality Gate, CrossMode Import/Export, and
+  CrossMode Audit Trail provide local review and release-hardening surfaces.
+
+Known v2.4 limitations:
+
+- It is not a full automatic synchronization engine.
+- Public Tavern -> World apply confirmation currently records an explicit
+  audit confirmation unless a service caller supplies runtime World
+  `GameState`, `EventLog`, and StateDeltas.
+- Conflict resolution UI creates review/fix-draft artifacts only; it does not
+  automatically edit source data.
+- Cross-mode import/export is local package handling, not cloud sync or online
+  collaboration.
+
 ## v2.3 Tavern Studio MVP
 
 v2.3 upgrades Tavern Mode from a safe project stub into a local Tavern Studio

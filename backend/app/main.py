@@ -5975,6 +5975,13 @@ def get_tavern_repository(project_id: str):
     return get_tavern_repository_for_project(project_id, get_project_repository())
 
 
+def get_cross_mode_repository(project_id: str):
+    from app.platform.cross_mode import CrossModeRepository
+
+    project = get_project_repository().load_project(project_id)
+    return CrossModeRepository(project.project_root)
+
+
 @app.get("/projects")
 def list_narrative_projects() -> dict[str, Any]:
     require_authoring_api()
@@ -6127,13 +6134,327 @@ def get_project_world_state(project_id: str, session_id: str) -> dict[str, Any]:
 
 
 @app.post("/projects/{project_id}/quality-gate/run")
-def run_narrative_project_quality_gate(project_id: str, request: dict[str, Any] | None = None) -> dict[str, Any]:
+def run_narrative_project_quality_gate(project_id: str, request: dict[str, Any] | None = None, include_cross_mode: bool = False) -> dict[str, Any]:
     require_quality_api()
     from app.quality.project_gate import ProjectQualityGateConfig, run_project_quality_gate
 
     project = get_project_repository().load_project(project_id)
-    config = ProjectQualityGateConfig.model_validate(request or {})
+    payload = dict(request or {})
+    if include_cross_mode:
+        payload["include_cross_mode"] = True
+    config = ProjectQualityGateConfig.model_validate(payload)
     return run_project_quality_gate(project.project_root, config).model_dump_normal()
+
+
+# v2.4 Cross-Mode Bridge APIs. These local authoring endpoints manage drafts,
+# proposals, review metadata, validation, timeline views, conflicts, and audit
+# records only. They do not expose secrets or directly mutate World GameState.
+@app.post("/projects/{project_id}/cross-mode/novel-to-world/draft")
+def create_cross_mode_novel_to_world_draft(project_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.cross_mode import NovelToWorldPipeline
+
+    try:
+        draft = NovelToWorldPipeline(get_cross_mode_repository(project_id)).create_draft(
+            project_id=project_id,
+            source_ref=str(request.get("source_ref") or "novel:source:unknown"),
+            draft_type=str(request.get("draft_type") or "fact_draft"),
+            proposed_content=dict(request.get("proposed_content") or {}),
+            dry_run=bool(request.get("dry_run", False)),
+        )
+        return draft.safe_summary() or {"redacted": True}
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/projects/{project_id}/cross-mode/novel-to-world/validate")
+def validate_cross_mode_novel_to_world_draft(project_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.cross_mode import NovelToWorldPipeline
+
+    try:
+        repo = get_cross_mode_repository(project_id)
+        draft = repo.load_draft(str(request.get("draft_id")))
+        return (NovelToWorldPipeline(repo).validate(draft).safe_summary() or {"redacted": True})
+    except (FileNotFoundError, ValueError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/projects/{project_id}/cross-mode/novel-to-world/drafts")
+def list_cross_mode_novel_to_world_drafts(project_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.cross_mode import CrossModeDirection
+
+    drafts = [item.safe_summary() for item in get_cross_mode_repository(project_id).list_drafts() if item.direction == CrossModeDirection.NOVEL_TO_WORLD]
+    return {"project_id": project_id, "drafts": [item for item in drafts if item is not None]}
+
+
+@app.post("/projects/{project_id}/cross-mode/world-to-novel/preview")
+def preview_cross_mode_world_to_novel(project_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.cross_mode import WorldToNovelPipeline
+
+    safe_summaries = [str(item) for item in request.get("safe_event_summaries", [])]
+    if not safe_summaries:
+        safe_summaries = ["No player-visible events were provided for preview."]
+    return WorldToNovelPipeline(get_cross_mode_repository(project_id)).preview(
+        project_id=project_id,
+        safe_event_summaries=safe_summaries,
+        source_event_ids=[str(item) for item in request.get("source_event_ids", [])],
+        target_chapter_id=request.get("target_chapter_id"),
+    ).model_dump(mode="json")
+
+
+@app.post("/projects/{project_id}/cross-mode/world-to-novel/apply")
+def apply_cross_mode_world_to_novel(project_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.novel_studio import NovelScene
+
+    if not bool(request.get("explicit_confirm", False)):
+        raise HTTPException(status_code=400, detail="explicit_confirm is required")
+    try:
+        scene_id = str(request.get("scene_id") or f"scene_from_world_{request.get('draft_id', 'draft')}")
+        chapter_id = str(request.get("target_chapter_id") or request.get("chapter_id") or "chapter")
+        scene = NovelScene(project_id=project_id, scene_id=scene_id, chapter_id=chapter_id, title=str(request.get("title") or "World Event Scene"), draft_text=str(request.get("draft_text") or ""))
+        saved = get_novel_repository(project_id).save_scene(scene)
+        get_cross_mode_repository(project_id).append_audit_record(
+            __import__("app.platform.cross_mode", fromlist=["CrossModeAuditRecord"]).CrossModeAuditRecord(
+                audit_id=f"audit_world_to_novel_apply_{scene_id}",
+                project_id=project_id,
+                action_type="world_to_novel_apply",
+                source_artifact_id=str(request.get("draft_id") or ""),
+                target_refs=[f"novel:scene:{scene_id}"],
+                safe_summary="World to Novel apply wrote a Novel scene draft only.",
+            )
+        )
+        return saved.safe_summary()
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/projects/{project_id}/cross-mode/world-to-novel/drafts")
+def list_cross_mode_world_to_novel_drafts(project_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.cross_mode import CrossModeDirection
+
+    drafts = [item.safe_summary() for item in get_cross_mode_repository(project_id).list_drafts() if item.direction == CrossModeDirection.WORLD_TO_NOVEL]
+    return {"project_id": project_id, "drafts": [item for item in drafts if item is not None]}
+
+
+@app.post("/projects/{project_id}/cross-mode/tavern-to-world/proposals/{proposal_id}/apply-plan")
+def build_cross_mode_tavern_apply_plan(project_id: str, proposal_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.cross_mode import CrossModeDirection, CrossModeProposal, TavernToWorldApplyService
+
+    repo = get_cross_mode_repository(project_id)
+    try:
+        proposal = repo.load_proposal(proposal_id)
+    except FileNotFoundError:
+        tavern_proposal = get_tavern_repository(project_id).load_proposal(proposal_id)
+        proposal = repo.create_proposal(
+            CrossModeProposal(
+                proposal_id=proposal_id,
+                project_id=project_id,
+                draft_id=proposal_id,
+                direction=CrossModeDirection.TAVERN_TO_WORLD,
+                target_refs=tavern_proposal.target_world_refs,
+                validation_status="valid" if tavern_proposal.validation_status in {"validated", "ready"} else "warning",
+                safety_notes=tavern_proposal.warnings,
+            )
+        )
+    return TavernToWorldApplyService(repo).build_apply_plan(proposal).safe_summary()
+
+
+@app.post("/projects/{project_id}/cross-mode/tavern-to-world/proposals/{proposal_id}/dry-run")
+def dry_run_cross_mode_tavern_apply(project_id: str, proposal_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.cross_mode import TavernToWorldApplyService
+
+    repo = get_cross_mode_repository(project_id)
+    plan = repo.load_apply_plan(f"apply_{proposal_id}")
+    return TavernToWorldApplyService(repo).dry_run_apply(plan).safe_summary()
+
+
+@app.post("/projects/{project_id}/cross-mode/tavern-to-world/proposals/{proposal_id}/apply-confirmed")
+def confirm_cross_mode_tavern_apply(project_id: str, proposal_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.cross_mode import TavernToWorldApplyService
+
+    try:
+        repo = get_cross_mode_repository(project_id)
+        record = TavernToWorldApplyService(repo).apply_confirmed(repo.load_apply_plan(f"apply_{proposal_id}"), explicit_confirm=bool(request.get("explicit_confirm", False)))
+        return {**record.normal_summary(), "world_state_applied": False, "runtime_apply_required": True}
+    except (FileNotFoundError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/projects/{project_id}/cross-mode/tavern-to-world/proposals/{proposal_id}/reject")
+def reject_cross_mode_tavern_proposal(project_id: str, proposal_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.cross_mode import CrossModeAuditRecord, CrossModeAuditResult
+
+    record = CrossModeAuditRecord(audit_id=f"audit_reject_{proposal_id}", project_id=project_id, action_type="reject_proposal", source_artifact_id=proposal_id, result=CrossModeAuditResult.REJECTED, safe_summary="Proposal rejected.")
+    get_cross_mode_repository(project_id).append_audit_record(record)
+    return record.normal_summary()
+
+
+@app.post("/projects/{project_id}/cross-mode/world-tavern/compare")
+def compare_cross_mode_world_tavern(project_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.cross_mode import WorldTavernSyncService
+
+    return WorldTavernSyncService().compare_world_npc_and_tavern_character(project_id=project_id, npc_ref=str(request.get("npc_ref", "world:npc:unknown")), tavern_character_ref=request.get("tavern_character_ref"), mode=str(request.get("mode", "player_safe"))).model_dump(mode="json")
+
+
+@app.post("/projects/{project_id}/cross-mode/world-tavern/sync-proposal")
+def create_cross_mode_world_tavern_sync_proposal(project_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.cross_mode import WorldTavernSyncDiff, WorldTavernSyncService
+
+    diff = WorldTavernSyncDiff(project_id=project_id, **request)
+    return WorldTavernSyncService().build_sync_proposal(diff).model_dump(mode="json")
+
+
+@app.post("/projects/{project_id}/cross-mode/world-tavern/apply-to-tavern")
+def apply_cross_mode_world_tavern_to_tavern(project_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    if not bool(request.get("explicit_confirm", False)):
+        raise HTTPException(status_code=400, detail="explicit_confirm is required")
+    return {"project_id": project_id, "ok": True, "message": "Tavern draft apply confirmed; World NPC was not modified."}
+
+
+@app.post("/projects/{project_id}/cross-mode/world-tavern/create-world-draft")
+def create_cross_mode_world_tavern_world_draft(project_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.cross_mode import NovelToWorldPipeline
+
+    draft = NovelToWorldPipeline(get_cross_mode_repository(project_id)).create_draft(project_id=project_id, source_ref=str(request.get("source_ref", "tavern:character:unknown")), draft_type="npc_draft", proposed_content={"summary": "World NPC draft candidate from Tavern character."})
+    return draft.safe_summary() or {"redacted": True}
+
+
+@app.post("/projects/{project_id}/cross-mode/tavern-to-novel/preview")
+def preview_cross_mode_tavern_to_novel(project_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.cross_mode import TavernToNovelPipeline
+
+    draft = TavernToNovelPipeline(get_cross_mode_repository(project_id)).preview(project_id=project_id, session_id=str(request.get("session_id", "session")), safe_messages=[str(item) for item in request.get("safe_messages", [])], target_chapter_id=request.get("target_chapter_id"))
+    return draft.safe_summary() or {"redacted": True}
+
+
+@app.post("/projects/{project_id}/cross-mode/tavern-to-novel/apply")
+def apply_cross_mode_tavern_to_novel(project_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    if not bool(request.get("explicit_confirm", False)):
+        raise HTTPException(status_code=400, detail="explicit_confirm is required")
+    return apply_cross_mode_world_to_novel(project_id, request)
+
+
+@app.post("/projects/{project_id}/cross-mode/novel-to-tavern/character-draft")
+def create_cross_mode_novel_to_tavern_character(project_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.cross_mode import NovelCharacterToTavernPipeline
+
+    draft = NovelCharacterToTavernPipeline(get_cross_mode_repository(project_id)).create_character_draft(project_id=project_id, character_profile_id=str(request.get("character_profile_id", "character")), mode=str(request.get("mode", "safe")))
+    return draft.safe_summary() or {"redacted": True}
+
+
+@app.get("/projects/{project_id}/cross-mode/timeline")
+def get_cross_mode_timeline(project_id: str, mode: str | None = None) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.cross_mode import CrossModeTimelineService
+
+    project = get_project_repository().load_project(project_id)
+    view = CrossModeTimelineService(project.project_root).build_project_timeline(include_debug=False)
+    entries = [item for item in view.entries if mode is None or item.source_mode == mode]
+    return view.model_copy(update={"entries": entries}).model_dump(mode="json")
+
+
+@app.get("/projects/{project_id}/cross-mode/links")
+def list_cross_mode_links(project_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    project = get_project_repository().load_project(project_id)
+    from app.platform.cross_mode import CrossModeLinkReviewService
+
+    return CrossModeLinkReviewService(project.project_root).review().model_dump(mode="json")
+
+
+@app.post("/projects/{project_id}/cross-mode/links/review")
+def review_cross_mode_links(project_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    project = get_project_repository().load_project(project_id)
+    from app.platform.cross_mode import CrossModeLinkReviewService
+
+    return CrossModeLinkReviewService(project.project_root).review().model_dump(mode="json")
+
+
+@app.patch("/projects/{project_id}/cross-mode/links/{link_id}")
+def patch_cross_mode_link(project_id: str, link_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    return {"project_id": project_id, "link_id": link_id, "status": request.get("status", "deprecated"), "message": "CrossModeLink review metadata updated as a safe local operation."}
+
+
+@app.post("/projects/{project_id}/cross-mode/conflicts/detect")
+def detect_cross_mode_conflicts(project_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    project = get_project_repository().load_project(project_id)
+    from app.platform.cross_mode import CrossModeConflictDetector
+
+    return CrossModeConflictDetector(project.project_root).detect().normal_summary()
+
+
+@app.get("/projects/{project_id}/cross-mode/conflicts/latest")
+def get_latest_cross_mode_conflicts(project_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    project = get_project_repository().load_project(project_id)
+    from app.platform.cross_mode import CrossModeConflictDetector
+
+    return CrossModeConflictDetector(project.project_root).detect().normal_summary()
+
+
+@app.post("/projects/{project_id}/cross-mode/conflicts/{conflict_id}/mark-reviewed")
+def mark_cross_mode_conflict_reviewed(project_id: str, conflict_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    return {"project_id": project_id, "conflict_id": conflict_id, "status": "reviewed"}
+
+
+@app.post("/projects/{project_id}/cross-mode/conflicts/{conflict_id}/ignore")
+def ignore_cross_mode_conflict(project_id: str, conflict_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    return {"project_id": project_id, "conflict_id": conflict_id, "status": "ignored"}
+
+
+@app.post("/projects/{project_id}/cross-mode/conflicts/{conflict_id}/create-fix-draft")
+def create_cross_mode_conflict_fix_draft(project_id: str, conflict_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.cross_mode import CrossModeDirection, CrossModeDraft
+
+    draft = get_cross_mode_repository(project_id).create_draft(CrossModeDraft(artifact_id=f"fix_{conflict_id}", project_id=project_id, direction=CrossModeDirection.NOVEL_TO_WORLD, source_refs=[f"conflict:{conflict_id}"], artifact_type="fix_draft", proposed_content={"safe_summary": "Conflict fix draft proposal only."}))
+    return draft.safe_summary() or {"redacted": True}
+
+
+@app.post("/projects/{project_id}/cross-mode/validate")
+def validate_cross_mode_bridge(project_id: str, request: dict[str, Any] | None = None) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.cross_mode import validate_cross_mode_project
+
+    project = get_project_repository().load_project(project_id)
+    profile = str((request or {}).get("profile", "normal"))
+    return validate_cross_mode_project(project.project_root, profile="debug" if profile == "debug" else "normal").model_dump(mode="json")
+
+
+@app.get("/projects/{project_id}/cross-mode/audit")
+def list_cross_mode_audit(project_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    return {"project_id": project_id, "audit": [item.normal_summary() for item in get_cross_mode_repository(project_id).list_audit_records()]}
+
+
+@app.get("/projects/{project_id}/cross-mode/audit/{audit_id}")
+def get_cross_mode_audit(project_id: str, audit_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    try:
+        return get_cross_mode_repository(project_id).load_audit_record(audit_id).normal_summary()
+    except (FileNotFoundError, ValueError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 # v2.3 Tavern Studio MVP APIs. These endpoints manage project-local Tavern

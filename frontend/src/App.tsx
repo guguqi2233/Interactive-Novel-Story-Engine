@@ -91,6 +91,16 @@ import {
   sendTavernChatMessage,
   fetchTavernScenePresets,
   createTavernScenePreset,
+  createNovelToWorldDraft,
+  validateNovelToWorldDraft,
+  fetchNovelToWorldDrafts,
+  previewWorldToNovel,
+  fetchCrossModeTimeline,
+  fetchCrossModeLinks,
+  detectCrossModeConflicts,
+  validateCrossMode,
+  fetchCrossModeAudit,
+  buildTavernApplyPlan,
   NovelManuscript,
   NovelChapter,
   NovelScene,
@@ -330,6 +340,11 @@ import {
   TavernSession,
   TavernMessage,
   TavernScenePreset,
+  CrossModeDraftSummary,
+  CrossModeTimelineEntry,
+  CrossModeLinkReviewReport,
+  CrossModeConflictReport,
+  CrossModeAuditRecord,
   ExampleDialogue,
   fetchExampleDialogues,
   previewNPCGoalGraph,
@@ -4975,6 +4990,17 @@ function ProjectShell({
   const [chatSafetyNotes, setChatSafetyNotes] = useState<string[]>([]);
   const [newScenePresetId, setNewScenePresetId] = useState("quiet_evening");
   const [newScenePresetName, setNewScenePresetName] = useState("Quiet Evening");
+  const [crossModeDrafts, setCrossModeDrafts] = useState<CrossModeDraftSummary[]>([]);
+  const [crossModeTimeline, setCrossModeTimeline] = useState<CrossModeTimelineEntry[]>([]);
+  const [crossModeLinks, setCrossModeLinks] = useState<CrossModeLinkReviewReport | null>(null);
+  const [crossModeConflicts, setCrossModeConflicts] = useState<CrossModeConflictReport | null>(null);
+  const [crossModeAudit, setCrossModeAudit] = useState<CrossModeAuditRecord[]>([]);
+  const [crossModeError, setCrossModeError] = useState("");
+  const [crossModeMessage, setCrossModeMessage] = useState("");
+  const [crossModeSourceRef, setCrossModeSourceRef] = useState("novel:scene:scene_1");
+  const [crossModeDraftType, setCrossModeDraftType] = useState("fact_draft");
+  const [worldToNovelPreview, setWorldToNovelPreview] = useState<Record<string, unknown> | null>(null);
+  const [tavernProposalId, setTavernProposalId] = useState("proposal_m1");
   const selected = projects.find((project) => project.project_id === selectedProjectId) ?? null;
   const novel = modeStatuses.find((status) => status.mode === "novel");
   const tavern = modeStatuses.find((status) => status.mode === "tavern");
@@ -5039,6 +5065,33 @@ function ProjectShell({
 
   useEffect(() => {
     void loadTavernData();
+  }, [selectedProjectId]);
+
+  async function loadCrossModeData() {
+    if (!selectedProjectId) {
+      return;
+    }
+    setCrossModeError("");
+    try {
+      const [drafts, timeline, links, conflicts, audit] = await Promise.all([
+        fetchNovelToWorldDrafts(selectedProjectId),
+        fetchCrossModeTimeline(selectedProjectId),
+        fetchCrossModeLinks(selectedProjectId),
+        detectCrossModeConflicts(selectedProjectId),
+        fetchCrossModeAudit(selectedProjectId)
+      ]);
+      setCrossModeDrafts(drafts.drafts);
+      setCrossModeTimeline(timeline.entries);
+      setCrossModeLinks(links);
+      setCrossModeConflicts(conflicts);
+      setCrossModeAudit(audit.audit);
+    } catch (err) {
+      setCrossModeError(toErrorMessage(err));
+    }
+  }
+
+  useEffect(() => {
+    void loadCrossModeData();
   }, [selectedProjectId]);
 
   async function handleCreateManuscript() {
@@ -5200,6 +5253,73 @@ function ProjectShell({
       await loadTavernData();
     } catch (err) {
       setTavernError(toErrorMessage(err));
+    }
+  }
+
+  async function handleCreateCrossModeDraft() {
+    setCrossModeError("");
+    setCrossModeMessage("");
+    try {
+      const draft = await createNovelToWorldDraft(selectedProjectId, {
+        source_ref: crossModeSourceRef,
+        draft_type: crossModeDraftType,
+        proposed_content: { source_ref: crossModeSourceRef, note: "UI review draft; not applied to World." }
+      });
+      setCrossModeMessage(`Cross-mode draft ${draft.artifact_id} created. It does not modify World state.`);
+      await loadCrossModeData();
+    } catch (err) {
+      setCrossModeError(toErrorMessage(err));
+    }
+  }
+
+  async function handleValidateCrossModeDraft(draftId: string) {
+    setCrossModeError("");
+    setCrossModeMessage("");
+    try {
+      const draft = await validateNovelToWorldDraft(selectedProjectId, draftId);
+      setCrossModeMessage(`Draft ${draft.artifact_id} validation status: ${draft.validation_status ?? "checked"}.`);
+      await loadCrossModeData();
+    } catch (err) {
+      setCrossModeError(toErrorMessage(err));
+    }
+  }
+
+  async function handlePreviewWorldToNovel() {
+    setCrossModeError("");
+    setCrossModeMessage("");
+    try {
+      const preview = await previewWorldToNovel(selectedProjectId, {
+        safe_event_summaries: ["A player-visible world event summary can become a Novel draft preview."],
+        source_event_ids: ["event_preview"]
+      });
+      setWorldToNovelPreview(preview);
+      setCrossModeMessage("World to Novel preview created. It did not write EventLog or GameState.");
+      await loadCrossModeData();
+    } catch (err) {
+      setCrossModeError(toErrorMessage(err));
+    }
+  }
+
+  async function handleValidateCrossMode() {
+    setCrossModeError("");
+    setCrossModeMessage("");
+    try {
+      const report = await validateCrossMode(selectedProjectId);
+      setCrossModeMessage(`Cross-mode validation ${report.ok ? "passed" : "failed"}: ${String(report.summary?.errors ?? 0)} error(s), ${String(report.summary?.warnings ?? 0)} warning(s).`);
+    } catch (err) {
+      setCrossModeError(toErrorMessage(err));
+    }
+  }
+
+  async function handleBuildTavernApplyPlan() {
+    setCrossModeError("");
+    setCrossModeMessage("");
+    try {
+      const plan = await buildTavernApplyPlan(selectedProjectId, tavernProposalId);
+      setCrossModeMessage(`Apply plan ${String(plan.apply_plan_id ?? "")} created for review. Confirmation is still required.`);
+      await loadCrossModeData();
+    } catch (err) {
+      setCrossModeError(toErrorMessage(err));
     }
   }
 
@@ -5465,6 +5585,115 @@ function ProjectShell({
           <ProjectModeCard title="Lorebook / World Info" message="Safe lore context filters hidden facts, unknown NPC facts, authoring notes, and debug data." />
           <ProjectModeCard title="Relationship Tone" message="Relationship tone affects expression only; World relationship changes require proposal and validation." />
           <ProjectModeCard title="Multi-Character Scene" message="Scene draft structure is available as a stub; multi-speaker generation comes later." />
+        </div>
+      </section>
+      <section className="tool-card">
+        <h3>Cross-Mode Bridge</h3>
+        <p className="muted">Cross-mode artifacts are drafts, proposals, reviews, validation reports, or audit records. Apply to World requires backend validation and explicit confirmation.</p>
+        <ErrorPanel message={crossModeError} compact />
+        <SuccessPanel message={crossModeMessage} compact />
+        <div className="card-grid">
+          <div>
+            <h4>Novel → World Review</h4>
+            <label>
+              Source ref
+              <input value={crossModeSourceRef} onChange={(event) => setCrossModeSourceRef(event.target.value)} />
+            </label>
+            <label>
+              Draft type
+              <select value={crossModeDraftType} onChange={(event) => setCrossModeDraftType(event.target.value)}>
+                <option value="npc_draft">NPC</option>
+                <option value="location_draft">Location</option>
+                <option value="quest_draft">Quest</option>
+                <option value="fact_draft">Fact</option>
+                <option value="item_draft">Item</option>
+                <option value="faction_draft">Faction</option>
+                <option value="timeline_event_draft">Timeline Event</option>
+              </select>
+            </label>
+            <button type="button" disabled={!selectedProjectId} onClick={handleCreateCrossModeDraft}>Generate Draft</button>
+            <p className="muted">Review only. This does not write content packs or GameState.</p>
+          </div>
+          <div>
+            <h4>World → Novel</h4>
+            <button type="button" disabled={!selectedProjectId} onClick={handlePreviewWorldToNovel}>Preview Chapter Draft</button>
+            {worldToNovelPreview && (
+              <pre className="code-block">{JSON.stringify(worldToNovelPreview, null, 2)}</pre>
+            )}
+            <p className="muted">Preview excludes raw state_deltas and hidden/debug events.</p>
+          </div>
+          <div>
+            <h4>Tavern → World Apply Review</h4>
+            <label>
+              Proposal id
+              <input value={tavernProposalId} onChange={(event) => setTavernProposalId(event.target.value)} />
+            </label>
+            <button type="button" disabled={!selectedProjectId || !tavernProposalId.trim()} onClick={handleBuildTavernApplyPlan}>Build Apply Plan</button>
+            <p className="muted">Apply plans require explicit confirmation; the UI does not mutate World state directly.</p>
+          </div>
+        </div>
+        <div className="card-grid">
+          <div>
+            <h4>Drafts</h4>
+            <ItemList
+              emptyText="No cross-mode drafts"
+              items={crossModeDrafts.map((draft) => (
+                <div key={draft.artifact_id} className="stack">
+                  <span>{draft.artifact_type} · {draft.validation_status ?? draft.status}</span>
+                  <small>{draft.source_refs.join(", ") || "no source"} → {draft.target_refs.join(", ") || "no target"}</small>
+                  <button type="button" onClick={() => void handleValidateCrossModeDraft(draft.artifact_id)}>Validate</button>
+                </div>
+              ))}
+            />
+          </div>
+          <div>
+            <h4>Timeline</h4>
+            <ItemList
+              emptyText="No timeline entries"
+              items={crossModeTimeline.map((entry) => (
+                <span key={entry.entry_id}>{entry.source_mode}: {entry.title} · {entry.visibility}</span>
+              ))}
+            />
+          </div>
+          <div>
+            <h4>Links</h4>
+            {crossModeLinks ? (
+              <ItemList
+                emptyText="No link issues"
+                items={[
+                  <span key="broken">Broken: {crossModeLinks.broken_links.length}</span>,
+                  <span key="hidden">Hidden risk: {crossModeLinks.hidden_target_risks.length}</span>,
+                  <span key="duplicate">Duplicate: {crossModeLinks.duplicate_links.length}</span>
+                ]}
+              />
+            ) : (
+              <EmptyState title="No link review loaded." />
+            )}
+          </div>
+          <div>
+            <h4>Conflicts</h4>
+            <ItemList
+              emptyText="No conflicts"
+              items={(crossModeConflicts?.conflicts ?? []).map((conflict) => (
+                <span key={conflict.conflict_id}>{conflict.severity}: {conflict.conflict_type}</span>
+              ))}
+            />
+          </div>
+          <div>
+            <h4>Audit</h4>
+            <ItemList
+              emptyText="No audit records"
+              items={crossModeAudit.slice(-5).map((record) => (
+                <span key={record.audit_id}>{record.action_type} · {record.result}</span>
+              ))}
+            />
+          </div>
+          <div>
+            <h4>Validation</h4>
+            <button type="button" disabled={!selectedProjectId} onClick={handleValidateCrossMode}>Run Cross-Mode Validation</button>
+            <button type="button" disabled={!selectedProjectId} onClick={() => void loadCrossModeData()}>Refresh Bridge</button>
+            <p className="muted">Normal reports do not show hidden facts, NPC secrets, debug memory, raw env, API keys, or raw state_deltas.</p>
+          </div>
         </div>
       </section>
     </div>

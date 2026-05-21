@@ -1,5 +1,32 @@
 # Content Pack Format
 
+## v2.4 Cross-Mode Bridge and Content Packs
+
+v2.4 Cross-Mode Bridge can create world-content drafts and proposals from
+Novel and Tavern sources, but those artifacts are not content-pack files by
+default and are not authoritative world facts.
+
+Cross-mode content-pack rules:
+
+- Novel -> World produces `CrossModeDraft` / `CrossModeProposal` records and
+  world-content draft candidates. It does not write `world/content_pack/`,
+  repository-level `worlds/`, `facts.yaml`, or active saves.
+- Tavern -> World produces proposals and apply plans. A proposal is not a
+  content-pack change until a future explicit content validation/apply flow
+  accepts it.
+- Any content-pack write must run the existing content validation path and
+  must not bypass visibility, schema checks, zip slip checks, executable
+  checks, or secret filtering.
+- `CrossModeLink` may record provenance between a draft/proposal and a
+  content-pack object, but the link itself does not import content or make
+  hidden targets visible.
+- Cross-mode export defaults exclude `.env`, API keys, provider secrets, raw
+  debug memory, raw `state_deltas`, databases, logs, caches, build outputs,
+  and debug-only details.
+
+Cross-mode import/export is local package handling. It is not cloud sync,
+online publishing, or a marketplace workflow.
+
 ## NarrativeProject Relationship
 
 v2.3 Tavern Studio can create Tavern characters, RP profiles, voice profiles,

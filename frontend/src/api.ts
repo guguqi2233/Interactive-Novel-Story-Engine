@@ -5521,6 +5521,65 @@ export type TavernChatResponse = {
   created_at: string;
 };
 
+export type CrossModeDraftSummary = {
+  artifact_id: string;
+  project_id: string;
+  direction: string;
+  source_refs: string[];
+  target_refs: string[];
+  artifact_type: string;
+  status: string;
+  validation_status?: string;
+  warnings?: string[];
+  proposed_content?: Record<string, unknown>;
+};
+
+export type CrossModeValidationReport = {
+  project_id?: string | null;
+  ok: boolean;
+  blockers: unknown[];
+  errors: unknown[];
+  warnings: unknown[];
+  suggestions: unknown[];
+  summary: Record<string, unknown>;
+};
+
+export type CrossModeTimelineEntry = {
+  entry_id: string;
+  source_mode: string;
+  source_ref: string;
+  title: string;
+  safe_summary: string;
+  visibility: string;
+  proposal_status?: string | null;
+};
+
+export type CrossModeLinkReviewReport = {
+  project_id: string;
+  ok: boolean;
+  broken_links: string[];
+  hidden_target_risks: string[];
+  duplicate_links: string[];
+  stale_links: string[];
+  links: Record<string, unknown>[];
+};
+
+export type CrossModeConflictReport = {
+  project_id: string;
+  ok: boolean;
+  conflicts: Array<{ conflict_id: string; conflict_type: string; severity: string; safe_summary: string; status: string }>;
+};
+
+export type CrossModeAuditRecord = {
+  audit_id: string;
+  action_type: string;
+  actor: string;
+  source_artifact_id?: string | null;
+  safe_summary: string;
+  result: string;
+  timestamp: string;
+};
+
 export async function fetchNarrativeProjects(): Promise<NarrativeProjectListResponse> {
   return requestJson<NarrativeProjectListResponse>("/projects");
 }
@@ -5660,6 +5719,62 @@ export async function createTavernScenePreset(projectId: string, input: { preset
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input)
   });
+}
+
+export async function createNovelToWorldDraft(projectId: string, input: { source_ref: string; draft_type: string; proposed_content?: Record<string, unknown> }): Promise<CrossModeDraftSummary> {
+  return requestJson<CrossModeDraftSummary>(`/projects/${encodeURIComponent(projectId)}/cross-mode/novel-to-world/draft`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input)
+  });
+}
+
+export async function validateNovelToWorldDraft(projectId: string, draftId: string): Promise<CrossModeDraftSummary> {
+  return requestJson<CrossModeDraftSummary>(`/projects/${encodeURIComponent(projectId)}/cross-mode/novel-to-world/validate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ draft_id: draftId })
+  });
+}
+
+export async function fetchNovelToWorldDrafts(projectId: string): Promise<{ project_id: string; drafts: CrossModeDraftSummary[] }> {
+  return requestJson<{ project_id: string; drafts: CrossModeDraftSummary[] }>(`/projects/${encodeURIComponent(projectId)}/cross-mode/novel-to-world/drafts`);
+}
+
+export async function previewWorldToNovel(projectId: string, input: { safe_event_summaries: string[]; source_event_ids?: string[]; target_chapter_id?: string }): Promise<Record<string, unknown>> {
+  return requestJson<Record<string, unknown>>(`/projects/${encodeURIComponent(projectId)}/cross-mode/world-to-novel/preview`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input)
+  });
+}
+
+export async function fetchCrossModeTimeline(projectId: string): Promise<{ project_id: string; entries: CrossModeTimelineEntry[] }> {
+  return requestJson<{ project_id: string; entries: CrossModeTimelineEntry[] }>(`/projects/${encodeURIComponent(projectId)}/cross-mode/timeline`);
+}
+
+export async function fetchCrossModeLinks(projectId: string): Promise<CrossModeLinkReviewReport> {
+  return requestJson<CrossModeLinkReviewReport>(`/projects/${encodeURIComponent(projectId)}/cross-mode/links`);
+}
+
+export async function detectCrossModeConflicts(projectId: string): Promise<CrossModeConflictReport> {
+  return requestJson<CrossModeConflictReport>(`/projects/${encodeURIComponent(projectId)}/cross-mode/conflicts/detect`, { method: "POST" });
+}
+
+export async function validateCrossMode(projectId: string): Promise<CrossModeValidationReport> {
+  return requestJson<CrossModeValidationReport>(`/projects/${encodeURIComponent(projectId)}/cross-mode/validate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ profile: "normal" })
+  });
+}
+
+export async function fetchCrossModeAudit(projectId: string): Promise<{ project_id: string; audit: CrossModeAuditRecord[] }> {
+  return requestJson<{ project_id: string; audit: CrossModeAuditRecord[] }>(`/projects/${encodeURIComponent(projectId)}/cross-mode/audit`);
+}
+
+export async function buildTavernApplyPlan(projectId: string, proposalId: string): Promise<Record<string, unknown>> {
+  return requestJson<Record<string, unknown>>(`/projects/${encodeURIComponent(projectId)}/cross-mode/tavern-to-world/proposals/${encodeURIComponent(proposalId)}/apply-plan`, { method: "POST" });
 }
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
