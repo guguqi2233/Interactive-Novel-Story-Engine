@@ -5465,6 +5465,62 @@ export type NovelScene = {
   status?: string;
 };
 
+export type TavernCharacter = {
+  tavern_character_id: string;
+  project_id: string;
+  display_name: string;
+  description?: string;
+  linked_character_profile_id?: string | null;
+  linked_world_npc_id?: string | null;
+  rp_profile_id?: string | null;
+  voice_profile_id?: string | null;
+  default_prompt_profile_id?: string | null;
+  lorebook_refs?: string[];
+  safety_flags?: string[];
+};
+
+export type TavernSession = {
+  session_id: string;
+  project_id: string;
+  title: string;
+  character_ids: string[];
+  message_count?: number;
+  status: string;
+  scene_context?: Record<string, unknown>;
+};
+
+export type TavernMessage = {
+  message_id: string;
+  session_id: string;
+  speaker_type: string;
+  speaker_id?: string | null;
+  content: string;
+  created_at: string;
+  safety_notes?: string[];
+};
+
+export type TavernScenePreset = {
+  preset_id: string;
+  name: string;
+  description?: string;
+  mood_tags?: string[];
+  narration_style?: string;
+  pacing?: string;
+  sensory_focus?: string[];
+  emotional_tone?: string;
+  max_intensity?: number;
+  safety_flags?: string[];
+};
+
+export type TavernChatResponse = {
+  message_id: string;
+  character_id: string;
+  content: string;
+  safety_notes: string[];
+  proposed_world_effects: string[];
+  created_at: string;
+};
+
 export async function fetchNarrativeProjects(): Promise<NarrativeProjectListResponse> {
   return requestJson<NarrativeProjectListResponse>("/projects");
 }
@@ -5544,6 +5600,62 @@ export async function createNovelScene(projectId: string, input: { scene_id: str
 
 export async function exportNovelManuscript(projectId: string, input: { manuscript_id: string; format: "markdown" | "txt"; chapter_ids?: string[] }): Promise<{ export_id: string; format: string; path: string; chapters_exported: string[] }> {
   return requestJson<{ export_id: string; format: string; path: string; chapters_exported: string[] }>(`/projects/${encodeURIComponent(projectId)}/novel/export`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input)
+  });
+}
+
+export async function fetchTavernCharacters(projectId: string): Promise<{ project_id: string; characters: TavernCharacter[] }> {
+  return requestJson<{ project_id: string; characters: TavernCharacter[] }>(`/projects/${encodeURIComponent(projectId)}/tavern/characters`);
+}
+
+export async function createTavernCharacter(projectId: string, input: { tavern_character_id: string; display_name: string; description?: string }): Promise<TavernCharacter> {
+  return requestJson<TavernCharacter>(`/projects/${encodeURIComponent(projectId)}/tavern/characters`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input)
+  });
+}
+
+export async function importTavernCharacterCard(projectId: string, rawContent: string): Promise<{ tavern_character: TavernCharacter; warnings: string[] }> {
+  return requestJson<{ tavern_character: TavernCharacter; warnings: string[] }>(`/projects/${encodeURIComponent(projectId)}/tavern/import-character-card`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ raw_content: rawContent, apply: true })
+  });
+}
+
+export async function fetchTavernSessions(projectId: string): Promise<{ project_id: string; sessions: TavernSession[] }> {
+  return requestJson<{ project_id: string; sessions: TavernSession[] }>(`/projects/${encodeURIComponent(projectId)}/tavern/sessions`);
+}
+
+export async function createTavernSession(projectId: string, input: { session_id: string; title: string; character_ids?: string[] }): Promise<TavernSession> {
+  return requestJson<TavernSession>(`/projects/${encodeURIComponent(projectId)}/tavern/sessions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input)
+  });
+}
+
+export async function fetchTavernMessages(projectId: string, sessionId: string): Promise<{ project_id: string; session_id: string; messages: TavernMessage[] }> {
+  return requestJson<{ project_id: string; session_id: string; messages: TavernMessage[] }>(`/projects/${encodeURIComponent(projectId)}/tavern/sessions/${encodeURIComponent(sessionId)}/messages`);
+}
+
+export async function sendTavernChatMessage(projectId: string, sessionId: string, input: { character_id: string; user_message: string }): Promise<TavernChatResponse> {
+  return requestJson<TavernChatResponse>(`/projects/${encodeURIComponent(projectId)}/tavern/sessions/${encodeURIComponent(sessionId)}/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input)
+  });
+}
+
+export async function fetchTavernScenePresets(projectId: string): Promise<{ project_id: string; scene_presets: TavernScenePreset[] }> {
+  return requestJson<{ project_id: string; scene_presets: TavernScenePreset[] }>(`/projects/${encodeURIComponent(projectId)}/tavern/scene-presets`);
+}
+
+export async function createTavernScenePreset(projectId: string, input: { preset_id: string; name: string; description?: string; mood_tags?: string[] }): Promise<TavernScenePreset> {
+  return requestJson<TavernScenePreset>(`/projects/${encodeURIComponent(projectId)}/tavern/scene-presets`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input)

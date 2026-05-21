@@ -49,6 +49,7 @@ def run_project_quality_gate(project_path: str | Path, config: ProjectQualityGat
     result = ProjectQualityGateResult(project_id=validation.project_id)
     _add_validation(result, validation)
     _try_novel_gate(project_path, result)
+    _try_tavern_gate(project_path, result)
     if cfg.run_world_quality_gate and validation.project_id:
         _try_world_gate(project_path, result, cfg)
     if cfg.fail_on_warning and result.warnings:
@@ -134,3 +135,23 @@ def _try_novel_gate(project_path: str | Path, result: ProjectQualityGateResult) 
         result.warnings.extend(f"{issue.code}: {issue.message}" for issue in report.issues)
     else:
         result.checks.append(ProjectQualityGateCheck(check_id="novel_quality_gate", status="pass", message="Novel consistency passed."))
+
+
+def _try_tavern_gate(project_path: str | Path, result: ProjectQualityGateResult) -> None:
+    root = Path(project_path)
+    tavern_root = root / "tavern"
+    if not tavern_root.exists():
+        result.checks.append(ProjectQualityGateCheck(check_id="tavern_boundary_gate", status="skip", message="No Tavern Studio section."))
+        return
+    try:
+        from app.evals.tavern_boundary import run_default_tavern_boundary_evals
+    except Exception:
+        return
+    report = run_default_tavern_boundary_evals()
+    result.report_refs.append("tavern_boundary_gate:default")
+    if report.failed:
+        result.checks.append(ProjectQualityGateCheck(check_id="tavern_boundary_gate", status="fail", message="Tavern boundary evals failed."))
+        result.blockers.append("tavern_boundary_gate: failed")
+        result.errors.append("tavern_boundary_gate: failed")
+    else:
+        result.checks.append(ProjectQualityGateCheck(check_id="tavern_boundary_gate", status="pass", message="Tavern boundary evals passed."))

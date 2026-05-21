@@ -2,6 +2,29 @@
 
 ## NarrativeProject Relationship
 
+v2.3 Tavern Studio can create Tavern characters, RP profiles, voice profiles,
+sessions, messages, memory, scene mood presets, relationship tone, and
+Tavern-to-World proposals inside a `NarrativeProject`. These are not content
+pack files by default and are not applied to active world content.
+
+Tavern-to-content-pack rules:
+
+- `TavernCharacter` and Tavern RP/voice profiles are local RP authoring data.
+  They may link to shared Character Library entries or World NPC refs, but they
+  do not overwrite NPC records.
+- Character card import creates Tavern/CharacterProfile/RP drafts only. It does
+  not create content-pack NPCs and does not write `facts.yaml`.
+- `TavernWorldProposal` is the v2.3 bridge object from RP outcomes to possible
+  world content. It must be validated before any future content-pack write path.
+- World NPC to Tavern Character adapter creates Tavern drafts/references only
+  and filters NPC secrets or unknown facts in player-safe mode.
+- Tavern memory is not a content-pack fact and is not authoritative.
+- Tavern prompt/profile/style data cannot grant hidden-fact access or state
+  modification authority.
+
+v2.3 does not implement full Tavern session export, direct Tavern-to-content
+pack apply, mature/NSFW package modules, or online RP package publishing.
+
 v2.2 Novel Studio can create Novel-to-World draft candidates from structured
 Novel references. These candidates are not content-pack files and are not
 runtime facts. They must pass explicit authoring review and content validation

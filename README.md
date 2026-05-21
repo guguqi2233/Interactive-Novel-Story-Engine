@@ -1,5 +1,22 @@
 # Local LLM Interactive Novel World Engine
 
+## v2.3 Tavern Studio MVP
+
+v2.3 adds a local Tavern Studio MVP on top of `NarrativeProject`. It supports
+Tavern characters, character card import, RP/Voice Profiles, Tavern sessions
+and messages, single-character chat, Tavern memory, safe lorebook/world-info
+context, scene mood presets, relationship tone, Tavern response generation,
+Tavern-to-World proposals, and World NPC to TavernCharacter drafts.
+
+Tavern Mode remains RP/proposal-only:
+
+- Tavern sessions and messages do not modify `GameState`.
+- Tavern-to-World creates proposals, not authoritative world facts.
+- World NPC to TavernCharacter creates drafts/references, not NPC overwrites.
+- Hidden facts, NPC secrets, unknown facts, private persona, raw
+  `state_deltas`, debug memory, API keys, raw env, and provider secrets are
+  excluded from normal Tavern context, prompt, UI, and reports.
+
 ## v2.2 Novel Studio MVP
 
 v2.2 adds a local Novel Studio MVP on top of `NarrativeProject`. It supports
@@ -2771,6 +2788,121 @@ v2.1 audits:
 - `docs/V2_1_LLM_BOUNDARY_AUDIT.md`
 - `docs/V2_1_VISIBILITY_CROSS_MODE_AUDIT.md`
 - `docs/V2_1_SECURITY_AUDIT.md`
+
+## v2.3 Tavern Studio MVP
+
+v2.3 upgrades the Tavern card in the Project Shell from a placeholder into a
+local Tavern Studio MVP. It is still a local RP session / memory / proposal
+mode, not a complete online Tavern replacement, not a cloud RP platform, and
+not a mature/NSFW module. Enable local authoring APIs on a trusted machine,
+open the frontend, create/open a `NarrativeProject`, then choose Tavern from
+the project navigation.
+
+```powershell
+$env:ENABLE_AUTHORING_API = "true"
+```
+
+Tavern Studio stores data under the project `tavern/` section:
+
+```text
+project/
+  tavern/
+    characters/
+    sessions/
+    messages/
+    lorebooks/
+    scene_presets/
+    memory/
+    proposals/
+    scenes/
+    profiles/
+```
+
+The frontend Tavern page supports:
+
+- Tavern character list and local character creation.
+- JSON/YAML character card import into a Tavern draft.
+- Tavern session list and local session creation.
+- Single-character chat with safe local provider behavior.
+- Scene mood preset creation/selection entry points.
+- Lorebook / World Info, Relationship Tone, RP Memory, Tavern Proposal, and
+  Multi-Character Scene MVP/stub panels.
+
+Useful local Tavern API routes:
+
+```text
+GET  /projects/{project_id}/tavern/characters
+POST /projects/{project_id}/tavern/characters
+GET  /projects/{project_id}/tavern/characters/{character_id}
+PATCH /projects/{project_id}/tavern/characters/{character_id}
+POST /projects/{project_id}/tavern/import-character-card
+GET  /projects/{project_id}/tavern/sessions
+POST /projects/{project_id}/tavern/sessions
+GET  /projects/{project_id}/tavern/sessions/{session_id}
+PATCH /projects/{project_id}/tavern/sessions/{session_id}
+GET  /projects/{project_id}/tavern/sessions/{session_id}/messages
+POST /projects/{project_id}/tavern/sessions/{session_id}/messages
+POST /projects/{project_id}/tavern/sessions/{session_id}/chat
+POST /projects/{project_id}/tavern/sessions/{session_id}/archive
+GET  /projects/{project_id}/tavern/scene-presets
+POST /projects/{project_id}/tavern/scene-presets
+PATCH /projects/{project_id}/tavern/scene-presets/{preset_id}
+GET  /projects/{project_id}/tavern/proposals
+POST /projects/{project_id}/tavern/proposals
+POST /projects/{project_id}/tavern/proposals/{proposal_id}/validate
+POST /projects/{project_id}/tavern/proposals/{proposal_id}/reject
+POST /projects/{project_id}/tavern/adapt-world-npc
+```
+
+Typical MVP workflow:
+
+1. Create or open a NarrativeProject in the Project Shell.
+2. Open Tavern mode.
+3. Create a Tavern character, or paste a JSON/YAML character card into the
+   import panel and import it as a local draft.
+4. Create a Tavern session and choose a character.
+5. Send a user message in the single-character chat panel. Generated replies
+   are saved as Tavern messages only.
+6. Create a scene mood preset when you need style/atmosphere guidance. Scene
+   mood affects expression only.
+7. Use relationship tone as Tavern presentation metadata. Tone changes are
+   proposals and do not modify World relationship state.
+8. Create a Tavern-to-World proposal for relationship changes, fact discovery,
+   quest hints, promises/deals, NPC mood changes, memory-to-fact candidates, or
+   scene-to-timeline candidates. Proposals must validate and v2.3 does not apply
+   them to World state.
+9. Use the World NPC adapter to create a TavernCharacter draft from a
+   player-visible NPC. Player-safe mode excludes NPC secrets and unknown facts.
+10. Run Tavern boundary tests/evals through the pytest suite:
+
+```powershell
+python -m pytest backend/tests/test_v23_tavern_studio_mvp.py backend/tests/test_v23_integration_regression.py
+```
+
+Tavern prompt and generation boundaries:
+
+- `TavernPromptContext` may contain only safe character/profile summaries, safe
+  scene mood fields, safe relationship tone, recent safe messages,
+  tavern-safe memory, safe lorebook/world-info entries, and style instructions.
+- `TavernRPProfile` and `TavernVoiceProfile` affect expression and roleplay
+  voice only. They cannot change facts or NPC knowledge.
+- Tavern-scoped prompt profiles cannot access hidden facts, modify state,
+  override action results, or bypass visibility.
+- Optional response generation uses `LLMProvider` / Provider Gateway and is
+  tested with fake/mock/local providers.
+- Generated text is a `GeneratedTavernReply` and then a `TavernMessage`. It is
+  never a World fact, never a `StateDelta`, and never an `EventLog` entry.
+
+v2.3 security limits:
+
+- Tavern data is local authoring/studio data behind `ENABLE_AUTHORING_API`.
+- Character card import parses data only and does not execute scripts.
+- API keys, provider secrets, raw env, hidden facts, NPC secrets, NPC unknown
+  facts, private persona, debug memory, and raw `state_deltas` stay out of
+  normal Tavern prompt/UI/report paths.
+- v2.3 does not implement full multi-character generation, full session export,
+  cloud sync, online RP, online marketplace, bidirectional NPC sync, or
+  apply-to-World proposal flow.
 
 ## v2.2 Novel Studio MVP
 

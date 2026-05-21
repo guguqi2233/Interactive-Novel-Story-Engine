@@ -1,5 +1,53 @@
 # Project Specification
 
+## v2.3 Tavern Studio MVP
+
+v2.3 upgrades Tavern Mode from a safe project stub into a local Tavern Studio
+MVP inside `NarrativeProject`. It supports Tavern characters, JSON/YAML
+character-card import, RP Profiles, Voice Profiles, Tavern sessions, messages,
+single-character chat, RP memory, safe lorebook/world-info context, scene mood
+presets, relationship tone, Tavern response generation, Tavern-to-World
+proposals, World NPC to Tavern character drafts, and deterministic Tavern
+boundary evals.
+
+Tavern Mode remains an RP session / memory / proposal system:
+
+- Tavern sessions and messages do not modify `GameState`.
+- Tavern messages do not append or rewrite `EventLog`.
+- Tavern memory is not an authoritative fact source.
+- Tavern -> World creates `TavernWorldProposal` candidates only.
+- World NPC -> Tavern Character creates adapter/draft/reference data only; it
+  does not overwrite NPC records.
+- Character card import creates Tavern/CharacterProfile/RP drafts only; it does
+  not create World NPCs.
+- Hidden facts, NPC secrets, NPC unknown facts, private persona, debug memory,
+  raw `state_deltas`, API keys, provider secrets, and raw env are excluded from
+  normal Tavern context, prompts, reports, frontend views, and future exports.
+
+Tavern Studio MVP data contracts:
+
+- `TavernCharacter`: project-local RP character metadata with optional links to
+  shared Character Library and World NPC refs.
+- `TavernSession`: local RP session metadata, participants, scene context,
+  messages, memory refs, world refs, and status.
+- `TavernMessage`: user/character/narrator/system message record. Proposed
+  world effects remain proposal metadata and are not applied.
+- `TavernRPProfile` / `TavernVoiceProfile`: expression, voice, roleplay style,
+  and boundaries. They cannot change world facts.
+- `TavernMemoryRecord`: non-authoritative RP memory with visibility filtering.
+- `TavernLorebookEntry` / `TavernLoreContext`: safe lore/world-info context for
+  RP prompts.
+- `SceneMoodPreset` and `RelationshipTone`: style and relationship-tone
+  context only.
+- `TavernPromptContext` / `GeneratedTavernReply`: safe prompt context and
+  schema-validated RP reply output.
+- `TavernWorldProposal`: candidate world effect that requires validation and
+  has no v2.3 apply-to-World path.
+
+v2.3 does not implement a full multi-character group chat system, online RP,
+cloud sync, online marketplace, full mature/NSFW module, bidirectional World NPC
+sync, or apply-to-World proposal workflow.
+
 ## v2.2 Novel Studio MVP
 
 v2.2 upgrades Novel Mode from a safe v2.1 stub into a local drafting MVP inside

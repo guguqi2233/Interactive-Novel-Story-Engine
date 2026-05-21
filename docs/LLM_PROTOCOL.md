@@ -1,5 +1,40 @@
 # LLM Protocol
 
+## v2.3 Tavern Studio LLM Boundary
+
+v2.3 allows optional RP reply generation through
+`TavernResponseGenerationService`. This does not expand LLM authority.
+
+- Tavern generation accepts an injected `LLMProvider`; application code must not
+  construct concrete provider SDK clients directly.
+- Tavern chat routes obtain providers through app state or provider factory
+  paths and tests use `FakeLLMProvider` / mock/local-stub providers.
+- Prompt input must be built from `TavernPromptContext`.
+- `TavernPromptContext` may contain only current speaker safe profile, safe
+  `TavernRPProfile` summary, safe `TavernVoiceProfile` summary, safe scene mood
+  fields, safe relationship tone summary, recent safe messages, tavern-safe
+  memory, safe lorebook entries, and style instructions.
+- `TavernPromptContext` must not contain hidden facts, NPC secrets, NPC unknown
+  facts, private persona authoring-only text, raw debug memory, raw
+  `state_deltas`, API keys, provider secrets, or raw env.
+- Tavern-scoped `ProjectPromptProfile` values may affect style only. They cannot
+  enable `can_access_hidden_facts`, `can_modify_state`,
+  `can_override_action_result`, or `can_bypass_visibility`.
+- `TavernRPProfile`, `TavernVoiceProfile`, `SceneMoodPreset`, and
+  `RelationshipTone` affect expression, tone, pacing, and relationship flavor
+  only. They do not change world facts or NPC knowledge.
+- Generated output is schema-validated as `GeneratedTavernReply`.
+- Generated RP text is a Tavern reply/draft only. It is not a World fact, does
+  not write `GameState`, does not emit `StateDelta`, and does not append
+  `EventLog`.
+- Tavern-to-World outcomes must be represented as `TavernWorldProposal` and
+  validated separately. v2.3 does not implement apply-to-World.
+- Tavern safety evals are deterministic local checks and do not use an external
+  LLM judge.
+
+Testing rule: v2.3 Tavern tests must use fake/mock/local-stub providers and
+must not call real OpenAI, OpenAI-compatible, or local HTTP services by default.
+
 ## v2.2 Novel Studio LLM Boundary
 
 v2.2 allows optional LLM-assisted Novel drafting through

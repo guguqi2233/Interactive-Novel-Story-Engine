@@ -82,6 +82,15 @@ import {
   fetchNovelScenes,
   createNovelScene,
   exportNovelManuscript,
+  fetchTavernCharacters,
+  createTavernCharacter,
+  importTavernCharacterCard,
+  fetchTavernSessions,
+  createTavernSession,
+  fetchTavernMessages,
+  sendTavernChatMessage,
+  fetchTavernScenePresets,
+  createTavernScenePreset,
   NovelManuscript,
   NovelChapter,
   NovelScene,
@@ -317,6 +326,10 @@ import {
   GroupRPSceneTemplate,
   NarrativeProjectSummary,
   NarrativeProjectModeStatus,
+  TavernCharacter,
+  TavernSession,
+  TavernMessage,
+  TavernScenePreset,
   ExampleDialogue,
   fetchExampleDialogues,
   previewNPCGoalGraph,
@@ -4945,6 +4958,23 @@ function ProjectShell({
   const [selectedManuscriptId, setSelectedManuscriptId] = useState("");
   const [selectedChapterId, setSelectedChapterId] = useState("");
   const [chapterDraftText, setChapterDraftText] = useState("");
+  const [tavernCharacters, setTavernCharacters] = useState<TavernCharacter[]>([]);
+  const [tavernSessions, setTavernSessions] = useState<TavernSession[]>([]);
+  const [tavernMessages, setTavernMessages] = useState<TavernMessage[]>([]);
+  const [tavernScenePresets, setTavernScenePresets] = useState<TavernScenePreset[]>([]);
+  const [tavernError, setTavernError] = useState("");
+  const [tavernMessage, setTavernMessage] = useState("");
+  const [newTavernCharacterId, setNewTavernCharacterId] = useState("tavern_character");
+  const [newTavernCharacterName, setNewTavernCharacterName] = useState("Tavern Character");
+  const [newTavernSessionId, setNewTavernSessionId] = useState("tavern_session");
+  const [newTavernSessionTitle, setNewTavernSessionTitle] = useState("Tavern Session");
+  const [selectedTavernCharacterId, setSelectedTavernCharacterId] = useState("");
+  const [selectedTavernSessionId, setSelectedTavernSessionId] = useState("");
+  const [tavernCardRaw, setTavernCardRaw] = useState('{"name":"Mira","description":"A local RP draft.","personality":"Careful and warm."}');
+  const [chatInput, setChatInput] = useState("");
+  const [chatSafetyNotes, setChatSafetyNotes] = useState<string[]>([]);
+  const [newScenePresetId, setNewScenePresetId] = useState("quiet_evening");
+  const [newScenePresetName, setNewScenePresetName] = useState("Quiet Evening");
   const selected = projects.find((project) => project.project_id === selectedProjectId) ?? null;
   const novel = modeStatuses.find((status) => status.mode === "novel");
   const tavern = modeStatuses.find((status) => status.mode === "tavern");
@@ -4976,6 +5006,39 @@ function ProjectShell({
 
   useEffect(() => {
     void loadNovelData();
+  }, [selectedProjectId]);
+
+  async function loadTavernData() {
+    if (!selectedProjectId) {
+      return;
+    }
+    setTavernError("");
+    try {
+      const [characters, sessions, presets] = await Promise.all([
+        fetchTavernCharacters(selectedProjectId),
+        fetchTavernSessions(selectedProjectId),
+        fetchTavernScenePresets(selectedProjectId)
+      ]);
+      setTavernCharacters(characters.characters);
+      setTavernSessions(sessions.sessions);
+      setTavernScenePresets(presets.scene_presets);
+      const firstCharacter = characters.characters[0]?.tavern_character_id ?? "";
+      const firstSession = sessions.sessions[0]?.session_id ?? "";
+      setSelectedTavernCharacterId((current) => current || firstCharacter);
+      setSelectedTavernSessionId((current) => current || firstSession);
+      if (firstSession) {
+        const messages = await fetchTavernMessages(selectedProjectId, selectedTavernSessionId || firstSession);
+        setTavernMessages(messages.messages);
+      } else {
+        setTavernMessages([]);
+      }
+    } catch (err) {
+      setTavernError(toErrorMessage(err));
+    }
+  }
+
+  useEffect(() => {
+    void loadTavernData();
   }, [selectedProjectId]);
 
   async function handleCreateManuscript() {
@@ -5052,6 +5115,91 @@ function ProjectShell({
       setNovelMessage(`Novel ${format} export created with ${result.chapters_exported.length} chapter(s).`);
     } catch (err) {
       setNovelError(toErrorMessage(err));
+    }
+  }
+
+  async function handleCreateTavernCharacter() {
+    setTavernError("");
+    setTavernMessage("");
+    try {
+      const character = await createTavernCharacter(selectedProjectId, {
+        tavern_character_id: newTavernCharacterId,
+        display_name: newTavernCharacterName,
+        description: "Project-local Tavern character draft."
+      });
+      setSelectedTavernCharacterId(character.tavern_character_id);
+      setTavernMessage("Tavern character draft created. It does not modify World NPCs.");
+      await loadTavernData();
+    } catch (err) {
+      setTavernError(toErrorMessage(err));
+    }
+  }
+
+  async function handleImportTavernCard() {
+    setTavernError("");
+    setTavernMessage("");
+    try {
+      const result = await importTavernCharacterCard(selectedProjectId, tavernCardRaw);
+      setSelectedTavernCharacterId(result.tavern_character.tavern_character_id);
+      setTavernMessage(`Character card imported as a Tavern draft. ${result.warnings?.length ?? 0} warning(s).`);
+      await loadTavernData();
+    } catch (err) {
+      setTavernError(toErrorMessage(err));
+    }
+  }
+
+  async function handleCreateTavernSession() {
+    setTavernError("");
+    setTavernMessage("");
+    try {
+      const session = await createTavernSession(selectedProjectId, {
+        session_id: newTavernSessionId,
+        title: newTavernSessionTitle,
+        character_ids: selectedTavernCharacterId ? [selectedTavernCharacterId] : []
+      });
+      setSelectedTavernSessionId(session.session_id);
+      setTavernMessage("Tavern session created. RP output remains project-local.");
+      await loadTavernData();
+    } catch (err) {
+      setTavernError(toErrorMessage(err));
+    }
+  }
+
+  async function handleSendTavernMessage() {
+    if (!selectedTavernSessionId || !selectedTavernCharacterId || !chatInput.trim()) {
+      return;
+    }
+    setTavernError("");
+    setTavernMessage("");
+    try {
+      const response = await sendTavernChatMessage(selectedProjectId, selectedTavernSessionId, {
+        character_id: selectedTavernCharacterId,
+        user_message: chatInput
+      });
+      setChatInput("");
+      setChatSafetyNotes(response.safety_notes ?? []);
+      setTavernMessage("Generated Tavern reply saved as a Tavern message only.");
+      const messages = await fetchTavernMessages(selectedProjectId, selectedTavernSessionId);
+      setTavernMessages(messages.messages);
+    } catch (err) {
+      setTavernError(toErrorMessage(err));
+    }
+  }
+
+  async function handleCreateScenePreset() {
+    setTavernError("");
+    setTavernMessage("");
+    try {
+      await createTavernScenePreset(selectedProjectId, {
+        preset_id: newScenePresetId,
+        name: newScenePresetName,
+        description: "Style-only Tavern scene mood preset.",
+        mood_tags: ["quiet", "local"]
+      });
+      setTavernMessage("Scene mood preset created. It affects style only.");
+      await loadTavernData();
+    } catch (err) {
+      setTavernError(toErrorMessage(err));
     }
   }
 
@@ -5200,6 +5348,123 @@ function ProjectShell({
               ]}
             />
           </div>
+        </div>
+      </section>
+      <section className="tool-card">
+        <h3>Tavern Studio MVP</h3>
+        <p className="muted">Tavern data is local RP material: sessions, messages, memory, and proposals. It never writes World GameState, EventLog, raw env, API keys, hidden facts, or raw state_deltas.</p>
+        <ErrorPanel message={tavernError} compact />
+        <SuccessPanel message={tavernMessage} compact />
+        <div className="card-grid">
+          <div>
+            <h4>Characters</h4>
+            <div className="form-grid">
+              <input value={newTavernCharacterId} onChange={(event) => setNewTavernCharacterId(event.target.value)} />
+              <input value={newTavernCharacterName} onChange={(event) => setNewTavernCharacterName(event.target.value)} />
+              <button type="button" disabled={!selectedProjectId} onClick={handleCreateTavernCharacter}>Create Character</button>
+            </div>
+            <ItemList
+              emptyText="No Tavern characters"
+              items={tavernCharacters.map((character) => (
+                <button
+                  key={character.tavern_character_id}
+                  type="button"
+                  className={character.tavern_character_id === selectedTavernCharacterId ? "selected-list-button" : ""}
+                  onClick={() => setSelectedTavernCharacterId(character.tavern_character_id)}
+                >
+                  {character.display_name}
+                </button>
+              ))}
+            />
+          </div>
+          <div>
+            <h4>Import Character Card</h4>
+            <textarea value={tavernCardRaw} onChange={(event) => setTavernCardRaw(event.target.value)} rows={6} />
+            <button type="button" disabled={!selectedProjectId} onClick={handleImportTavernCard}>Import Draft</button>
+            <p className="muted">Creator notes and prompt-like fields are treated as untrusted authoring material.</p>
+          </div>
+          <div>
+            <h4>Sessions</h4>
+            <div className="form-grid">
+              <input value={newTavernSessionId} onChange={(event) => setNewTavernSessionId(event.target.value)} />
+              <input value={newTavernSessionTitle} onChange={(event) => setNewTavernSessionTitle(event.target.value)} />
+              <button type="button" disabled={!selectedProjectId} onClick={handleCreateTavernSession}>Create Session</button>
+            </div>
+            <ItemList
+              emptyText="No Tavern sessions"
+              items={tavernSessions.map((session) => (
+                <button
+                  key={session.session_id}
+                  type="button"
+                  className={session.session_id === selectedTavernSessionId ? "selected-list-button" : ""}
+                  onClick={async () => {
+                    setSelectedTavernSessionId(session.session_id);
+                    try {
+                      const messages = await fetchTavernMessages(selectedProjectId, session.session_id);
+                      setTavernMessages(messages.messages);
+                    } catch (err) {
+                      setTavernError(toErrorMessage(err));
+                    }
+                  }}
+                >
+                  {session.title} · {session.status}
+                </button>
+              ))}
+            />
+          </div>
+        </div>
+        <div className="card-grid">
+          <div>
+            <h4>Single Character Chat</h4>
+            <label>
+              Character
+              <select value={selectedTavernCharacterId} onChange={(event) => setSelectedTavernCharacterId(event.target.value)}>
+                <option value="">Select character</option>
+                {tavernCharacters.map((character) => (
+                  <option key={character.tavern_character_id} value={character.tavern_character_id}>{character.display_name}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              User message
+              <textarea value={chatInput} onChange={(event) => setChatInput(event.target.value)} rows={4} />
+            </label>
+            <button type="button" disabled={!selectedTavernSessionId || !selectedTavernCharacterId || !chatInput.trim()} onClick={handleSendTavernMessage}>Send</button>
+            {chatSafetyNotes.length > 0 && (
+              <details>
+                <summary>Safety notes</summary>
+                <ItemList emptyText="No notes" items={chatSafetyNotes.map((note) => <span key={note}>{note}</span>)} />
+              </details>
+            )}
+          </div>
+          <div>
+            <h4>Messages</h4>
+            <ItemList
+              emptyText="No messages"
+              items={tavernMessages.map((message) => (
+                <span key={message.message_id}><strong>{message.speaker_type}</strong>: {message.content}</span>
+              ))}
+            />
+          </div>
+          <div>
+            <h4>Scene Mood Presets</h4>
+            <div className="form-grid">
+              <input value={newScenePresetId} onChange={(event) => setNewScenePresetId(event.target.value)} />
+              <input value={newScenePresetName} onChange={(event) => setNewScenePresetName(event.target.value)} />
+              <button type="button" disabled={!selectedProjectId} onClick={handleCreateScenePreset}>Create Preset</button>
+            </div>
+            <ItemList
+              emptyText="No scene presets"
+              items={tavernScenePresets.map((preset) => (
+                <span key={preset.preset_id}>{preset.name} · {(preset.mood_tags ?? []).join(", ") || "style-only"}</span>
+              ))}
+            />
+          </div>
+        </div>
+        <div className="card-grid">
+          <ProjectModeCard title="Lorebook / World Info" message="Safe lore context filters hidden facts, unknown NPC facts, authoring notes, and debug data." />
+          <ProjectModeCard title="Relationship Tone" message="Relationship tone affects expression only; World relationship changes require proposal and validation." />
+          <ProjectModeCard title="Multi-Character Scene" message="Scene draft structure is available as a stub; multi-speaker generation comes later." />
         </div>
       </section>
     </div>

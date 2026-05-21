@@ -1,5 +1,35 @@
 # World Engine
 
+## v2.3 Tavern Studio Integration
+
+v2.3 adds a local Tavern Studio MVP around the existing World Engine. Tavern
+Studio can reference world-facing concepts through safe summaries, proposals,
+and `CrossModeLink`, but it does not become the world fact engine.
+
+Tavern integration points are deliberately non-authoritative:
+
+- Tavern characters, RP profiles, voice profiles, sessions, messages, scene
+  mood presets, relationship tone, lore context, and RP memory are project-local
+  RP/authoring data.
+- Tavern Mode does not modify `GameState`.
+- Tavern Mode does not apply `StateDelta`.
+- Tavern Mode does not append or rewrite `EventLog`.
+- Tavern messages do not become world facts.
+- Tavern memory is not authoritative and cannot override facts, NPC knowledge,
+  relationships, saves, or EventLog.
+- `TavernWorldProposal` records possible world effects such as relationship
+  changes, fact discoveries, quest hints, promises/deals, NPC mood changes,
+  memory-to-world-fact candidates, or scene-to-timeline-event candidates.
+  Proposals must be validated and v2.3 does not implement an apply-to-World
+  path.
+- `WorldNpcToTavernAdapterService` creates Tavern character/RP/voice drafts and
+  optional `CrossModeLink` references from safe NPC data. It does not overwrite
+  NPCs and excludes NPC secrets or unknown facts in `player_safe` mode.
+
+The World Engine remains the only runtime fact source for World Mode. Any future
+Tavern proposal application must go through explicit validation and the normal
+World Engine `StateDelta` / `EventLog` path.
+
 ## v2.2 Novel Studio Integration
 
 v2.2 adds a Novel Studio MVP around the existing World Engine. Novel Studio can

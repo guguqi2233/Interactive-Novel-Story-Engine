@@ -159,13 +159,17 @@ class NovelModeProjectState(ModeModel):
 class TavernProjectSection(ModeModel):
     characters_path: str = "tavern/characters"
     sessions_path: str = "tavern/sessions"
+    messages_path: str = "tavern/messages"
     lorebooks_path: str = "tavern/lorebooks"
+    scene_presets_path: str = "tavern/scene_presets"
+    memory_path: str = "tavern/memory"
+    proposals_path: str = "tavern/proposals"
     linked_character_library: str | None = None
     linked_memory_library: str | None = None
     default_prompt_profile_id: str | None = None
     default_provider_profile_id: str | None = None
 
-    @field_validator("characters_path", "sessions_path", "lorebooks_path")
+    @field_validator("characters_path", "sessions_path", "messages_path", "lorebooks_path", "scene_presets_path", "memory_path", "proposals_path")
     @classmethod
     def validate_paths(cls, value: str) -> str:
         return validate_project_relative_path(value)
