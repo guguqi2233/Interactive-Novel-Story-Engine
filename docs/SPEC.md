@@ -1,5 +1,51 @@
 # Project Specification
 
+## v2.1 Unified Narrative Project Layer
+
+v2.1 adds a local `NarrativeProject` layer above the v2.0 modular platform.
+The project is a metadata and workspace container for Novel, Tavern, World,
+Scripts/Mods, Providers, Quality Reports, and Exports. It does not replace
+`GameState`, and it does not become a second fact engine.
+
+Core v2.1 project concepts:
+
+- `NarrativeProject`: project id, name, version, engine/schema version,
+  default world, active campaign, project root, mode flags, library refs,
+  local settings, safety policy, and migration history.
+- Project workspace layout: `project.yaml`, `novel/`, `tavern/`, `world/`,
+  `scripts/`, `providers/`, `quality/`, and `exports/`.
+- Shared libraries: character profiles, World Bible, timeline, lore/fact
+  entries, prompt profiles, provider profiles, and memory records.
+- `CrossModeLink`: references between Novel/Tavern/World/Script/Quality
+  assets. Links never apply state changes and cannot make hidden targets
+  visible.
+- Mode Router: safe status routing for `novel`, `tavern`, `world`, `script`,
+  `quality`, and `settings`.
+- Project validation and project quality gate: local reports that check
+  schema, directory layout, forbidden files, provider/prompt safety, broken
+  cross-mode links, world validation when configured, and export safety.
+
+Mode boundaries:
+
+- Novel Mode in v2.1 is a stub and draft container. Novel outlines and chapter
+  drafts do not modify `GameState` and do not become world facts.
+- Tavern Mode in v2.1 is a stub and RP session/proposal container. Tavern
+  sessions do not modify `GameState`; relationship/fact changes remain
+  proposals until explicitly validated by a later World flow.
+- World Mode adapts existing world startup/state APIs into a project context.
+  It still uses the World Engine, `GameState`, `StateDelta`, `EventLog`, and
+  visibility rules.
+
+Project APIs are local authoring/studio endpoints under `/projects`. They are
+not public service APIs. They return safe summaries, validation reports, mode
+status, and World Mode visible-state projections. They must not return API
+keys, raw env, raw `GameState`, raw `state_deltas`, hidden facts, debug memory,
+or provider secrets.
+
+v2.1 does not implement a full Novel Studio, full Tavern Studio, cloud sync,
+accounts, online marketplace, arbitrary-code plugins, or online project
+publishing.
+
 ## v2.0 Modular Narrative RPG Platform
 
 v2.0 formalizes the local studio as a modular narrative RPG platform. The scope

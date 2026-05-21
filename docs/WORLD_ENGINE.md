@@ -1,5 +1,36 @@
 # World Engine
 
+## v2.1 NarrativeProject Integration
+
+v2.1 introduces `NarrativeProject` as a local project container above the
+existing world engine. A project can organize Novel drafts, Tavern session
+drafts, World content/saves/campaigns, script/mod metadata, provider profile
+references, quality reports, and exports under one workspace. This project
+layer does not change world authority.
+
+World Engine remains the fact source for World Mode:
+
+- `GameState` is still authoritative.
+- World state changes still go through `StateDelta`.
+- Player actions and system consequences still append `EventLog` entries.
+- Player-facing responses still use `visible_state`.
+- Hidden facts, NPC secrets, debug memory, raw `GameState`, and raw
+  `state_deltas` remain out of player and narrator contexts.
+
+Novel and Tavern project data are not world facts:
+
+- Novel outlines and chapter drafts are authoring drafts.
+- Tavern sessions, messages, and RP proposals are RP draft/proposal records.
+- Neither mode can directly modify active `GameState`.
+- `CrossModeLink` records references between modes only; it does not convert
+  drafts into facts, reveal hidden targets, or apply deltas.
+
+The v2.1 World Mode adapter exposes project-aware routes such as
+`POST /projects/{project_id}/world/start` and
+`GET /projects/{project_id}/world/state/{session_id}`. These use the existing
+world loader/session/game-loop path and return visible-state projections. The
+legacy `/game/start` flow remains supported.
+
 ## v2.0 Platform Integration
 
 v2.0 adds platform services around the world engine without changing the engine

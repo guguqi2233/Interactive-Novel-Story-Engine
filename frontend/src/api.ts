@@ -5384,6 +5384,87 @@ export async function saveGroupRPSceneAuthoring(
   );
 }
 
+export type NarrativeProjectSummary = {
+  project_id: string;
+  name: string;
+  path_redacted?: string;
+  schema_version?: string;
+  safe_status?: string;
+};
+
+export type NarrativeProject = {
+  project_id: string;
+  name: string;
+  description?: string;
+  version?: string;
+  schema_version?: string;
+  engine_version?: string;
+  default_world_id?: string | null;
+  active_campaign_id?: string | null;
+  modes?: Record<string, boolean>;
+  libraries?: Record<string, string | null>;
+  safety_policy?: Record<string, boolean>;
+};
+
+export type NarrativeProjectListResponse = {
+  projects: NarrativeProjectSummary[];
+};
+
+export type NarrativeProjectModeStatus = {
+  mode: string;
+  enabled: boolean;
+  configured: boolean;
+  missing_requirements: string[];
+  safe_summary: Record<string, unknown>;
+};
+
+export type NarrativeProjectModesResponse = {
+  project_id: string;
+  modes: NarrativeProjectModeStatus[];
+};
+
+export type NarrativeProjectValidationReport = {
+  project_id?: string | null;
+  ok: boolean;
+  errors: unknown[];
+  warnings: unknown[];
+  suggestions: unknown[];
+  summary: Record<string, number>;
+};
+
+export async function fetchNarrativeProjects(): Promise<NarrativeProjectListResponse> {
+  return requestJson<NarrativeProjectListResponse>("/projects");
+}
+
+export async function createNarrativeProject(input: {
+  project_id: string;
+  name: string;
+  description?: string;
+  project_root: string;
+  default_world_id?: string;
+  dry_run?: boolean;
+}): Promise<{ dry_run: boolean; project: NarrativeProject }> {
+  return requestJson<{ dry_run: boolean; project: NarrativeProject }>("/projects", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input)
+  });
+}
+
+export async function fetchNarrativeProject(projectId: string): Promise<NarrativeProject> {
+  return requestJson<NarrativeProject>(`/projects/${encodeURIComponent(projectId)}`);
+}
+
+export async function validateNarrativeProject(projectId: string): Promise<NarrativeProjectValidationReport> {
+  return requestJson<NarrativeProjectValidationReport>(`/projects/${encodeURIComponent(projectId)}/validate`, {
+    method: "POST"
+  });
+}
+
+export async function fetchNarrativeProjectModes(projectId: string): Promise<NarrativeProjectModesResponse> {
+  return requestJson<NarrativeProjectModesResponse>(`/projects/${encodeURIComponent(projectId)}/modes`);
+}
+
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, init);
   if (!response.ok) {

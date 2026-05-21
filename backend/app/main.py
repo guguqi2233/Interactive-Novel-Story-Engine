@@ -5948,3 +5948,177 @@ def _get_v2_timeline_service():
         service = TimelineBranchService()
         app.state.v2_timeline_service = service
     return service
+
+
+# v2.1 NarrativeProject APIs. These are local project/studio endpoints and return
+# safe summaries only; they do not expose raw env, provider secrets, hidden facts,
+# or raw GameState.
+def get_project_repository():
+    from app.platform.project_repository import ProjectRepository
+
+    repository = getattr(app.state, "project_repository", None)
+    if repository is None:
+        repository = ProjectRepository(Path.cwd() / "projects")
+        app.state.project_repository = repository
+    return repository
+
+
+@app.get("/projects")
+def list_narrative_projects() -> dict[str, Any]:
+    require_authoring_api()
+    return {"projects": [item.model_dump(mode="json") for item in get_project_repository().list_projects()]}
+
+
+@app.post("/projects")
+def create_narrative_project(request: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.narrative_project import NarrativeProject
+
+    try:
+        project = NarrativeProject(
+            project_id=str(request.get("project_id", "local_project")),
+            name=str(request.get("name", "Local Narrative Project")),
+            description=str(request.get("description", "")),
+            project_root=str(request.get("project_root", Path.cwd() / "projects" / str(request.get("project_id", "local_project")))),
+            default_world_id=request.get("default_world_id"),
+        )
+        created = get_project_repository().create_project(project, dry_run=bool(request.get("dry_run", False)))
+        return {"dry_run": bool(request.get("dry_run", False)), "project": created.safe_summary()}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/projects/{project_id}")
+def get_narrative_project(project_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    try:
+        return get_project_repository().load_project(project_id).safe_summary()
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.patch("/projects/{project_id}")
+def update_narrative_project(project_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    try:
+        project = get_project_repository().update_project_metadata(
+            project_id,
+            name=request.get("name"),
+            description=request.get("description"),
+            default_world_id=request.get("default_world_id"),
+            active_campaign_id=request.get("active_campaign_id"),
+        )
+        return project.safe_summary()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/projects/{project_id}/sections")
+def list_narrative_project_sections(project_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.project_workspace import list_project_sections
+
+    project = get_project_repository().load_project(project_id)
+    return {"project_id": project.project_id, "sections": list_project_sections()}
+
+
+@app.get("/projects/{project_id}/status")
+def get_narrative_project_status(project_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.project_validation import validate_project
+
+    project = get_project_repository().load_project(project_id)
+    report = validate_project(project.project_root)
+    return {"project": project.safe_summary(), "validation": report.model_dump(mode="json")}
+
+
+@app.post("/projects/{project_id}/validate")
+def validate_narrative_project(project_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.project_validation import validate_project
+
+    try:
+        project = get_project_repository().load_project(project_id)
+        return validate_project(project.project_root).model_dump(mode="json")
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/projects/{project_id}/modes")
+def list_narrative_project_modes(project_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.project_modes import ModeRouter
+
+    project = get_project_repository().load_project(project_id)
+    return {"project_id": project.project_id, "modes": [item.model_dump(mode="json") for item in ModeRouter().modes_for_project(project)]}
+
+
+@app.get("/projects/{project_id}/modes/{mode}")
+def get_narrative_project_mode(project_id: str, mode: str) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.project_modes import ModeRouter
+
+    project = get_project_repository().load_project(project_id)
+    return ModeRouter().status_for_mode(project, mode).model_dump(mode="json")
+
+
+@app.post("/projects/{project_id}/world/start")
+def start_project_world(project_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.project_modes import WorldProjectSection
+
+    project = get_project_repository().load_project(project_id)
+    world_id = str(request.get("world_id") or project.default_world_id or "mist_valley")
+    section = WorldProjectSection(default_world_id=world_id)
+    worlds_root = Path(project.project_root) / section.content_pack_path
+    if not (worlds_root / world_id).exists():
+        worlds_root = get_worlds_root()
+    stores = getattr(app.state, "project_session_stores", None)
+    if stores is None:
+        stores = {}
+        app.state.project_session_stores = stores
+    store_key = f"{project_id}:{worlds_root}"
+    store = stores.get(store_key)
+    if store is None:
+        store = InMemorySessionStore(worlds_root=str(worlds_root), default_world_id=world_id)
+        stores[store_key] = store
+    try:
+        session_id, game_loop = store.create_session(world_id)
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {
+        "project_id": project.project_id,
+        "session_id": session_id,
+        "world_id": game_loop.state.world_id,
+        "turn": game_loop.state.turn,
+        "visible_state": build_visible_state(game_loop.state).model_dump(mode="json"),
+        "world_section": section.model_dump(mode="json"),
+    }
+
+
+@app.get("/projects/{project_id}/world/state/{session_id}")
+def get_project_world_state(project_id: str, session_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    stores = getattr(app.state, "project_session_stores", {}) or {}
+    for key, store in stores.items():
+        if str(key).startswith(f"{project_id}:"):
+            game_loop = store.get_session(session_id)
+            if game_loop:
+                return {
+                    "project_id": project_id,
+                    "session_id": session_id,
+                    "world_id": game_loop.state.world_id,
+                    "turn": game_loop.state.turn,
+                    "visible_state": build_visible_state(game_loop.state).model_dump(mode="json"),
+                }
+    raise HTTPException(status_code=404, detail="Project world session not found")
+
+
+@app.post("/projects/{project_id}/quality-gate/run")
+def run_narrative_project_quality_gate(project_id: str, request: dict[str, Any] | None = None) -> dict[str, Any]:
+    require_quality_api()
+    from app.quality.project_gate import ProjectQualityGateConfig, run_project_quality_gate
+
+    project = get_project_repository().load_project(project_id)
+    config = ProjectQualityGateConfig.model_validate(request or {})
+    return run_project_quality_gate(project.project_root, config).model_dump_normal()

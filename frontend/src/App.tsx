@@ -70,6 +70,10 @@ import {
   fetchAuthoringMods,
   fetchDialogueSceneAuthoring,
   fetchGroupRPSceneAuthoring,
+  fetchNarrativeProjects,
+  createNarrativeProject,
+  validateNarrativeProject,
+  fetchNarrativeProjectModes,
   fetchAuthoringMap,
   fetchItemEconomyAuthoring,
   fetchNPCGoalGraph,
@@ -300,6 +304,8 @@ import {
   DialogueSceneTemplate,
   GroupRPSceneAuthoring,
   GroupRPSceneTemplate,
+  NarrativeProjectSummary,
+  NarrativeProjectModeStatus,
   ExampleDialogue,
   fetchExampleDialogues,
   previewNPCGoalGraph,
@@ -589,7 +595,7 @@ export function App() {
   const [saveWorldFilter, setSaveWorldFilter] = useState<string>("");
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>("");
-  const [mode, setMode] = useState<"studio" | "play" | "authoring" | "prompt_lab">("studio");
+  const [mode, setMode] = useState<"project" | "studio" | "play" | "authoring" | "prompt_lab">("studio");
   const [requestedAuthoringTool, setRequestedAuthoringTool] = useState<AuthoringToolId | null>(null);
   const [studioStatus, setStudioStatus] = useState<StudioStatus | null>(null);
   const [studioStatusError, setStudioStatusError] = useState<string>("");
@@ -608,6 +614,11 @@ export function App() {
   const [currentWorkspaceId, setCurrentWorkspaceId] = useState<string>("");
   const [workspaceError, setWorkspaceError] = useState<string>("");
   const [workspaceMessage, setWorkspaceMessage] = useState<string>("");
+  const [narrativeProjects, setNarrativeProjects] = useState<NarrativeProjectSummary[]>([]);
+  const [currentNarrativeProjectId, setCurrentNarrativeProjectId] = useState<string>("");
+  const [projectModeStatuses, setProjectModeStatuses] = useState<NarrativeProjectModeStatus[]>([]);
+  const [projectShellError, setProjectShellError] = useState<string>("");
+  const [projectShellMessage, setProjectShellMessage] = useState<string>("");
   const [narrativeEvalReports, setNarrativeEvalReports] = useState<NarrativeEvalReport[]>([]);
   const [selectedNarrativeEval, setSelectedNarrativeEval] = useState<NarrativeEvalReport | null>(null);
   const [narrativeEvalError, setNarrativeEvalError] = useState<string>("");
@@ -636,6 +647,7 @@ export function App() {
     void refreshLocalUpdateNotes();
     void refreshDesktopHealth();
     void refreshProjectWorkspaces();
+    void refreshNarrativeProjects();
     void refreshWorkspaceTemplates();
     void refreshRecentProjects();
     void refreshNarrativeEvals();
@@ -788,6 +800,56 @@ export function App() {
     } catch (err) {
       setProjectWorkspaces([]);
       setWorkspaceError(toErrorMessage(err));
+    }
+  }
+
+  async function refreshNarrativeProjects() {
+    setProjectShellError("");
+    try {
+      const response = await fetchNarrativeProjects();
+      setNarrativeProjects(response.projects);
+      const selected = currentNarrativeProjectId || response.projects[0]?.project_id || "";
+      setCurrentNarrativeProjectId(selected);
+      if (selected) {
+        const modes = await fetchNarrativeProjectModes(selected);
+        setProjectModeStatuses(modes.modes);
+      } else {
+        setProjectModeStatuses([]);
+      }
+    } catch (err) {
+      setNarrativeProjects([]);
+      setProjectModeStatuses([]);
+      setProjectShellError(toErrorMessage(err));
+    }
+  }
+
+  async function handleCreateNarrativeProject(projectId: string, name: string, projectRoot: string) {
+    setProjectShellError("");
+    setProjectShellMessage("");
+    try {
+      const response = await createNarrativeProject({
+        project_id: projectId,
+        name,
+        project_root: projectRoot,
+        default_world_id: selectedWorldId
+      });
+      await refreshNarrativeProjects();
+      setCurrentNarrativeProjectId(response.project.project_id);
+      setProjectShellMessage("NarrativeProject created. Novel/Tavern drafts remain separate from World GameState.");
+    } catch (err) {
+      setProjectShellError(toErrorMessage(err));
+    }
+  }
+
+  async function handleValidateNarrativeProject(projectId: string) {
+    setProjectShellError("");
+    setProjectShellMessage("");
+    try {
+      const report = await validateNarrativeProject(projectId);
+      const summary = report.summary ?? { errors: report.errors.length, warnings: report.warnings.length };
+      setProjectShellMessage(`Validation ${report.ok ? "passed" : "failed"}: ${summary.errors ?? 0} errors, ${summary.warnings ?? 0} warnings.`);
+    } catch (err) {
+      setProjectShellError(toErrorMessage(err));
     }
   }
 
@@ -1714,6 +1776,13 @@ export function App() {
           <div className="segmented">
             <button
               type="button"
+              className={mode === "project" ? "active" : ""}
+              onClick={() => setMode("project")}
+            >
+              Project
+            </button>
+            <button
+              type="button"
               className={mode === "studio" ? "active" : ""}
               onClick={() => setMode("studio")}
             >
@@ -1869,7 +1938,22 @@ export function App() {
       </aside>
 
       <section className="story-panel">
-        {mode === "authoring" ? (
+        {mode === "project" ? (
+          <ProjectShell
+            projects={narrativeProjects}
+            selectedProjectId={currentNarrativeProjectId}
+            modeStatuses={projectModeStatuses}
+            error={projectShellError}
+            message={projectShellMessage}
+            onRefresh={() => void refreshNarrativeProjects()}
+            onSelect={(projectId) => {
+              setCurrentNarrativeProjectId(projectId);
+              void fetchNarrativeProjectModes(projectId).then((response) => setProjectModeStatuses(response.modes)).catch((err) => setProjectShellError(toErrorMessage(err)));
+            }}
+            onCreate={(projectId, name, root) => void handleCreateNarrativeProject(projectId, name, root)}
+            onValidate={(projectId) => void handleValidateNarrativeProject(projectId)}
+          />
+        ) : mode === "authoring" ? (
           <AuthoringPanel
             requestedTool={requestedAuthoringTool}
             onRequestedToolHandled={() => setRequestedAuthoringTool(null)}
@@ -4811,6 +4895,105 @@ function EmptyState({ title, detail }: { title: string; detail?: string }) {
     <div className="empty-state">
       <strong>{title}</strong>
       {detail && <p>{detail}</p>}
+    </div>
+  );
+}
+
+function ProjectShell({
+  projects,
+  selectedProjectId,
+  modeStatuses,
+  error,
+  message,
+  onRefresh,
+  onSelect,
+  onCreate,
+  onValidate
+}: {
+  projects: NarrativeProjectSummary[];
+  selectedProjectId: string;
+  modeStatuses: NarrativeProjectModeStatus[];
+  error: string;
+  message: string;
+  onRefresh: () => void;
+  onSelect: (projectId: string) => void;
+  onCreate: (projectId: string, name: string, root: string) => void;
+  onValidate: (projectId: string) => void;
+}) {
+  const [projectId, setProjectId] = useState("local_project");
+  const [name, setName] = useState("Local Narrative Project");
+  const [root, setRoot] = useState("projects/local_project");
+  const selected = projects.find((project) => project.project_id === selectedProjectId) ?? null;
+  const novel = modeStatuses.find((status) => status.mode === "novel");
+  const tavern = modeStatuses.find((status) => status.mode === "tavern");
+  return (
+    <div className="studio-page">
+      <PageHeader
+        eyebrow="v2.1 Unified Narrative Project Layer"
+        title="NarrativeProject Shell"
+        description="Local project container for Novel drafts, Tavern proposals, World play, scripts, providers, and quality reports."
+        actions={<button type="button" onClick={onRefresh}>Refresh</button>}
+      />
+      <ErrorPanel message={error} />
+      <SuccessPanel message={message} />
+      <section className="card-grid">
+        <div className="tool-card">
+          <h3>Projects</h3>
+          {projects.length === 0 ? (
+            <EmptyState title="No NarrativeProject found." detail="Create a local project shell. This does not modify active GameState." />
+          ) : (
+            <select value={selectedProjectId} onChange={(event) => onSelect(event.target.value)}>
+              {projects.map((project) => (
+                <option key={project.project_id} value={project.project_id}>{project.name}</option>
+              ))}
+            </select>
+          )}
+          {selected && (
+            <p className="muted">
+              {selected.project_id} · {selected.schema_version ?? "schema"} · {selected.safe_status ?? "ok"}
+            </p>
+          )}
+          <button type="button" disabled={!selectedProjectId} onClick={() => onValidate(selectedProjectId)}>Validate Project</button>
+        </div>
+        <div className="tool-card">
+          <h3>Create Project</h3>
+          <label>
+            Project id
+            <input value={projectId} onChange={(event) => setProjectId(event.target.value)} />
+          </label>
+          <label>
+            Name
+            <input value={name} onChange={(event) => setName(event.target.value)} />
+          </label>
+          <label>
+            Local root
+            <input value={root} onChange={(event) => setRoot(event.target.value)} />
+          </label>
+          <button type="button" onClick={() => onCreate(projectId, name, root)}>Create</button>
+        </div>
+      </section>
+      <section className="card-grid">
+        <ProjectModeCard title="Novel" status={novel} message="Novel Studio MVP coming in v2.2" />
+        <ProjectModeCard title="Tavern" status={tavern} message="Tavern Studio MVP coming in v2.3" />
+        {modeStatuses.filter((status) => !["novel", "tavern"].includes(status.mode)).map((status) => (
+          <ProjectModeCard key={status.mode} title={status.mode} status={status} message="Project mode entry is routed through the v2.1 Mode Router." />
+        ))}
+      </section>
+    </div>
+  );
+}
+
+function ProjectModeCard({ title, status, message }: { title: string; status?: NarrativeProjectModeStatus; message: string }) {
+  return (
+    <div className="tool-card">
+      <h3>{title}</h3>
+      <p className="muted">{message}</p>
+      <StatusBadge label={status?.enabled ? "enabled" : "stub"} enabled={Boolean(status?.enabled)} />
+      {status?.missing_requirements?.length ? (
+        <ItemList emptyText="Configured" items={status.missing_requirements.map((item) => <span key={item}>{item}</span>)} />
+      ) : (
+        <p className="muted">Configured safely. No API keys, hidden facts, or raw env are shown here.</p>
+      )}
     </div>
   );
 }

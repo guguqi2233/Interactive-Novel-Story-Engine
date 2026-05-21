@@ -2629,3 +2629,121 @@ v2.0 is still local-first. It does not add cloud sync, accounts, multi-user
 collaboration, an online marketplace, or LLM world judging. v1.x compatibility
 has explicit boundaries and should be verified with compatibility tests and
 package validation before migration or import.
+
+## v2.1 Unified Narrative Project Layer
+
+v2.1 adds `NarrativeProject` as the local project layer for the three-mode
+direction: Novel, Tavern, and World. It organizes project metadata, shared
+libraries, world content/saves/campaigns, scripts/mods, provider profile
+references, quality reports, imports, exports, and migration history under one
+workspace. It does not replace `GameState` and it does not make Novel or Tavern
+drafts world facts.
+
+Recommended local project layout:
+
+```text
+project/
+  project.yaml
+  novel/{outlines,chapters,drafts,exports}/
+  tavern/{characters,sessions,lorebooks}/
+  world/{content_pack,saves,campaigns}/
+  scripts/{quests,templates,mods}/
+  providers/profiles/
+  quality/{reports,playtests,evals}/
+  exports/
+```
+
+Project APIs are local authoring/studio APIs. Enable them only on a trusted
+local machine:
+
+```powershell
+$env:ENABLE_AUTHORING_API = "true"
+```
+
+Create or open a project from the Project Shell in the frontend, or call the
+local API:
+
+```text
+GET  /projects
+POST /projects
+GET  /projects/{project_id}
+PATCH /projects/{project_id}
+GET  /projects/{project_id}/sections
+GET  /projects/{project_id}/status
+POST /projects/{project_id}/validate
+```
+
+The Project Shell lists/creates/opens projects and shows mode cards for Novel,
+Tavern, World, Script/Mods, Authoring, Quality, Providers, and Settings. Novel
+and Tavern are v2.1 stubs: they show project-level placeholders and safe draft
+metadata only. Full Novel Studio and full Tavern Studio are not implemented in
+v2.1.
+
+World Mode can start through a project while still using the existing World
+Engine:
+
+```text
+GET  /projects/{project_id}/modes
+GET  /projects/{project_id}/modes/{mode}
+POST /projects/{project_id}/world/start
+GET  /projects/{project_id}/world/state/{session_id}
+```
+
+Project World responses return `visible_state`; they do not return raw
+`GameState`, raw `state_deltas`, hidden facts, API keys, or raw env.
+
+Run project validation:
+
+```powershell
+python -m backend.app.tools.validate_project <project_path> --json
+```
+
+Run the project quality gate:
+
+```powershell
+python -m backend.app.tools.project_quality_gate <project_path> --json
+```
+
+Migrate a v2.0-style workspace into a v2.1 NarrativeProject workspace:
+
+```powershell
+python -m backend.app.tools.migrate_project --from <old_root> --to <new_project_root> --dry-run
+python -m backend.app.tools.migrate_project --from <old_root> --to <new_project_root> --apply
+```
+
+Dry-run writes nothing. Apply creates a new project workspace and copies safe
+sections such as worlds, saves, mods, templates, provider profile metadata, and
+quality reports. Migration skips `.env`, raw API keys, database files, logs,
+caches, `node_modules`, build outputs, backups, crash reports, executables, and
+secret-like files.
+
+Project import/export is available as backend services. It uses
+`ProjectPackageManifest`, checksums, zip-slip rejection, executable rejection,
+duplicate project detection, and secret filtering. Project export is a local
+portability/backup flow; it is not a public redacted publishing profile for
+hidden world-design content.
+
+v2.1 shared libraries are project resources:
+
+- Character Library: shared character metadata; private notes are
+  authoring-only.
+- World Bible: flavor/structured/hidden/authoring entries; hidden entries are
+  not narrator-safe.
+- Timeline Library: Novel/Tavern/World/authoring event refs; hidden and
+  authoring-only events are filtered from normal summaries.
+- Lore / Fact Library: draft/flavor/structured/hidden entries with Novel,
+  Tavern, and world-import filtering.
+- Prompt Profile Library: style/variant/token settings only; cannot access
+  hidden facts or modify state.
+- Provider Profile Library: provider metadata and `api_key_env` references
+  only; no raw API keys.
+- Memory Library: non-authoritative project memory with mode-based visibility
+  filtering.
+- CrossModeLink: references only. Links do not convert drafts into world facts,
+  reveal hidden targets, or bypass validation.
+
+v2.1 audits:
+
+- `docs/V2_1_LLM_BOUNDARY_AUDIT.md`
+- `docs/V2_1_VISIBILITY_CROSS_MODE_AUDIT.md`
+- `docs/V2_1_SECURITY_AUDIT.md`

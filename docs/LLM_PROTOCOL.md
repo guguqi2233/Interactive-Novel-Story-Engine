@@ -1,5 +1,41 @@
 # LLM Protocol
 
+## v2.1 NarrativeProject LLM Boundary
+
+v2.1 adds a project layer for Novel, Tavern, World, Script/Mods, Providers,
+Quality, and Settings. This layer does not expand LLM authority. The LLM
+remains a language-layer provider behind `LLMProvider` / Provider Gateway.
+
+Mode-specific rules:
+
+- Novel Mode stub may store outlines and chapter drafts. Drafts are not world
+  facts and cannot directly write `GameState`.
+- Tavern Mode stub may store RP sessions, messages, and proposals. Proposals
+  do not create `StateDelta` values or world facts by themselves.
+- World Mode remains the existing World Engine path. Facts are decided by
+  deterministic rules, `StateDelta`, `EventLog`, and visibility.
+- `CrossModeLink` stores references only. It cannot convert hidden facts,
+  draft lore, RP memories, or Novel scenes into visible world state.
+
+Project prompt/provider profile rules:
+
+- `ProjectPromptProfile` may select style, prompt variants, temperature
+  overrides, and output-token hints by mode.
+- It cannot set `can_access_hidden_facts`, `can_modify_state`,
+  `can_override_action_result`, or `can_bypass_visibility`.
+- `ProjectProviderProfile` stores provider type, display metadata,
+  capabilities, allowed modes, fallback id, and `api_key_env` references only.
+  It must not contain raw API keys.
+- Provider construction still goes through Provider Gateway / `LLMProvider`;
+  project profiles are not concrete provider instances.
+
+Shared libraries also preserve the boundary:
+
+- World Bible hidden entries are not narrator-safe.
+- Lore/fact hidden entries are filtered from Novel/Tavern normal context.
+- Project memory is non-authoritative and hidden/debug memory is filtered.
+- Character private notes are authoring-only and excluded from safe summaries.
+
 ## v2.0 Provider and Platform Boundary
 
 v2.0 keeps Provider Gateway as the stable model access boundary. Plugins,

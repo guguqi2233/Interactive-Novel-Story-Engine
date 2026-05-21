@@ -1,0 +1,100 @@
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Literal
+
+from pydantic import BaseModel, Field
+
+from app.platform.project_validation import ProjectValidationReport, validate_project
+from app.platform.security import redact_text
+from app.quality.gate import QualityGateConfig, QualityGateProfile, run_quality_gate
+
+
+class ProjectQualityGateConfig(BaseModel):
+    profile: Literal["fast", "standard", "strict"] = "standard"
+    run_world_quality_gate: bool = True
+    fail_on_warning: bool = False
+    include_debug_details: bool = False
+
+
+class ProjectQualityGateCheck(BaseModel):
+    check_id: str
+    status: Literal["pass", "fail", "warning", "skip"]
+    message: str
+    safe_details: dict[str, str] = Field(default_factory=dict)
+
+
+class ProjectQualityGateResult(BaseModel):
+    project_id: str | None = None
+    passed: bool = False
+    checks: list[ProjectQualityGateCheck] = Field(default_factory=list)
+    blockers: list[str] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    suggestions: list[str] = Field(default_factory=list)
+    report_refs: list[str] = Field(default_factory=list)
+    summary: dict[str, int | str | None] = Field(default_factory=dict)
+
+    def model_dump_normal(self) -> dict:
+        payload = self.model_dump(mode="json")
+        payload["blockers"] = [redact_text(item) for item in self.blockers]
+        payload["errors"] = [redact_text(item) for item in self.errors]
+        payload["warnings"] = [redact_text(item) for item in self.warnings]
+        return payload
+
+
+def run_project_quality_gate(project_path: str | Path, config: ProjectQualityGateConfig | None = None) -> ProjectQualityGateResult:
+    cfg = config or ProjectQualityGateConfig()
+    validation = validate_project(project_path, profile="normal")
+    result = ProjectQualityGateResult(project_id=validation.project_id)
+    _add_validation(result, validation)
+    if cfg.run_world_quality_gate and validation.project_id:
+        _try_world_gate(project_path, result, cfg)
+    if cfg.fail_on_warning and result.warnings:
+        result.blockers.append("Project quality gate configured to fail on warnings.")
+    result.passed = not result.blockers and not result.errors
+    result.summary = {
+        "checks": len(result.checks),
+        "blockers": len(result.blockers),
+        "errors": len(result.errors),
+        "warnings": len(result.warnings),
+        "profile": cfg.profile,
+    }
+    return result
+
+
+def _add_validation(result: ProjectQualityGateResult, validation: ProjectValidationReport) -> None:
+    if validation.ok:
+        result.checks.append(ProjectQualityGateCheck(check_id="project_validation", status="pass", message="Project validation passed."))
+    else:
+        result.checks.append(ProjectQualityGateCheck(check_id="project_validation", status="fail", message="Project validation failed."))
+    for issue in validation.errors:
+        result.errors.append(f"{issue.code}: {issue.message}")
+        result.blockers.append(f"{issue.code}: {issue.message}")
+    for issue in validation.warnings:
+        result.warnings.append(f"{issue.code}: {issue.message}")
+    for issue in validation.suggestions:
+        result.suggestions.append(f"{issue.code}: {issue.message}")
+
+
+def _try_world_gate(project_path: str | Path, result: ProjectQualityGateResult, cfg: ProjectQualityGateConfig) -> None:
+    root = Path(project_path)
+    content_root = root / "world" / "content_pack"
+    if not content_root.exists():
+        result.checks.append(ProjectQualityGateCheck(check_id="world_quality_gate", status="skip", message="No world content pack section."))
+        return
+    worlds = sorted(path.name for path in content_root.iterdir() if path.is_dir())
+    if not worlds:
+        result.checks.append(ProjectQualityGateCheck(check_id="world_quality_gate", status="skip", message="No world packs found."))
+        return
+    profile = QualityGateProfile.FAST if cfg.profile == "fast" else QualityGateProfile.STANDARD
+    gate = run_quality_gate(worlds[0], QualityGateConfig(profile=profile, min_health_score=0), worlds_root=content_root)
+    result.report_refs.append(f"world_quality_gate:{worlds[0]}")
+    if gate.passed:
+        result.checks.append(ProjectQualityGateCheck(check_id="world_quality_gate", status="pass", message="World quality gate passed."))
+    else:
+        result.checks.append(ProjectQualityGateCheck(check_id="world_quality_gate", status="fail", message="World quality gate failed."))
+        result.blockers.extend(gate.blockers)
+        result.errors.extend(gate.errors)
+        result.warnings.extend(gate.warnings)
+

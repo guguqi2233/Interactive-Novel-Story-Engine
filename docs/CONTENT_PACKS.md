@@ -1,5 +1,39 @@
 # Content Pack Format
 
+## NarrativeProject Relationship
+
+v2.1 projects can contain world content packs under:
+
+```text
+project/
+  world/
+    content_pack/
+      {world_id}/
+        manifest.yaml
+        locations.yaml
+        npcs.yaml
+        items.yaml
+        quests.yaml
+        facts.yaml
+        factions.yaml
+        rumors.yaml
+        relationships.yaml
+```
+
+This project layout is an organization layer. It does not change content-pack
+semantics: content packs are still local YAML data loaded and validated by the
+world loader before becoming runtime `GameState`.
+
+World Mode project startup may resolve a project-local content pack first and
+fall back to the repository-level `worlds/` directory when the project does not
+contain the requested world. Existing `/game/start` behavior remains supported.
+
+Novel/Tavern project sections may link to content-pack worlds through
+`CrossModeLink`, World Bible refs, character refs, or timeline refs, but those
+links do not import facts into the world. Draft lore, Novel scenes, Tavern
+messages, and project memories become world content only through explicit
+authoring/migration flows and normal content-pack validation.
+
 ## Content Pack Schema v2
 
 v2 content packs declare a `ContentPackV2Manifest` with `world_id`, `name`,
