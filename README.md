@@ -2560,3 +2560,34 @@ playtest scenario, benchmark, health score, and coverage schemas.
   should not be exposed as hosted endpoints.
 - There is no dedicated `ENABLE_QUALITY_API` yet; some quality analyzer routes
   rely on the local-only deployment boundary rather than a separate flag.
+## v1.9 Release Candidate Hardening
+
+v1.9 is the local Release Candidate Hardening milestone before a future v2.0
+platform step. It does not primarily add new gameplay. It keeps the v1.8 stable
+contracts intact, keeps the LLM as a language layer rather than a world judge,
+and focuses on release gates, stress checks, documentation, and local security.
+
+Useful local commands:
+
+```bash
+python -m backend.app.tools.quality_gate
+python -m backend.app.tools.playtest --world mist_valley --steps 50
+python -m backend.app.tools.playtest_batch --world mist_valley --seeds 1,2,3
+python -m backend.app.tools.benchmark --world mist_valley
+python -m backend.app.tools.prompt_regression
+python -m backend.app.tools.v2_compatibility_checklist --json
+python -m backend.app.tools.v2_release_candidate_checklist --json
+python -m backend.app.tools.release_checklist --version v1.9 --json
+```
+
+The standard quality gate is the local aggregate gate for v1.9. It combines
+world validation, hidden leak regression, scenario smoke coverage,
+save/load/migration stress, benchmark smoke, playtest batch coverage, and module
+compatibility smoke. Long-run 1000+ turn checks should be run explicitly as slow
+local verification, not as the default quick test path.
+
+Performance budget reports are local estimates with p50, p95, and max timings;
+they are not absolute guarantees across all machines. Release checklist output
+does not auto-fix issues, does not commit or tag, does not upload reports, and
+does not call real providers by default. The v2.0 RC checklist is a readiness
+aid and does not mean v2.0 is complete.
