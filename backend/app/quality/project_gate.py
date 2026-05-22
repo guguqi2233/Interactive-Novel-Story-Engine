@@ -16,6 +16,7 @@ class ProjectQualityGateConfig(BaseModel):
     fail_on_warning: bool = False
     include_debug_details: bool = False
     include_cross_mode: bool = False
+    include_rp_mature: bool = True
 
 
 class ProjectQualityGateCheck(BaseModel):
@@ -54,6 +55,8 @@ def run_project_quality_gate(project_path: str | Path, config: ProjectQualityGat
     _try_tavern_gate(project_path, result)
     if cfg.include_cross_mode:
         _try_cross_mode_gate(project_path, result)
+    if cfg.include_rp_mature:
+        _try_rp_mature_gate(project_path, result)
     if cfg.run_world_quality_gate and validation.project_id:
         _try_world_gate(project_path, result, cfg)
     if cfg.fail_on_warning and result.warnings:
@@ -194,3 +197,22 @@ def _try_cross_mode_gate(project_path: str | Path, result: ProjectQualityGateRes
         result.blockers.append(f"cross_mode_link_broken: {redact_text(link_id)}")
     for link_id in link_review.hidden_target_risks:
         result.errors.append(f"cross_mode_hidden_target_risk: {redact_text(link_id)}")
+
+
+def _try_rp_mature_gate(project_path: str | Path, result: ProjectQualityGateResult) -> None:
+    try:
+        from app.platform.rp_mature import RPMatureQualityGateConfig, run_rp_mature_quality_gate
+    except Exception as exc:
+        result.checks.append(ProjectQualityGateCheck(check_id="rp_mature_quality_gate", status="fail", message="RP/Mature quality gate unavailable.", category="rp_mature"))
+        result.errors.append(redact_text(str(exc)))
+        result.blockers.append("rp_mature_quality_gate: unavailable")
+        return
+    gate = run_rp_mature_quality_gate(project_path, RPMatureQualityGateConfig())
+    result.report_refs.append("rp_mature_quality_gate:default")
+    if gate.passed:
+        result.checks.append(ProjectQualityGateCheck(check_id="rp_mature_quality_gate", status="pass", message="RP/Mature quality gate passed.", category="rp_mature"))
+    else:
+        result.checks.append(ProjectQualityGateCheck(check_id="rp_mature_quality_gate", status="fail", message="RP/Mature quality gate failed.", category="rp_mature"))
+        result.blockers.extend(gate.blockers)
+        result.errors.extend(gate.errors)
+        result.warnings.extend(gate.warnings)

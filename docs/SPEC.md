@@ -1,5 +1,127 @@
 # Project Specification
 
+## v2.8 Roleplay Immersion & Mature Module
+
+v2.8 adds Roleplay Immersion & Mature Module infrastructure on top of Tavern
+Studio, Cross-Mode Bridge, Provider Gateway, and the v2.6/v2.7 module safety
+contracts. The scope is richer local RP continuity and safer optional mature
+policy handling, not a new World authority layer.
+
+Roleplay Immersion scope:
+
+- `AdvancedRPMemoryRecord` captures RP continuity metadata such as address
+  preferences, relationship shifts, emotional afterglow, promises, unresolved
+  tension, scene preferences, boundary notes, style preferences, and
+  mature-scoped memory.
+- `EmotionState` / `EmotionArc` capture session-local emotional presentation
+  and turning points. They influence Tavern prompt context only.
+- `RelationshipToneProfile` derives bounded tone metadata from tavern-safe
+  memory, emotion arcs, and world relationship safe summaries.
+- `SceneMoodPresetPro` and Voice Lab metadata control expression, pacing,
+  voice, rhythm, and style. They do not change facts.
+- Multi-NPC Scene Pro builds per-speaker context from each NPC's known and
+  visible facts only, then stores generated text as Tavern messages.
+
+Mature Module boundary:
+
+- The Mature Module is optional and disabled by default.
+- `MatureContentPolicy` defaults to `enabled=false`,
+  `default_fade_to_black=true`, `export_mature_content=false`, and
+  `allow_explicit_adult=false`.
+- `RoleplayBoundaryProfile`, `ConsentState`, `BoundaryCheckResult`,
+  `FadeToBlackPolicy`, `MatureExportPolicy`, and `MatureModPolicy` are local
+  policy/validation contracts.
+- Unknown-age, minor, unwilling, coerced, unconscious, or boundary-violating
+  scenarios are rejected or downgraded to fade-to-black by deterministic local
+  checks.
+- Mature memory is partitioned from ordinary Tavern/Novel/World prompt
+  contexts and excluded from normal exports.
+- Mature provider routing must satisfy project policy and
+  `ProviderSafetyPolicy`; fallback providers must satisfy the same constraints.
+
+Authority boundary:
+
+- Tavern/RP can enhance expression and prepare proposals, but it cannot directly
+  modify `GameState`.
+- Tavern messages and RP memory are not `StateDelta`, `EventLog`, or World
+  facts.
+- Tavern -> World remains proposal / validation / explicit apply.
+- LLMs do not judge age, consent, relationship boundaries, safety pass/fail, or
+  World facts.
+- Hidden facts, NPC secrets, NPC unknown facts, debug memory, raw prompts, raw
+  `state_deltas`, API keys, provider secrets, and raw env must not enter normal
+  RP prompts, frontend views, exports, or quality reports.
+
+v2.8 does not implement an online adult-content platform, age verification
+service, cloud mature-content sync, NSFW image generation, arbitrary-code
+plugins, or LLM-based safety judging.
+
+## v2.7 Advanced World Simulation Modules
+
+v2.7 adds Advanced World Simulation Modules as optional, local, deterministic
+module MVPs on top of the v2.6 Script / Mod Platform contracts. The scope is to
+make richer World Mode systems modular, verifiable, migratable, disable-able,
+and quality-gate checkable without expanding core World Engine authority.
+
+Implemented v2.7 module families:
+
+- `tactical_combat`: encounter state, combatants, initiative/turn order,
+  action points, range bands, cover, stance, status effects, visible tactical
+  summaries, and lightweight tactical actions.
+- `economy_sim`: regional markets, commodity supply/demand, scarcity,
+  price-index modifiers, trade-route status, and deterministic economy ticks.
+- `faction_war`: regional conflict state, control score, front pressure,
+  morale, supply level, war phase, player-known summaries, and regional war
+  ticks.
+- `magic`: caster resources, known spells, spell definitions, local spell
+  effects, public-illegal magic consequence proposals, and magic actions.
+- `hacking`: in-world hackable objects, security level, access state, trace
+  level, visible digital logs, and hacking actions. It never touches real
+  networks or filesystems.
+- `crafting`: recipe definitions, material consumption, workstation checks,
+  output generation, and `craft_item`.
+- `deduction`: evidence, claims, hypotheses, known-fact checks, and deduction
+  actions that do not reveal hidden truth.
+- `survival_travel`: fatigue/hunger/thirst status, travel routes, travel
+  costs, route risk, camp/rest, forage, and hidden-danger filtering.
+- `cultivation`: cultivator state, realm/stage/progress/qi, techniques,
+  breakthrough rules, meditation/practice/breakthrough/pill actions.
+
+Module boundary:
+
+- Module state lives under `GameState.modules` and is declared by
+  `ModuleStateExtension`.
+- Module state paths are constrained to `modules.{module_id}...` and validated
+  by module-state helpers.
+- Module migrations use `ModuleMigrationPlan` / `ModuleMigrationStep` and
+  support dry-run before apply.
+- Module actions must go through `ActionRegistry` or the reviewed local module
+  resolvers.
+- Runtime-affecting module changes are represented as `StateDelta` and are
+  accompanied by module `Event` records.
+- Module authoring APIs edit drafts/configs or run validation. They must not
+  mutate active `GameState`.
+- Module quality gates aggregate playtests, compatibility stress, migration,
+  EventLog, save/load, hidden leak, and permission checks.
+
+v2.7 explicitly does not implement:
+
+- a complete tactical board game;
+- a complete large-scale war simulation;
+- a complete global/complex economy;
+- full freeform magic, hacking, crafting, deduction, survival, or cultivation
+  simulation;
+- arbitrary-code modules or mod Python/JavaScript execution;
+- LLM adjudication of combat, economy, war, magic, hacking, crafting,
+  deduction, survival, travel, or cultivation results.
+
+Known balance note:
+
+- Crafting recipe validation hardening is covered by v2.7 tests, the
+  balance/simulation audit, and acceptance checks. Zero-input recipes and
+  obvious net-positive duplication recipes are blocked. Crafting remains a
+  lightweight MVP, not a complete complex production-chain system.
+
 ## v2.6 Script / Mod Platform Pro
 
 v2.6 adds Script / Mod Platform Pro: a local extension platform for declarative
@@ -73,10 +195,11 @@ Rule Module boundary:
 
 Known v2.6 hardening note:
 
-- `docs/V2_6_IMPORT_EXPORT_SECRET_AUDIT.md` flags read-before-skip paths in
-  import dry-run and module scan as release blockers until fixed. These issues
-  do not make v2.6 an executable plugin platform, but they must be resolved
-  before final acceptance.
+- The v2.6 import/export/secret blocker around forbidden-file
+  read-before-skip behavior has been fixed and is covered by v2.6 acceptance,
+  security/import-export/secret audits, and regression tests. The safety rule
+  remains: import/export paths must filter `.env`, API keys, databases, logs,
+  caches, `node_modules`, `dist`, executables, and secret-like content.
 
 ## v2.5 Provider Gateway Pro
 

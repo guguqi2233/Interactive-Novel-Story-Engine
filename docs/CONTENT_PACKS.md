@@ -1,5 +1,98 @@
 # Content Pack Format
 
+## v2.8 RP / Mature Content and Package Policy
+
+v2.8 adds RP immersion and mature-policy metadata that can appear in local
+project content or extension packages. These records remain authoring/RP
+metadata until validated by the appropriate Tavern, Cross-Mode, or World
+proposal flow.
+
+RP content formats:
+
+- RP profile and voice/profile data describe expression, tone, diction,
+  sentence rhythm, catchphrases, taboo phrases, emotional markers, example
+  dialogue, and mode scope. They cannot change NPC knowledge or world facts.
+- `RoleplayBoundaryProfile` declares project/character/session boundaries:
+  allowed intensity, disallowed topics, consent-required topics,
+  fade-to-black topics, mature eligibility, violence/romance intensity limits,
+  and authoring-only privacy notes.
+- `SceneMoodPresetPro` declares mood tags, sensory focus, pacing, intensity,
+  genre flavor, dialogue/narration density, emotional temperature, mode scopes,
+  and optional fade-to-black policy. It cannot access hidden facts, modify
+  state, override action results, or force mature content.
+- `AdvancedRPMemoryRecord` stores non-authoritative continuity metadata with
+  visibility such as `tavern_safe`, `novel_safe`, `authoring_only`,
+  `mature_only`, `hidden`, or `debug_only`.
+
+Mature mod/package policy:
+
+- Mature-related packages may declare `MatureModPolicy` fields such as
+  `contains_mature_content`, `max_content_rating`, `requires_mature_module`,
+  `requires_adult_characters`, `requires_consent`, and export restrictions.
+- Mature packages are not enabled by default.
+- Mature packages must not contain real API keys, provider secrets,
+  authorization headers, executable payloads, path traversal, hidden-fact
+  access, boundary bypass, provider-policy bypass, or default-enabled mature
+  behavior.
+- Normal export excludes mature-only memory, mature scene details, boundary
+  private notes, debug memory, API keys, provider secrets, raw env, databases,
+  logs, caches, and build artifacts.
+- Explicit mature export can include only policy-allowed mature content and
+  still must filter secrets.
+
+Mature Module is local and default-off. This project does not provide an online
+adult-content marketplace, age verification service, cloud mature-content sync,
+NSFW image generation, or arbitrary-code mature plugin runtime.
+
+## v2.7 Advanced Module Configuration Content
+
+v2.7 advanced modules add local module configuration and module-state extension
+metadata on top of v2.6 package contracts. Module configuration is content or
+authoring data until a validated runtime flow applies changes through the World
+Engine.
+
+Module configuration can describe:
+
+- tactical combat encounter drafts, combatant defaults, range bands, cover,
+  victory/failure notes;
+- economy market regions, commodities, initial supply/demand, price-index
+  modifiers, trade-route status, and event modifiers;
+- faction war region control, contested factions, front pressure, morale,
+  supply, war phase, and player-known flags;
+- magic spells, caster defaults, mana/focus resource metadata, target types,
+  visibility policy, and local effects;
+- hacking terminals, security levels, access state, trace rules, digital logs,
+  and locked functions;
+- crafting recipes, input/output items, workstation tags, time cost, and
+  failure outcomes;
+- deduction evidence, claims, hypotheses, reveal policy, and contradiction
+  metadata;
+- survival/travel routes, fatigue/hunger/thirst status, route risks, supplies,
+  camp/rest metadata;
+- cultivation realms, stages, qi/progress, techniques, breakthrough rules, and
+  pill/artifact modifiers.
+
+Module state extension relationship:
+
+- Runtime module state is stored under `state.modules.{module_id}`.
+- `ModuleStateExtension` declares namespace, fields, defaults, migration
+  requirement, visibility policy, and save policy.
+- Content packs may include module configuration and extension metadata, but
+  they must not rewrite core `GameState` schema or active saves directly.
+- Module imports must validate schema, permissions, migration impact,
+  compatibility, zip slip, executables, and secrets before apply.
+- Module migration must dry-run before apply and destructive module-state
+  removal is rejected by default.
+
+Module packages must not contain `.env`, API keys, provider secrets, databases,
+logs, caches, `node_modules`, `dist`, executable files, raw prompts, raw
+`state_deltas`, hidden/debug payloads in normal package paths, or hidden module
+details in player-facing text.
+
+Known v2.7 balance note: crafting recipe validation hardening is covered by
+v2.7 tests, the balance/simulation audit, and acceptance checks. Zero-input
+recipes and obvious net-positive duplication recipes are blocked.
+
 ## v2.6 Script / Mod Platform Pro Packages
 
 v2.6 introduces `PackageManifestV2` as the common manifest for local extension
@@ -57,9 +150,10 @@ Import/export rules:
 - Duplicate package ids are reported.
 - High-risk modules are not automatically enabled after import.
 
-Known v2.6 hardening note: `docs/V2_6_IMPORT_EXPORT_SECRET_AUDIT.md` currently
-flags forbidden-file read-before-skip behavior in import dry-run and module
-scan. Resolve those blockers before v2.6 final acceptance.
+Known v2.6 hardening note: the forbidden-file read-before-skip blocker noted
+in `docs/V2_6_IMPORT_EXPORT_SECRET_AUDIT.md` has been fixed and is covered by
+v2.6 acceptance, security/import-export/secret audits, and regression tests.
+The import/export safety rules above remain in force for v2.7 module packages.
 
 ## v2.4 Cross-Mode Bridge and Content Packs
 

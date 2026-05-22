@@ -297,13 +297,13 @@ class ProjectMemoryRecord(LibraryModel):
     linked_character_ids: list[str] = Field(default_factory=list)
     linked_fact_ids: list[str] = Field(default_factory=list)
     linked_timeline_event_ids: list[str] = Field(default_factory=list)
-    visibility: Literal["player_visible", "narrator_safe", "tavern_safe", "novel_safe", "debug_only", "hidden"] = "hidden"
+    visibility: Literal["player_visible", "narrator_safe", "tavern_safe", "novel_safe", "mature_only", "debug_only", "hidden"] = "hidden"
     authoritative: Literal[False] = False
     importance: float = 0.0
     created_at: str = Field(default_factory=now_iso)
 
     def safe_content(self) -> str:
-        if self.visibility in {"debug_only", "hidden"}:
+        if self.visibility in {"debug_only", "hidden", "mature_only"}:
             return "[redacted]"
         return redact_text(self.content)
 

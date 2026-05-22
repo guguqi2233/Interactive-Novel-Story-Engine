@@ -14,6 +14,7 @@ from app.core.world_state import GameState
 from app.llm.provider_base import LLMProvider, Message
 from app.platform.narrative_project import validate_project_id, validate_project_relative_path
 from app.platform.project_repository import ProjectRepository
+from app.platform.rp_mature import MatureExportFilter, MatureExportPolicy
 from app.platform.security import contains_secret_text, redact_text, safe_identifier, validate_relative_package_path
 from app.platform.shared_libraries import (
     CharacterLibrary,
@@ -950,6 +951,7 @@ class NovelExportRequest(NovelModel):
     include_scenes: bool = True
     run_consistency_check: bool = True
     filename: str | None = None
+    include_mature_content: bool = False
 
 
 class NovelExportResult(NovelModel):
@@ -976,6 +978,16 @@ class NovelExportService:
             if any(issue.severity == "blocker" for issue in report.issues):
                 raise ValueError("Consistency blocker prevents export")
         rendered = self._render(manuscript, chapters, request.format, request.include_scenes)
+        filtered = MatureExportFilter().filter_text(
+            rendered,
+            MatureExportPolicy(
+                include_mature_content=request.include_mature_content,
+                include_mature_memory=request.include_mature_content,
+            ),
+        )
+        if filtered is None:
+            raise ValueError("Novel export contains forbidden content")
+        rendered = filtered
         if contains_secret_text(rendered) or "state_delta" in rendered.lower():
             raise ValueError("Novel export contains forbidden content")
         filename = request.filename or f"{manuscript.manuscript_id}.{ 'md' if request.format == 'markdown' else 'txt'}"

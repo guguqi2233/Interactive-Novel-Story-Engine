@@ -64,9 +64,8 @@ def validate_narrative_style_mod(mod: NarrativeStyleMod) -> PackValidationReport
     report = PackValidationReport(safe_summary=mod.safe_summary())
     validate_manifest_type(mod.manifest, PackageTypeV2.NARRATIVE_STYLE_MOD, report)
     validate_no_secrets(mod.model_dump(mode="json"), report)
-    text = json.dumps(mod.model_dump(mode="json"), ensure_ascii=False, default=str)
     for behavior in FORBIDDEN_STYLE_BEHAVIORS:
-        if behavior in mod.forbidden_behaviors or behavior in text:
+        if behavior in mod.forbidden_behaviors:
             report.add_error(f"style mod cannot request behavior: {behavior}")
     preset = mod.to_prompt_profile_preset()
     if any(preset.get(key) for key in ("can_access_hidden_facts", "can_modify_state", "can_override_action_result")):

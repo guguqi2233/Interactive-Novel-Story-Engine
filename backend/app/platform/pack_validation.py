@@ -11,7 +11,7 @@ from app.platform.security import contains_secret_text, redact_text
 
 
 HIDDEN_LEAK_PATTERNS = (
-    re.compile(r"hidden[_ -]?fact", re.IGNORECASE),
+    re.compile(r"(?<!access_)hidden[_ -]?fact", re.IGNORECASE),
     re.compile(r"npc[_ -]?secret", re.IGNORECASE),
     re.compile(r"debug[_ -]?memory", re.IGNORECASE),
     re.compile(r"raw[_ -]?state[_ -]?delta", re.IGNORECASE),

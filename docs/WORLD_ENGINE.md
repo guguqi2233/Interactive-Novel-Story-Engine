@@ -1,5 +1,117 @@
 # World Engine
 
+## v2.8 Roleplay Immersion & Mature Module Integration
+
+v2.8 strengthens Tavern/RP immersion and adds default-off mature safety policy
+infrastructure without changing World Engine authority. The World Engine
+remains the fact source for runtime World Mode.
+
+RP integration rules:
+
+- Advanced RP memory, emotion arcs, relationship tone, scene mood, voice lab
+  data, boundary profiles, and mature policy data are project/Tavern metadata.
+- RP metadata can influence expression, prompt context, and proposal drafting.
+- RP metadata does not modify `GameState`, apply `StateDelta`, append
+  `EventLog`, or become a World fact.
+- Multi-NPC scene generation stores Tavern messages only. Per-NPC prompt
+  context must be filtered to that NPC's known and visible facts.
+- Dead/incapacitated NPC consistency, NPC unknown facts, nonexistent items,
+  quest-claim contradictions, and hidden leaks are reported as
+  warnings/errors/proposals, not applied as facts.
+
+Mature boundary rules:
+
+- Mature content is disabled by default through `MatureContentPolicy`.
+- Consent, adult-character eligibility, boundary checks, fade-to-black, mature
+  memory partitioning, provider routing, export filtering, and mature mod policy
+  are deterministic local checks.
+- Mature memory and boundary private notes do not enter normal Tavern, Novel,
+  World, export, or quality-report contexts.
+- Mature content must not be written into World facts. Any RP-to-World effect
+  remains a proposal until validation and explicit apply.
+
+Tavern -> World continues to use proposal / validation / explicit apply. A
+valid World-changing apply must still use the normal World Engine
+`StateDelta` / `EventLog` path. LLM output, Tavern messages, RP memory, mature
+memory, and boundary notes cannot bypass that path.
+
+## v2.7 Advanced World Simulation Modules
+
+v2.7 adds optional Advanced World Simulation Modules while preserving World
+Engine authority. Modules enrich local play, but they do not become a second
+fact source and they do not bypass `GameState`, `StateDelta`, `EventLog`, or
+visibility.
+
+### Module State Extension
+
+`ModuleStateExtension` declares controlled module state under:
+
+```text
+state.modules.{module_id}
+```
+
+Each extension declares module id, namespace, fields, default values,
+migration requirement, visibility policy, and save policy. Core `GameState`
+fields cannot be redefined by module extensions. Module StateDelta validation
+allows module paths such as `modules.tactical_combat...` and rejects attempts
+to write unrelated core paths through a module-state helper.
+
+### Module Migration
+
+`ModuleMigrationPlan` and `ModuleMigrationStep` support module save migration
+for:
+
+- adding module defaults;
+- upgrading module schema;
+- disabling a module while preserving state;
+- destructive module-state removal only with explicit dangerous confirmation.
+
+Migration dry-run does not write saves. Apply must be confirmed and records
+`module_migration_history`. Failure paths should leave the original save
+intact.
+
+### v2.7 Module Families
+
+- `tactical_combat`: encounter state, combatants, turn order, active
+  combatant, action points, range bands, cover, stance, status effects, and
+  player-safe tactical summaries.
+- `economy_sim`: regional markets, commodities, supply/demand, scarcity,
+  price-index modifiers, trade route status, and deterministic economy ticks.
+  It does not overwrite item `base_price`.
+- `faction_war`: regional control/conflict state, front pressure, morale,
+  supply, war phase, and player-known conflict summaries.
+- `magic`: caster mana/focus, known spells, spell definitions, spell effects,
+  visibility policy, and public-illegal magic consequence proposals.
+- `hacking`: in-world hackable objects, security level, access state,
+  trace level, visible digital logs, and alert-style consequences. It never
+  touches real networks.
+- `crafting`: recipes, materials, workstation checks, crafting time metadata,
+  deterministic success/failure, material consumption, and output proposals.
+- `deduction`: evidence, claims, hypotheses, contradiction checks, and
+  known-fact-only hypothesis testing.
+- `survival_travel`: fatigue/hunger/thirst state, travel routes, time/fatigue
+  costs, route risk, camp/rest, forage, and hidden-danger filtering.
+- `cultivation`: cultivator realm/stage/progress/qi, techniques,
+  breakthrough rules, meditation, practice, breakthrough, and pill modifiers.
+
+### Runtime Boundary
+
+- All module runtime changes must be emitted as `StateDelta`.
+- All module events that affect runtime state must be recorded as `EventLog`
+  events.
+- Module actions do not directly modify `GameState`.
+- LLMs do not decide module outcomes.
+- Hidden combatants, hidden markets, hidden war status, hidden logs, hidden
+  evidence, hidden route danger, and hidden techniques must not enter normal
+  player-visible summaries.
+- Authoring UI/API endpoints validate or edit draft/config data only. They do
+  not apply active world state.
+
+Known v2.7 balance note: crafting recipe validation hardening is covered by
+v2.7 tests, the balance/simulation audit, and acceptance checks. Zero-input
+recipes and obvious net-positive duplication recipes are blocked. Crafting
+remains a lightweight MVP, not a complete production-chain simulation.
+
 ## v2.6 Script / Mod Platform Pro Integration
 
 v2.6 adds local Script / Mod Platform Pro services around the World Engine. It

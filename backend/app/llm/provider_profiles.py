@@ -56,6 +56,9 @@ class ProviderSafetyPolicy(BaseModel):
     disallowed_modes: list[ProviderMode] = Field(default_factory=list)
     allow_sensitive_prompts: bool = False
     allow_mature_content: bool = False
+    allowed_content_ratings: list[str] = Field(default_factory=lambda: ["safe"])
+    allow_explicit_adult: bool = False
+    require_local_only_for_mature: bool = False
     allow_debug_prompts: bool = False
     log_prompts: bool = False
     log_outputs: bool = False
@@ -66,6 +69,8 @@ class ProviderSafetyPolicy(BaseModel):
     def validate_safe_logging(self) -> "ProviderSafetyPolicy":
         if not self.redact_secrets and (self.log_prompts or self.log_outputs):
             raise ValueError("Provider safety policy cannot log prompts/outputs without redaction")
+        if self.allow_explicit_adult and not self.allow_mature_content:
+            raise ValueError("Explicit adult content requires allow_mature_content=True")
         return self
 
 

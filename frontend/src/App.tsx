@@ -91,6 +91,11 @@ import {
   sendTavernChatMessage,
   fetchTavernScenePresets,
   createTavernScenePreset,
+  fetchMatureSettings,
+  updateMatureSettings,
+  fetchTavernMultiNPCScenes,
+  createTavernMultiNPCScene,
+  generateTavernMultiNPCReply,
   createNovelToWorldDraft,
   validateNovelToWorldDraft,
   fetchNovelToWorldDrafts,
@@ -109,6 +114,8 @@ import {
   ModuleBrowserDetail,
   ModuleBrowserSummary,
   ModulePermissionSummary,
+  AdvancedModuleDashboardItem,
+  AdvancedModuleDraftValidation,
   ModAuditRecord,
   ModCompatibilityMatrix,
   ModQualityGateResult,
@@ -118,9 +125,17 @@ import {
   fetchProjectModulePermissions,
   fetchProjectModulePermissionsSummary,
   fetchProjectModules,
+  fetchAuthoringModuleDashboard,
+  fetchEconomySimConfig,
+  fetchFactionWarConfig,
+  fetchTacticalCombatConfig,
+  runProjectAdvancedModuleQualityGate,
   runProjectModuleQualityGate,
   scanProjectModules,
+  validateEconomySimDraft,
+  validateFactionWarDraft,
   validateProjectModule,
+  validateTacticalCombatDraft,
   fetchAuthoringMap,
   fetchItemEconomyAuthoring,
   fetchNPCGoalGraph,
@@ -370,6 +385,8 @@ import {
   TavernSession,
   TavernMessage,
   TavernScenePreset,
+  MatureSettingsResponse,
+  MultiNPCSceneSummary,
   CrossModeDraftSummary,
   CrossModeTimelineEntry,
   CrossModeLinkReviewReport,
@@ -508,6 +525,7 @@ type AuthoringToolId =
   | "quest_pack_generator"
   | "location_clusters"
   | "action_mods"
+  | "advanced_modules"
   | "merge_assistant"
   | "diff_review"
   | "library"
@@ -533,6 +551,7 @@ const AUTHORING_TOOL_NAV: { id: AuthoringToolId; label: string; description: str
   { id: "quest_pack_generator", label: "Quest Pack", description: "batch questline drafts" },
   { id: "location_clusters", label: "Location Clusters", description: "map cluster templates" },
   { id: "action_mods", label: "Action Mods", description: "declarative action editor" },
+  { id: "advanced_modules", label: "Advanced Modules", description: "combat, economy, faction war, magic, hacking, crafting" },
   { id: "merge_assistant", label: "Merge Assistant", description: "branch conflict review" },
   { id: "diff_review", label: "Diff Review", description: "content change review" },
   { id: "library", label: "Library", description: "local content packages" },
@@ -2024,6 +2043,7 @@ export function App() {
           />
         ) : mode === "authoring" ? (
           <AuthoringPanel
+            projectId={currentNarrativeProjectId || "local_project"}
             requestedTool={requestedAuthoringTool}
             onRequestedToolHandled={() => setRequestedAuthoringTool(null)}
           />
@@ -2037,6 +2057,7 @@ export function App() {
         ) : mode === "studio" ? (
           <StudioHome
             status={studioStatus}
+            selectedProjectId={currentNarrativeProjectId}
             configSummary={studioConfigSummary}
             localConfigSummary={localConfigSummary}
             localConfigIssues={localConfigIssues}
@@ -2355,6 +2376,7 @@ export function App() {
 
 function StudioHome({
   status,
+  selectedProjectId,
   configSummary,
   localConfigSummary,
   localConfigIssues,
@@ -2418,6 +2440,7 @@ function StudioHome({
   onNavigate
 }: {
   status: StudioStatus | null;
+  selectedProjectId: string;
   configSummary: StudioConfigSummary | null;
   localConfigSummary: LocalConfigSummary | null;
   localConfigIssues: LocalConfigIssue[];
@@ -2690,6 +2713,7 @@ function StudioHome({
       />
 
       <SettingsPrivacyPanel
+        selectedProjectId={selectedProjectId}
         summary={configSummary}
         localConfigSummary={localConfigSummary}
         localConfigIssues={localConfigIssues}
@@ -4133,6 +4157,7 @@ function PromptLabPanelIndex() {
 }
 
 function SettingsPrivacyPanel({
+  selectedProjectId,
   summary,
   localConfigSummary,
   localConfigIssues,
@@ -4146,6 +4171,7 @@ function SettingsPrivacyPanel({
   onClearRecentProjects = () => undefined,
   promptLabOnly = false
 }: {
+  selectedProjectId?: string;
   summary: StudioConfigSummary | null;
   localConfigSummary?: LocalConfigSummary | null;
   localConfigIssues?: LocalConfigIssue[];
@@ -4200,9 +4226,49 @@ function SettingsPrivacyPanel({
   const [compactDisplay, setCompactDisplay] = useState<boolean>(false);
   const [showRedactionBadges, setShowRedactionBadges] = useState<boolean>(true);
   const [logTailSize, setLogTailSize] = useState<number>(200);
+  const [matureSettings, setMatureSettings] = useState<MatureSettingsResponse | null>(null);
+  const [matureSettingsError, setMatureSettingsError] = useState<string>("");
+  const [matureSettingsMessage, setMatureSettingsMessage] = useState<string>("");
   const profiles = summary?.prompt_profiles ?? [];
   const effectiveProfileAId = profileAId || summary?.selected_prompt_profile_id || profiles[0]?.id || "";
   const effectiveProfileBId = profileBId || profiles.find((profile) => profile.id !== effectiveProfileAId)?.id || effectiveProfileAId;
+
+  useEffect(() => {
+    if (selectedProjectId && !promptLabOnly) {
+      void handleLoadMatureSettings();
+    }
+  }, [selectedProjectId, promptLabOnly]);
+
+  async function handleLoadMatureSettings() {
+    if (!selectedProjectId) {
+      setMatureSettingsError("Select a project first.");
+      return;
+    }
+    setMatureSettingsError("");
+    setMatureSettingsMessage("");
+    try {
+      setMatureSettings(await fetchMatureSettings(selectedProjectId));
+    } catch (err) {
+      setMatureSettings(null);
+      setMatureSettingsError(toErrorMessage(err));
+    }
+  }
+
+  async function handleSaveMatureSettings(patch: Record<string, unknown>) {
+    if (!selectedProjectId) {
+      setMatureSettingsError("Select a project first.");
+      return;
+    }
+    setMatureSettingsError("");
+    setMatureSettingsMessage("");
+    try {
+      const updated = await updateMatureSettings(selectedProjectId, patch);
+      setMatureSettings(updated);
+      setMatureSettingsMessage("Mature Module settings saved. Mature content remains governed by age, consent, provider, and export policies.");
+    } catch (err) {
+      setMatureSettingsError(toErrorMessage(err));
+    }
+  }
 
   async function handleRunABTest() {
     if (!effectiveProfileAId || !effectiveProfileBId) {
@@ -4556,6 +4622,56 @@ function SettingsPrivacyPanel({
                 <p>{showRedactionBadges ? "Redaction active: API keys, raw env, raw prompts, hidden facts, and full sensitive paths are not displayed." : "Redaction is always active even when badges are hidden."}</p>
                 <p>{compactDisplay ? "Compact display preference is local UI state only." : "Standard display preference is local UI state only."}</p>
               </div>
+              {!promptLabOnly && (
+                <section className="studio-section">
+                  <div className="authoring-pane-header">
+                    <div>
+                      <h4>Mature Module Settings</h4>
+                      <p className="muted">Default-off local policy controls. Mature memory bodies, secrets, raw env, and provider keys are not displayed here.</p>
+                    </div>
+                    <button type="button" disabled={!selectedProjectId} onClick={handleLoadMatureSettings}>Refresh</button>
+                  </div>
+                  <ErrorPanel message={matureSettingsError} compact />
+                  <SuccessPanel message={matureSettingsMessage} compact />
+                  <div className="studio-grid compact-dashboard-grid">
+                    <DashboardCard title="Mature Module" value={matureSettings?.policy.enabled ? "Enabled" : "Disabled"}>
+                      <p className="muted">Disabled by default. Local-only provider routing is recommended.</p>
+                    </DashboardCard>
+                    <DashboardCard title="Max Rating" value={matureSettings?.policy.max_rating ?? "safe"}>
+                      <p className="muted">No minors or unknown-age characters; consent is required.</p>
+                    </DashboardCard>
+                    <DashboardCard title="Fade-to-Black" value={matureSettings?.policy.default_fade_to_black ? "Default" : "Off"}>
+                      <p className="muted">Boundary scenes should use safe transition summaries.</p>
+                    </DashboardCard>
+                    <DashboardCard title="Mature Export" value={matureSettings?.policy.export_mature_content ? "Explicitly on" : "Default off"}>
+                      <p className="muted">Normal export excludes mature memory, boundary private notes, debug memory, and secrets.</p>
+                    </DashboardCard>
+                  </div>
+                  <div className="template-grid">
+                    <label className="checkbox-row">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(matureSettings?.policy.enabled)}
+                        onChange={(event) => handleSaveMatureSettings({ enabled: event.target.checked })}
+                        disabled={!selectedProjectId}
+                      />
+                      Enable Mature Module policy metadata
+                    </label>
+                    <label className="checkbox-row">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(matureSettings?.policy.export_mature_content)}
+                        onChange={(event) => handleSaveMatureSettings({ export_mature_content: event.target.checked })}
+                        disabled={!selectedProjectId}
+                      />
+                      Allow explicit mature export flag
+                    </label>
+                  </div>
+                  <p className="muted">
+                    Provider policy must allow the requested rating. The UI never shows mature memory details, API keys, raw environment values, or hidden facts.
+                  </p>
+                </section>
+              )}
             </section>
           )}
           <div className="studio-grid compact-dashboard-grid">
@@ -5271,12 +5387,16 @@ function ProjectShell({
   const [tavernSessions, setTavernSessions] = useState<TavernSession[]>([]);
   const [tavernMessages, setTavernMessages] = useState<TavernMessage[]>([]);
   const [tavernScenePresets, setTavernScenePresets] = useState<TavernScenePreset[]>([]);
+  const [multiNPCScenes, setMultiNPCScenes] = useState<MultiNPCSceneSummary[]>([]);
   const [tavernError, setTavernError] = useState("");
   const [tavernMessage, setTavernMessage] = useState("");
   const [newTavernCharacterId, setNewTavernCharacterId] = useState("tavern_character");
   const [newTavernCharacterName, setNewTavernCharacterName] = useState("Tavern Character");
   const [newTavernSessionId, setNewTavernSessionId] = useState("tavern_session");
   const [newTavernSessionTitle, setNewTavernSessionTitle] = useState("Tavern Session");
+  const [newMultiNPCSceneId, setNewMultiNPCSceneId] = useState("multi_npc_scene");
+  const [newMultiNPCSceneTitle, setNewMultiNPCSceneTitle] = useState("Multi-NPC Scene");
+  const [selectedMultiNPCSceneId, setSelectedMultiNPCSceneId] = useState("");
   const [selectedTavernCharacterId, setSelectedTavernCharacterId] = useState("");
   const [selectedTavernSessionId, setSelectedTavernSessionId] = useState("");
   const [tavernCardRaw, setTavernCardRaw] = useState('{"name":"Mira","description":"A local RP draft.","personality":"Careful and warm."}');
@@ -5346,18 +5466,21 @@ function ProjectShell({
     }
     setTavernError("");
     try {
-      const [characters, sessions, presets] = await Promise.all([
+      const [characters, sessions, presets, multiScenes] = await Promise.all([
         fetchTavernCharacters(selectedProjectId),
         fetchTavernSessions(selectedProjectId),
-        fetchTavernScenePresets(selectedProjectId)
+        fetchTavernScenePresets(selectedProjectId),
+        fetchTavernMultiNPCScenes(selectedProjectId)
       ]);
       setTavernCharacters(characters.characters);
       setTavernSessions(sessions.sessions);
       setTavernScenePresets(presets.scene_presets);
+      setMultiNPCScenes(multiScenes.scenes);
       const firstCharacter = characters.characters[0]?.tavern_character_id ?? "";
       const firstSession = sessions.sessions[0]?.session_id ?? "";
       setSelectedTavernCharacterId((current) => current || firstCharacter);
       setSelectedTavernSessionId((current) => current || firstSession);
+      setSelectedMultiNPCSceneId((current) => current || multiScenes.scenes[0]?.scene_id || "");
       if (firstSession) {
         const messages = await fetchTavernMessages(selectedProjectId, selectedTavernSessionId || firstSession);
         setTavernMessages(messages.messages);
@@ -5625,6 +5748,44 @@ function ProjectShell({
       setSelectedTavernSessionId(session.session_id);
       setTavernMessage("Tavern session created. RP output remains project-local.");
       await loadTavernData();
+    } catch (err) {
+      setTavernError(toErrorMessage(err));
+    }
+  }
+
+  async function handleCreateMultiNPCScene() {
+    if (!selectedProjectId) {
+      return;
+    }
+    const participantIds = tavernCharacters.slice(0, 3).map((character) => character.tavern_character_id);
+    setTavernError("");
+    setTavernMessage("");
+    try {
+      const scene = await createTavernMultiNPCScene(selectedProjectId, {
+        scene_id: newMultiNPCSceneId,
+        title: newMultiNPCSceneTitle,
+        participant_ids: participantIds,
+        turn_order: participantIds
+      });
+      setSelectedMultiNPCSceneId(scene.scene_id);
+      setTavernMessage("Multi-NPC scene created. It stores Tavern messages only and does not modify World GameState.");
+      await loadTavernData();
+    } catch (err) {
+      setTavernError(toErrorMessage(err));
+    }
+  }
+
+  async function handleGenerateMultiNPCReply() {
+    if (!selectedProjectId || !selectedMultiNPCSceneId) {
+      return;
+    }
+    setTavernError("");
+    setTavernMessage("");
+    try {
+      const result = await generateTavernMultiNPCReply(selectedProjectId, selectedMultiNPCSceneId);
+      setTavernMessage(`Generated safe local reply for ${result.message.speaker_id ?? "next speaker"}. World GameState unchanged.`);
+      const scenes = await fetchTavernMultiNPCScenes(selectedProjectId);
+      setMultiNPCScenes(scenes.scenes);
     } catch (err) {
       setTavernError(toErrorMessage(err));
     }
@@ -5992,11 +6153,38 @@ function ProjectShell({
               ))}
             />
           </div>
+          <div>
+            <h4>Multi-NPC Scene Pro</h4>
+            <p className="muted">Multi-character scenes store Tavern messages only. They do not modify World GameState, EventLog, hidden facts, NPC secrets, or provider secrets.</p>
+            <div className="form-grid">
+              <input value={newMultiNPCSceneId} onChange={(event) => setNewMultiNPCSceneId(event.target.value)} />
+              <input value={newMultiNPCSceneTitle} onChange={(event) => setNewMultiNPCSceneTitle(event.target.value)} />
+              <button type="button" disabled={!selectedProjectId || tavernCharacters.length < 2} onClick={handleCreateMultiNPCScene}>Create Scene</button>
+            </div>
+            <label>
+              Scene
+              <select value={selectedMultiNPCSceneId} onChange={(event) => setSelectedMultiNPCSceneId(event.target.value)}>
+                <option value="">Select scene</option>
+                {multiNPCScenes.map((scene) => (
+                  <option key={scene.scene_id} value={scene.scene_id}>{scene.title}</option>
+                ))}
+              </select>
+            </label>
+            <button type="button" disabled={!selectedProjectId || !selectedMultiNPCSceneId} onClick={handleGenerateMultiNPCReply}>Generate Next Reply</button>
+            <ItemList
+              emptyText={tavernCharacters.length < 2 ? "Create at least two Tavern characters first." : "No multi-NPC scenes"}
+              items={multiNPCScenes.map((scene) => (
+                <span key={scene.scene_id}>
+                  {scene.title} · participants {scene.participant_ids.length} · turn {scene.current_turn_index + 1}
+                </span>
+              ))}
+            />
+          </div>
         </div>
         <div className="card-grid">
           <ProjectModeCard title="Lorebook / World Info" message="Safe lore context filters hidden facts, unknown NPC facts, authoring notes, and debug data." />
           <ProjectModeCard title="Relationship Tone" message="Relationship tone affects expression only; World relationship changes require proposal and validation." />
-          <ProjectModeCard title="Multi-Character Scene" message="Scene draft structure is available as a stub; multi-speaker generation comes later." />
+          <ProjectModeCard title="Multi-Character Scene" message="Multi-NPC Scene Pro uses safe per-speaker context and writes Tavern messages only." />
         </div>
       </section>
       <section className="tool-card">
@@ -7693,9 +7881,11 @@ function ImportPackagePanel() {
 }
 
 function AuthoringPanel({
+  projectId,
   requestedTool,
   onRequestedToolHandled
 }: {
+  projectId: string;
   requestedTool: AuthoringToolId | null;
   onRequestedToolHandled: () => void;
 }) {
@@ -8181,6 +8371,15 @@ function AuthoringPanel({
                 );
               }}
             />
+          </AuthoringSection>
+
+          <AuthoringSection
+            toolId="advanced_modules"
+            activeTool={activeAuthoringTool}
+            title="Advanced Modules"
+            description="Module authoring dashboard for tactical combat, economy simulation, faction war, magic, hacking, crafting, deduction, survival, and cultivation."
+          >
+            <AdvancedModuleAuthoringPanel worldId={selectedWorldId} projectId={projectId} />
           </AuthoringSection>
 
           <AuthoringSection
@@ -8691,6 +8890,156 @@ function GroupRPSceneEditorPanel({
       {message && <p className="muted">{message}</p>}
       <ErrorPanel message={error} />
     </section>
+  );
+}
+
+function AdvancedModuleAuthoringPanel({ worldId, projectId }: { worldId: string; projectId: string }) {
+  const [modules, setModules] = useState<AdvancedModuleDashboardItem[]>([]);
+  const [selectedModuleId, setSelectedModuleId] = useState<string>("tactical_combat");
+  const [message, setMessage] = useState<string>("");
+  const [error, setError] = useState<string>("");
+  const [validation, setValidation] = useState<AdvancedModuleDraftValidation | null>(null);
+  const [qualityGate, setQualityGate] = useState<{ passed: boolean; blockers: string[]; warnings: string[] } | null>(null);
+
+  useEffect(() => {
+    void refreshDashboard();
+  }, [worldId]);
+
+  async function refreshDashboard() {
+    if (!worldId) {
+      return;
+    }
+    setError("");
+    try {
+      const response = await fetchAuthoringModuleDashboard(worldId);
+      setModules(response.modules);
+      setSelectedModuleId((current) => current || response.modules[0]?.module_id || "tactical_combat");
+    } catch (err) {
+      setModules([]);
+      setError(toErrorMessage(err));
+    }
+  }
+
+  async function handleValidateSelected() {
+    setError("");
+    setValidation(null);
+    try {
+      const draft = await loadDraftForSelected();
+      const result = await validateDraftForSelected(draft);
+      setValidation(result);
+      setMessage(result.ok ? "Module draft validation passed." : "Module draft validation found issues.");
+    } catch (err) {
+      setError(toErrorMessage(err));
+    }
+  }
+
+  async function handleQualityGate() {
+    setError("");
+    try {
+      const response = await runProjectAdvancedModuleQualityGate(projectId);
+      setQualityGate(response.quality_gate);
+      setMessage(response.quality_gate.passed ? "Advanced module quality gate passed." : "Advanced module quality gate found blockers.");
+    } catch (err) {
+      setError(toErrorMessage(err));
+    }
+  }
+
+  async function loadDraftForSelected(): Promise<Record<string, unknown>> {
+    if (selectedModuleId === "economy_sim") {
+      return fetchEconomySimConfig(worldId);
+    }
+    if (selectedModuleId === "faction_war") {
+      return fetchFactionWarConfig(worldId);
+    }
+    return fetchTacticalCombatConfig(worldId);
+  }
+
+  async function validateDraftForSelected(draft: Record<string, unknown>): Promise<AdvancedModuleDraftValidation> {
+    const payload = (draft.draft as Record<string, unknown> | undefined) ?? draft;
+    if (selectedModuleId === "economy_sim") {
+      return validateEconomySimDraft(worldId, payload);
+    }
+    if (selectedModuleId === "faction_war") {
+      return validateFactionWarDraft(worldId, payload);
+    }
+    return validateTacticalCombatDraft(worldId, payload);
+  }
+
+  return (
+    <SectionCard title="Advanced Modules" description="Local-only advanced module authoring and validation.">
+      <div className="section-header">
+        <div>
+          <h3>Module Authoring Dashboard</h3>
+          <p className="muted">Local-only advanced modules. Draft/config validation does not modify active GameState and never displays secrets or hidden details.</p>
+        </div>
+        <div className="button-row">
+          <button type="button" onClick={() => void refreshDashboard()}>Refresh</button>
+          <button type="button" onClick={() => void handleValidateSelected()} disabled={!worldId}>Validate Draft</button>
+          <button type="button" onClick={() => void handleQualityGate()}>Quality Gate</button>
+        </div>
+      </div>
+      {modules.length === 0 ? (
+        <EmptyState title="No advanced module dashboard data." detail="Enable the local authoring API to inspect module schema, actions, migration, validation, and quality status." />
+      ) : (
+        <div className="provider-table-wrap">
+          <table className="provider-table">
+            <thead><tr><th>Module</th><th>Enabled</th><th>State</th><th>Actions</th><th>Migration</th><th>Validation</th><th>Quality</th></tr></thead>
+            <tbody>
+              {modules.map((item) => (
+                <tr key={item.module_id} className={selectedModuleId === item.module_id ? "selected-row" : ""} onClick={() => setSelectedModuleId(item.module_id)}>
+                  <td>{item.module_id}</td>
+                  <td>{item.enabled ? "enabled" : "disabled"}</td>
+                  <td>{item.state_extension_status}</td>
+                  <td>{item.actions_provided.length}</td>
+                  <td>{item.migration_required ? "required" : "clear"}</td>
+                  <td>{item.validation_status}</td>
+                  <td>{item.quality_gate_status}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <div className="grid two-column">
+        <InfoCard title="Tactical Combat" value="encounter drafts, combatants, range and cover" detail="Normal UI omits hidden combatants." />
+        <InfoCard title="Economy / Faction" value="market and conflict drafts" detail="Authoring validation only; backend rules remain authoritative." />
+      </div>
+      {validation && (
+        <StatusList
+          title={validation.ok ? "Validation passed" : "Validation issues"}
+          items={[...validation.errors, ...validation.warnings]}
+          emptyText="No warnings or errors."
+        />
+      )}
+      {qualityGate && (
+        <StatusList
+          title={qualityGate.passed ? "Quality gate passed" : "Quality gate blockers"}
+          items={[...qualityGate.blockers, ...qualityGate.warnings]}
+          emptyText="No blockers or warnings."
+        />
+      )}
+      <SuccessPanel message={message} compact />
+      <ErrorPanel message={error} compact />
+    </SectionCard>
+  );
+}
+
+function InfoCard({ title, value, detail }: { title: string; value: string; detail: string }) {
+  return (
+    <div className="metric-card">
+      <span>{title}</span>
+      <strong>{value}</strong>
+      <p>{detail}</p>
+    </div>
+  );
+}
+
+function StatusList({ title, items, emptyText }: { title: string; items: string[]; emptyText: string }) {
+  return (
+    <div className="validation-list">
+      <h4>{title}</h4>
+      {items.length === 0 ? <p className="muted">{emptyText}</p> : <ul>{items.map((item) => <li key={item}>{item}</li>)}</ul>}
+    </div>
   );
 }
 

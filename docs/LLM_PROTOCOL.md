@@ -1,5 +1,97 @@
 # LLM Protocol
 
+## v2.8 Roleplay / Mature LLM Boundary
+
+v2.8 does not grant LLMs new authority. Provider Gateway remains the only model
+entry point, and RP/Mature systems use deterministic local policy checks for
+visibility, consent, boundaries, provider eligibility, export filtering, and
+quality-gate pass/fail.
+
+RP prompt context filtering:
+
+- Tavern prompt context may include safe character/profile summaries, safe voice
+  context, safe scene mood, tavern-safe memory, relationship-tone safe context,
+  and recent safe messages.
+- Normal RP prompts must exclude hidden facts, NPC secrets, NPC unknown facts,
+  private persona notes, mature-only memory, debug memory, raw `GameState`, raw
+  `state_deltas`, API keys, provider secrets, raw env, and sensitive local
+  paths.
+- Advanced RP Memory, Emotion Arc, Relationship Tone Pro, Scene Mood Preset
+  Pro, and Voice Lab affect expression only. They are not World facts.
+
+Multi-NPC Scene boundary:
+
+- Each NPC speaker prompt is built from facts that NPC can know plus safe
+  RP/voice/mood/memory/tone metadata.
+- One NPC's secrets or unknown facts must not leak into another NPC's context.
+- Generated replies are Tavern messages only and cannot directly modify
+  `GameState`, emit `StateDelta`, append `EventLog`, or apply a Tavern -> World
+  proposal.
+
+Mature provider routing:
+
+- `MatureContentPolicy` defaults mature content off.
+- `ProviderSafetyPolicy` must allow the requested content rating before a
+  provider can be selected.
+- If project policy disables mature content, or the provider disallows the
+  rating, routing must reject or require fade-to-black.
+- If local-only mature routing is required, cloud providers are rejected.
+- Routing explanations and usage traces must not include sensitive prompt text,
+  mature memory body text, hidden facts, API keys, provider secrets, or raw env.
+
+LLM non-authority:
+
+- LLMs do not judge age, consent, boundary validity, relationship boundaries,
+  mature policy, provider safety pass/fail, RP quality gate pass/fail, or World
+  facts.
+- LLMs cannot override fade-to-black, boundary refusal, mature export controls,
+  or provider safety routing.
+- Prompt profiles, RP profiles, scene mood presets, style mods, and mature mods
+  cannot enable hidden fact access, state mutation, visibility bypass, or direct
+  proposal apply.
+- Cross-Mode RP bridge outputs remain proposal/draft metadata until local
+  validation and explicit apply.
+
+## v2.7 Advanced Module LLM Boundary
+
+v2.7 Advanced World Simulation Modules do not grant LLMs rule authority.
+Provider Gateway remains the only model entry, and providers may be used only
+for expression, summaries, or authoring drafts that remain outside authoritative
+runtime state until validated by local engine flows.
+
+Module rule boundaries:
+
+- Tactical Combat: LLMs do not decide hits, damage, action points, death, or
+  encounter outcomes.
+- Economy Simulation: LLMs do not set prices, scarcity, supply, demand, or
+  market ticks.
+- Faction War: LLMs do not decide control shifts, morale, supply, front
+  pressure, or victory stages.
+- Magic: LLMs do not invent freeform spell effects or decide spell success.
+- Hacking: LLMs do not decide hack success, access state, trace, or visible
+  digital logs.
+- Crafting: LLMs do not generate authoritative outputs or decide crafting
+  success.
+- Deduction: LLMs do not decide truth, solve cases, complete investigations,
+  or reveal hidden facts.
+- Survival / Travel: LLMs do not judge route risk, fatigue, hunger, thirst,
+  camp, forage, or travel consequences.
+- Cultivation: LLMs do not decide breakthrough success, realm changes,
+  technique effects, or backlash.
+
+Module implementation rules:
+
+- Module rules must not call providers directly.
+- Module actions must not set `call_llm` permissions.
+- Any prose generated from module results can use only confirmed
+  `StateDelta`/`EventLog` outcomes and visibility-safe summaries.
+- Hidden facts, NPC secrets, debug memory, hidden module state, raw
+  `GameState`, raw `state_deltas`, API keys, provider secrets, and raw env must
+  not enter module-related prompts.
+- Module playtests, compatibility stress, quality gates, import/export checks,
+  and balance/security audits are deterministic local checks. They do not use
+  an LLM as judge.
+
 ## v2.6 Script / Mod Platform LLM Boundary
 
 v2.6 Script / Mod Platform Pro does not grant mods any LLM authority. Provider

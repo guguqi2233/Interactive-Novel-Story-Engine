@@ -9,6 +9,7 @@ from app.llm.model_compatibility import ModelCompatibilityUseCase
 from app.llm.model_prompt_lab_policy import redact_sensitive_text
 from app.llm.provider_capabilities import ModelCapability, ProviderCapabilityRegistry
 from app.llm.provider_profiles import ProviderMode, ProviderSafetyPolicy
+from app.platform.rp_mature import ContentRating, MatureContentPolicy
 
 
 class ProviderRoutingUseCase(StrEnum):
@@ -64,6 +65,8 @@ class ProviderRoutingContext(BaseModel):
     use_case: ProviderRoutingUseCase | str
     prompt_is_sensitive: bool = False
     prompt_is_debug: bool = False
+    content_rating: ContentRating | str = ContentRating.SAFE
+    mature_policy: MatureContentPolicy | None = None
     project_local_only: bool = False
     explicit_external_override: bool = False
 
@@ -200,6 +203,9 @@ class ProviderRouter:
         raise ValueError("; ".join(report.errors) or "Routing rule is invalid.")
 
     def resolve_provider_for_use_case(self, context: ProviderRoutingContext) -> ProviderRoutingDecision:
+        mature_errors = self.reject_or_downgrade_by_policy(context)
+        if mature_errors:
+            raise ValueError("; ".join(mature_errors))
         parsed = ProviderRoutingUseCase(str(context.use_case))
         rule = next((item for item in self._config.rules if item.enabled and item.use_case == parsed), None)
         if rule is None:
@@ -226,6 +232,22 @@ class ProviderRouter:
                 warnings=report.errors + report.warnings,
             )
         raise ValueError("; ".join(report.errors) or "Provider safety policy rejected routing decision")
+
+    def resolve_provider_for_content_rating(self, context: ProviderRoutingContext) -> ProviderRoutingDecision:
+        errors = self.reject_or_downgrade_by_policy(context)
+        if errors:
+            raise ValueError("; ".join(errors))
+        return self.resolve_provider_for_use_case(context)
+
+    def reject_or_downgrade_by_policy(self, context: ProviderRoutingContext) -> list[str]:
+        parsed = ContentRating(str(context.content_rating))
+        if parsed == ContentRating.SAFE:
+            return []
+        if context.mature_policy is None or not context.mature_policy.enabled:
+            return ["mature_policy_disabled"]
+        if not context.mature_policy.rating_allowed(parsed):
+            return ["mature_content_rating_not_allowed"]
+        return []
 
     def fallback_for_use_case(self, context: ProviderRoutingContext) -> ProviderRoutingDecision | None:
         """Return a fallback decision that satisfies the same capability and policy checks."""
@@ -348,6 +370,16 @@ def _policy_errors(context: ProviderRoutingContext, policy: ProviderSafetyPolicy
         errors.append("provider_safety_policy_rejects_sensitive_prompt")
     if context.prompt_is_debug and not policy.allow_debug_prompts:
         errors.append("provider_safety_policy_rejects_debug_prompt")
+    rating = ContentRating(str(context.content_rating))
+    if rating != ContentRating.SAFE:
+        if not policy.allow_mature_content:
+            errors.append("provider_safety_policy_rejects_mature_content")
+        if rating.value not in set(policy.allowed_content_ratings):
+            errors.append("provider_safety_policy_rejects_content_rating")
+        if rating == ContentRating.EXPLICIT_ADULT_DISABLED_BY_DEFAULT and not policy.allow_explicit_adult:
+            errors.append("provider_safety_policy_rejects_explicit_adult")
+        if policy.require_local_only_for_mature and not model.local_only:
+            errors.append("provider_safety_policy_requires_local_only_for_mature")
     if (context.project_local_only or policy.require_local_only) and not context.explicit_external_override and not model.local_only:
         errors.append("provider_safety_policy_requires_local_only")
     return errors

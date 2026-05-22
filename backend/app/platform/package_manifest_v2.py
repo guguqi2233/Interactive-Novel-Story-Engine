@@ -8,6 +8,7 @@ from typing import Any
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.platform.module_permissions import ModulePermissionSet, validate_module_permissions
+from app.platform.rp_mature import MatureModPolicy
 from app.platform.security import contains_secret_text, validate_relative_package_path
 
 
@@ -86,6 +87,7 @@ class PackageManifestV2(BaseModel):
     entry_points: list[PackageEntryPoint] = Field(default_factory=list)
     compatibility_notes: list[str] = Field(default_factory=list)
     migration_notes: list[str] = Field(default_factory=list)
+    mature_policy: MatureModPolicy = Field(default_factory=MatureModPolicy)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     model_config = {"extra": "forbid"}
@@ -116,6 +118,9 @@ class PackageManifestV2(BaseModel):
         text = json.dumps(self.model_dump(mode="json", exclude={"created_at"}), ensure_ascii=False)
         if contains_secret_text(text):
             raise ValueError("manifest contains secret-like text")
+        mature_text = json.dumps(self.mature_policy.model_dump(mode="json"), ensure_ascii=False).lower()
+        if "can_access_hidden_facts" in mature_text and '"can_access_hidden_facts": true' in mature_text:
+            raise ValueError("mature package policy cannot access hidden facts")
         for entry in self.included_files:
             if any(entry.path.lower().endswith(suffix) for suffix in EXECUTABLE_SUFFIXES):
                 raise ValueError(f"executable payload is blocked: {entry.path}")
@@ -130,6 +135,7 @@ class PackageManifestV2(BaseModel):
             "target_project_modes": self.target_project_modes,
             "target_worlds": self.target_worlds,
             "permissions": self.permissions.safe_summary(),
+            "mature_policy": self.mature_policy.safe_summary(),
             "entry_point_count": len(self.entry_points),
             "included_file_count": len(self.included_files),
         }

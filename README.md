@@ -1,5 +1,186 @@
 # Local LLM Interactive Novel World Engine
 
+## v2.8 Roleplay Immersion & Mature Module
+
+v2.8 adds Roleplay Immersion & Mature Module infrastructure for richer local
+Tavern/RP workflows. It strengthens Advanced RP Memory, emotion arcs,
+relationship tone, scene mood, character voice profiles, Multi-NPC scenes,
+boundary profiles, fade-to-black handling, mature memory isolation, provider
+safety routing, export filtering, and RP/Mature quality gates.
+
+The Mature Module is local, optional, and disabled by default. It is not an
+online adult-content platform, age verification service, cloud sync feature,
+NSFW image generator, or arbitrary-code plugin system. Mature-related metadata
+is used for classification, routing, boundary checks, fade-to-black behavior,
+and export controls. It does not generate explicit content by itself.
+
+Core v2.8 boundaries:
+
+- Tavern/RP data can improve expression, continuity, tone, and scene flow, but
+  it does not become authoritative World facts.
+- Tavern/RP messages do not directly modify `GameState`, emit `StateDelta`, or
+  append `EventLog`.
+- Tavern -> World changes remain proposal / validation / explicit apply flows.
+- Mature content remains disabled unless a local project policy explicitly
+  enables it.
+- Unknown-age, minor, unwilling, coerced, unconscious, or boundary-violating
+  scenarios are rejected or routed to fade-to-black.
+- Mature memory is partitioned from ordinary Tavern/Novel/World contexts and
+  is excluded from normal exports.
+- Provider routing must satisfy both project `MatureContentPolicy` and
+  `ProviderSafetyPolicy`; fallback providers must meet the same policy.
+- LLMs do not judge age, consent, boundaries, safety pass/fail, or World facts.
+
+Useful local APIs and workflows:
+
+```text
+GET   /projects/{project_id}/mature/settings
+PATCH /projects/{project_id}/mature/settings
+GET   /projects/{project_id}/voices
+POST  /projects/{project_id}/voices
+POST  /projects/{project_id}/voices/{voice_id}/samples
+POST  /projects/{project_id}/voices/{voice_id}/validate
+POST  /projects/{project_id}/tavern/multi-scenes
+GET   /projects/{project_id}/tavern/multi-scenes
+POST  /projects/{project_id}/tavern/multi-scenes/{scene_id}/next-reply
+```
+
+Advanced RP Memory stores local RP continuity records such as address
+preferences, relationship shifts, emotional afterglow, promises, unresolved
+tension, scene preferences, boundary notes, style preferences, and
+`mature_only` memory. These records are non-authoritative by default and must
+not be promoted to World facts without a separate proposal/review/apply flow.
+
+Multi-NPC Scene Pro lets Tavern scenes coordinate several local characters.
+Each speaker context is built from that NPC's safe known facts, safe RP/voice
+profile, safe scene mood, relevant tavern-safe memory, and relationship-tone
+safe context. It must not include hidden facts, NPC secrets, NPC unknown facts,
+raw prompts, raw `state_deltas`, or API keys. Generated replies are Tavern
+messages only and do not update active World state.
+
+Boundary Profiles and Mature settings are configured as local project/session/
+character policy metadata. `RoleplayBoundaryProfile` defaults to safe settings
+with `mature_allowed=false`. `MatureContentPolicy` defaults to
+`enabled=false`, `require_adult_characters=true`, `require_consent=true`,
+`default_fade_to_black=true`, `export_mature_content=false`, and
+`allow_explicit_adult=false`.
+
+Fade-to-Black mode uses deterministic safe templates for romance fades, mature
+fades, boundary refusals, and safe transition summaries. It does not include
+explicit details, does not store sensitive details, and does not modify World
+facts.
+
+Run focused RP/Mature safety regressions:
+
+```powershell
+$env:PYTHONPATH="backend"
+python -m pytest backend/tests/test_v28_roleplay_mature_module.py backend/tests/test_v28_integration_regression.py
+```
+
+Run the project quality gate with RP/Mature checks enabled by default:
+
+```powershell
+python -m backend.app.tools.project_quality_gate <project_path> --json
+```
+
+Use `--skip-rp-mature` only when intentionally isolating unrelated project gate
+checks during local debugging. Release readiness should keep RP/Mature checks
+enabled.
+
+## v2.7 Advanced World Simulation Modules
+
+v2.7 adds Advanced World Simulation Modules: lightweight, deterministic module
+MVPs for tactical combat, economy simulation, faction war, magic, hacking,
+crafting, deduction, survival/travel, and cultivation. These modules build on
+the v2.6 Script / Mod Platform contracts and remain local rule systems, not
+arbitrary-code plugins.
+
+v2.7 does not implement a complete tactical board game, complete grand-war
+simulation, complete global economy, full cultivation system, online
+marketplace, cloud module runtime, or LLM multi-agent society. The World Engine
+remains the fact source. Module outcomes are resolved by local rules and all
+runtime changes must flow through `StateDelta` and `EventLog`.
+
+Advanced module ids:
+
+- `tactical_combat`
+- `economy_sim`
+- `faction_war`
+- `magic`
+- `hacking`
+- `crafting`
+- `deduction`
+- `survival_travel`
+- `cultivation`
+
+Enable local module authoring APIs only on a trusted local machine:
+
+```powershell
+$env:ENABLE_AUTHORING_API="true"
+# Optional placeholder documented for v2.7 local module surfaces:
+$env:ENABLE_MODULE_API="true"
+```
+
+Module Authoring Dashboard:
+
+```text
+GET /authoring/worlds/{world_id}/modules/dashboard
+```
+
+The dashboard summarizes module enabled/status metadata, state-extension
+status, provided actions, migration warnings, validation status, and quality
+gate status. It does not display secrets, hidden details, raw module state, raw
+`state_deltas`, or API keys.
+
+Draft/config validation endpoints:
+
+```text
+GET  /authoring/worlds/{world_id}/modules/tactical-combat/config
+POST /authoring/worlds/{world_id}/modules/tactical-combat/validate-draft
+POST /authoring/worlds/{world_id}/modules/economy-sim/validate-draft
+POST /authoring/worlds/{world_id}/modules/faction-war/validate-draft
+POST /projects/{project_id}/modules/quality-gate
+```
+
+Run the advanced module quality gate:
+
+```powershell
+$env:PYTHONPATH="backend"
+python -m app.tools.module_quality_gate_v27 . --json
+```
+
+The legacy module quality gate command can also run the v2.7 gate with
+`--advanced`:
+
+```powershell
+$env:PYTHONPATH="backend"
+python -m app.tools.module_quality_gate . --advanced --json
+```
+
+Run module playtests and compatibility stress checks from the local Python
+entrypoints:
+
+```powershell
+$env:PYTHONPATH="backend"
+python -c "from app.playtesting.module_playtest import run_all_module_playtests; import json; print(json.dumps([r.model_dump(mode='json') for r in run_all_module_playtests()], indent=2))"
+python -c "from app.quality.module_compatibility_stress import run_default_module_compatibility_stress; import json; print(json.dumps([r.model_dump(mode='json') for r in run_default_module_compatibility_stress()], indent=2))"
+```
+
+Focused v2.7 regression checks:
+
+```powershell
+$env:PYTHONPATH="backend"
+python -m pytest backend/tests/test_v27_advanced_modules.py backend/tests/test_v27_advanced_module_integration_regression.py
+```
+
+Known v2.7 balance note: crafting recipe validation hardening is now covered
+by v2.7 tests, the balance/simulation audit, and acceptance checks. Zero-input
+recipes and obvious net-positive duplication recipes are blocked. Crafting
+outputs must flow through `StateDelta`, crafting actions must record `EventLog`,
+and LLMs cannot decide crafting results. This remains a lightweight MVP, not a
+complete complex production-chain system. See
+`docs/V2_7_BALANCE_SIMULATION_AUDIT.md`.
+
 ## v2.6 Script / Mod Platform Pro
 
 v2.6 adds Script / Mod Platform Pro: a local, manifest-driven extension

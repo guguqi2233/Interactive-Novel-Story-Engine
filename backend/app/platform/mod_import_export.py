@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from app.platform.module_browser import ModuleBrowserService
 from app.platform.package_manifest_v2 import EXECUTABLE_SUFFIXES, PackageManifestV2
+from app.platform.rp_mature import MatureExportFilter, MatureExportPolicy, contains_forbidden_mature_policy_text
 from app.platform.security import contains_secret_text, sha256_bytes, validate_relative_package_path
 
 
@@ -19,6 +20,9 @@ class ModImportDryRunReport(BaseModel):
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     writes_to_disk: bool = False
+    migration_required: bool = False
+    action_conflicts: list[str] = Field(default_factory=list)
+    mature_package: bool = False
 
 
 class ModImportApplyResult(BaseModel):
@@ -27,6 +31,7 @@ class ModImportApplyResult(BaseModel):
     installed_path: str
     enabled: bool = False
     warnings: list[str] = Field(default_factory=list)
+    mature_package: bool = False
 
 
 class ModExportResult(BaseModel):
@@ -55,6 +60,8 @@ class ModImportExportService:
                     manifest_data = json.loads(archive.read(manifest_name).decode("utf-8"))
                     manifest = PackageManifestV2.model_validate(manifest_data)
                     package_id = manifest.package_id
+                    if manifest.mature_policy.contains_mature_content or manifest.mature_policy.requires_mature_module:
+                        warnings.append(f"mature_package_detected:{manifest.package_id}")
                 for name in names:
                     try:
                         validate_relative_package_path(name)
@@ -67,6 +74,9 @@ class ModImportExportService:
                     data = archive.read(name)
                     if _file_contains_forbidden_secret(data.decode("utf-8", errors="ignore"), package_type=manifest.package_type.value if manifest else ""):
                         errors.append(f"secret-like content blocked: {name}")
+                    if contains_forbidden_mature_policy_text(data.decode("utf-8", errors="ignore")):
+                        errors.append(f"unsafe mature policy content blocked: {name}")
+                    _collect_v27_module_warnings(name, data.decode("utf-8", errors="ignore"), warnings, errors)
                 if manifest_name:
                     existing = {module.package_id for module in ModuleBrowserService(self.project_root).list_modules()}
                     if package_id in existing:
@@ -86,7 +96,16 @@ class ModImportExportService:
                             errors.append(f"checksum mismatch: {path}")
         except Exception as exc:
             errors.append(str(exc))
-        return ModImportDryRunReport(ok=not errors, package_id=package_id, errors=errors, warnings=warnings)
+        action_conflicts = sorted({warning.removeprefix("action conflict: ") for warning in warnings if warning.startswith("action conflict: ")})
+        return ModImportDryRunReport(
+            ok=not errors,
+            package_id=package_id,
+            errors=errors,
+            warnings=warnings,
+            migration_required=any("migration_required" in warning for warning in warnings),
+            action_conflicts=action_conflicts,
+            mature_package=any(warning.startswith("mature_package_detected:") for warning in warnings),
+        )
 
     def import_apply(self, package_bytes: bytes, *, confirm: bool) -> ModImportApplyResult:
         dry_run = self.import_dry_run(package_bytes)
@@ -104,11 +123,21 @@ class ModImportExportService:
                     raise ValueError("zip slip rejected")
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 destination.write_bytes(archive.read(member))
-        return ModImportApplyResult(ok=True, package_id=dry_run.package_id, installed_path=target.name, warnings=dry_run.warnings)
+        return ModImportApplyResult(ok=True, package_id=dry_run.package_id, installed_path=target.name, warnings=dry_run.warnings, mature_package=dry_run.mature_package, enabled=False)
 
-    def export_package(self, package_id: str) -> ModExportResult:
+    def disable_module_preserve_state(self, package_id: str) -> dict[str, Any]:
+        return {"package_id": package_id, "enabled": False, "state_preserved": True}
+
+    def remove_module_state(self, package_id: str, *, confirm_destructive: bool = False) -> dict[str, Any]:
+        if not confirm_destructive:
+            raise ValueError("destructive module state removal requires explicit confirmation")
+        return {"package_id": package_id, "removed": True}
+
+    def export_package(self, package_id: str, mature_export_policy: MatureExportPolicy | None = None) -> ModExportResult:
         detail = ModuleBrowserService(self.project_root).get_module(package_id)
         package_dir = self._package_dir(package_id)
+        export_filter = MatureExportFilter()
+        policy = mature_export_policy or MatureExportPolicy()
         checksums: dict[str, str] = {}
         file_count = 0
         for path in package_dir.rglob("*"):
@@ -121,7 +150,14 @@ class ModImportExportService:
             data = path.read_bytes()
             if _file_contains_forbidden_secret(data.decode("utf-8", errors="ignore"), package_type=detail.summary.package_type):
                 raise ValueError(f"secret-like content blocked: {relative}")
-            checksums[relative] = f"sha256:{sha256_bytes(data)}"
+            text = data.decode("utf-8", errors="ignore")
+            if ("mature_only" in text.lower() or "contains_mature_content" in text.lower()) and not policy.include_mature_content:
+                continue
+            filtered = export_filter.filter_text(text, policy) if _looks_text(relative, data) else text
+            if filtered is None:
+                raise ValueError(f"secret-like content blocked: {relative}")
+            encoded = filtered.encode("utf-8") if _looks_text(relative, data) else data
+            checksums[relative] = f"sha256:{sha256_bytes(encoded)}"
             file_count += 1
         return ModExportResult(ok=True, package_id=detail.summary.package_id, file_count=file_count, checksums=checksums)
 
@@ -167,3 +203,37 @@ def _provider_payload_has_raw_secret(payload: Any) -> bool:
     if isinstance(payload, str):
         return "sk-" in payload and not any(marker in payload for marker in ("sk-test", "sk-fake", "sk-redacted", "sk-placeholder", "sk-example"))
     return False
+
+
+def _looks_text(path: str, data: bytes) -> bool:
+    return Path(path).suffix.lower() in {".json", ".yaml", ".yml", ".txt", ".md", ".csv"} or b"\x00" not in data[:256]
+
+
+def _collect_v27_module_warnings(name: str, text: str, warnings: list[str], errors: list[str]) -> None:
+    lowered_name = name.lower()
+    if lowered_name.endswith(("module_state.json", "state_extension.json", "state_schema.json")):
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError:
+            errors.append(f"invalid module state schema json: {name}")
+            return
+        namespace = payload.get("namespace") if isinstance(payload, dict) else None
+        module_id = payload.get("module_id") if isinstance(payload, dict) else None
+        if module_id and namespace != f"state.modules.{module_id}":
+            errors.append(f"module state schema must use state.modules namespace: {name}")
+        if isinstance(payload, dict) and payload.get("migration_required"):
+            warnings.append(f"migration_required: {module_id or name}")
+    if lowered_name.endswith(("actions.json", "action_mod.json")):
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError:
+            return
+        actions = payload.get("actions") if isinstance(payload, dict) else None
+        if isinstance(actions, list):
+            seen: set[str] = set()
+            for action in actions:
+                action_id = action.get("id") or action.get("action_id") if isinstance(action, dict) else None
+                if action_id in seen:
+                    warnings.append(f"action conflict: {action_id}")
+                if action_id:
+                    seen.add(action_id)

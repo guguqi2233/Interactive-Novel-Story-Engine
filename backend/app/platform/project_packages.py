@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from app.db.migrations import CURRENT_ENGINE_VERSION
 from app.platform.narrative_project import NarrativeProject, NARRATIVE_PROJECT_SCHEMA_VERSION
 from app.platform.project_repository import ProjectRepository
+from app.platform.rp_mature import MatureExportFilter, MatureExportPolicy
 from app.platform.security import contains_secret_text, safe_identifier, sha256_bytes, validate_relative_package_path
 
 
@@ -58,9 +59,11 @@ def export_project(
     sections: list[str] | None = None,
     export_mode: Literal["normal", "authoring", "debug"] = "normal",
     include_debug: bool = False,
+    mature_policy: MatureExportPolicy | None = None,
 ) -> ProjectPackageExportResult:
     if export_mode == "debug" and not include_debug:
         raise ValueError("debug export requires include_debug=True")
+    mature_policy = mature_policy or MatureExportPolicy(export_mode=export_mode, include_debug=include_debug)
     project = repository.load_project(project_id)
     root = Path(project.project_root)
     files: dict[str, bytes] = {}
@@ -68,10 +71,10 @@ def export_project(
     for section in allowed_sections:
         source = root / section
         if source.is_file():
-            _add_file(files, source, root)
+            _add_file(files, source, root, mature_policy=mature_policy)
         elif source.is_dir():
             for path in sorted(item for item in source.rglob("*") if item.is_file()):
-                _add_file(files, path, root)
+                _add_file(files, path, root, mature_policy=mature_policy)
     checksums = {path: sha256_bytes(data) for path, data in files.items()}
     manifest = ProjectPackageManifest(
         package_id=f"{project.project_id}_project",
@@ -170,7 +173,7 @@ def _validate_archive(archive_base64: str, target_root: str | Path, repository: 
         return ProjectPackageReport(ok=False, errors=[str(exc)])
 
 
-def _add_file(files: dict[str, bytes], path: Path, root: Path) -> None:
+def _add_file(files: dict[str, bytes], path: Path, root: Path, *, mature_policy: MatureExportPolicy | None = None) -> None:
     rel = validate_relative_package_path(path.relative_to(root).as_posix())
     data = path.read_bytes()
     if _looks_text(rel, data):
@@ -178,8 +181,14 @@ def _add_file(files: dict[str, bytes], path: Path, root: Path) -> None:
         lowered = text.lower()
         if contains_secret_text(text):
             return
+        if ("mature_only" in lowered or "mature scene" in lowered or "contains_mature_content" in lowered) and not (mature_policy and mature_policy.include_mature_content):
+            return
         if rel.startswith("cross_mode/") and ("raw_state_delta" in lowered or "raw state_delta" in lowered or "debug memory" in lowered):
             return
+        filtered = MatureExportFilter().filter_text(text, mature_policy)
+        if filtered is None:
+            return
+        data = filtered.encode("utf-8")
     files[rel] = data
 
 

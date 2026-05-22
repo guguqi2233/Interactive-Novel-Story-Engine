@@ -10,6 +10,7 @@ import yaml
 from pydantic import BaseModel, Field, model_validator
 
 from app.platform.narrative_project import validate_project_relative_path
+from app.platform.rp_mature import CrossModeRPSafetyMetadata, MatureExportFilter, MatureExportPolicy
 from app.platform.security import contains_secret_text, redact_text, safe_identifier, validate_relative_package_path
 from app.platform.shared_libraries import CrossModeLink, CrossModeLinkRegistry
 
@@ -125,6 +126,7 @@ class CrossModeProposal(CrossModeBaseModel):
     review_status: CrossModeArtifactStatus = CrossModeArtifactStatus.PROPOSED
     validation_status: Literal["draft", "valid", "warning", "invalid", "unvalidated"] = "unvalidated"
     safety_notes: list[str] = Field(default_factory=list)
+    rp_safety_metadata: CrossModeRPSafetyMetadata | None = None
     hidden: bool = False
     debug_only: bool = False
     created_at: str = Field(default_factory=now_iso)
@@ -142,6 +144,7 @@ class CrossModeProposal(CrossModeBaseModel):
             "review_status": str(self.review_status),
             "validation_status": self.validation_status,
             "safety_notes": [redact_text(item) for item in self.safety_notes],
+            "rp_safety_metadata": self.rp_safety_metadata.safe_summary() if self.rp_safety_metadata else None,
             "proposed_cross_mode_links": [item.safe_summary() for item in self.proposed_cross_mode_links if item.safe_summary() is not None],
             "created_at": self.created_at,
             "updated_at": self.updated_at,
@@ -471,6 +474,10 @@ class CrossModeValidationService:
             payload = json.dumps(proposal.safe_summary() or {}, ensure_ascii=False).lower()
             if "state_delta" in payload or contains_secret_text(payload):
                 report.add(_issue("blocker", "proposal_forbidden_material", "Proposal normal summary contains forbidden material", proposal.proposal_id))
+            if proposal.direction == CrossModeDirection.TAVERN_TO_WORLD and proposal.rp_safety_metadata is None:
+                report.add(_issue("error", "tavern_world_missing_rp_safety_metadata", "Tavern to World proposal is missing RP safety metadata", proposal.proposal_id))
+            if proposal.rp_safety_metadata and (proposal.rp_safety_metadata.contains_mature_content or proposal.rp_safety_metadata.contains_mature_memory):
+                report.add(_issue("blocker", "cross_mode_mature_content_to_world_blocked", "Mature RP content cannot become World facts", proposal.proposal_id))
             for ref in proposal.target_refs:
                 if ref not in known_refs and not ref.startswith(("world:", "npc:", "fact:", "quest:", "location:", "relationship:", "timeline:")):
                     report.add(_issue("error", "proposal_target_missing", "CrossModeProposal target_ref does not resolve", proposal.proposal_id, ref=ref))
@@ -780,7 +787,8 @@ class TavernToNovelPipeline:
         self.repository = repository
 
     def preview(self, *, project_id: str, session_id: str, safe_messages: list[str], target_chapter_id: str | None = None) -> CrossModeDraft:
-        draft = CrossModeDraft(artifact_id=f"tn_{session_id}", project_id=project_id, direction=CrossModeDirection.TAVERN_TO_NOVEL, source_refs=[f"tavern:session:{session_id}"], target_refs=[f"novel:chapter:{target_chapter_id}"] if target_chapter_id else [], artifact_type="novel_scene_draft", proposed_content={"safe_messages": [redact_text(item) for item in safe_messages]}, validation_status="valid")
+        filtered = [item for message in safe_messages if (item := MatureExportFilter().filter_text(message, MatureExportPolicy()))]
+        draft = CrossModeDraft(artifact_id=f"tn_{session_id}", project_id=project_id, direction=CrossModeDirection.TAVERN_TO_NOVEL, source_refs=[f"tavern:session:{session_id}"], target_refs=[f"novel:chapter:{target_chapter_id}"] if target_chapter_id else [], artifact_type="novel_scene_draft", proposed_content={"safe_messages": [redact_text(item) for item in filtered]}, validation_status="valid")
         return self.repository.create_draft(draft)
 
 

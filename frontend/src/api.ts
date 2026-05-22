@@ -1032,6 +1032,37 @@ export type ModAuditRecord = {
   related_report_ids: string[];
 };
 
+export type AdvancedModuleDashboardItem = {
+  module_id: string;
+  enabled: boolean;
+  state_extension_status: string;
+  actions_provided: string[];
+  migration_required: boolean;
+  validation_status: string;
+  quality_gate_status: string;
+};
+
+export type AdvancedModuleDashboardResponse = {
+  local_only: boolean;
+  world_id: string;
+  modules: AdvancedModuleDashboardItem[];
+};
+
+export type AdvancedModuleDraftValidation = {
+  local_only: boolean;
+  world_id: string;
+  ok: boolean;
+  errors: string[];
+  warnings: string[];
+};
+
+export type AdvancedModuleQualityGateResult = {
+  passed: boolean;
+  blockers: string[];
+  warnings: string[];
+  module_ids: string[];
+};
+
 export type AuthoringProjectStatus = {
   status: string;
   errors: number;
@@ -5718,6 +5749,34 @@ export type TavernScenePreset = {
   safety_flags?: string[];
 };
 
+export type MatureContentPolicy = {
+  enabled: boolean;
+  max_rating: string;
+  require_adult_characters: boolean;
+  require_consent: boolean;
+  default_fade_to_black: boolean;
+  export_mature_content: boolean;
+  allow_explicit_adult: boolean;
+};
+
+export type MatureSettingsResponse = {
+  project_id: string;
+  policy: MatureContentPolicy;
+  warnings: string[];
+};
+
+export type MultiNPCSceneSummary = {
+  scene_id: string;
+  project_id: string;
+  title: string;
+  participant_ids: string[];
+  turn_order: string[];
+  current_turn_index: number;
+  message_ids: string[];
+  status: string;
+  safety_notes: string[];
+};
+
 export type TavernChatResponse = {
   message_id: string;
   character_id: string;
@@ -5927,6 +5986,36 @@ export async function createTavernScenePreset(projectId: string, input: { preset
   });
 }
 
+export async function fetchMatureSettings(projectId: string): Promise<MatureSettingsResponse> {
+  return requestJson<MatureSettingsResponse>(`/projects/${encodeURIComponent(projectId)}/mature/settings`);
+}
+
+export async function updateMatureSettings(projectId: string, policy: Partial<MatureContentPolicy>): Promise<MatureSettingsResponse> {
+  return requestJson<MatureSettingsResponse>(`/projects/${encodeURIComponent(projectId)}/mature/settings`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(policy)
+  });
+}
+
+export async function fetchTavernMultiNPCScenes(projectId: string): Promise<{ project_id: string; scenes: MultiNPCSceneSummary[] }> {
+  return requestJson<{ project_id: string; scenes: MultiNPCSceneSummary[] }>(`/projects/${encodeURIComponent(projectId)}/tavern/multi-scenes`);
+}
+
+export async function createTavernMultiNPCScene(projectId: string, input: { scene_id: string; title: string; participant_ids: string[]; turn_order?: string[] }): Promise<MultiNPCSceneSummary> {
+  return requestJson<MultiNPCSceneSummary>(`/projects/${encodeURIComponent(projectId)}/tavern/multi-scenes`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input)
+  });
+}
+
+export async function generateTavernMultiNPCReply(projectId: string, sceneId: string): Promise<{ scene: MultiNPCSceneSummary; message: TavernMessage }> {
+  return requestJson<{ scene: MultiNPCSceneSummary; message: TavernMessage }>(`/projects/${encodeURIComponent(projectId)}/tavern/multi-scenes/${encodeURIComponent(sceneId)}/next-reply`, {
+    method: "POST"
+  });
+}
+
 export async function createNovelToWorldDraft(projectId: string, input: { source_ref: string; draft_type: string; proposed_content?: Record<string, unknown> }): Promise<CrossModeDraftSummary> {
   return requestJson<CrossModeDraftSummary>(`/projects/${encodeURIComponent(projectId)}/cross-mode/novel-to-world/draft`, {
     method: "POST",
@@ -6025,6 +6114,50 @@ export async function certifyProjectModule(projectId: string, packageId: string)
 
 export async function runProjectModuleQualityGate(projectId: string, packageId: string): Promise<{ local_only: boolean; quality_gate: ModQualityGateResult }> {
   return requestJson<{ local_only: boolean; quality_gate: ModQualityGateResult }>(`/projects/${encodeURIComponent(projectId)}/modules/${encodeURIComponent(packageId)}/quality-gate`, { method: "POST" });
+}
+
+export async function runProjectAdvancedModuleQualityGate(projectId: string): Promise<{ local_only: boolean; quality_gate: AdvancedModuleQualityGateResult }> {
+  return requestJson<{ local_only: boolean; quality_gate: AdvancedModuleQualityGateResult }>(`/projects/${encodeURIComponent(projectId)}/modules/quality-gate`, { method: "POST" });
+}
+
+export async function fetchAuthoringModuleDashboard(worldId: string): Promise<AdvancedModuleDashboardResponse> {
+  return requestJson<AdvancedModuleDashboardResponse>(`/authoring/worlds/${encodeURIComponent(worldId)}/modules/dashboard`);
+}
+
+export async function fetchTacticalCombatConfig(worldId: string): Promise<Record<string, unknown>> {
+  return requestJson<Record<string, unknown>>(`/authoring/worlds/${encodeURIComponent(worldId)}/modules/tactical-combat/config`);
+}
+
+export async function validateTacticalCombatDraft(worldId: string, draft: Record<string, unknown>): Promise<AdvancedModuleDraftValidation> {
+  return requestJson<AdvancedModuleDraftValidation>(`/authoring/worlds/${encodeURIComponent(worldId)}/modules/tactical-combat/validate-draft`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ draft })
+  });
+}
+
+export async function fetchEconomySimConfig(worldId: string): Promise<Record<string, unknown>> {
+  return requestJson<Record<string, unknown>>(`/authoring/worlds/${encodeURIComponent(worldId)}/modules/economy-sim/config`);
+}
+
+export async function validateEconomySimDraft(worldId: string, draft: Record<string, unknown>): Promise<AdvancedModuleDraftValidation> {
+  return requestJson<AdvancedModuleDraftValidation>(`/authoring/worlds/${encodeURIComponent(worldId)}/modules/economy-sim/validate-draft`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ draft })
+  });
+}
+
+export async function fetchFactionWarConfig(worldId: string): Promise<Record<string, unknown>> {
+  return requestJson<Record<string, unknown>>(`/authoring/worlds/${encodeURIComponent(worldId)}/modules/faction-war/config`);
+}
+
+export async function validateFactionWarDraft(worldId: string, draft: Record<string, unknown>): Promise<AdvancedModuleDraftValidation> {
+  return requestJson<AdvancedModuleDraftValidation>(`/authoring/worlds/${encodeURIComponent(worldId)}/modules/faction-war/validate-draft`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ draft })
+  });
 }
 
 export async function fetchProjectModuleAudit(projectId: string): Promise<{ local_only: boolean; records: ModAuditRecord[] }> {

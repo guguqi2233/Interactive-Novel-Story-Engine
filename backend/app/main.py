@@ -5997,6 +5997,105 @@ def get_provider_profile_repository(project_id: str) -> ProviderProfileRepositor
     return ProviderProfileRepository(project.project_root)
 
 
+def _project_root(project_id: str) -> Path:
+    return Path(get_project_repository().load_project(project_id).project_root)
+
+
+def _mature_settings_path(project_id: str) -> Path:
+    path = _project_root(project_id) / "settings" / "mature_policy.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+@app.get("/projects/{project_id}/mature/settings", response_model=dict[str, Any])
+def get_project_mature_settings(project_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.rp_mature import MatureContentPolicy, MatureExportPolicy
+
+    path = _mature_settings_path(project_id)
+    policy = MatureContentPolicy()
+    if path.exists():
+        policy = MatureContentPolicy.model_validate(json.loads(path.read_text(encoding="utf-8")))
+    return {
+        "project_id": project_id,
+        "local_only": True,
+        "policy": policy.model_dump(mode="json"),
+        "export_policy": MatureExportPolicy().model_dump(mode="json"),
+        "provider_routing_requirements": {
+            "provider_policy_must_allow": True,
+            "local_only_recommended": True,
+            "secrets_returned": False,
+        },
+        "warnings": [
+            "Mature Module is disabled by default.",
+            "No minors or unknown-age characters.",
+            "Consent and boundaries are required.",
+            "Mature export is off by default.",
+        ],
+    }
+
+
+@app.patch("/projects/{project_id}/mature/settings", response_model=dict[str, Any])
+def patch_project_mature_settings(project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.rp_mature import MatureContentPolicy
+
+    policy = MatureContentPolicy.model_validate(payload.get("policy", payload))
+    path = _mature_settings_path(project_id)
+    path.write_text(json.dumps(policy.model_dump(mode="json"), sort_keys=True, indent=2), encoding="utf-8")
+    return get_project_mature_settings(project_id)
+
+
+@app.get("/projects/{project_id}/voices", response_model=dict[str, Any])
+def list_project_voice_lab_profiles(project_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    profiles = getattr(app.state, "v28_voice_profiles", {}).get(project_id, {})
+    return {"project_id": project_id, "voices": [profile.safe_summary() for profile in profiles.values()]}
+
+
+@app.post("/projects/{project_id}/voices", response_model=dict[str, Any])
+def create_project_voice_lab_profile(project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.rp_mature import CharacterVoiceLabProfile, VoiceLabService
+
+    profile = CharacterVoiceLabProfile.model_validate(payload)
+    store = getattr(app.state, "v28_voice_profiles", {})
+    project_store = store.setdefault(project_id, {})
+    service = VoiceLabService(list(project_store.values()))
+    saved = service.create_voice_profile(profile)
+    project_store[saved.voice_id] = saved
+    app.state.v28_voice_profiles = store
+    return saved.safe_summary()
+
+
+@app.post("/projects/{project_id}/voices/{voice_id}/samples", response_model=dict[str, Any])
+def add_project_voice_lab_sample(project_id: str, voice_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.rp_mature import VoiceLabService, VoiceSample
+
+    store = getattr(app.state, "v28_voice_profiles", {})
+    project_store = store.setdefault(project_id, {})
+    service = VoiceLabService(list(project_store.values()))
+    sample = VoiceSample.model_validate({"voice_id": voice_id, **payload})
+    updated = service.add_voice_sample(voice_id, sample)
+    project_store[voice_id] = updated
+    app.state.v28_voice_profiles = store
+    return updated.safe_summary()
+
+
+@app.post("/projects/{project_id}/voices/{voice_id}/validate", response_model=dict[str, Any])
+def validate_project_voice_lab_profile(project_id: str, voice_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.rp_mature import VoiceLabService
+
+    profiles = getattr(app.state, "v28_voice_profiles", {}).get(project_id, {})
+    profile = profiles.get(voice_id)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="Voice profile not found")
+    VoiceLabService([profile]).validate_voice_profile(profile)
+    return {"ok": True, "voice_id": voice_id, "warnings": []}
+
+
 def _usage_since(since_minutes: int | None = None, since: str | None = None):
     if since:
         try:
@@ -6262,6 +6361,101 @@ def run_project_module_quality_gate(project_id: str, package_id: str, request: d
     report = run_mod_quality_gate(Path(project.project_root), package_id, config)
     get_mod_audit_repository(project_id).append_action(package_id=package_id, action_type="quality_gate", result=ModAuditResult.SUCCESS if report.ok else ModAuditResult.FAILURE, safe_summary=f"Quality gate {'passed' if report.ok else 'failed'}")
     return {"local_only": True, "quality_gate": report.model_dump(mode="json")}
+
+
+@app.post("/projects/{project_id}/modules/quality-gate", response_model=dict[str, Any])
+def run_project_advanced_modules_quality_gate(project_id: str, request: dict[str, Any] | None = None) -> dict[str, Any]:
+    require_authoring_api()
+    from app.quality.module_quality_gate import ModuleQualityGateConfig, run_module_quality_gate
+
+    config = ModuleQualityGateConfig.model_validate(request or {})
+    report = run_module_quality_gate(config=config)
+    return {"local_only": True, "quality_gate": report.model_dump(mode="json")}
+
+
+@app.get("/authoring/worlds/{world_id}/modules/dashboard", response_model=dict[str, Any])
+def get_authoring_world_modules_dashboard(world_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    from app.engine.advanced_modules import AdvancedModuleId
+
+    modules = [
+        {
+            "module_id": module_id.value,
+            "enabled": False,
+            "state_extension_status": "declared",
+            "actions_provided": _advanced_module_actions(module_id.value),
+            "migration_required": False,
+            "validation_status": "not_configured",
+            "quality_gate_status": "not_run",
+        }
+        for module_id in AdvancedModuleId
+    ]
+    return {"local_only": True, "world_id": world_id, "modules": modules}
+
+
+@app.get("/authoring/worlds/{world_id}/modules/tactical-combat/config", response_model=dict[str, Any])
+def get_authoring_tactical_combat_config(world_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    return {
+        "local_only": True,
+        "world_id": world_id,
+        "module_id": "tactical_combat",
+        "enabled": False,
+        "draft": {"encounter_id": "", "combatants": [], "initial_range_band": "near", "cover_settings": [], "victory_notes": "", "failure_notes": ""},
+    }
+
+
+@app.post("/authoring/worlds/{world_id}/modules/tactical-combat/validate-draft", response_model=dict[str, Any])
+def validate_authoring_tactical_combat_draft(world_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    errors = []
+    draft = request.get("draft", request)
+    if not isinstance(draft, dict) or not draft.get("encounter_id"):
+        errors.append("encounter_id is required")
+    hidden_count = sum(1 for combatant in draft.get("combatants", []) if isinstance(combatant, dict) and combatant.get("hidden"))
+    return {"local_only": True, "world_id": world_id, "ok": not errors, "errors": errors, "warnings": [f"{hidden_count} hidden combatants omitted from normal UI"] if hidden_count else []}
+
+
+@app.get("/authoring/worlds/{world_id}/modules/economy-sim/config", response_model=dict[str, Any])
+def get_authoring_economy_sim_config(world_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    return {"local_only": True, "world_id": world_id, "module_id": "economy_sim", "enabled": False, "draft": {"market_regions": [], "commodities": [], "event_modifiers": []}}
+
+
+@app.post("/authoring/worlds/{world_id}/modules/economy-sim/validate-draft", response_model=dict[str, Any])
+def validate_authoring_economy_sim_draft(world_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    draft = request.get("draft", request)
+    errors = [] if isinstance(draft, dict) else ["draft must be an object"]
+    return {"local_only": True, "world_id": world_id, "ok": not errors, "errors": errors, "warnings": []}
+
+
+@app.get("/authoring/worlds/{world_id}/modules/faction-war/config", response_model=dict[str, Any])
+def get_authoring_faction_war_config(world_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    return {"local_only": True, "world_id": world_id, "module_id": "faction_war", "enabled": False, "draft": {"regions": []}}
+
+
+@app.post("/authoring/worlds/{world_id}/modules/faction-war/validate-draft", response_model=dict[str, Any])
+def validate_authoring_faction_war_draft(world_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    draft = request.get("draft", request)
+    errors = [] if isinstance(draft, dict) else ["draft must be an object"]
+    return {"local_only": True, "world_id": world_id, "ok": not errors, "errors": errors, "warnings": []}
+
+
+def _advanced_module_actions(module_id: str) -> list[str]:
+    return {
+        "tactical_combat": ["tactical_move", "take_cover", "aim", "strike", "defend", "guard", "flee_tactical"],
+        "economy_sim": ["economy_sim_tick"],
+        "faction_war": ["faction_war_tick"],
+        "magic": ["cast_spell", "prepare_spell", "rest_focus", "inspect_magic"],
+        "hacking": ["scan_terminal", "hack_terminal", "extract_logs", "erase_trace", "disable_lock"],
+        "crafting": ["craft_item"],
+        "deduction": ["inspect_evidence", "compare_claims", "form_hypothesis", "test_hypothesis"],
+        "survival_travel": ["travel_route", "make_camp", "forage", "rest_travel"],
+        "cultivation": ["meditate", "practice_technique", "attempt_breakthrough", "consume_pill"],
+    }.get(module_id, [])
 
 
 @app.get("/projects")
@@ -6869,6 +7063,65 @@ def archive_tavern_session(project_id: str, session_id: str) -> dict[str, Any]:
         return get_tavern_repository(project_id).archive_session(session_id).safe_summary()
     except (FileNotFoundError, ValueError) as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/projects/{project_id}/tavern/multi-scenes")
+def create_tavern_multi_scene(project_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.tavern_studio import MultiCharacterScene, MultiCharacterSceneService
+
+    characters = get_tavern_repository(project_id).list_tavern_characters()
+    payload = dict(request)
+    if "character_ids" not in payload and "participant_ids" in payload:
+        payload["character_ids"] = payload.pop("participant_ids")
+    payload.setdefault("session_id", payload.get("scene_id", "multi_npc_scene"))
+    payload.setdefault("turn_order", list(payload.get("character_ids", [])))
+    scene = MultiCharacterScene(project_id=project_id, **payload)
+    created = MultiCharacterSceneService(characters=characters).create_multi_character_scene(scene)
+    store = getattr(app.state, "v28_multi_scenes", {})
+    store.setdefault(project_id, {})[created.scene_id] = created
+    app.state.v28_multi_scenes = store
+    return created.safe_summary()
+
+
+@app.get("/projects/{project_id}/tavern/multi-scenes")
+def list_tavern_multi_scenes(project_id: str, session_id: str | None = None) -> dict[str, Any]:
+    require_authoring_api()
+    scenes = list(getattr(app.state, "v28_multi_scenes", {}).get(project_id, {}).values())
+    if session_id:
+        scenes = [scene for scene in scenes if scene.session_id == session_id]
+    return {"project_id": project_id, "scenes": [scene.safe_summary() for scene in scenes]}
+
+
+@app.post("/projects/{project_id}/tavern/multi-scenes/{scene_id}/next-reply")
+def generate_tavern_multi_scene_next_reply(project_id: str, scene_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.tavern_studio import TavernMessage, TavernSpeakerType
+
+    scenes = getattr(app.state, "v28_multi_scenes", {}).get(project_id, {})
+    scene = scenes.get(scene_id)
+    if scene is None:
+        raise HTTPException(status_code=404, detail="Multi-NPC scene not found")
+    if not scene.turn_order:
+        raise HTTPException(status_code=400, detail="Multi-NPC scene has no turn order")
+    speaker_id = scene.active_speaker_id or scene.turn_order[0]
+    text = "I will stay within what I know in this Tavern scene."
+    timestamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S%f")
+    message = get_tavern_repository(project_id).append_message(
+        TavernMessage(
+            message_id=f"multi_{scene_id}_{timestamp}",
+            session_id=scene.session_id,
+            speaker_type=TavernSpeakerType.CHARACTER,
+            speaker_id=speaker_id,
+            content=text,
+            source_refs=[f"multi_scene:{scene_id}"],
+        )
+    )
+    current_index = scene.turn_order.index(speaker_id) if speaker_id in scene.turn_order else 0
+    next_speaker = scene.turn_order[(current_index + 1) % len(scene.turn_order)]
+    scenes[scene_id] = scene.model_copy(update={"active_speaker_id": next_speaker})
+    app.state.v28_multi_scenes[project_id] = scenes
+    return {"scene": scenes[scene_id].safe_summary(), "message": message.safe_summary()}
 
 
 @app.post("/projects/{project_id}/tavern/sessions/{session_id}/chat")

@@ -13,6 +13,7 @@ from app.core.world_state import GameState, NPCState
 from app.llm.provider_base import LLMProvider, Message
 from app.platform.narrative_project import validate_project_relative_path
 from app.platform.project_repository import ProjectRepository
+from app.platform.rp_mature import CrossModeRPSafetyMetadata
 from app.platform.security import contains_secret_text, redact_text
 from app.platform.shared_libraries import (
     CharacterLibrary,
@@ -79,6 +80,7 @@ class TavernSpeakerType(StrEnum):
 
 class TavernVisibility(StrEnum):
     TAVERN_SAFE = "tavern_safe"
+    MATURE_ONLY = "mature_only"
     AUTHORING_ONLY = "authoring_only"
     HIDDEN = "hidden"
     DEBUG_ONLY = "debug_only"
@@ -375,6 +377,7 @@ class MultiCharacterScene(TavernModel):
     scene_id: str
     project_id: str
     session_id: str
+    title: str = "Multi-NPC Scene"
     character_ids: list[str] = Field(default_factory=list)
     scene_context: TavernSceneContext = Field(default_factory=TavernSceneContext)
     turn_order: list[str] = Field(default_factory=list)
@@ -386,12 +389,19 @@ class MultiCharacterScene(TavernModel):
             "scene_id": self.scene_id,
             "project_id": self.project_id,
             "session_id": self.session_id,
+            "title": self.title,
             "character_ids": list(self.character_ids),
+            "participant_ids": list(self.character_ids),
             "scene_context": self.scene_context.safe_summary(),
             "turn_order": list(self.turn_order),
             "active_speaker_id": self.active_speaker_id,
+            "current_turn_index": self.turn_order.index(self.active_speaker_id) if self.active_speaker_id in self.turn_order else 0,
+            "message_ids": [],
+            "safety_notes": [
+                "multi_npc_scene_does_not_modify_world_gamestate",
+                "hidden_facts_and_npc_secrets_are_filtered",
+            ],
             "status": self.status.value,
-            "message": "multi-character generation coming later",
         }
 
 
@@ -816,6 +826,7 @@ class TavernWorldProposal(TavernModel):
     target_world_refs: list[str] = Field(default_factory=list)
     validation_status: TavernWorldProposalStatus = TavernWorldProposalStatus.DRAFT
     warnings: list[str] = Field(default_factory=list)
+    rp_safety_metadata: CrossModeRPSafetyMetadata | None = None
     created_at: str = Field(default_factory=now_iso)
 
     def normal_summary(self) -> dict[str, Any]:
@@ -829,6 +840,7 @@ class TavernWorldProposal(TavernModel):
             "target_world_refs": list(self.target_world_refs),
             "validation_status": self.validation_status.value,
             "warnings": _redacted_list(self.warnings),
+            "rp_safety_metadata": self.rp_safety_metadata.safe_summary() if self.rp_safety_metadata else None,
             "created_at": self.created_at,
         }
 
@@ -847,11 +859,13 @@ class TavernToWorldProposalService:
         self._proposals: dict[str, TavernWorldProposal] = {}
 
     def create_proposal_from_message(self, *, project_id: str, session_id: str, message: TavernMessage, proposal_type: TavernWorldProposalType, proposed_content: dict[str, Any], target_world_refs: list[str] | None = None, create_link: bool = False) -> TavernWorldProposal:
-        proposal = TavernWorldProposal(proposal_id=f"proposal_{message.message_id}", project_id=project_id, source_session_id=session_id, source_message_ids=[message.message_id], proposal_type=proposal_type, proposed_content=proposed_content, target_world_refs=target_world_refs or [])
+        proposal = TavernWorldProposal(proposal_id=f"proposal_{message.message_id}", project_id=project_id, source_session_id=session_id, source_message_ids=[message.message_id], proposal_type=proposal_type, proposed_content=proposed_content, target_world_refs=target_world_refs or [], rp_safety_metadata=CrossModeRPSafetyMetadata(mature_policy_checked=True, consent_checked=True, visibility_checked=True, safe_notes=["Tavern to World content remains proposal-only."]))
         return self._store(proposal, create_link=create_link, source_ref=f"tavern:message:{message.message_id}")
 
     def create_proposal_from_memory(self, *, project_id: str, memory: TavernMemoryRecord, proposal_type: TavernWorldProposalType = TavernWorldProposalType.FACT_DISCOVERY, target_world_refs: list[str] | None = None) -> TavernWorldProposal:
-        proposal = TavernWorldProposal(proposal_id=f"proposal_{memory.memory_id}", project_id=project_id, source_session_id=memory.session_id, source_message_ids=list(memory.linked_message_ids), proposal_type=proposal_type, proposed_content={"summary": redact_text(memory.content)}, target_world_refs=target_world_refs or [])
+        contains_mature = memory.visibility == TavernVisibility.MATURE_ONLY
+        safe_content = "[mature memory filtered]" if contains_mature else redact_text(memory.content)
+        proposal = TavernWorldProposal(proposal_id=f"proposal_{memory.memory_id}", project_id=project_id, source_session_id=memory.session_id, source_message_ids=list(memory.linked_message_ids), proposal_type=proposal_type, proposed_content={"summary": safe_content}, target_world_refs=target_world_refs or [], rp_safety_metadata=CrossModeRPSafetyMetadata(mature_policy_checked=True, consent_checked=True, visibility_checked=memory.visibility == TavernVisibility.TAVERN_SAFE, contains_mature_memory=contains_mature, mature_memory_filtered=True, safe_notes=["Tavern memory to World remains proposal-only."]))
         return self._store(proposal, source_ref=f"tavern:memory:{memory.memory_id}")
 
     def validate_proposal(self, proposal: TavernWorldProposal) -> TavernWorldProposalValidationReport:
@@ -863,6 +877,12 @@ class TavernToWorldProposalService:
         payload = json.dumps(proposal.normal_summary(), ensure_ascii=False).lower()
         if contains_secret_text(payload) or "state_delta" in payload:
             errors.append("Proposal contains forbidden secret or StateDelta material")
+        if proposal.proposal_type == TavernWorldProposalType.PROMISE_OR_DEAL and proposal.proposed_content.get("quest_completed"):
+            errors.append("RP promise/deal cannot directly complete quests")
+        if proposal.rp_safety_metadata is None:
+            errors.append("Tavern to World proposal is missing RP safety metadata")
+        elif proposal.rp_safety_metadata.contains_mature_content or proposal.rp_safety_metadata.contains_mature_memory:
+            errors.append("Mature content cannot enter World facts through Tavern proposal")
         return TavernWorldProposalValidationReport(ok=not errors, proposal_id=proposal.proposal_id, errors=errors, warnings=list(proposal.warnings))
 
     def list_proposals(self) -> list[TavernWorldProposal]:

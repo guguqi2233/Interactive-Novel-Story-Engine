@@ -1102,6 +1102,8 @@ class GameState(BaseModel):
     cover_states: dict[str, CoverState] = Field(default_factory=dict)
     scene_mood_presets: dict[str, SceneMoodPreset] = Field(default_factory=dict)
     example_dialogues: dict[str, ExampleDialogue] = Field(default_factory=dict)
+    modules: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    module_migration_history: list[dict[str, Any]] = Field(default_factory=list)
 
     @field_serializer("player_visible_facts", when_used="json")
     def serialize_player_visible_facts(self, player_visible_facts: set[str]) -> list[str]:
@@ -1155,6 +1157,8 @@ def migrate_game_state_payload(payload: dict[str, Any]) -> dict[str, Any]:
     migrated.setdefault("cover_states", {})
     migrated.setdefault("scene_mood_presets", {})
     migrated.setdefault("example_dialogues", {})
+    migrated.setdefault("modules", {})
+    migrated.setdefault("module_migration_history", [])
     return migrated
 
 
