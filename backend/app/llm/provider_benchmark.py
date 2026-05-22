@@ -22,6 +22,12 @@ from app.llm.schemas import MemorySummary, NarrativeResult, PlayerActionType, Pl
 
 
 class ProviderBenchmarkType(StrEnum):
+    TEXT_GENERATION = "text_generation"
+    JSON_GENERATION = "json_generation"
+    SCHEMA_FAILURE_HANDLING = "schema_failure_handling"
+    TIMEOUT_HANDLING = "timeout_handling"
+    FALLBACK_HANDLING = "fallback_handling"
+    ROUTING_RESOLUTION = "routing_resolution"
     GENERATE_TEXT_SMOKE = "generate_text_smoke"
     GENERATE_JSON_SCHEMA = "generate_json_schema"
     INTENT_PARSER_SCHEMA = "intent_parser_schema"
@@ -81,6 +87,12 @@ class ProviderBenchmarkCaseResult(BaseModel):
     error_message_safe: str | None = None
     prompt_preview_redacted: str = ""
     output_summary_safe: str = ""
+    provider_profile_id: str | None = None
+    model_id: str | None = None
+    use_case: str | None = None
+    success: bool | None = None
+    error_type: str | None = None
+    safety_notes: list[str] = Field(default_factory=list)
 
 
 class ProviderBenchmarkReport(BaseModel):
@@ -274,18 +286,24 @@ def _run_case(provider: LLMProvider, case: ProviderBenchmarkCase) -> ProviderBen
         error_message_safe=error_message_safe,
         prompt_preview_redacted=case.redacted_prompt_preview(),
         output_summary_safe=output_summary,
+        use_case=case.benchmark_type.value,
+        success=ok,
+        error_type=error_class,
+        safety_notes=["safe benchmark metadata only"],
     )
 
 
 def _execute_case(provider: LLMProvider, case: ProviderBenchmarkCase) -> object:
     messages = case.messages or [{"role": "user", "content": "search the square"}]
-    if case.benchmark_type in {ProviderBenchmarkType.GENERATE_TEXT_SMOKE, ProviderBenchmarkType.LATENCY_SMOKE}:
+    if case.benchmark_type in {ProviderBenchmarkType.GENERATE_TEXT_SMOKE, ProviderBenchmarkType.LATENCY_SMOKE, ProviderBenchmarkType.TEXT_GENERATION, ProviderBenchmarkType.TIMEOUT_HANDLING}:
         return provider.generate_text(messages, temperature=case.temperature)
-    if case.benchmark_type == ProviderBenchmarkType.RP_DIALOGUE_STYLE:
+    if case.benchmark_type in {ProviderBenchmarkType.RP_DIALOGUE_STYLE, ProviderBenchmarkType.FALLBACK_HANDLING}:
         return provider.generate_text(messages, temperature=case.temperature)
+    if case.benchmark_type == ProviderBenchmarkType.ROUTING_RESOLUTION:
+        return "routing_resolution_metadata_only"
     if case.benchmark_type == ProviderBenchmarkType.HIDDEN_FACT_REFUSAL:
         return provider.generate_text(messages, temperature=case.temperature)
-    if case.benchmark_type == ProviderBenchmarkType.GENERATE_JSON_SCHEMA:
+    if case.benchmark_type in {ProviderBenchmarkType.GENERATE_JSON_SCHEMA, ProviderBenchmarkType.JSON_GENERATION, ProviderBenchmarkType.SCHEMA_FAILURE_HANDLING}:
         return provider.generate_json(messages, schema=PlayerIntent, temperature=case.temperature)
     if case.benchmark_type == ProviderBenchmarkType.INTENT_PARSER_SCHEMA:
         return IntentParser(provider).parse(messages[-1]["content"])
@@ -327,7 +345,7 @@ def _default_cases(benchmark_types: list[ProviderBenchmarkType]) -> list[Provide
 
 
 def _schema_name_for_type(benchmark_type: ProviderBenchmarkType) -> str | None:
-    if benchmark_type in {ProviderBenchmarkType.GENERATE_JSON_SCHEMA, ProviderBenchmarkType.INTENT_PARSER_SCHEMA}:
+    if benchmark_type in {ProviderBenchmarkType.GENERATE_JSON_SCHEMA, ProviderBenchmarkType.JSON_GENERATION, ProviderBenchmarkType.SCHEMA_FAILURE_HANDLING, ProviderBenchmarkType.INTENT_PARSER_SCHEMA}:
         return PlayerIntent.__name__
     if benchmark_type == ProviderBenchmarkType.NARRATOR_STYLE:
         return NarrativeResult.__name__

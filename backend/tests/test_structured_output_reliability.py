@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 from app.config import Settings
 from app.llm.structured_output_reliability import (
+    STRUCTURED_OUTPUT_SCHEMA_NAMES,
     StructuredOutputReliabilityRun,
     StructuredOutputSchemaName,
     StructuredOutputTestCase,
@@ -16,7 +17,7 @@ from app.tools.structured_output_reliability import main as cli_main
 def test_fake_valid_json_passes_all_default_schemas() -> None:
     report = run_structured_output_reliability(StructuredOutputReliabilityRun(provider_id="fake"))
 
-    assert report.total_cases == 7
+    assert report.total_cases == len(STRUCTURED_OUTPUT_SCHEMA_NAMES)
     assert report.valid_json_rate == 1.0
     assert report.schema_valid_rate == 1.0
     assert all(case.ok for case in report.cases)

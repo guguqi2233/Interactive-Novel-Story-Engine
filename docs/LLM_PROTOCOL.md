@@ -1,5 +1,106 @@
 # LLM Protocol
 
+## v2.5 Provider Gateway Pro Boundary
+
+v2.5 upgrades Provider Gateway into the single safe model-entry boundary for
+Novel, Tavern, World, Cross-Mode, Quality, and authoring workflows. Provider
+selection may change wording, latency, cost estimate, formatting, or structured
+output reliability. It cannot change world authority, reveal hidden facts, or
+modify `GameState`.
+
+Provider Gateway Pro components:
+
+- `LLMProvider`: runtime provider contract. Providers must implement
+  `generate_text` and schema-validated `generate_json`; optional streaming
+  remains provider capability metadata, not a new authority path.
+- `ProviderProfileV2`: project-local provider profile schema for provider type,
+  model profiles, allowed modes, timeout, retry, fallback ids, cost hints, and
+  safety policy. It rejects raw `api_key`, `llm_api_key`, and
+  `openai_api_key` fields.
+- `ModelProfile`: per-model capability and cost-hint metadata. Cost hints are
+  local estimates, not billing records.
+- `ProviderSecretResolver`: backend-only secret resolver for `api_key_env` and
+  `secret_ref`. It may read environment variables or test fake secrets; it must
+  never return secret values to frontend, exports, logs, usage reports, or
+  quality reports.
+- `ProviderRouter`: mode/use-case routing layer for `novel_draft`,
+  `novel_rewrite`, `tavern_reply`, `world_intent_parse`, `world_narration`,
+  `memory_summary`, `cross_mode_draft`, `quality_eval`, `structured_json`, and
+  `cheap_summary`.
+- `ProviderGateway`: executes safe provider calls through the resolved provider
+  path, applies fallback behavior, records safe call traces, and preserves
+  schema validation.
+
+Mode-based routing rules:
+
+- Novel draft/rewrite flows use Novel use cases.
+- Tavern response generation uses `tavern_reply`.
+- World intent parsing uses a JSON-capable route such as
+  `world_intent_parse`.
+- World narration uses `world_narration`.
+- Memory summarization uses `memory_summary` and must not send raw
+  `state_deltas`.
+- Cross-mode draft/proposal helpers use `cross_mode_draft` or
+  `structured_json`; apply, validation, quality gate pass/fail, import/export,
+  and conflict detection remain deterministic and LLM-free.
+
+Fallback rules:
+
+- Fallback providers must satisfy the same required capabilities and safety
+  policy as the primary provider.
+- Fallback cannot bypass prompt safety filtering or Pydantic schema
+  validation.
+- Fallback traces use safe metadata only: provider/profile id, model id, use
+  case, reason, timing, success, and error category. They must not contain
+  prompt text, output text, API keys, provider secrets, raw env, hidden facts,
+  or raw `state_deltas`.
+
+Provider safety policy:
+
+- `ProviderSafetyPolicy` controls allowed/disallowed modes, sensitive/debug
+  prompt allowance, mature-content allowance, local-only requirements, prompt
+  logging, output logging, and secret redaction.
+- `log_prompts=false`, `log_outputs=false`, and `redact_secrets=true` are the
+  safe defaults.
+- Project-local-only policy must reject cloud/remote providers unless an
+  explicit local trusted override is implemented for that call path.
+- Provider profiles and routing rules cannot grant hidden fact access,
+  `GameState` mutation, action-result override, visibility bypass, or proposal
+  apply authority.
+
+Structured output rules:
+
+- Every `generate_json` result must be validated against a Pydantic schema
+  before use.
+- Schema failure must fail closed with a clear provider error or use a
+  schema-valid fallback path.
+- Model output may become text, draft, summary, or proposal metadata only after
+  validation. It must not directly enter `GameState`, `EventLog`, content
+  packs, facts, relationships, or save files.
+
+Usage and privacy rules:
+
+- Provider usage records store safe metadata only: provider/profile id, model
+  id, mode, use case, estimated tokens, estimated cost, duration, success, and
+  error category.
+- Usage/cost tracking is local observability only. It is approximate, not
+  billing-grade, and must not upload telemetry.
+- Usage records, benchmark reports, structured-output reliability reports,
+  routing explanations, call traces, fallback traces, frontend dashboards, and
+  exports must not contain full prompts, full outputs, API keys, raw env,
+  hidden facts, debug memory, or raw `state_deltas`.
+
+Provider API and UI rules:
+
+- Project provider APIs are local authoring/studio endpoints gated by local
+  configuration.
+- Frontend provider screens may edit provider type, env-var references,
+  `secret_ref`, model profiles, allowed modes, routing preferences, and safe
+  status. They must not include a plaintext API key field.
+- OpenAI-compatible and relay profiles are generic compatible API profiles.
+  The project does not provide API resale, online billing, cloud accounts, or
+  vendor-specific relay integrations.
+
 ## v2.4 Cross-Mode Bridge LLM Boundary
 
 v2.4 Cross-Mode Bridge does not grant the LLM any new world authority. Cross
@@ -186,12 +287,16 @@ selection, and local configuration views without adding new LLM authority.
 
 ## Provider Boundary
 
-Runtime provider construction must go through:
+Runtime provider construction must go through the provider boundary:
 
 - `backend/app/llm/provider_factory.py`
 - `create_llm_provider(settings)`
+- `ProviderGateway` / `ProviderRouter` for v2.5 mode/use-case routing where
+  the caller has project provider metadata
 
-The factory reads `LLM_PROVIDER` from settings/environment.
+The legacy factory path reads `LLM_PROVIDER` from settings/environment.
+Project-scoped v2.5 paths may also resolve `ProviderProfileV2` metadata and
+then delegate construction through the same provider boundary.
 
 Supported values:
 
@@ -203,14 +308,23 @@ Supported values:
   `LOCAL_LLM_BASE_URL`, `LOCAL_LLM_MODEL`, timeout, and JSON-mode configuration
   without binding the engine to one specific local model product.
 - `openai`: OpenAI API provider.
+- `openai_compatible`: OpenAI-compatible API profile for local/private/relay
+  compatible endpoints without binding to a specific service.
+- `relay`: relay-style compatible API profile that reuses the
+  OpenAI-compatible protocol. It is not an API resale service.
 
-Business modules depend on `LLMProvider`, not `OpenAIProvider` or a vendor SDK. Tests may use `FakeLLMProvider` as a controlled test double.
+Business modules depend on `LLMProvider`, `ProviderGateway`, or
+`ProviderRouter` metadata, not `OpenAIProvider` or a vendor SDK. Tests may use
+`FakeLLMProvider`, mock, or local-stub providers as controlled test doubles.
 
 ## Credentials
 
 API keys are read only from environment variables.
 
 - `LLM_API_KEY` is required when `LLM_PROVIDER=openai`.
+- Project-scoped v2.5 provider profiles should use `api_key_env` names such as
+  `OPENAI_API_KEY` or `RELAY_API_KEY`, or a `secret_ref` resolved only by the
+  backend.
 - `LOCAL_LLM_BASE_URL` is required when `LLM_PROVIDER=local_http`.
 - Real API keys must not be committed, logged, written into fixtures, returned from APIs, or stored in saves.
 - Missing OpenAI credentials fail with a clear `LLMProviderError`.

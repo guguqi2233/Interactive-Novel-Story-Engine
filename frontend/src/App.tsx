@@ -123,6 +123,15 @@ import {
   fetchProductionPipelineSummary,
   fetchModelCompatibilityMatrix,
   fetchModelUsageSummary,
+  fetchProjectProviderUsageByMode,
+  fetchProjectProviderUsageByProvider,
+  fetchProjectProviderCapabilityMatrix,
+  fetchProjectProviders,
+  createProjectProvider,
+  validateProjectProvider,
+  fetchProjectProviderStatus,
+  fetchProjectProviderUsageRecent,
+  fetchProjectProviderUsageSummary,
   fetchProviderCapabilities,
   fetchTokenBudgetProfiles,
   fetchRecentModelUsage,
@@ -196,6 +205,10 @@ import {
   ModelCompatibilityMatrix,
   ModelUsageRecord,
   ModelUsageSummary,
+  CostLatencyGroupSummary,
+  ProviderProfileDraft,
+  ProviderProfileSummary,
+  ProviderModelCapabilityMatrix,
   ProviderBenchmarkReport,
   ProviderCapabilityCatalog,
   BudgetReport,
@@ -2001,6 +2014,7 @@ export function App() {
           <PromptLabPage
             summary={studioConfigSummary}
             configError={studioConfigError}
+            projectId={currentNarrativeProjectId || "local_project"}
             onSelectPromptProfile={(profileId) => void handleSelectPromptProfile(profileId)}
           />
         ) : mode === "studio" ? (
@@ -3645,10 +3659,12 @@ function ScenarioRegressionDashboard({
 function PromptLabPage({
   summary,
   configError,
+  projectId,
   onSelectPromptProfile
 }: {
   summary: StudioConfigSummary | null;
   configError: string;
+  projectId: string;
   onSelectPromptProfile: (profileId: string) => void;
 }) {
   const [capabilities, setCapabilities] = useState<ProviderCapabilityCatalog | null>(null);
@@ -3658,6 +3674,27 @@ function PromptLabPage({
   const [diagnosticReport, setDiagnosticReport] = useState<LocalModelDiagnosticReport | null>(null);
   const [usageSummary, setUsageSummary] = useState<ModelUsageSummary | null>(null);
   const [recentUsage, setRecentUsage] = useState<ModelUsageRecord[]>([]);
+  const [projectUsageSummary, setProjectUsageSummary] = useState<ModelUsageSummary | null>(null);
+  const [projectRecentUsage, setProjectRecentUsage] = useState<ModelUsageRecord[]>([]);
+  const [usageByMode, setUsageByMode] = useState<CostLatencyGroupSummary[]>([]);
+  const [usageByProvider, setUsageByProvider] = useState<CostLatencyGroupSummary[]>([]);
+  const [usageRange, setUsageRange] = useState<number | undefined>(undefined);
+  const [providerProfiles, setProviderProfiles] = useState<ProviderProfileSummary[]>([]);
+  const [providerCapabilityMatrix, setProviderCapabilityMatrix] = useState<ProviderModelCapabilityMatrix | null>(null);
+  const [providerStatus, setProviderStatus] = useState<Record<string, unknown> | null>(null);
+  const [providerValidation, setProviderValidation] = useState<string>("");
+  const [providerDraft, setProviderDraft] = useState<ProviderProfileDraft>({
+    provider_profile_id: "local_stub",
+    display_name: "Local Stub",
+    provider_type: "local_stub",
+    api_key_env: "",
+    secret_ref: "",
+    model_profiles: [{ model_id: "local_stub", display_name: "Local Stub", supports_json: true, supports_streaming: false }],
+    allowed_modes: ["novel", "tavern", "world", "cross_mode", "quality"],
+    default_timeout_seconds: 30,
+    enabled: true,
+    requires_api_key: false
+  });
   const [diffReport, setDiffReport] = useState<PromptDiffReport | null>(null);
   const [labError, setLabError] = useState<string>("");
 
@@ -3673,6 +3710,59 @@ function PromptLabPage({
   const profiles = summary?.prompt_profiles ?? [];
   const leftProfile = profiles[0] ? { id: profiles[0].id, hidden_fact_policy: "deny", state_modification_policy: "deny" } : {};
   const rightProfile = profiles[1] ? { id: profiles[1].id, hidden_fact_policy: "deny", state_modification_policy: "deny" } : leftProfile;
+
+  async function loadProjectUsage() {
+    const [summaryResult, recentResult, byModeResult, byProviderResult] = await Promise.all([
+      fetchProjectProviderUsageSummary(projectId, usageRange),
+      fetchProjectProviderUsageRecent(projectId, 12, usageRange),
+      fetchProjectProviderUsageByMode(projectId, usageRange),
+      fetchProjectProviderUsageByProvider(projectId, usageRange)
+    ]);
+    setProjectUsageSummary(summaryResult);
+    setProjectRecentUsage(recentResult.records);
+    setUsageByMode(byModeResult.by_mode);
+    setUsageByProvider(byProviderResult.by_provider);
+  }
+
+  async function loadProviderProfiles() {
+    const [profilesResult, matrixResult] = await Promise.all([
+      fetchProjectProviders(projectId),
+      fetchProjectProviderCapabilityMatrix(projectId)
+    ]);
+    setProviderProfiles(profilesResult.providers);
+    setProviderCapabilityMatrix(matrixResult.matrix);
+  }
+
+  async function saveProviderProfile(event: FormEvent) {
+    event.preventDefault();
+    const cleaned: ProviderProfileDraft = {
+      ...providerDraft,
+      base_url: providerDraft.base_url?.trim() || null,
+      base_url_env: providerDraft.base_url_env?.trim() || null,
+      api_key_env: providerDraft.api_key_env?.trim() || null,
+      secret_ref: providerDraft.secret_ref?.trim() || null,
+      allowed_modes: providerDraft.allowed_modes ?? [],
+      model_profiles: providerDraft.model_profiles.filter((model) => model.model_id.trim()).map((model) => ({
+        ...model,
+        model_id: model.model_id.trim(),
+        display_name: model.display_name?.trim() || model.model_id.trim(),
+        recommended_use_cases: model.recommended_use_cases ?? []
+      }))
+    };
+    const created = await createProjectProvider(projectId, cleaned);
+    setProviderProfiles((current) => [...current.filter((item) => item.provider_profile_id !== created.provider.provider_profile_id), created.provider]);
+    setProviderValidation("Profile saved. Secrets are still resolved only on the backend from env or local secret refs.");
+  }
+
+  async function validateProvider(profileId: string) {
+    const result = await validateProjectProvider(projectId, profileId);
+    setProviderValidation(result.ok ? "Provider profile validates." : `Provider profile failed validation: ${result.warnings.join(", ")}`);
+  }
+
+  async function loadProviderStatus(profileId: string) {
+    const result = await fetchProjectProviderStatus(projectId, profileId);
+    setProviderStatus(result.status);
+  }
 
   return (
     <section className="studio-section">
@@ -3718,6 +3808,133 @@ function PromptLabPage({
         ) : (
           <p className="muted">Empty until loaded. API disabled states are shown as a safe error instead of exposing config.</p>
         )}
+      </section>
+
+      <section className="studio-section">
+        <div className="authoring-pane-header">
+          <div>
+            <h4>Provider Profiles</h4>
+            <p className="muted">Project-local provider profiles. API keys are never entered here; use env vars or local secret refs only.</p>
+          </div>
+          <button type="button" onClick={() => void runLabAction(loadProviderProfiles)}>
+            Load Profiles
+          </button>
+        </div>
+        <form className="form-grid" onSubmit={(event) => void runLabAction(async () => saveProviderProfile(event))}>
+          <label>
+            Profile ID
+            <input
+              value={providerDraft.provider_profile_id}
+              onChange={(event) => setProviderDraft((draft) => ({ ...draft, provider_profile_id: event.target.value }))}
+            />
+          </label>
+          <label>
+            Display Name
+            <input
+              value={providerDraft.display_name}
+              onChange={(event) => setProviderDraft((draft) => ({ ...draft, display_name: event.target.value }))}
+            />
+          </label>
+          <label>
+            Provider Type
+            <select
+              value={providerDraft.provider_type}
+              onChange={(event) => setProviderDraft((draft) => ({ ...draft, provider_type: event.target.value }))}
+            >
+              <option value="local_stub">local_stub</option>
+              <option value="mock">mock</option>
+              <option value="local_http">local_http</option>
+              <option value="openai">openai</option>
+              <option value="openai_compatible">openai_compatible</option>
+              <option value="relay">relay</option>
+            </select>
+          </label>
+          <label>
+            Base URL
+            <input
+              value={providerDraft.base_url ?? ""}
+              onChange={(event) => setProviderDraft((draft) => ({ ...draft, base_url: event.target.value }))}
+              placeholder="Optional endpoint URL"
+            />
+          </label>
+          <label>
+            Base URL Env
+            <input
+              value={providerDraft.base_url_env ?? ""}
+              onChange={(event) => setProviderDraft((draft) => ({ ...draft, base_url_env: event.target.value }))}
+              placeholder="LOCAL_LLM_BASE_URL"
+            />
+          </label>
+          <label>
+            API Key Env
+            <input
+              value={providerDraft.api_key_env ?? ""}
+              onChange={(event) => setProviderDraft((draft) => ({ ...draft, api_key_env: event.target.value }))}
+              placeholder="OPENAI_API_KEY"
+            />
+          </label>
+          <label>
+            Secret Ref
+            <input
+              value={providerDraft.secret_ref ?? ""}
+              onChange={(event) => setProviderDraft((draft) => ({ ...draft, secret_ref: event.target.value }))}
+              placeholder="local-secret-id"
+            />
+          </label>
+          <label>
+            Model ID
+            <input
+              value={providerDraft.model_profiles[0]?.model_id ?? ""}
+              onChange={(event) => setProviderDraft((draft) => ({ ...draft, model_profiles: [{ ...(draft.model_profiles[0] ?? {}), model_id: event.target.value }] }))}
+            />
+          </label>
+          <label>
+            Timeout Seconds
+            <input
+              type="number"
+              min={1}
+              max={600}
+              value={providerDraft.default_timeout_seconds ?? 30}
+              onChange={(event) => setProviderDraft((draft) => ({ ...draft, default_timeout_seconds: Number(event.target.value) || 30 }))}
+            />
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={providerDraft.enabled ?? true}
+              onChange={(event) => setProviderDraft((draft) => ({ ...draft, enabled: event.target.checked }))}
+            />
+            Enabled
+          </label>
+          <button type="submit">Save Safe Profile</button>
+        </form>
+        <p className="muted">{providerValidation || "This form intentionally has no plaintext API key field."}</p>
+        <div className="studio-grid two-column-grid">
+          <ItemList
+            emptyText="No provider profiles loaded."
+            items={providerProfiles.map((profile) => (
+              <span key={profile.provider_profile_id}>
+                {profile.display_name} ({profile.provider_type}) - {profile.enabled ? "enabled" : "disabled"} - {profile.model_profiles.length} models
+                <button type="button" onClick={() => void runLabAction(async () => validateProvider(profile.provider_profile_id))}>
+                  Validate
+                </button>
+                <button type="button" onClick={() => void runLabAction(async () => loadProviderStatus(profile.provider_profile_id))}>
+                  Status
+                </button>
+              </span>
+            ))}
+          />
+          <ItemList
+            emptyText="No capability matrix loaded."
+            items={(providerCapabilityMatrix?.rows ?? []).map((row) => (
+              <span key={`${row.provider_profile_id}-${row.model_id}`}>
+                {row.provider_profile_id}/{row.model_id}: {row.recommended_use_cases.join(", ") || "no use cases"}
+                {row.warnings.length ? ` - warnings ${row.warnings.length}` : ""}
+              </span>
+            ))}
+          />
+        </div>
+        {providerStatus ? <pre className="debug-json">{JSON.stringify(providerStatus, null, 2)}</pre> : null}
       </section>
 
       <section className="studio-section">
@@ -3796,6 +4013,66 @@ function PromptLabPage({
           items={recentUsage.map((record) => (
             <span key={record.usage_id}>
               {record.provider_id}/{record.model_id} {record.use_case}: {record.success ? "ok" : record.error_type ?? "failed"}
+            </span>
+          ))}
+        />
+      </section>
+
+      <section className="studio-section">
+        <div className="authoring-pane-header">
+          <div>
+            <h4>Provider Usage Dashboard</h4>
+            <p className="muted">Local estimates for project {projectId}. Prompts, outputs, API keys, hidden facts, and raw state deltas are never displayed.</p>
+          </div>
+          <div className="button-row">
+            <select value={usageRange ?? 0} onChange={(event) => setUsageRange(Number(event.target.value) || undefined)} aria-label="Usage time range">
+              <option value={0}>All time</option>
+              <option value={60}>Last hour</option>
+              <option value={1440}>Last day</option>
+              <option value={10080}>Last 7 days</option>
+            </select>
+            <button type="button" onClick={() => void runLabAction(loadProjectUsage)}>
+              Load Project Usage
+            </button>
+          </div>
+        </div>
+        <div className="studio-grid compact-dashboard-grid">
+          <DashboardCard title="Calls" value={projectUsageSummary ? String(projectUsageSummary.total_calls) : "empty"}>
+            <p>{projectUsageSummary ? `${projectUsageSummary.successes} ok / ${projectUsageSummary.failures} errors` : "Usage API may be disabled or empty."}</p>
+          </DashboardCard>
+          <DashboardCard title="Tokens" value={projectUsageSummary ? String(projectUsageSummary.total_input_tokens_estimated + projectUsageSummary.total_output_tokens_estimated) : "empty"}>
+            <p>{projectUsageSummary ? `in ${projectUsageSummary.total_input_tokens_estimated} / out ${projectUsageSummary.total_output_tokens_estimated}` : "Estimates only, not billing."}</p>
+          </DashboardCard>
+          <DashboardCard title="Cost" value={projectUsageSummary ? String(projectUsageSummary.total_cost_estimated) : "empty"}>
+            <p>Estimated local metadata only.</p>
+          </DashboardCard>
+          <DashboardCard title="Errors" value={projectUsageSummary ? String(projectUsageSummary.failures) : "empty"}>
+            <p>{projectUsageSummary ? `${Math.round(projectUsageSummary.error_rate * 100)}% error rate` : "No usage summary."}</p>
+          </DashboardCard>
+        </div>
+        <div className="studio-grid two-column-grid">
+          <ItemList
+            emptyText="No usage by mode."
+            items={usageByMode.map((item) => (
+              <span key={item.key}>
+                {item.key}: {item.count} calls, {item.total_tokens_estimated} tokens, cost {item.total_cost_estimated}
+              </span>
+            ))}
+          />
+          <ItemList
+            emptyText="No usage by provider."
+            items={usageByProvider.map((item) => (
+              <span key={item.key}>
+                {item.key}: {item.count} calls, {item.failures} failures
+              </span>
+            ))}
+          />
+        </div>
+        <ItemList
+          emptyText="No project usage records."
+          items={projectRecentUsage.map((record) => (
+            <span key={record.usage_id}>
+              {(record.mode ?? "mode")}/{record.use_case}: {record.provider_id}/{record.model_id} {record.success ? "ok" : record.error_type ?? "failed"} ({record.total_tokens_estimated ?? record.input_tokens_estimated + record.output_tokens_estimated} tokens)
             </span>
           ))}
         />

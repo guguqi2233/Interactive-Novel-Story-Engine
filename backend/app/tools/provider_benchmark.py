@@ -21,12 +21,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--iterations", type=int, default=1, help="Iterations per case.")
     parser.add_argument("--allow-real-provider", action="store_true", help="Explicitly allow real external provider calls.")
+    parser.add_argument("--project", default=None, help="Optional project path label; no secrets are read from it.")
+    parser.add_argument("--mock-only", action="store_true", help="Force mock/fake provider benchmark mode.")
     args = parser.parse_args(argv)
 
+    provider_id = "fake" if args.mock_only else args.provider
     request_kwargs = {
-        "provider_id": args.provider,
+        "provider_id": provider_id,
         "model_id": args.model,
-        "allow_real_provider": args.allow_real_provider,
+        "allow_real_provider": False if args.mock_only else args.allow_real_provider,
         "iterations": max(1, args.iterations),
     }
     if args.benchmark:

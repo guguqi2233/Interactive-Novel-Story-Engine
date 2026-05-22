@@ -13,14 +13,20 @@ from app.llm.provider_base import LLMProvider, SchemaT
 
 class ModelUsageRecord(BaseModel):
     usage_id: str = Field(default_factory=lambda: f"usage-{uuid4().hex}")
+    project_id: str = "local_project"
     provider_id: str
+    provider_profile_id: str | None = None
     model_id: str
+    mode: str = "authoring"
     use_case: str
     started_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime | None = None
     duration_ms: float
     input_tokens_estimated: int = 0
     output_tokens_estimated: int = 0
+    total_tokens_estimated: int = 0
     cost_estimated: float = 0.0
+    currency: str = "USD"
     success: bool = True
     error_type: str | None = None
     request_id: str | None = None
@@ -77,6 +83,10 @@ class ModelUsageStore:
     def record(self, record: ModelUsageRecord) -> None:
         if not self.enabled:
             return
+        if record.created_at is None:
+            record.created_at = record.started_at
+        if record.total_tokens_estimated == 0:
+            record.total_tokens_estimated = record.input_tokens_estimated + record.output_tokens_estimated
         self._records.append(record)
 
     def recent(
@@ -86,10 +96,14 @@ class ModelUsageStore:
         provider_id: str | None = None,
         model_id: str | None = None,
         use_case: str | None = None,
+        project_id: str | None = None,
+        mode: str | None = None,
+        since: datetime | None = None,
+        until: datetime | None = None,
     ) -> list[ModelUsageRecord]:
         if limit <= 0:
             return []
-        return _filter_records(list(self._records), provider_id=provider_id, model_id=model_id, use_case=use_case)[-limit:]
+        return _filter_records(list(self._records), provider_id=provider_id, model_id=model_id, use_case=use_case, project_id=project_id, mode=mode, since=since, until=until)[-limit:]
 
     def clear(self) -> None:
         self._records.clear()
@@ -100,8 +114,12 @@ class ModelUsageStore:
         provider_id: str | None = None,
         model_id: str | None = None,
         use_case: str | None = None,
+        project_id: str | None = None,
+        mode: str | None = None,
+        since: datetime | None = None,
+        until: datetime | None = None,
     ) -> CostLatencySummary:
-        records = _filter_records(list(self._records), provider_id=provider_id, model_id=model_id, use_case=use_case)
+        records = _filter_records(list(self._records), provider_id=provider_id, model_id=model_id, use_case=use_case, project_id=project_id, mode=mode, since=since, until=until)
         total = len(records)
         failures = sum(1 for record in records if not record.success)
         grouped: dict[str, list[ModelUsageRecord]] = {}
@@ -125,6 +143,12 @@ class ModelUsageStore:
             recent_failures=[record for record in records if not record.success][-10:],
         )
 
+    def by_mode(self, **filters: object) -> list[CostLatencyGroupSummary]:
+        return _summarize_group(_filter_records(list(self._records), **filters), "mode")  # type: ignore[arg-type]
+
+    def by_provider(self, **filters: object) -> list[CostLatencyGroupSummary]:
+        return _summarize_group(_filter_records(list(self._records), **filters), "provider_id")  # type: ignore[arg-type]
+
 
 class UsageTrackingProvider(LLMProvider):
     def __init__(
@@ -136,6 +160,9 @@ class UsageTrackingProvider(LLMProvider):
         store: ModelUsageStore,
         input_cost_per_1k: float = 0.0,
         output_cost_per_1k: float = 0.0,
+        project_id: str = "local_project",
+        mode: str = "authoring",
+        currency: str = "USD",
     ) -> None:
         self._provider = provider
         self._provider_id = provider_id
@@ -143,6 +170,9 @@ class UsageTrackingProvider(LLMProvider):
         self._store = store
         self._input_cost_per_1k = input_cost_per_1k
         self._output_cost_per_1k = output_cost_per_1k
+        self._project_id = project_id
+        self._mode = mode
+        self._currency = currency
 
     def generate_text(self, messages: list[dict[str, str]], temperature: float = 0.7) -> str:
         started_at = datetime.now(timezone.utc)
@@ -181,19 +211,25 @@ class UsageTrackingProvider(LLMProvider):
         output_tokens = _estimate_tokens(output)
         self._store.record(
             ModelUsageRecord(
+                project_id=self._project_id,
                 provider_id=self._provider_id,
+                provider_profile_id=self._provider_id,
                 model_id=self._model_id,
+                mode=self._mode,
                 use_case=use_case,
                 started_at=started_at,
+                created_at=started_at,
                 duration_ms=round((perf_counter() - started) * 1000, 3),
                 input_tokens_estimated=input_tokens,
                 output_tokens_estimated=output_tokens,
+                total_tokens_estimated=input_tokens + output_tokens,
                 cost_estimated=_estimate_cost(
                     input_tokens,
                     output_tokens,
                     self._input_cost_per_1k,
                     self._output_cost_per_1k,
                 ),
+                currency=self._currency,
                 success=success,
                 error_type=error_type,
             )
@@ -223,6 +259,9 @@ def wrap_provider_for_usage_tracking(
     enabled: bool,
     input_cost_per_1k: float = 0.0,
     output_cost_per_1k: float = 0.0,
+    project_id: str = "local_project",
+    mode: str = "authoring",
+    currency: str = "USD",
 ) -> LLMProvider:
     set_usage_tracking_enabled(enabled)
     if not enabled:
@@ -236,6 +275,9 @@ def wrap_provider_for_usage_tracking(
         store=get_model_usage_store(),
         input_cost_per_1k=input_cost_per_1k,
         output_cost_per_1k=output_cost_per_1k,
+        project_id=project_id,
+        mode=mode,
+        currency=currency,
     )
 
 
@@ -278,9 +320,13 @@ def _summarize_group(records: list[ModelUsageRecord], attr: str) -> list[CostLat
 def _filter_records(
     records: list[ModelUsageRecord],
     *,
-    provider_id: str | None,
-    model_id: str | None,
-    use_case: str | None,
+    provider_id: str | None = None,
+    model_id: str | None = None,
+    use_case: str | None = None,
+    project_id: str | None = None,
+    mode: str | None = None,
+    since: datetime | None = None,
+    until: datetime | None = None,
 ) -> list[ModelUsageRecord]:
     return [
         record
@@ -288,6 +334,10 @@ def _filter_records(
         if (provider_id is None or record.provider_id == provider_id)
         and (model_id is None or record.model_id == model_id)
         and (use_case is None or record.use_case == use_case)
+        and (project_id is None or record.project_id == project_id)
+        and (mode is None or record.mode == mode)
+        and (since is None or (record.created_at or record.started_at) >= since)
+        and (until is None or (record.created_at or record.started_at) <= until)
     ]
 
 

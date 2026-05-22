@@ -1,5 +1,73 @@
 # Project Specification
 
+## v2.5 Provider Gateway Pro
+
+v2.5 upgrades the provider layer into Provider Gateway Pro: a local,
+mode-routed, secret-safe model access boundary for Novel Studio, Tavern Studio,
+World Mode, Cross-Mode Bridge, Quality, and authoring tools.
+
+Provider Gateway Pro is not a hosted model platform, API resale service, cloud
+account system, or billing system. It is a local routing and observability
+layer around existing `LLMProvider` implementations.
+
+Provider Gateway Pro scope:
+
+- `ProviderProfileV2`: project-local provider profile metadata for `openai`,
+  `openai_compatible`, `local_http`, `relay`, `mock`, and `local_stub`.
+- `ModelProfile`: model capability, recommended use case, context-window,
+  structured-output, streaming/tool/embedding flags, and optional cost-hint
+  metadata.
+- `ProviderSafetyPolicy`: allowed/disallowed modes, sensitive/debug prompt
+  controls, local-only requirements, and logging/redaction defaults.
+- `ProviderSecretResolver`: backend-only resolver for `api_key_env` and
+  `secret_ref`. Provider profiles do not store raw API keys.
+- `ProviderProfileRepository`: local provider profile storage under
+  `project/providers/profiles/` with path traversal and secret rejection.
+- Provider APIs under `/projects/{project_id}/providers...` for local
+  authoring/studio profile management, validation, safe status, capability
+  matrix, and usage summaries.
+- Provider Profile UI, capability matrix, routing controls, and local usage
+  dashboard. These views show safe metadata only.
+- OpenAI, OpenAI-compatible, relay-style, local HTTP, mock, and local-stub
+  provider paths behind the provider factory/gateway boundary.
+- Provider capability detection, model capability matrix, mode-based routing,
+  fallback chains, usage/cost estimates, benchmark harness, structured-output
+  reliability checks, and provider simulation profiles.
+
+Provider Gateway Pro preserves world authority:
+
+- Providers cannot modify `GameState`.
+- Providers cannot append `EventLog`.
+- Providers cannot apply `StateDelta`.
+- Providers cannot create authoritative World facts.
+- Providers cannot decide whether Cross-Mode or Tavern-to-World proposals are
+  applied.
+- Provider routing cannot expand hidden fact access, NPC knowledge, prompt
+  permissions, profile permissions, or visibility.
+
+Mode-based routing:
+
+- Novel uses routes such as `novel_draft` and `novel_rewrite`.
+- Tavern uses `tavern_reply`.
+- World intent parsing uses a JSON-capable route such as
+  `world_intent_parse`; World narration uses `world_narration`.
+- Memory summarization uses `memory_summary` and must exclude raw
+  `state_deltas`.
+- Cross-Mode helpers use `cross_mode_draft` or `structured_json` for optional
+  draft/proposal generation. Apply, validation, import/export, quality gates,
+  and conflict detection remain deterministic local checks.
+
+Privacy and logging:
+
+- Provider profiles may store `api_key_env` or `secret_ref`, never raw keys.
+- Frontend APIs return safe summaries only and must not return API keys, raw
+  env, provider secrets, full prompts, full outputs, hidden facts, or raw
+  `state_deltas`.
+- Usage/cost tracking is local, approximate, and metadata-only. It does not
+  upload telemetry and does not provide real billing.
+- Benchmark and structured-output reliability tools default to fake/mock/local
+  providers. Real provider checks are explicit opt-in and are not CI defaults.
+
 ## v2.4 Cross-Mode Bridge
 
 v2.4 adds a local Cross-Mode Bridge across Novel, Tavern, and World inside

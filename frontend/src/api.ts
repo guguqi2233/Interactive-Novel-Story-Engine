@@ -2498,7 +2498,15 @@ export type ProviderRoutingUseCase =
   | "character_import"
   | "lorebook_classification"
   | "quest_draft"
-  | "structured_json";
+  | "structured_json"
+  | "novel_draft"
+  | "novel_rewrite"
+  | "tavern_reply"
+  | "world_intent_parse"
+  | "world_narration"
+  | "cross_mode_draft"
+  | "quality_eval"
+  | "cheap_summary";
 
 export type ProviderRoutingRule = {
   use_case: ProviderRoutingUseCase;
@@ -2577,16 +2585,89 @@ export type ProviderCapabilityCatalog = {
   models: ModelCapabilitySummary[];
 };
 
+export type ProviderProfileSummary = {
+  provider_profile_id: string;
+  display_name: string;
+  provider_type: string;
+  base_url_configured?: boolean;
+  base_url_source?: string | null;
+  api_key_env?: string | null;
+  secret_ref?: string | null;
+  model_profiles: Array<{
+    model_id: string;
+    display_name?: string;
+    context_window?: number | null;
+    supports_text?: boolean;
+    supports_json?: boolean;
+    supports_tools?: boolean;
+    supports_streaming?: boolean;
+    recommended_use_cases?: string[];
+  }>;
+  capabilities?: string[];
+  allowed_modes?: string[];
+  enabled: boolean;
+  cost_tracking?: boolean;
+  safety_policy?: Record<string, unknown>;
+  provider_notes?: string;
+};
+
+export type ProviderProfileDraft = {
+  provider_profile_id: string;
+  display_name: string;
+  provider_type: string;
+  base_url?: string | null;
+  base_url_env?: string | null;
+  api_key_env?: string | null;
+  secret_ref?: string | null;
+  model_profiles: Array<{
+    model_id: string;
+    display_name?: string;
+    supports_json?: boolean;
+    supports_streaming?: boolean;
+    recommended_use_cases?: string[];
+  }>;
+  allowed_modes?: string[];
+  default_timeout_seconds?: number;
+  fallback_profile_ids?: string[];
+  cost_tracking?: boolean;
+  enabled?: boolean;
+  requires_api_key?: boolean | null;
+};
+
+export type ModelCapabilityMatrixRow = {
+  provider_profile_id: string;
+  model_id: string;
+  capabilities: Record<string, unknown>;
+  allowed_modes: string[];
+  recommended_use_cases: string[];
+  warnings: string[];
+  disabled_reasons: string[];
+};
+
+export type ProviderModelCapabilityMatrix = {
+  matrix_id: string;
+  project_id: string;
+  generated_at: string;
+  rows: ModelCapabilityMatrixRow[];
+  warnings: string[];
+};
+
 export type ModelUsageRecord = {
   usage_id: string;
+  project_id?: string;
   provider_id: string;
+  provider_profile_id?: string | null;
   model_id: string;
+  mode?: string;
   use_case: string;
   started_at: string;
+  created_at?: string | null;
   duration_ms: number;
   input_tokens_estimated: number;
   output_tokens_estimated: number;
+  total_tokens_estimated?: number;
   cost_estimated: number;
+  currency?: string;
   success: boolean;
   error_type?: string | null;
   request_id?: string | null;
@@ -3042,6 +3123,53 @@ export async function fetchModelUsageSummary(): Promise<ModelUsageSummary> {
 
 export async function fetchRecentModelUsage(limit = 20): Promise<{ local_only: boolean; enabled: boolean; records: ModelUsageRecord[] }> {
   return requestJson<{ local_only: boolean; enabled: boolean; records: ModelUsageRecord[] }>(`/prompt-lab/usage/recent?limit=${limit}`);
+}
+
+export async function fetchProjectProviders(projectId: string): Promise<{ local_only: boolean; providers: ProviderProfileSummary[] }> {
+  return requestJson<{ local_only: boolean; providers: ProviderProfileSummary[] }>(`/projects/${encodeURIComponent(projectId)}/providers`);
+}
+
+export async function createProjectProvider(projectId: string, profile: ProviderProfileDraft): Promise<{ local_only: boolean; provider: ProviderProfileSummary }> {
+  return requestJson<{ local_only: boolean; provider: ProviderProfileSummary }>(`/projects/${encodeURIComponent(projectId)}/providers`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(profile)
+  });
+}
+
+export async function validateProjectProvider(projectId: string, providerProfileId: string): Promise<{ local_only: boolean; ok: boolean; warnings: string[] }> {
+  return requestJson<{ local_only: boolean; ok: boolean; warnings: string[] }>(`/projects/${encodeURIComponent(projectId)}/providers/${encodeURIComponent(providerProfileId)}/validate`, {
+    method: "POST"
+  });
+}
+
+export async function fetchProjectProviderStatus(projectId: string, providerProfileId: string): Promise<{ local_only: boolean; status: Record<string, unknown> }> {
+  return requestJson<{ local_only: boolean; status: Record<string, unknown> }>(`/projects/${encodeURIComponent(projectId)}/providers/${encodeURIComponent(providerProfileId)}/status`);
+}
+
+export async function fetchProjectProviderCapabilityMatrix(projectId: string): Promise<{ local_only: boolean; matrix: ProviderModelCapabilityMatrix }> {
+  return requestJson<{ local_only: boolean; matrix: ProviderModelCapabilityMatrix }>(`/projects/${encodeURIComponent(projectId)}/providers/capability-matrix`);
+}
+
+export async function fetchProjectProviderUsageSummary(projectId: string, sinceMinutes?: number): Promise<ModelUsageSummary> {
+  const query = sinceMinutes ? `?since_minutes=${sinceMinutes}` : "";
+  return requestJson<ModelUsageSummary>(`/projects/${encodeURIComponent(projectId)}/providers/usage/summary${query}`);
+}
+
+export async function fetchProjectProviderUsageRecent(projectId: string, limit = 20, sinceMinutes?: number): Promise<{ local_only: boolean; enabled: boolean; records: ModelUsageRecord[] }> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (sinceMinutes) params.set("since_minutes", String(sinceMinutes));
+  return requestJson<{ local_only: boolean; enabled: boolean; records: ModelUsageRecord[] }>(`/projects/${encodeURIComponent(projectId)}/providers/usage/recent?${params.toString()}`);
+}
+
+export async function fetchProjectProviderUsageByMode(projectId: string, sinceMinutes?: number): Promise<{ local_only: boolean; enabled: boolean; by_mode: CostLatencyGroupSummary[] }> {
+  const query = sinceMinutes ? `?since_minutes=${sinceMinutes}` : "";
+  return requestJson<{ local_only: boolean; enabled: boolean; by_mode: CostLatencyGroupSummary[] }>(`/projects/${encodeURIComponent(projectId)}/providers/usage/by-mode${query}`);
+}
+
+export async function fetchProjectProviderUsageByProvider(projectId: string, sinceMinutes?: number): Promise<{ local_only: boolean; enabled: boolean; by_provider: CostLatencyGroupSummary[] }> {
+  const query = sinceMinutes ? `?since_minutes=${sinceMinutes}` : "";
+  return requestJson<{ local_only: boolean; enabled: boolean; by_provider: CostLatencyGroupSummary[] }>(`/projects/${encodeURIComponent(projectId)}/providers/usage/by-provider${query}`);
 }
 
 export async function previewProviderRoutingRule(rule: ProviderRoutingRule): Promise<ProviderRoutingPreview> {

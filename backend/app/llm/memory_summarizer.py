@@ -22,7 +22,7 @@ class MemorySummarizer:
                 "result": event.result,
                 "input_text": event.input_text,
                 "narrative_text": event.narrative_text,
-                "state_deltas": [delta.model_dump(mode="json") for delta in event.state_deltas],
+                "state_delta_count": len(event.state_deltas),
             }
             for event in recent_events
         ]

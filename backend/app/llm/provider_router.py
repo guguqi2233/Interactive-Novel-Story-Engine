@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.llm.model_compatibility import ModelCompatibilityUseCase
 from app.llm.model_prompt_lab_policy import redact_sensitive_text
 from app.llm.provider_capabilities import ModelCapability, ProviderCapabilityRegistry
+from app.llm.provider_profiles import ProviderMode, ProviderSafetyPolicy
 
 
 class ProviderRoutingUseCase(StrEnum):
@@ -19,6 +20,14 @@ class ProviderRoutingUseCase(StrEnum):
     LOREBOOK_CLASSIFICATION = "lorebook_classification"
     QUEST_DRAFT = "quest_draft"
     STRUCTURED_JSON = "structured_json"
+    NOVEL_DRAFT = "novel_draft"
+    NOVEL_REWRITE = "novel_rewrite"
+    TAVERN_REPLY = "tavern_reply"
+    WORLD_INTENT_PARSE = "world_intent_parse"
+    WORLD_NARRATION = "world_narration"
+    CROSS_MODE_DRAFT = "cross_mode_draft"
+    QUALITY_EVAL = "quality_eval"
+    CHEAP_SUMMARY = "cheap_summary"
 
 
 JSON_ROUTING_USE_CASES = {
@@ -28,6 +37,9 @@ JSON_ROUTING_USE_CASES = {
     ProviderRoutingUseCase.LOREBOOK_CLASSIFICATION,
     ProviderRoutingUseCase.QUEST_DRAFT,
     ProviderRoutingUseCase.STRUCTURED_JSON,
+    ProviderRoutingUseCase.WORLD_INTENT_PARSE,
+    ProviderRoutingUseCase.CROSS_MODE_DRAFT,
+    ProviderRoutingUseCase.QUALITY_EVAL,
 }
 
 
@@ -43,7 +55,17 @@ class ProviderRoutingRule(BaseModel):
     max_cost_per_call: float | None = Field(default=None, ge=0)
     require_json_support: bool = False
     require_local_only: bool | None = None
+    safety_policy: ProviderSafetyPolicy = Field(default_factory=ProviderSafetyPolicy)
     enabled: bool = True
+
+
+class ProviderRoutingContext(BaseModel):
+    mode: ProviderMode | str = ProviderMode.AUTHORING
+    use_case: ProviderRoutingUseCase | str
+    prompt_is_sensitive: bool = False
+    prompt_is_debug: bool = False
+    project_local_only: bool = False
+    explicit_external_override: bool = False
 
 
 class ProviderRoutingConfig(BaseModel):
@@ -130,6 +152,8 @@ class ProviderRouter:
             warnings.append("max_cost_per_call_is_enforced_as_metadata_only")
         if rule.max_latency_ms is not None:
             warnings.append("max_latency_ms_is_enforced_as_metadata_only")
+        if rule.safety_policy.log_prompts:
+            warnings.append("prompt_logging_is_disabled_by_default_and_requires_explicit_debug_review")
         return ProviderRoutingValidationReport(ok=not errors, rule=rule, errors=errors, warnings=warnings)
 
     def select_model_for_use_case(self, use_case: ProviderRoutingUseCase | ModelCompatibilityUseCase | str) -> ProviderRoutingDecision:
@@ -174,6 +198,54 @@ class ProviderRouter:
                 warnings=report.errors + report.warnings,
             )
         raise ValueError("; ".join(report.errors) or "Routing rule is invalid.")
+
+    def resolve_provider_for_use_case(self, context: ProviderRoutingContext) -> ProviderRoutingDecision:
+        parsed = ProviderRoutingUseCase(str(context.use_case))
+        rule = next((item for item in self._config.rules if item.enabled and item.use_case == parsed), None)
+        if rule is None:
+            decision = self.select_model_for_use_case(parsed)
+            model = self._registry.get_capability(decision.provider_id, decision.model_id)  # type: ignore[assignment]
+            policy_errors = _policy_errors(context, ProviderSafetyPolicy(), model)  # type: ignore[arg-type]
+            if policy_errors:
+                raise ValueError("; ".join(policy_errors))
+            return decision
+        report = self.validate_routing_rule(rule)
+        primary = self._get_model(rule.primary_provider_id, rule.primary_model_id, [])
+        if primary is not None:
+            report.errors.extend(_policy_errors(context, rule.safety_policy, primary))
+        if report.ok and not report.errors:
+            return self.select_model_for_use_case(parsed)
+        fallback = self._valid_fallback(rule)
+        if fallback is not None and not _policy_errors(context, rule.safety_policy, fallback):
+            return ProviderRoutingDecision(
+                use_case=parsed,
+                provider_id=fallback.provider_id,
+                model_id=fallback.model_id,
+                used_fallback=True,
+                reason="routing_policy_primary_blocked_fallback_selected",
+                warnings=report.errors + report.warnings,
+            )
+        raise ValueError("; ".join(report.errors) or "Provider safety policy rejected routing decision")
+
+    def fallback_for_use_case(self, context: ProviderRoutingContext) -> ProviderRoutingDecision | None:
+        """Return a fallback decision that satisfies the same capability and policy checks."""
+        parsed = ProviderRoutingUseCase(str(context.use_case))
+        rule = next((item for item in self._config.rules if item.enabled and item.use_case == parsed), None)
+        if rule is None:
+            return None
+        fallback = self._valid_fallback(rule)
+        if fallback is None:
+            return None
+        policy_errors = _policy_errors(context, rule.safety_policy, fallback)
+        if policy_errors:
+            return None
+        return ProviderRoutingDecision(
+            use_case=parsed,
+            provider_id=fallback.provider_id,
+            model_id=fallback.model_id,
+            used_fallback=True,
+            reason="routing_rule_fallback_selected_after_primary_failure",
+        )
 
     def apply_routing_config(self, config: ProviderRoutingConfig) -> ProviderRoutingSummary:
         reports = [self.validate_routing_rule(rule) for rule in config.rules]
@@ -220,11 +292,16 @@ class ProviderRouter:
 
     def _default_model_for_use_case(self, use_case: ProviderRoutingUseCase) -> ModelCapability:
         capability_key = _capability_use_case(use_case)
+        needs_json = use_case in JSON_ROUTING_USE_CASES
         for model in self._registry.list_models():
+            if needs_json and not model.supports_json:
+                continue
             if capability_key in model.recommended_use_cases:
                 return model
-        models = self._registry.list_models()
+        models = [model for model in self._registry.list_models() if not needs_json or model.supports_json]
         if not models:
+            if needs_json:
+                raise ValueError("No JSON-capable provider models are registered.")
             raise ValueError("No provider models are registered.")
         return models[0]
 
@@ -249,11 +326,31 @@ def _model_constraint_errors(rule: ProviderRoutingRule, model: ModelCapability, 
 def _capability_use_case(use_case: ProviderRoutingUseCase) -> str:
     if use_case in JSON_ROUTING_USE_CASES:
         return "structured_output"
-    if use_case == ProviderRoutingUseCase.NARRATOR:
+    if use_case in {ProviderRoutingUseCase.NARRATOR, ProviderRoutingUseCase.WORLD_NARRATION, ProviderRoutingUseCase.NOVEL_DRAFT, ProviderRoutingUseCase.NOVEL_REWRITE}:
         return "narration"
-    if use_case == ProviderRoutingUseCase.RP_DIALOGUE:
+    if use_case in {ProviderRoutingUseCase.RP_DIALOGUE, ProviderRoutingUseCase.TAVERN_REPLY}:
         return "rp_expression"
+    if use_case in {ProviderRoutingUseCase.MEMORY_SUMMARY, ProviderRoutingUseCase.CHEAP_SUMMARY}:
+        return "structured_output"
     return use_case.value
+
+
+def _policy_errors(context: ProviderRoutingContext, policy: ProviderSafetyPolicy, model: ModelCapability) -> list[str]:
+    errors: list[str] = []
+    mode = str(context.mode)
+    allowed = [str(item) for item in policy.allowed_modes]
+    disallowed = [str(item) for item in policy.disallowed_modes]
+    if allowed and mode not in allowed:
+        errors.append("provider_safety_policy_mode_not_allowed")
+    if mode in disallowed:
+        errors.append("provider_safety_policy_mode_disallowed")
+    if context.prompt_is_sensitive and not policy.allow_sensitive_prompts:
+        errors.append("provider_safety_policy_rejects_sensitive_prompt")
+    if context.prompt_is_debug and not policy.allow_debug_prompts:
+        errors.append("provider_safety_policy_rejects_debug_prompt")
+    if (context.project_local_only or policy.require_local_only) and not context.explicit_external_override and not model.local_only:
+        errors.append("provider_safety_policy_requires_local_only")
+    return errors
 
 
 def _contains_sensitive(value: Any) -> bool:

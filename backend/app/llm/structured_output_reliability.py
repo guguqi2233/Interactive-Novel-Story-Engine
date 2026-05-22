@@ -14,8 +14,12 @@ from app.engine.content.batch_lorebook_classification import BatchLorebookClassi
 from app.engine.content.side_quest_generator import QuestDraft, QuestDraftStage
 from app.llm.model_prompt_lab_policy import BenchmarkRun, ModelPromptLabPolicy, ProviderProfile, redact_sensitive_text
 from app.llm.provider_base import LLMProvider, LLMProviderError
+from app.llm.provider_profiles import ProviderCapabilityReport
 from app.llm.provider_factory import create_llm_provider
 from app.llm.schemas import MemorySummary, NarrativeResult, PlayerActionType, PlayerIntent
+from app.platform.cross_mode import CrossModeDraft
+from app.platform.novel_studio import GeneratedNovelDraft
+from app.platform.tavern_studio import GeneratedTavernReply
 from app.roleplay.character_cards import (
     CharacterCardImportReport,
     CharacterCardInputFormat,
@@ -36,6 +40,10 @@ class StructuredOutputSchemaName(StrEnum):
     CHARACTER_CARD_IMPORT_RESULT = "CharacterCardImportResult"
     LOREBOOK_CLASSIFICATION_RESULT = "LorebookClassificationResult"
     RP_CONSISTENCY_REPORT = "RPConsistencyReport"
+    GENERATED_NOVEL_DRAFT = "GeneratedNovelDraft"
+    GENERATED_TAVERN_REPLY = "GeneratedTavernReply"
+    CROSS_MODE_DRAFT = "CrossModeDraft"
+    PROVIDER_CAPABILITY_REPORT = "ProviderCapabilityReport"
 
 
 STRUCTURED_OUTPUT_SCHEMA_NAMES = [item.value for item in StructuredOutputSchemaName]
@@ -83,6 +91,11 @@ class StructuredOutputCaseResult(BaseModel):
     output_summary_safe: str = ""
     error_class: str | None = None
     error_message_safe: str | None = None
+    provider_profile_id: str | None = None
+    success: bool | None = None
+    validation_errors: list[str] = Field(default_factory=list)
+    retry_count: int = 0
+    fallback_used: bool = False
 
 
 class StructuredOutputReliabilityReport(BaseModel):
@@ -159,6 +172,8 @@ def _run_case(provider: LLMProvider, case: StructuredOutputTestCase) -> Structur
             result = _result_from_exception(case, exc, perf_counter() - started)
     result.retried = retried
     result.retry_succeeded = retry_succeeded and result.ok
+    result.retry_count = 1 if retried else 0
+    result.success = result.ok
     return result
 
 
@@ -204,6 +219,7 @@ def _result_from_exception(case: StructuredOutputTestCase, exc: Exception, elaps
         prompt_preview_redacted=case.redacted_prompt_preview(),
         error_class=type(exc).__name__,
         error_message_safe=_safe_error_message(message),
+        validation_errors=[_safe_error_message(message)] if schema_violation or invalid_json else [],
     )
 
 
@@ -296,6 +312,10 @@ def _schema_for_case(schema_name: StructuredOutputSchemaName) -> type[BaseModel]
         StructuredOutputSchemaName.CHARACTER_CARD_IMPORT_RESULT: CharacterCardImportReport,
         StructuredOutputSchemaName.LOREBOOK_CLASSIFICATION_RESULT: BatchLorebookClassificationReport,
         StructuredOutputSchemaName.RP_CONSISTENCY_REPORT: RPConsistencyReport,
+        StructuredOutputSchemaName.GENERATED_NOVEL_DRAFT: GeneratedNovelDraft,
+        StructuredOutputSchemaName.GENERATED_TAVERN_REPLY: GeneratedTavernReply,
+        StructuredOutputSchemaName.CROSS_MODE_DRAFT: CrossModeDraft,
+        StructuredOutputSchemaName.PROVIDER_CAPABILITY_REPORT: ProviderCapabilityReport,
     }
     return mapping[schema_name]
 
@@ -322,6 +342,14 @@ def _sample_for_schema(schema: type[Any]) -> BaseModel:
         return BatchLorebookClassificationReport(target_world_id="test_world", total_entries=0)
     if schema is RPConsistencyReport:
         return RPConsistencyReport(ok=True, decision=RPConsistencyDecision.ACCEPT)
+    if schema is GeneratedNovelDraft:
+        return GeneratedNovelDraft(text="Safe generated novel draft.", summary="safe")
+    if schema is GeneratedTavernReply:
+        return GeneratedTavernReply(content="Safe Tavern reply.", speaker_id="mira")
+    if schema is CrossModeDraft:
+        return CrossModeDraft(artifact_id="structured_output_draft", project_id="demo", direction="novel_to_world", artifact_type="fact_draft")
+    if schema is ProviderCapabilityReport:
+        return ProviderCapabilityReport(provider_profile_id="fake", model_id="fake")
     raise LLMProviderError(f"Unsupported structured output schema: {schema.__name__}")
 
 

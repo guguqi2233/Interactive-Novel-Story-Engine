@@ -144,7 +144,7 @@ class ProviderCapabilityRegistry:
         }
 
     def factory_supported_provider_ids(self) -> list[str]:
-        return ["mock", "local_stub", "local_http", "openai"]
+        return ["mock", "local_stub", "local_http", "openai", "openai_compatible", "relay"]
 
     def _require_provider(self, provider_id: str) -> ProviderCapability:
         provider = self._providers.get(provider_id)
@@ -200,10 +200,20 @@ def default_provider_capabilities() -> list[ProviderCapability]:
         ProviderCapability(
             provider_id="openai_compatible",
             provider_type=ProviderType.OPENAI_COMPATIBLE,
-            recommended_use_cases=["compatibility_metadata", "local_model_experiment"],
+            recommended_use_cases=["compatibility_metadata", "local_model_experiment", "structured_output", "narration", "rp_expression"],
             json_reliability_rating="provider_dependent",
             local_only=False,
-            notes="Declared compatibility profile; concrete runtime selection is currently local_http.",
+            requires_api_key=True,
+            notes="OpenAI-compatible endpoint configured by local provider profile.",
+        ),
+        ProviderCapability(
+            provider_id="relay",
+            provider_type=ProviderType.RELAY,
+            recommended_use_cases=["compatibility_metadata", "structured_output", "narration", "rp_expression"],
+            json_reliability_rating="provider_dependent",
+            local_only=False,
+            requires_api_key=True,
+            notes="Relay/middleman profile using the OpenAI-compatible protocol.",
         ),
     ]
 
@@ -252,6 +262,16 @@ def default_model_capabilities() -> list[ModelCapability]:
             json_reliability_rating="provider_dependent",
             local_only=False,
             notes="Generic OpenAI-compatible metadata profile.",
+        ),
+        ModelCapability(
+            provider_id="relay",
+            provider_type=ProviderType.RELAY,
+            model_id="relay-chat",
+            recommended_use_cases=["compatibility_metadata", "structured_output", "narration", "rp_expression"],
+            json_reliability_rating="provider_dependent",
+            requires_api_key=True,
+            local_only=False,
+            notes="Generic relay/middleman OpenAI-compatible metadata profile.",
         ),
     ]
 

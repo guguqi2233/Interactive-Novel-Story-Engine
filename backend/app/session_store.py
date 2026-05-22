@@ -33,9 +33,10 @@ from app.engine.rules.faction_conflict import get_visible_faction_conflicts
 from app.engine.rules.time import format_game_time, get_time_of_day
 from app.llm.intent_parser import IntentParser
 from app.llm.narrator import Narrator
-from app.llm.provider_factory import create_llm_provider
 from app.llm.provider_base import LLMProvider
+from app.llm.provider_gateway import world_routed_provider_from_settings
 from app.llm.prompt_profiles import get_default_prompt_profile_store
+from app.config import get_settings
 
 ProviderFactory = Callable[[], LLMProvider]
 
@@ -48,7 +49,7 @@ class InMemorySessionStore:
         default_world_id: str = "mist_valley",
     ) -> None:
         self._sessions: dict[str, GameLoop] = {}
-        self._provider_factory = provider_factory or create_llm_provider
+        self._provider_factory = provider_factory or _create_default_world_provider
         self._world_loader = WorldLoader(worlds_root)
         self._default_world_id = default_world_id
 
@@ -89,6 +90,10 @@ class InMemorySessionStore:
 def create_initial_state(world_loader: WorldLoader | None = None, world_id: str = "mist_valley") -> GameState:
     loader = world_loader or WorldLoader("worlds")
     return loader.load(world_id).to_game_state()
+
+
+def _create_default_world_provider() -> LLMProvider:
+    return world_routed_provider_from_settings(get_settings())
 
 
 def build_visible_state(state: GameState) -> VisibleStateResponse:

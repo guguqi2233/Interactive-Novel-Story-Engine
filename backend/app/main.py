@@ -1,12 +1,13 @@
 import json
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException
+from pydantic import ValidationError
 
 from app.api import (
     AuthoringCreateWorldRequest,
@@ -496,11 +497,20 @@ from app.llm.provider_benchmark import (
 )
 from app.llm.provider_router import (
     ProviderRouter,
+    ProviderRoutingContext,
     ProviderRoutingConfig,
     ProviderRoutingDecision,
     ProviderRoutingRule,
     ProviderRoutingValidationReport,
     get_default_provider_router,
+)
+from app.llm.provider_profiles import (
+    CapabilityDetectionService,
+    FakeProviderSecretResolver,
+    ModelCapabilityMatrix,
+    ProviderProfileRepository,
+    ProviderProfileV2,
+    build_model_capability_matrix,
 )
 from app.llm.structured_output_reliability import (
     StructuredOutputReliabilityReport,
@@ -5982,6 +5992,150 @@ def get_cross_mode_repository(project_id: str):
     return CrossModeRepository(project.project_root)
 
 
+def get_provider_profile_repository(project_id: str) -> ProviderProfileRepository:
+    project = get_project_repository().load_project(project_id)
+    return ProviderProfileRepository(project.project_root)
+
+
+def _usage_since(since_minutes: int | None = None, since: str | None = None):
+    if since:
+        try:
+            return datetime.fromisoformat(since.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Invalid since timestamp") from exc
+    if since_minutes is not None:
+        return datetime.now(timezone.utc) - timedelta(minutes=max(0, since_minutes))
+    return None
+
+
+def _usage_until(until: str | None = None):
+    if not until:
+        return None
+    try:
+        return datetime.fromisoformat(until.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid until timestamp") from exc
+
+
+@app.get("/projects/{project_id}/providers", response_model=dict[str, Any])
+def list_project_provider_profiles(project_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    repo = get_provider_profile_repository(project_id)
+    return {"local_only": True, "providers": repo.list_safe_summaries()}
+
+
+@app.post("/projects/{project_id}/providers", response_model=dict[str, Any])
+def create_project_provider_profile(project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    try:
+        profile = ProviderProfileV2.model_validate(payload)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    saved = get_provider_profile_repository(project_id).create_provider_profile(profile)
+    return {"local_only": True, "provider": saved.safe_summary()}
+
+
+@app.get("/projects/{project_id}/providers/capability-matrix", response_model=dict[str, Any])
+def get_project_provider_capability_matrix(project_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    repo = get_provider_profile_repository(project_id)
+    matrix = build_model_capability_matrix(project_id, repo.list_provider_profiles())
+    return {"local_only": True, "matrix": matrix.safe_summary()}
+
+
+@app.get("/projects/{project_id}/providers/{provider_profile_id}", response_model=dict[str, Any])
+def get_project_provider_profile(project_id: str, provider_profile_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    return {"local_only": True, "provider": get_provider_profile_repository(project_id).load_provider_profile(provider_profile_id).safe_summary()}
+
+
+@app.patch("/projects/{project_id}/providers/{provider_profile_id}", response_model=dict[str, Any])
+def update_project_provider_profile(project_id: str, provider_profile_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    profile = get_provider_profile_repository(project_id).update_provider_profile(provider_profile_id, payload)
+    return {"local_only": True, "provider": profile.safe_summary()}
+
+
+@app.delete("/projects/{project_id}/providers/{provider_profile_id}", response_model=dict[str, Any])
+def delete_project_provider_profile(project_id: str, provider_profile_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    get_provider_profile_repository(project_id).delete_provider_profile(provider_profile_id)
+    return {"ok": True, "provider_profile_id": provider_profile_id}
+
+
+@app.post("/projects/{project_id}/providers/{provider_profile_id}/validate", response_model=dict[str, Any])
+def validate_project_provider_profile(project_id: str, provider_profile_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    profile = get_provider_profile_repository(project_id).load_provider_profile(provider_profile_id)
+    reports = CapabilityDetectionService().detect_from_profile(profile)
+    warnings = [warning for report in reports for warning in report.warnings]
+    return {"local_only": True, "ok": True, "warnings": warnings, "reports": [report.safe_summary() for report in reports], "provider": profile.safe_summary()}
+
+
+@app.get("/projects/{project_id}/providers/{provider_profile_id}/status", response_model=dict[str, Any])
+def get_project_provider_profile_status(project_id: str, provider_profile_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    profile = get_provider_profile_repository(project_id).load_provider_profile(provider_profile_id)
+    return {"local_only": True, "status": "configured" if profile.enabled else "disabled", "provider": profile.safe_summary()}
+
+
+@app.post("/projects/{project_id}/providers/{provider_profile_id}/test-connection", response_model=dict[str, Any])
+def test_project_provider_connection(project_id: str, provider_profile_id: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    require_authoring_api()
+    allow_real = bool((payload or {}).get("allow_real_connection", False))
+    profile = get_provider_profile_repository(project_id).load_provider_profile(provider_profile_id)
+    if not allow_real:
+        return {"ok": True, "dry_run": True, "provider": profile.safe_summary(), "notes": ["No real provider call was made."]}
+    raise HTTPException(status_code=403, detail="Real provider connection tests are disabled by default")
+
+
+@app.get("/projects/{project_id}/providers/usage/recent", response_model=dict[str, Any])
+def get_project_provider_usage_recent(
+    project_id: str,
+    limit: int = 50,
+    provider_id: str | None = None,
+    model_id: str | None = None,
+    mode: str | None = None,
+    use_case: str | None = None,
+    since_minutes: int | None = None,
+    since: str | None = None,
+    until: str | None = None,
+) -> dict[str, Any]:
+    require_usage_api()
+    records = get_model_usage_store().recent(limit, provider_id=provider_id, model_id=model_id, use_case=use_case, project_id=project_id, mode=mode, since=_usage_since(since_minutes, since), until=_usage_until(until))
+    return {"local_only": True, "enabled": usage_tracking_enabled(), "records": [record.safe_dict() for record in records]}
+
+
+@app.get("/projects/{project_id}/providers/usage/summary", response_model=dict[str, Any])
+def get_project_provider_usage_summary(
+    project_id: str,
+    provider_id: str | None = None,
+    model_id: str | None = None,
+    mode: str | None = None,
+    use_case: str | None = None,
+    since_minutes: int | None = None,
+    since: str | None = None,
+    until: str | None = None,
+) -> dict[str, Any]:
+    require_usage_api()
+    summary = get_model_usage_store().summary(provider_id=provider_id, model_id=model_id, use_case=use_case, project_id=project_id, mode=mode, since=_usage_since(since_minutes, since), until=_usage_until(until))
+    return {"local_only": True, **summary.model_dump(mode="json")}
+
+
+@app.get("/projects/{project_id}/providers/usage/by-mode", response_model=dict[str, Any])
+def get_project_provider_usage_by_mode(project_id: str, since_minutes: int | None = None) -> dict[str, Any]:
+    require_usage_api()
+    groups = get_model_usage_store().by_mode(project_id=project_id, since=_usage_since(since_minutes))
+    return {"local_only": True, "enabled": usage_tracking_enabled(), "by_mode": [group.model_dump(mode="json") for group in groups]}
+
+
+@app.get("/projects/{project_id}/providers/usage/by-provider", response_model=dict[str, Any])
+def get_project_provider_usage_by_provider(project_id: str, since_minutes: int | None = None) -> dict[str, Any]:
+    require_usage_api()
+    groups = get_model_usage_store().by_provider(project_id=project_id, since=_usage_since(since_minutes))
+    return {"local_only": True, "enabled": usage_tracking_enabled(), "by_provider": [group.model_dump(mode="json") for group in groups]}
+
+
 @app.get("/projects")
 def list_narrative_projects() -> dict[str, Any]:
     require_authoring_api()
@@ -6592,7 +6746,6 @@ def archive_tavern_session(project_id: str, session_id: str) -> dict[str, Any]:
 @app.post("/projects/{project_id}/tavern/sessions/{session_id}/chat")
 def chat_tavern_session(project_id: str, session_id: str, request: dict[str, Any]) -> dict[str, Any]:
     require_authoring_api()
-    from app.llm.provider_factory import create_llm_provider
     from app.platform.tavern_studio import (
         GeneratedTavernReply,
         SingleCharacterChatService,
@@ -6600,14 +6753,27 @@ def chat_tavern_session(project_id: str, session_id: str, request: dict[str, Any
     )
 
     try:
-        provider = getattr(app.state, "tavern_llm_provider", None) or create_llm_provider(getattr(app.state, "settings", settings))
         repo = get_tavern_repository(project_id)
-        if getattr(provider, "__class__", type(provider)).__name__ == "MockLLMProvider":
+        from app.llm.provider_gateway import routed_provider_from_provider, routed_provider_from_settings
+        from app.llm.provider_router import ProviderRoutingUseCase
+
+        raw_provider = getattr(app.state, "tavern_llm_provider", None)
+        if getattr(raw_provider, "__class__", type(raw_provider)).__name__ == "MockLLMProvider":
             # The default mock provider does not know the v2.3 schema; use a safe
             # deterministic response when tests/UI have not injected a provider.
             from app.llm.fake_provider import FakeLLMProvider
 
-            provider = FakeLLMProvider(json_responses=[GeneratedTavernReply(content="I hear you. Let's keep this in the Tavern session for now.", speaker_id=str(request.get("character_id", "character")), safety_notes=["local_stub"]).model_dump(mode="json")])
+            provider = routed_provider_from_provider(
+                FakeLLMProvider(json_responses=[GeneratedTavernReply(content="I hear you. Let's keep this in the Tavern session for now.", speaker_id=str(request.get("character_id", "character")), safety_notes=["local_stub"]).model_dump(mode="json")]),
+                provider_id="mock",
+                model_id="mock",
+                mode="tavern",
+                use_case=ProviderRoutingUseCase.TAVERN_REPLY,
+            )
+        elif raw_provider is not None:
+            provider = routed_provider_from_provider(raw_provider, provider_id="local_stub", model_id="local_stub", mode="tavern", use_case=ProviderRoutingUseCase.TAVERN_REPLY)
+        else:
+            provider = routed_provider_from_settings(getattr(app.state, "settings", settings), mode="tavern", use_case=ProviderRoutingUseCase.TAVERN_REPLY)
         service = SingleCharacterChatService(repo, TavernResponseGenerationService(provider, repo))
         return service.chat(project_id=project_id, session_id=session_id, user_message=str(request.get("user_message", "")), character_id=str(request.get("character_id", ""))).model_dump(mode="json")
     except (FileNotFoundError, ValueError) as exc:

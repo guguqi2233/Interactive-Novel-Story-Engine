@@ -1,5 +1,98 @@
 # Local LLM Interactive Novel World Engine
 
+## v2.5 Provider Gateway Pro
+
+v2.5 adds Provider Gateway Pro: a local provider management, routing,
+capability, fallback, usage-estimate, benchmark, and safety layer for Novel,
+Tavern, World, Cross-Mode, and Quality workflows.
+
+Provider Gateway Pro is not an API resale service, cloud account system, online
+billing system, or hosted provider platform. Provider choice affects wording,
+latency, formatting, cost estimates, and structured-output reliability; it
+does not change World Engine authority. Providers cannot directly modify
+`GameState`, apply `StateDelta`, append `EventLog`, reveal hidden facts, or
+decide proposal apply results.
+
+Provider profile basics:
+
+1. Open a local `NarrativeProject` in the Project Shell.
+2. Go to the Providers / Settings provider panel.
+3. Create a provider profile with:
+   - `provider_type`: `mock`, `local_stub`, `local_http`, `openai`,
+     `openai_compatible`, or `relay`.
+   - `display_name`.
+   - one or more `ModelProfile` entries.
+   - `allowed_modes` such as Novel, Tavern, World, Cross-Mode, Quality, or
+     Authoring.
+   - optional timeout, retry, fallback profile ids, cost hints, and safety
+     policy.
+4. Use `api_key_env` or `secret_ref` for credentials. Do not paste a real API
+   key into provider profile JSON, project files, frontend env, docs, logs, or
+   exports.
+
+Environment placeholders:
+
+```bash
+OPENAI_API_KEY=
+LOCAL_LLM_BASE_URL=
+LOCAL_LLM_MODEL=local-model
+RELAY_API_KEY=
+```
+
+For OpenAI-compatible or relay profiles:
+
+- Use `provider_type=openai_compatible` or `provider_type=relay`.
+- Set `base_url` or `base_url_env`.
+- Set `api_key_env` or `secret_ref`.
+- The relay type is a generic compatible API profile. The project does not
+  endorse or integrate with a specific relay service and does not resell API
+  access.
+
+For local HTTP profiles:
+
+- Use `provider_type=local_http`.
+- Set `base_url` or `LOCAL_LLM_BASE_URL`.
+- Set a local `model_id`.
+- Start the local model service yourself. Tests and default benchmarks do not
+  call real local services.
+
+Routing rules:
+
+- Provider routing is mode/use-case based. Common use cases include
+  `novel_draft`, `novel_rewrite`, `tavern_reply`,
+  `world_intent_parse`, `world_narration`, `memory_summary`,
+  `cross_mode_draft`, `quality_eval`, `structured_json`, and
+  `cheap_summary`.
+- JSON-oriented use cases require JSON-capable models and all `generate_json`
+  output is schema-validated.
+- Fallback providers must satisfy the same capability and safety requirements
+  as the primary provider.
+
+Usage dashboard:
+
+- The Provider Usage dashboard shows recent calls, usage by mode/use case,
+  usage by provider, estimated tokens, estimated cost, and error counts.
+- Usage and cost values are approximate local estimates, not billing records.
+- The dashboard does not display full prompts, full outputs, API keys, hidden
+  facts, raw env, or raw `state_deltas`.
+
+Provider benchmark and structured-output reliability:
+
+```powershell
+$env:PYTHONPATH="backend"
+python -m app.tools.provider_benchmark --mock-only
+python -m app.tools.structured_output_reliability --provider fake
+```
+
+Real provider checks are explicit opt-in and are not CI defaults. Use
+`python -m pytest` and the frontend build for normal local verification:
+
+```bash
+python -m pytest
+cd frontend
+npm.cmd run build
+```
+
 ## v2.4 Cross-Mode Bridge
 
 v2.4 adds a local Cross-Mode Bridge between Novel, Tavern, and World inside

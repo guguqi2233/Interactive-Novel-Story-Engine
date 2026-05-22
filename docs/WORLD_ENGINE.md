@@ -1,5 +1,40 @@
 # World Engine
 
+## v2.5 Provider Gateway Pro Integration
+
+v2.5 Provider Gateway Pro changes provider management, routing, fallback,
+capability metadata, usage estimates, and provider diagnostics. It does not
+change World Engine authority.
+
+World Engine rules remain unchanged:
+
+- `GameState` is still the authoritative runtime state.
+- Runtime state changes still go through `StateDelta`.
+- Runtime World consequences still record `EventLog`.
+- Player-facing state still comes from visibility-filtered projections.
+- Hidden facts, NPC secrets, debug memory, raw `GameState`, and raw
+  `state_deltas` remain outside player APIs and narrator/provider prompts.
+
+Provider routing boundaries:
+
+- Provider choice may change wording, latency, failure behavior, cost
+  estimates, or structured-output reliability.
+- Provider choice cannot change action rules, visibility rules, quest rules,
+  NPC knowledge, relationship authority, or state mutation authority.
+- `IntentParser` may use a JSON-capable provider route to parse player input,
+  but the parsed intent is still resolved by deterministic engine rules.
+- `Narrator` may use a provider route to render visible outcomes, but it may
+  receive only confirmed action results and narrator-safe visible facts.
+- `MemorySummarizer` may use a provider route to create non-authoritative
+  summaries and must not receive raw `state_deltas`.
+- Fallback providers must follow the same schema validation, visibility, and
+  safety policy as the primary provider.
+
+Provider Gateway Pro data such as `ProviderProfileV2`, `ModelProfile`,
+`ProviderRoutingRule`, fallback metadata, `ProviderCallTrace`, and
+`ProviderUsageRecord` is local observability/configuration metadata. It is not
+World state and cannot apply deltas or create facts.
+
 ## v2.4 Cross-Mode Bridge Integration
 
 v2.4 adds Cross-Mode Bridge services around Novel, Tavern, and World, but it
