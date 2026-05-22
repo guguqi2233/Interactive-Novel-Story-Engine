@@ -6164,20 +6164,107 @@ export async function fetchProjectModuleAudit(projectId: string): Promise<{ loca
   return requestJson<{ local_only: boolean; records: ModAuditRecord[] }>(`/projects/${encodeURIComponent(projectId)}/modules/audit`);
 }
 
-async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, init);
-  if (!response.ok) {
-    const errorBody = await safeReadError(response);
-    throw new Error(errorBody || `Request failed: ${response.status}`);
+export class ApiError extends Error {
+  status: number;
+  path: string;
+  code?: string;
+
+  constructor(message: string, options: { status: number; path: string; code?: string }) {
+    super(redactSensitiveText(message || "Request failed."));
+    this.name = "ApiError";
+    this.status = options.status;
+    this.path = options.path;
+    this.code = options.code;
   }
-  return (await response.json()) as T;
 }
 
-async function safeReadError(response: Response): Promise<string> {
+export async function safeFetch(path: string, init?: RequestInit): Promise<Response> {
   try {
-    const payload = (await response.json()) as { detail?: string };
-    return payload.detail ?? "";
+    return await fetch(`${API_BASE_URL}${path}`, init);
   } catch {
-    return "";
+    throw new ApiError("Backend API unavailable.", { status: 0, path });
   }
+}
+
+export async function parseJsonSafe(response: Response): Promise<unknown> {
+  const text = await response.text();
+  if (!text.trim()) {
+    return null;
+  }
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return { detail: "Backend returned a non-JSON response." };
+  }
+}
+
+export function getErrorMessageSafe(error: unknown): string {
+  if (error instanceof ApiError) {
+    return redactSensitiveText(error.message);
+  }
+  if (error instanceof Error) {
+    return redactSensitiveText(error.message);
+  }
+  if (typeof error === "string") {
+    return redactSensitiveText(error);
+  }
+  return "Request failed.";
+}
+
+export function isApiDisabledError(error: unknown): boolean {
+  const message = getErrorMessageSafe(error).toLowerCase();
+  return (
+    error instanceof ApiError && [403, 404, 503].includes(error.status)
+  ) || message.includes("disabled") || message.includes("not enabled") || message.includes("unavailable");
+}
+
+export function isDebugDisabledError(error: unknown): boolean {
+  const message = getErrorMessageSafe(error).toLowerCase();
+  return (
+    (error instanceof ApiError && error.path.toLowerCase().includes("debug")) ||
+    message.includes("enable_debug_api") ||
+    (message.includes("debug") && (message.includes("disabled") || message.includes("not enabled")))
+  );
+}
+
+async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await safeFetch(path, init);
+  const parsed = await parseJsonSafe(response);
+  if (!response.ok) {
+    const errorInfo = extractErrorInfo(parsed);
+    throw new ApiError(errorInfo.message || `Request failed: ${response.status}`, {
+      status: response.status,
+      path,
+      code: errorInfo.code
+    });
+  }
+  return parsed as T;
+}
+
+function extractErrorInfo(payload: unknown): { message: string; code?: string } {
+  if (!payload || typeof payload !== "object") {
+    return { message: "" };
+  }
+  const record = payload as Record<string, unknown>;
+  const detail = record.detail;
+  const message = record.message ?? record.error;
+  const code = typeof record.code === "string" ? record.code : undefined;
+  if (typeof detail === "string") {
+    return { message: redactSensitiveText(detail), code };
+  }
+  if (typeof message === "string") {
+    return { message: redactSensitiveText(message), code };
+  }
+  return { message: "Request failed.", code };
+}
+
+function redactSensitiveText(value: string): string {
+  return value
+    .replace(/sk-[A-Za-z0-9_-]+/g, "sk-[redacted]")
+    .replace(/(authorization\s*[:=]\s*)(bearer\s+)?[A-Za-z0-9._~+/=-]+/gi, "$1[redacted]")
+    .replace(/(api[_-]?key|secret|token|password)\s*[:=]\s*['"]?[^'",\s}]+/gi, "$1=[redacted]")
+    .replace(/[A-Z]:\\[^\s"'<>]+/g, "[local path redacted]")
+    .replace(/\/[^\s"'<>]*(?:\.env|\.db|\.sqlite|logs?|cache|backups?|crash-reports|node_modules|dist)[^\s"'<>]*/gi, "[local path redacted]")
+    .replace(/(hidden[_\s-]?facts?|npc[_\s-]?secrets?|raw[_\s-]?prompts?|state[_\s-]?deltas?)\s*[:=]\s*[^}\n]+/gi, "$1=[redacted]")
+    .replace(/Traceback[\s\S]*/i, "[stack trace redacted]");
 }

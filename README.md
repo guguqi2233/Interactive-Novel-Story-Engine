@@ -1,5 +1,79 @@
 # Local LLM Interactive Novel World Engine
 
+## v2.9+ Local UI / UX Roadmap
+
+The project direction after v2.8 is local-first, UI-first, and
+experience-first. The near-term roadmap is now:
+
+- v2.9: Local UI / UX Foundation
+- v3.0: Local Desktop Studio Polish
+- v3.1: Novel Studio UI Pro
+- v3.2: Tavern Studio UI Pro
+- v3.3: World Studio UI Pro
+- v3.4: Authoring / Mod UI Pro
+- v3.5: Local QA / Debug / Replay UI Pro
+- v3.6: Local Performance & Accessibility Polish
+
+Online-Ready Architecture, account systems, cloud sync, online marketplaces,
+remote package registries, online narrative platforms, and online mature-content
+platforms are not near-term goals. They remain long-term optional directions
+only after the local privacy, export, provider, package, and UI boundaries are
+stable. The project remains local-first: API keys stay local, are not uploaded,
+are not synchronized, do not enter frontend code, and do not enter exports,
+mods, packages, logs, or documentation examples.
+
+## v2.9 Local UI / UX Foundation
+
+v2.9 is a local UI foundation release. It does not rewrite the whole app and
+does not add new gameplay systems. It improves the current frontend shell so
+the existing Novel, Tavern, World, Cross-Mode, Provider, Script / Mod, Quality,
+Settings, Debug / Replay, and Diagnostics workflows are easier to find and
+safer to use.
+
+Implemented v2.9 UI surfaces:
+
+- Unified Navigation for Project Home, Novel, Tavern, World, Cross-Mode,
+  Script / Mods, Providers, Quality, Debug / Replay, and Settings.
+- Project Home with local-only status, mode cards, Provider status, Quality
+  status, privacy summary, recent safe activity, and quick actions.
+- Mode landing sections for Novel, Tavern, World, Cross-Mode, Script / Mods,
+  Providers, Quality, and Debug / Replay.
+- Local Status Bar summarizing project loaded state, backend status, provider
+  status, quality status, debug status, local-only state, and secret-safe state.
+- Provider Setup UX that accepts only `api_key_env` or `secret_ref`; it does not
+  provide a plaintext API key field.
+- Module Browser polish with local package categories, risk badges, permission
+  summaries, compatibility/certification/quality summaries, and no marketplace
+  or remote download flow.
+- Quality Gate Dashboard polish with blocker/warning counts, category status,
+  safe issue summaries, and suggested local actions.
+- Cross-Mode Dashboard polish with draft/proposal/conflict/audit counts and
+  validation/confirmation guidance.
+- Settings / Privacy and Local Help / Onboarding panels explaining local-first
+  workflow, Provider setup, Quality Gate, privacy, exports, and diagnostics.
+- Diagnostics Export UI for local safe JSON previews. Normal diagnostics
+  exclude API keys, `.env`, provider secrets, hidden facts, mature/private
+  content, debug memory, and raw `state_deltas`. Debug export requires explicit
+  confirmation and `ENABLE_DEBUG_API`.
+
+Useful v2.9 frontend checks:
+
+```powershell
+cd frontend
+npm.cmd run build
+npm.cmd run check:v29-ui
+```
+
+Focused v2.9 UI regression checks:
+
+```powershell
+python -m pytest backend/tests/test_v29_ui_regression.py
+```
+
+v2.9 remains local-only. It does not implement accounts, cloud sync, online
+marketplaces, remote package auto-download, online publishing, or online
+mature-content services. Those areas remain long-term optional directions only.
+
 ## v2.8 Roleplay Immersion & Mature Module
 
 v2.8 adds Roleplay Immersion & Mature Module infrastructure for richer local

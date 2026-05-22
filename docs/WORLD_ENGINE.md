@@ -1,5 +1,27 @@
 # World Engine
 
+## v2.9+ Local UI / UX Direction
+
+The roadmap after v2.8 prioritizes local UI / UX foundations and local desktop
+polish rather than online architecture. UI improvements may make World, Novel,
+Tavern, authoring, mod, QA, debug, and replay workflows easier to use, but they
+must not change World Engine authority.
+
+The World Engine remains the fact source. UI layers must not bypass
+`StateDelta`, `EventLog`, visibility filtering, save migration, provider
+boundaries, package validation, or export privacy rules. Account systems, cloud
+sync, online marketplaces, remote package registries, online narrative
+platforms, and online mature-content platforms are long-term optional ideas, not
+near-term World Engine scope.
+
+v2.9 implements UI surfaces such as Unified Navigation, Project Home, Local
+Status Bar, mode landing sections, Provider Setup, Module Browser, Quality Gate
+Dashboard, Cross-Mode Dashboard, Settings / Privacy, and Diagnostics Export.
+These are safe summary and navigation layers. They do not grant the frontend
+authority to directly edit `GameState`, apply proposals, bypass validation, or
+write `EventLog`. Normal UI must continue to show visible/safe summaries only;
+debug/replay and diagnostics debug export remain gated by `ENABLE_DEBUG_API`.
+
 ## v2.8 Roleplay Immersion & Mature Module Integration
 
 v2.8 strengthens Tavern/RP immersion and adds default-off mature safety policy

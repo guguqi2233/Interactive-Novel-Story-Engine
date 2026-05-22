@@ -23,6 +23,38 @@ The project direction includes:
 8. Desktop / Local Studio: local launcher, project/workspace tools, logs,
    crash reports, health checks, backup/restore, and offline help/update notes.
 
+AI Narrative Studio is a local-first three-mode platform for writing novels,
+Tavern-style roleplay, and interactive open-world play. After v2.8, the
+near-term direction is local UI / UX improvement, not online architecture.
+
+Near-term roadmap:
+
+- v2.9 Local UI / UX Foundation.
+- v3.0 Local Desktop Studio Polish.
+- v3.1 Novel Studio UI Pro.
+- v3.2 Tavern Studio UI Pro.
+- v3.3 World Studio UI Pro.
+- v3.4 Authoring / Mod UI Pro.
+- v3.5 Local QA / Debug / Replay UI Pro.
+- v3.6 Local Performance & Accessibility Polish.
+
+Explicitly deferred from v2.9-v3.6 primary scope:
+
+- account system;
+- cloud sync;
+- online marketplace;
+- online package registry;
+- remote package auto-download;
+- online narrative platform;
+- API resale service;
+- online mature content platform;
+- multi-user collaboration;
+- real-time online publishing.
+
+These may remain long-term optional directions, but they must not be treated as
+near-term goals or described as implemented unless a future version explicitly
+requests, implements, tests, documents, and audits them.
+
 This is local-first software. LLMs are provided by API or local providers, but
 the world state, rules, EventLog, save/load, migration, visibility, NPC knowledge,
 import/export, package validation, and quality gates are local engine
@@ -32,6 +64,23 @@ API keys may only be read through environment variables or local safe
 configuration. Real API keys must never enter frontend code, logs, crash reports,
 exports, backups, mods, tests, fixtures, package manifests, prompt profiles, or
 documentation examples.
+
+# Local-First Rules
+
+1. All core features must be runnable locally.
+2. API keys may only be read through environment variables or a local secret
+   resolver.
+3. API keys must never enter frontend code.
+4. API keys must never enter project exports.
+5. API keys must never enter logs, diagnostics, crash reports, quality reports,
+   backups, mods, package manifests, prompt profiles, or documentation examples.
+6. Project data is not uploaded by default.
+7. The app does not make network calls by default except to user-configured LLM
+   providers.
+8. Mature/private content is not exported or synchronized by default.
+9. Local package management takes priority over online marketplaces.
+10. UI code may call local backend APIs, but it must not directly read or write
+    arbitrary files.
 
 # Core Architecture Principles
 
@@ -373,6 +422,22 @@ documented invocation works.
     executable payloads, secrets, databases, logs, caches, and build artifacts
     unless a future explicit safe policy says otherwise.
 
+# UI Development Rules
+
+1. UI improvements must not change World Engine fact authority.
+2. UI code must not directly modify `GameState`.
+3. All world-changing UI actions must go through backend APIs, `StateDelta`, and
+   `EventLog`.
+4. Normal UI views must not display hidden facts, NPC secrets, debug memory, raw
+   prompts, raw `state_deltas`, provider secrets, or API keys.
+5. Debug views must be explicitly gated by `ENABLE_DEBUG_API`.
+6. Provider UI must not display API keys.
+7. Export UI must filter secrets and mature/private content by default.
+8. New UI pages must handle loading, empty, error, and disabled states.
+9. Frontend changes must pass `cd frontend && npm.cmd run build`.
+10. Do not introduce large UI dependencies unless there is a clear, documented
+    reason and the existing UI patterns cannot reasonably solve the problem.
+
 # LLM Boundary Rules
 
 - `IntentParser` only parses player intent.
@@ -523,6 +588,13 @@ For every release:
 10. Do not describe online marketplace, cloud sync, accounts, arbitrary-code
     plugins, or multiplayer collaboration as stable unless code, tests, docs,
     and security boundaries actually support them.
+11. Do not implement online account, cloud sync, or marketplace features unless
+    explicitly requested in a future version.
+12. Do not introduce remote package download or remote package execution.
+13. Do not add network services beyond user-configured LLM providers unless a
+    future version explicitly requests and audits them.
+14. Do not present planned online features as implemented.
+15. Do not weaken local privacy constraints for UI convenience.
 
 # Documentation Maintenance
 

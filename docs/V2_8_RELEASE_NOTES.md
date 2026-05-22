@@ -232,11 +232,20 @@ passed
 
 ## 17. Recommended v2.9 Direction
 
-Recommended v2.9 direction: **Online-Ready Architecture**, only after v2.8's
-privacy, mature policy, provider routing, export filtering, and quality gates
-remain stable under release checks.
+Recommended v2.9 direction: **Local UI / UX Foundation**.
 
-Alternative v2.9 candidate: **Sandbox Plugin Runtime**, but only with a
-dedicated sandbox design, disabled-by-default policy, permission model,
-import/export hardening, and exhaustive security tests. It should not be
-introduced as arbitrary-code plugin support without that foundation.
+The post-v2.8 roadmap is local-first, UI-first, and experience-first:
+
+- v2.9: Local UI / UX Foundation
+- v3.0: Local Desktop Studio Polish
+- v3.1: Novel Studio UI Pro
+- v3.2: Tavern Studio UI Pro
+- v3.3: World Studio UI Pro
+- v3.4: Authoring / Mod UI Pro
+- v3.5: Local QA / Debug / Replay UI Pro
+- v3.6: Local Performance & Accessibility Polish
+
+Online-Ready Architecture and Sandbox Plugin Runtime are demoted to long-term
+optional directions. Account systems, cloud sync, online marketplaces, remote
+package registries, online narrative platforms, and online mature-content
+platforms are not near-term goals.

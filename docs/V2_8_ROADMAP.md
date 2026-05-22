@@ -542,15 +542,29 @@ npm.cmd run build
 
 ## v2.9 Candidate Directions
 
-Recommended v2.9 direction: **Quality Studio Pro**.
+Recommended v2.9 direction: **Local UI / UX Foundation**.
 
 Rationale: v2.1-v2.8 would cover project structure, Novel/Tavern/World modes,
 Cross-Mode Bridge, Provider Gateway, Script/Mod Platform, advanced modules, and
-RP/mature safety. Quality Studio Pro should unify release gates, scenario
-coverage, provider checks, module checks, mature/RP safety, performance,
-regression dashboards, and long-term maintenance.
+RP/mature safety. The next priority should be making these local capabilities
+easier, clearer, safer, and more pleasant to use before adding online
+architecture. v2.9 should establish shared UI patterns, navigation,
+information-density rules, local settings surfaces, safe preview panels, and
+consistent empty/error/loading states.
 
-Alternative candidate: **Online-Ready Architecture**, but only after mature/RP
-privacy, local export, provider routing, and quality gates are fully audited and
-accepted. It should not introduce cloud sync, accounts, or public sharing until
-the local privacy boundary is proven stable.
+Planned local-first follow-up roadmap:
+
+- v3.0: Local Desktop Studio Polish
+- v3.1: Novel Studio UI Pro
+- v3.2: Tavern Studio UI Pro
+- v3.3: World Studio UI Pro
+- v3.4: Authoring / Mod UI Pro
+- v3.5: Local QA / Debug / Replay UI Pro
+- v3.6: Local Performance & Accessibility Polish
+
+Online-Ready Architecture, account systems, cloud sync, online marketplaces,
+remote package registries, online narrative platforms, and online mature-content
+platforms are demoted to long-term optional directions. They should not be
+treated as v2.9 or near-term v3.x goals, and they must not be introduced before
+the local privacy, provider, export, package, mature/RP, and UI boundaries are
+stable.

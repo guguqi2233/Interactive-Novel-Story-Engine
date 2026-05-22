@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "check:v29-ui": "node scripts/check-v29-ui-safety.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

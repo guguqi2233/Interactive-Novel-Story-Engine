@@ -1,5 +1,26 @@
 # Content Pack Format
 
+## v2.9+ Local Package UI / UX Direction
+
+After v2.8, package work prioritizes local UI / UX for browsing, validating,
+authoring, importing, exporting, and reviewing local packs. v2.9 is not a remote
+package registry, online marketplace, automatic downloader, cloud sync system,
+or online mature-content distribution channel.
+
+Remote package registries, online marketplaces, online narrative platforms, and
+cloud package sync are long-term optional directions only. Local package
+management remains the default: packages must be validated locally, secrets must
+be filtered, API keys must not enter packages or exports, and UI improvements
+must not bypass manifest validation, permissions, compatibility checks, quality
+gates, or import/export hardening.
+
+The v2.9 Module Browser UI is a local package review surface. It may show local
+package categories, risk badges, permission summaries, compatibility summaries,
+certification status, quality-gate status, and import dry-run guidance. It must
+not execute packages, download remote packages, auto-enable risky modules,
+display provider secrets, or present an online marketplace as a near-term
+feature.
+
 ## v2.8 RP / Mature Content and Package Policy
 
 v2.8 adds RP immersion and mature-policy metadata that can appear in local

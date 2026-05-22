@@ -2,6 +2,19 @@
 
 Generated from local schema constants. This document contains no raw env, API keys, hidden facts, or user data.
 
+## v2.9+ Roadmap Contract Note
+
+v2.9 is now planned as **Local UI / UX Foundation**. The v3.x near-term roadmap
+continues with local desktop, Novel, Tavern, World, authoring/mod, QA/debug/
+replay, performance, and accessibility UI polish. Online-Ready Architecture,
+account systems, cloud sync, online marketplaces, remote package registries,
+online narrative platforms, and online mature-content platforms are long-term
+optional directions, not active contract targets.
+
+v2.9 also introduces frontend-only UI safety contracts for the Local UI / UX
+Foundation. These contracts are not new backend authority layers; they document
+safe summary, navigation, redaction, diagnostics, and local-first UI behavior.
+
 ## Stable Contracts
 - `GameState`: `1.8` (compatible)
 - `StateDelta`: `1.8` (compatible)
@@ -98,6 +111,13 @@ Generated from local schema constants. This document contains no raw env, API ke
 - `RPWorldConsistencyReport`: `2.8` (local RP-to-world consistency report for dead speakers, unknown facts, nonexistent refs, and quest contradictions)
 - `CrossModeRPSafetyMetadata`: `2.8` (RP/Mature safety metadata attached to cross-mode proposals/drafts)
 - `RPMatureQualityGateResult`: `2.8` (project quality gate sub-result for RP/Mature boundary, routing, export, consistency, and cross-mode blockers)
+- `UnifiedNavigation`: `2.9` (frontend local navigation contract over existing Project/Novel/Tavern/World/Cross-Mode/Script-Mod/Provider/Quality/Debug/Settings surfaces; no new router authority)
+- `LocalStatusBar`: `2.9` (frontend safe summary contract for project/backend/provider/quality/debug/local-only/privacy status)
+- `ProjectHomeSummary`: `2.9` (frontend safe Project Home overview contract; no direct GameState mutation)
+- `ModeLandingPage`: `2.9` (frontend safe mode entry contract for Novel/Tavern/World/Cross-Mode/Script-Mod/Provider/Quality/Debug surfaces)
+- `DiagnosticsExportSafePreview`: `2.9` (frontend local diagnostics preview contract; filters API keys, `.env`, provider secrets, hidden facts, mature/private content, debug memory, and raw state deltas by default)
+- `FrontendApiSafeError`: `2.9` (frontend API error formatting contract with secret/path/authorization/raw-debug redaction and disabled/debug API detection)
+- `V29UISafetyCheck`: `2.9` (`npm.cmd run check:v29-ui` static UI safety check for local-first entries and no plaintext API key field)
 - `WorldProjectSection`: `2.1` (project-aware World Mode adapter config)
 - `ProjectPackageManifest`: `2.1` (NarrativeProject import/export package manifest)
 - `ProjectValidationReport`: `2.1` (normal/debug-safe project validation report)

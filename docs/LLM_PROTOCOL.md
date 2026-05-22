@@ -1,5 +1,27 @@
 # LLM Protocol
 
+## v2.9+ Local UI / UX LLM Boundary
+
+The post-v2.8 roadmap shifts v2.9 to Local UI / UX Foundation. UI changes can
+improve prompt inspection, provider selection displays, visibility previews,
+Tavern/Novel/World workflows, and local quality feedback, but they cannot change
+LLM authority.
+
+LLMs remain language tools, not world judges or safety judges. UI refactors must
+not widen provider access, bypass Provider Gateway, expose hidden facts or NPC
+secrets, move API keys into frontend code, weaken prompt/profile validation, or
+let prompts override `StateDelta`, `EventLog`, visibility, mature policy, or
+export controls. Online accounts, cloud sync, remote registries, online
+marketplaces, and online mature-content platforms are long-term optional
+directions only.
+
+v2.9 Provider Setup UI only accepts `api_key_env` and `secret_ref` references;
+it does not expose a plaintext API key field. Provider status, Prompt Lab
+summaries, diagnostics, errors, and Quality/Debug views must use safe summaries
+or redaction. UI polish may make provider configuration easier to understand,
+but it cannot route around Provider Gateway, log raw prompts, display provider
+secrets, or allow LLM output to directly modify World state.
+
 ## v2.8 Roleplay / Mature LLM Boundary
 
 v2.8 does not grant LLMs new authority. Provider Gateway remains the only model

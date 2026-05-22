@@ -379,6 +379,7 @@ import {
   DialogueSceneTemplate,
   GroupRPSceneAuthoring,
   GroupRPSceneTemplate,
+  getErrorMessageSafe,
   NarrativeProjectSummary,
   NarrativeProjectModeStatus,
   TavernCharacter,
@@ -626,6 +627,7 @@ const SCENE_MOOD_PRESETS = [
 ];
 
 const DIALOGUE_MODES = ["focused", "casual", "interrogation", "negotiation", "intimate", "conflict"];
+type AppMode = "project" | "studio" | "play" | "authoring" | "prompt_lab";
 
 export function App() {
   const [sessionId, setSessionId] = useState<string>("");
@@ -683,7 +685,7 @@ export function App() {
   const [saveWorldFilter, setSaveWorldFilter] = useState<string>("");
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>("");
-  const [mode, setMode] = useState<"project" | "studio" | "play" | "authoring" | "prompt_lab">("studio");
+  const [mode, setMode] = useState<AppMode>("studio");
   const [requestedAuthoringTool, setRequestedAuthoringTool] = useState<AuthoringToolId | null>(null);
   const [studioStatus, setStudioStatus] = useState<StudioStatus | null>(null);
   const [studioStatusError, setStudioStatusError] = useState<string>("");
@@ -1860,44 +1862,21 @@ export function App() {
         </div>
 
         <section>
-          <h2>Mode</h2>
-          <div className="segmented">
-            <button
-              type="button"
-              className={mode === "project" ? "active" : ""}
-              onClick={() => setMode("project")}
-            >
-              Project
-            </button>
-            <button
-              type="button"
-              className={mode === "studio" ? "active" : ""}
-              onClick={() => setMode("studio")}
-            >
-              Studio
-            </button>
-            <button
-              type="button"
-              className={mode === "play" ? "active" : ""}
-              onClick={() => setMode("play")}
-            >
-              Play
-            </button>
-            <button
-              type="button"
-              className={mode === "authoring" ? "active" : ""}
-              onClick={() => setMode("authoring")}
-            >
-              Authoring
-            </button>
-            <button
-              type="button"
-              className={mode === "prompt_lab" ? "active" : ""}
-              onClick={() => setMode("prompt_lab")}
-            >
-              Prompt Lab
-            </button>
-          </div>
+          <h2>Local Navigation</h2>
+          <UnifiedNavigation
+            mode={mode}
+            requestedTool={requestedAuthoringTool}
+            hasProject={Boolean(currentNarrativeProjectId)}
+            debugEnabled={studioStatus?.debug_api_enabled ?? false}
+            debugOpen={debugOpen}
+            onNavigate={(targetMode, toolId) => {
+              if (toolId) {
+                setRequestedAuthoringTool(toolId);
+              }
+              setMode(targetMode);
+            }}
+            onToggleDebug={() => setDebugOpen((current) => !current)}
+          />
         </section>
 
         {mode === "play" && (
@@ -2142,6 +2121,13 @@ export function App() {
           />
         ) : (
           <>
+        <WorldStudioLanding
+          visibleState={visibleState}
+          sessionId={sessionId}
+          selectedSaveId={selectedSaveId}
+          saves={saves}
+          debugEnabled={studioStatus?.debug_api_enabled ?? false}
+        />
         <div className="story-scroll">
           {story.map((entry) => (
             <article className="story-entry" key={entry.id}>
@@ -2514,7 +2500,7 @@ function StudioHome({
   onRefreshUpdateNotes: () => void;
   onRunDesktopHealthCheck: () => void;
   onSelectPromptProfile: (profileId: string) => void;
-  onNavigate: (mode: "studio" | "play" | "authoring", toolId?: AuthoringToolId) => void;
+  onNavigate: (mode: AppMode, toolId?: AuthoringToolId) => void;
 }) {
   const recentSaves = status?.recent_saves.length ? status.recent_saves : saves.slice(0, 5);
   const validationSummaries = status?.validation_summaries ?? [];
@@ -2532,6 +2518,40 @@ function StudioHome({
       />
 
       <ErrorPanel message={error} />
+      <LocalStatusBar
+        projectLoaded={Boolean(selectedProjectId || currentWorkspaceId)}
+        backendStatus={status?.backend_status ?? "unavailable"}
+        providerStatus={configSummary?.provider_status ?? status?.local_model_provider_status ?? "unknown"}
+        qualityStatus={worldHealth ? "available" : "not run"}
+        debugEnabled={status?.debug_api_enabled ?? false}
+        apiKeyConfigured={configSummary?.api_key_configured ?? localConfigSummary?.api_key_configured}
+      />
+      <ProjectHomeRedesignPanel
+        status={status}
+        selectedProjectId={selectedProjectId}
+        configSummary={configSummary}
+        worldHealth={worldHealth}
+        recentSaves={recentSaves}
+        validationSummaries={validationSummaries}
+        onNavigate={onNavigate}
+      />
+      <LocalHelpOnboardingPanel />
+      <QualityDashboardUXPanel
+        worldHealth={worldHealth}
+        narrativeEvalReports={narrativeEvalReports}
+        playtestReports={playtestReports}
+        scenarioRegressionRuns={scenarioRegressionRuns}
+        contentCoverage={contentCoverage}
+      />
+      <DiagnosticsExportPanel
+        selectedProjectId={selectedProjectId}
+        status={status}
+        configSummary={configSummary}
+        localConfigSummary={localConfigSummary}
+        worldHealth={worldHealth}
+        desktopHealth={desktopHealth}
+        safeErrors={[error, configError, desktopHealthError, worldHealthError].filter(Boolean)}
+      />
       <ProjectSelectorPanel
         workspaces={workspaces}
         templates={workspaceTemplates}
@@ -3855,11 +3875,18 @@ function PromptLabPage({
         <div className="authoring-pane-header">
           <div>
             <h4>Provider Profiles</h4>
-            <p className="muted">Project-local provider profiles. API keys are never entered here; use env vars or local secret refs only.</p>
+            <p className="muted">Provider Setup for project-local provider profiles. API keys are never entered here; use env vars or local secret refs only.</p>
           </div>
           <button type="button" onClick={() => void runLabAction(loadProviderProfiles)}>
             Load Profiles
           </button>
+        </div>
+        <div className="mode-landing-grid">
+          <FeatureCard title="openai" detail="Use api_key_env or secret_ref; the frontend never asks for plaintext keys." />
+          <FeatureCard title="openai_compatible" detail="Use a local or trusted compatible endpoint with explicit base URL metadata." />
+          <FeatureCard title="local_http" detail="Local model endpoint; capability warnings still apply." />
+          <FeatureCard title="relay" detail="Relay-style profile metadata only. No API resale or specific relay support is implied." />
+          <FeatureCard title="mock / local_stub" detail="Safe defaults for tests and local dry-runs." />
         </div>
         <form className="form-grid" onSubmit={(event) => void runLabAction(async () => saveProviderProfile(event))}>
           <label>
@@ -3975,7 +4002,7 @@ function PromptLabPage({
             ))}
           />
         </div>
-        {providerStatus ? <pre className="debug-json">{JSON.stringify(providerStatus, null, 2)}</pre> : null}
+        {providerStatus ? <SafeJSON value={providerStatus} /> : null}
       </section>
 
       <section className="studio-section">
@@ -5348,6 +5375,614 @@ function EmptyState({ title, detail }: { title: string; detail?: string }) {
   );
 }
 
+function DisabledState({ title, detail }: { title: string; detail: string }) {
+  return (
+    <div className="disabled-state">
+      <strong>{title}</strong>
+      <p>{detail}</p>
+    </div>
+  );
+}
+
+function SafeSummaryCard({
+  title,
+  value,
+  detail,
+  children
+}: {
+  title: string;
+  value: string;
+  detail?: string;
+  children?: ReactNode;
+}) {
+  return (
+    <section className="safe-summary-card">
+      <p className="muted">{title}</p>
+      <strong>{value}</strong>
+      {detail && <p>{detail}</p>}
+      {children}
+    </section>
+  );
+}
+
+function FeatureCard({
+  title,
+  detail,
+  action,
+  status
+}: {
+  title: string;
+  detail: string;
+  action?: ReactNode;
+  status?: ReactNode;
+}) {
+  return (
+    <section className="feature-card">
+      <div>
+        <h4>{title}</h4>
+        <p className="muted">{detail}</p>
+      </div>
+      {status && <div>{status}</div>}
+      {action && <div className="feature-card-action">{action}</div>}
+    </section>
+  );
+}
+
+function ModeCard({
+  title,
+  detail,
+  status,
+  onOpen,
+  disabled = false
+}: {
+  title: string;
+  detail: string;
+  status?: ReactNode;
+  onOpen?: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <section className={`mode-card ${disabled ? "disabled" : ""}`}>
+      <div>
+        <h4>{title}</h4>
+        <p>{detail}</p>
+      </div>
+      {status}
+      {onOpen && (
+        <button type="button" onClick={onOpen} disabled={disabled}>
+          Open
+        </button>
+      )}
+    </section>
+  );
+}
+
+function LocalOnlyBadge() {
+  return <span className="local-only-badge">Local-only</span>;
+}
+
+function RiskBadge({ level }: { level: "safe" | "warning" | "blocked" | "unknown" }) {
+  return <span className={`risk-badge ${level}`}>{level}</span>;
+}
+
+function ValidationStatusBadge({ status }: { status: "passed" | "warning" | "failed" | "not_run" }) {
+  return <span className={`validation-status-badge ${status}`}>{status.replace("_", " ")}</span>;
+}
+
+function SecretSafeNotice({ compact = false }: { compact?: boolean }) {
+  return (
+    <div className={`secret-safe-notice ${compact ? "compact" : ""}`}>
+      <strong>Secret-safe UI</strong>
+      <p>
+        API keys are not stored in project files. Provider secrets stay behind env or local secret
+        resolver references, and normal export filters secrets, mature/private content, debug memory,
+        and raw state deltas.
+      </p>
+    </div>
+  );
+}
+
+function UnifiedNavigation({
+  mode,
+  requestedTool,
+  hasProject,
+  debugEnabled,
+  debugOpen,
+  onNavigate,
+  onToggleDebug
+}: {
+  mode: AppMode;
+  requestedTool: AuthoringToolId | null;
+  hasProject: boolean;
+  debugEnabled: boolean;
+  debugOpen: boolean;
+  onNavigate: (mode: AppMode, toolId?: AuthoringToolId) => void;
+  onToggleDebug: () => void;
+}) {
+  const items: {
+    label: string;
+    targetMode: AppMode;
+    toolId?: AuthoringToolId;
+    active: boolean;
+    disabled?: boolean;
+    reason?: string;
+    badge?: string;
+  }[] = [
+    { label: "Project Home", targetMode: "project", active: mode === "project" },
+    { label: "Novel", targetMode: "project", active: mode === "project", badge: hasProject ? "Project Shell" : "Setup" },
+    { label: "Tavern", targetMode: "project", active: mode === "project", badge: hasProject ? "Project Shell" : "Setup" },
+    { label: "World", targetMode: "play", active: mode === "play" },
+    { label: "Cross-Mode", targetMode: "project", active: mode === "project", badge: "Review" },
+    {
+      label: "Script / Mods",
+      targetMode: "authoring",
+      toolId: "advanced_modules",
+      active: mode === "authoring" && (requestedTool === "advanced_modules" || requestedTool === "action_mods"),
+      badge: "Local"
+    },
+    { label: "Providers", targetMode: "prompt_lab", active: mode === "prompt_lab" },
+    { label: "Quality", targetMode: "studio", active: mode === "studio", badge: "Gate" },
+    {
+      label: "Settings",
+      targetMode: "studio",
+      active: mode === "studio",
+      badge: "Privacy"
+    }
+  ];
+
+  return (
+    <nav className="unified-navigation" aria-label="Local studio navigation">
+      <LocalOnlyBadge />
+      <div className="nav-group">
+        {items.map((item) => (
+          <button
+            key={`${item.label}-${item.toolId ?? item.targetMode}`}
+            type="button"
+            className={`nav-item ${item.active ? "active" : ""} ${item.disabled ? "disabled" : ""}`}
+            onClick={() => onNavigate(item.targetMode, item.toolId)}
+            disabled={item.disabled}
+            title={item.reason}
+          >
+            <span>{item.label}</span>
+            {item.badge && <span className="nav-badge">{item.badge}</span>}
+          </button>
+        ))}
+        <button
+          type="button"
+          className={`nav-item debug-gated ${debugOpen ? "active" : ""}`}
+          onClick={onToggleDebug}
+          title={debugEnabled ? "Debug API enabled" : "Debug API disabled by ENABLE_DEBUG_API"}
+        >
+          <span>Debug / Replay</span>
+          <span className="nav-badge">{debugEnabled ? "Enabled" : "Gated"}</span>
+        </button>
+      </div>
+      <p className="muted nav-note">No account, no cloud sync, no online marketplace.</p>
+    </nav>
+  );
+}
+
+function LocalStatusBar({
+  projectLoaded,
+  backendStatus,
+  providerStatus,
+  qualityStatus,
+  debugEnabled,
+  apiKeyConfigured
+}: {
+  projectLoaded: boolean;
+  backendStatus: string;
+  providerStatus: string;
+  qualityStatus: string;
+  debugEnabled: boolean;
+  apiKeyConfigured?: boolean;
+}) {
+  return (
+    <section className="local-status-bar" aria-label="Local status">
+      <StatusBadge label={projectLoaded ? "Project loaded" : "No project"} enabled={projectLoaded} />
+      <StatusBadge label={`Backend ${backendStatus}`} enabled={backendStatus === "ok" || backendStatus === "available"} />
+      <StatusBadge label={providerStatus ? `Provider ${providerStatus}` : "Provider missing"} enabled={Boolean(providerStatus && providerStatus !== "missing")} />
+      <StatusBadge label={`Quality ${qualityStatus}`} enabled={qualityStatus !== "not run"} />
+      <StatusBadge label={debugEnabled ? "Debug enabled" : "Debug disabled"} enabled={debugEnabled} />
+      <StatusBadge label="Local-only" enabled />
+      <StatusBadge label={apiKeyConfigured ? "Secret ref configured" : "No key in project"} enabled />
+    </section>
+  );
+}
+
+function ProjectHomeRedesignPanel({
+  status,
+  selectedProjectId,
+  configSummary,
+  worldHealth,
+  recentSaves,
+  validationSummaries,
+  onNavigate
+}: {
+  status: StudioStatus | null;
+  selectedProjectId: string;
+  configSummary: StudioConfigSummary | null;
+  worldHealth: WorldHealthScore | null;
+  recentSaves: SaveSummary[];
+  validationSummaries: { world_id: string; ok: boolean; error_count?: number; warning_count?: number }[];
+  onNavigate: (mode: AppMode, toolId?: AuthoringToolId) => void;
+}) {
+  const providerConfigured = Boolean(configSummary?.api_key_configured || configSummary?.provider_status === "configured");
+  const qualityStatus = worldHealth ? "available" : "not run";
+  return (
+    <SectionCard
+      title="Project Home"
+      description="A local-first overview for project status, mode entry, providers, quality, and privacy."
+    >
+      <div className="project-home-hero">
+        <div>
+          <p className="eyebrow">Local UI / UX Foundation</p>
+          <h3>{selectedProjectId || "Local Narrative Project"}</h3>
+          <p className="muted">
+            AI Narrative Studio stays local-first: no account, No cloud sync, and No online marketplace.
+          </p>
+        </div>
+        <LocalOnlyBadge />
+      </div>
+      <div className="mode-landing-grid">
+        <ModeCard title="Novel" detail="Manuscripts, outlines, chapters, scenes, exports, and World to Novel drafts." onOpen={() => onNavigate("project")} status={<ValidationStatusBadge status="not_run" />} />
+        <ModeCard title="Tavern" detail="Characters, sessions, RP memory, multi-NPC scenes, mood, voice, and safety settings." onOpen={() => onNavigate("project")} status={<RiskBadge level="safe" />} />
+        <ModeCard title="World" detail="Continue local play, inspect visible state, saves, quests, inventory, and replay." onOpen={() => onNavigate("play")} status={<StatusBadge label={status?.worlds_count ? "Worlds available" : "No world loaded"} enabled={Boolean(status?.worlds_count)} />} />
+        <ModeCard title="Script / Mods" detail="Local packages, permissions, compatibility, certification, and quality gates." onOpen={() => onNavigate("authoring", "advanced_modules")} status={<RiskBadge level="unknown" />} />
+        <ModeCard title="Providers" detail="Configure provider profiles by env or secret reference only. No plaintext key field." onOpen={() => onNavigate("prompt_lab")} status={<StatusBadge label={providerConfigured ? "Configured" : "Missing"} enabled={providerConfigured} />} />
+        <ModeCard title="Quality" detail="World health, narrative evals, playtests, compatibility, and release confidence." onOpen={() => onNavigate("studio")} status={<ValidationStatusBadge status={worldHealth ? "passed" : "not_run"} />} />
+        <ModeCard title="Debug / Replay" detail="Timeline and diagnostics remain gated by ENABLE_DEBUG_API." onOpen={() => onNavigate("play")} status={<StatusBadge label={status?.debug_api_enabled ? "Debug enabled" : "Debug gated"} enabled={status?.debug_api_enabled} />} />
+        <ModeCard title="Settings" detail="Local privacy, provider, export, debug, mature module, UI, and quality preferences." onOpen={() => onNavigate("studio")} status={<LocalOnlyBadge />} />
+      </div>
+      <div className="safe-summary-grid">
+        <SafeSummaryCard title="Recent activity" value={recentSaves.length ? `${recentSaves.length} recent saves` : "No recent saves"} detail="Shown as safe save summaries only." />
+        <SafeSummaryCard title="Validation" value={validationSummaries.length ? `${validationSummaries.length} worlds checked` : "Not run"} detail={validationSummaries.some((item) => !item.ok) ? "Some worlds need review." : "No blocker summary available."} />
+        <SafeSummaryCard title="Privacy summary" value="Secrets filtered" detail="API key not stored in project; export filters secrets; cloud sync disabled / not implemented." />
+      </div>
+      <div className="quick-actions">
+        <button type="button" onClick={() => onNavigate("project")}>Open Novel</button>
+        <button type="button" onClick={() => onNavigate("project")}>Open Tavern</button>
+        <button type="button" onClick={() => onNavigate("play")}>Open World</button>
+        <button type="button" onClick={() => onNavigate("studio")}>Run Quality Gate</button>
+        <button type="button" onClick={() => onNavigate("studio")}>Open Settings</button>
+        <button type="button" onClick={() => onNavigate("prompt_lab")}>Open Providers</button>
+      </div>
+      <SecretSafeNotice />
+    </SectionCard>
+  );
+}
+
+function LocalHelpOnboardingPanel() {
+  return (
+    <SectionCard title="Local Help / Onboarding" description="Short guide to the local-first workflow.">
+      <div className="mode-landing-grid">
+        <FeatureCard title="What is AI Narrative Studio" detail="A local writing, Tavern RP, and World Studio workspace sharing one fact boundary." />
+        <FeatureCard title="Local-first workflow" detail="No account, no cloud sync, no online marketplace, and API keys stay local." />
+        <FeatureCard title="Novel / Tavern / World modes" detail="Draft prose, roleplay safely, and play the world without letting UI bypass rules." />
+        <FeatureCard title="Cross-Mode proposals" detail="Drafts and proposals are reviewed before becoming world changes." />
+        <FeatureCard title="Provider setup" detail="Use api_key_env or secret_ref; never paste plaintext API keys into the frontend." />
+        <FeatureCard title="Mods and permissions" detail="Local packages are validated, never executed as arbitrary code." />
+        <FeatureCard title="Quality Gate" detail="Run deterministic checks for leaks, migration, compatibility, and release readiness." />
+        <FeatureCard title="Privacy and secrets" detail="Exports and diagnostics default to filtered safe summaries." />
+      </div>
+    </SectionCard>
+  );
+}
+
+function ModeLandingPage({
+  title,
+  localStatus,
+  features,
+  warnings,
+  actions
+}: {
+  title: string;
+  localStatus: string;
+  features: string[];
+  warnings: string[];
+  actions: string[];
+}) {
+  return (
+    <section className="mode-landing-page">
+      <div className="mode-landing-header">
+        <h3>{title}</h3>
+        <LocalOnlyBadge />
+      </div>
+      <p className="muted">{localStatus}</p>
+      <h4>Available</h4>
+      <ItemList emptyText="No features configured." items={features.map((feature) => <span key={feature}>{feature}</span>)} />
+      <h4>Warnings</h4>
+      <ItemList emptyText="No warnings." items={warnings.map((warning) => <span key={warning}>{warning}</span>)} />
+      <h4>Quick actions</h4>
+      <div className="quick-actions">
+        {actions.map((action) => (
+          <button type="button" key={action} disabled>{action}</button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function DiagnosticsExportPanel({
+  selectedProjectId,
+  status,
+  configSummary,
+  localConfigSummary,
+  worldHealth,
+  desktopHealth,
+  safeErrors
+}: {
+  selectedProjectId: string;
+  status: StudioStatus | null;
+  configSummary: StudioConfigSummary | null;
+  localConfigSummary: LocalConfigSummary | null;
+  worldHealth: WorldHealthScore | null;
+  desktopHealth: DesktopHealthCheckReport | null;
+  safeErrors: string[];
+}) {
+  const [includeDebug, setIncludeDebug] = useState(false);
+  const [confirmedDebug, setConfirmedDebug] = useState(false);
+  const debugAllowed = Boolean(status?.debug_api_enabled);
+  const diagnostics = {
+    project: {
+      project_id: selectedProjectId || "not_selected",
+      local_only: true,
+      cloud_sync: "not_implemented"
+    },
+    provider: {
+      provider_status: configSummary?.provider_status ?? "unknown",
+      provider_type: localConfigSummary?.provider_type ?? "unknown",
+      api_key_status: "[redacted]"
+    },
+    quality: {
+      world_health: worldHealth ? "available" : "not_run",
+      desktop_health: desktopHealth ? desktopHealth.overall_status : "not_run"
+    },
+    modules: {
+      status: "safe summary only"
+    },
+    recent_safe_errors: safeErrors.map((item) => sanitizeDisplayError(item)).slice(0, 5),
+    filters: [
+      "API key",
+      ".env",
+      "provider secrets",
+      "hidden facts",
+      "mature/private content",
+      "debug memory",
+      "raw state_deltas"
+    ],
+    debug_export: includeDebug && confirmedDebug && debugAllowed ? "explicitly_requested" : "excluded"
+  };
+
+  function downloadDiagnostics() {
+    if (includeDebug && (!debugAllowed || !confirmedDebug)) {
+      return;
+    }
+    const blob = new Blob([JSON.stringify(diagnostics, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "ai-narrative-studio-diagnostics-safe.json";
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <SectionCard
+      title="Diagnostics Export"
+      description="Local-only safe JSON preview. Nothing is uploaded."
+    >
+      <SecretSafeNotice compact />
+      <div className="diagnostics-controls">
+        <label>
+          <input
+            type="checkbox"
+            checked={includeDebug}
+            onChange={(event) => {
+              setIncludeDebug(event.target.checked);
+              setConfirmedDebug(false);
+            }}
+          />
+          Include debug export metadata
+        </label>
+        {includeDebug && (
+          <label>
+            <input
+              type="checkbox"
+              checked={confirmedDebug}
+              disabled={!debugAllowed}
+              onChange={(event) => setConfirmedDebug(event.target.checked)}
+            />
+            I understand debug export requires ENABLE_DEBUG_API and explicit confirmation.
+          </label>
+        )}
+        {!debugAllowed && includeDebug && (
+          <DisabledState
+            title="Debug export gated"
+            detail="ENABLE_DEBUG_API is disabled, so diagnostics remain normal safe summaries only."
+          />
+        )}
+      </div>
+      <SafeJSON value={diagnostics} />
+      <button type="button" onClick={downloadDiagnostics} disabled={includeDebug && (!debugAllowed || !confirmedDebug)}>
+        Export local diagnostics JSON
+      </button>
+    </SectionCard>
+  );
+}
+
+function QualityDashboardUXPanel({
+  worldHealth,
+  narrativeEvalReports,
+  playtestReports,
+  scenarioRegressionRuns,
+  contentCoverage
+}: {
+  worldHealth: WorldHealthScore | null;
+  narrativeEvalReports: NarrativeEvalReport[];
+  playtestReports: PlaytestReport[];
+  scenarioRegressionRuns: ScenarioRegressionRun[];
+  contentCoverage: ContentCoverageReport | null;
+}) {
+  const blockerCount = (worldHealth?.blockers?.length ?? 0) + narrativeEvalReports.reduce((count, report) => count + report.failed, 0);
+  const warningCount = (worldHealth?.warnings?.length ?? 0) + (contentCoverage ? Object.values(contentCoverage.hidden_entities_redacted).reduce((total, value) => total + value, 0) : 0);
+  const categories = ["Project", "World", "Novel", "Tavern", "Cross-Mode", "Provider", "Mods", "Modules", "RP/Mature"];
+  return (
+    <SectionCard title="Quality Gate Dashboard" description="Safe overview of blockers, warnings, and next local actions.">
+      <div className="safe-summary-grid">
+        <SafeSummaryCard title="Overall status" value={blockerCount ? "blocked" : worldHealth ? "review" : "not run"} detail="Run the relevant local quality gates before release." />
+        <SafeSummaryCard title="Blockers" value={String(blockerCount)} detail="Safe summaries only; hidden facts are not printed." />
+        <SafeSummaryCard title="Warnings" value={String(warningCount)} detail="Warnings guide the next manual review." />
+        <SafeSummaryCard title="Playtests" value={String(playtestReports.length)} detail="Existing reports remain local." />
+        <SafeSummaryCard title="Scenario runs" value={String(scenarioRegressionRuns.length)} detail="Regression results are local-only." />
+      </div>
+      <div className="mode-landing-grid">
+        {categories.map((category) => (
+          <FeatureCard
+            key={category}
+            title={category}
+            detail="Open the dedicated panel for full safe issue details and suggested actions."
+            status={<ValidationStatusBadge status={blockerCount ? "warning" : "not_run"} />}
+          />
+        ))}
+      </div>
+    </SectionCard>
+  );
+}
+
+function WorldStudioLanding({
+  visibleState,
+  sessionId,
+  selectedSaveId,
+  saves,
+  debugEnabled
+}: {
+  visibleState: VisibleState | null;
+  sessionId: string;
+  selectedSaveId: string;
+  saves: SaveSummary[];
+  debugEnabled: boolean;
+}) {
+  return (
+    <section className="world-landing">
+      <PageHeader
+        eyebrow="World Studio"
+        title="Local World Entry"
+        description="Normal view uses visible state only. World changes still go through backend rules, StateDelta, and EventLog."
+      />
+      <div className="safe-summary-grid">
+        <SafeSummaryCard title="Active session" value={sessionId ? "Started" : "No active session"} detail={selectedSaveId ? `Loaded save ${selectedSaveId}` : "Start or load a local save."} />
+        <SafeSummaryCard title="Visible location" value={visibleState?.location.name ?? "Unknown"} detail="Hidden locations and NPC secrets are excluded." />
+        <SafeSummaryCard title="Visible NPCs" value={String(visibleState?.visible_npcs.length ?? 0)} detail="Only player-visible NPC summaries are shown." />
+        <SafeSummaryCard title="Quests" value={String(visibleState?.quests.length ?? 0)} detail="Normal view excludes hidden quest facts." />
+        <SafeSummaryCard title="Inventory" value={String(visibleState?.inventory.length ?? 0)} detail="Visible inventory summary only." />
+        <SafeSummaryCard title="Advanced modules" value="Status safe" detail="Combat/economy/faction module details stay backend-authoritative." />
+        <SafeSummaryCard title="Timeline replay" value={debugEnabled ? "Debug enabled" : "Debug gated"} detail="Raw debug data requires ENABLE_DEBUG_API." />
+        <SafeSummaryCard title="Saves" value={String(saves.length)} detail="Save/load remains local." />
+      </div>
+    </section>
+  );
+}
+
+function ScriptModEntryPanel({
+  modules,
+  moduleDetail,
+  compatibilityMatrix,
+  moduleQualityGate,
+  auditRecords
+}: {
+  modules: ModuleBrowserSummary[];
+  moduleDetail: ModuleBrowserDetail | null;
+  compatibilityMatrix: ModCompatibilityMatrix | null;
+  moduleQualityGate: ModQualityGateResult | null;
+  auditRecords: ModAuditRecord[];
+}) {
+  const byType = modules.reduce<Record<string, number>>((counts, item) => {
+    counts[item.package_type] = (counts[item.package_type] ?? 0) + 1;
+    return counts;
+  }, {});
+  const unsafeCount = modules.filter((item) => item.permission_risk_level === "blocked" || item.permission_risk_level === "high").length;
+  const packageTypes = [
+    "Script Pack",
+    "World Extension",
+    "Character Pack",
+    "Prompt Pack",
+    "Provider Pack",
+    "Narrative Style Mod",
+    "RP Profile Mod",
+    "Action Mod",
+    "Rule Module"
+  ];
+  return (
+    <section className="module-entry-panel">
+      <div className="safe-summary-grid">
+        <SafeSummaryCard title="Local packages" value={String(modules.length)} detail="Scanned local manifests only; packages are not executed." />
+        <SafeSummaryCard title="Unsafe packages" value={String(unsafeCount)} detail="Blocked or high-risk packages require review." />
+        <SafeSummaryCard title="Compatibility warnings" value={String((compatibilityMatrix?.entries ?? []).reduce((count, entry) => count + entry.warnings.length, 0) + (compatibilityMatrix?.conflicts_summary.length ?? 0))} detail="Matrix warnings stay local." />
+        <SafeSummaryCard title="Certification" value={moduleDetail?.summary.validation_status ?? "not loaded"} detail="Certification status is a safe summary." />
+        <SafeSummaryCard title="Quality Gate" value={moduleQualityGate ? (moduleQualityGate.ok ? "passed" : "blocked") : "not run"} detail="Run before import/apply." />
+        <SafeSummaryCard title="Recent imports/exports" value={String(auditRecords.length)} detail="Audit trail summaries redact secrets." />
+      </div>
+      <div className="mode-landing-grid">
+        {packageTypes.map((type) => (
+          <FeatureCard
+            key={type}
+            title={type}
+            detail={`${byType[type.toLowerCase().replaceAll(" ", "_")] ?? 0} local packages found`}
+            status={<RiskBadge level="unknown" />}
+          />
+        ))}
+      </div>
+      <SecretSafeNotice compact />
+      <p className="muted">No online marketplace, no remote auto-download, and no arbitrary code execution.</p>
+    </section>
+  );
+}
+
+function CrossModeDashboardPanel({
+  drafts,
+  timeline,
+  links,
+  conflicts,
+  audit
+}: {
+  drafts: CrossModeDraftSummary[];
+  timeline: CrossModeTimelineEntry[];
+  links: CrossModeLinkReviewReport | null;
+  conflicts: CrossModeConflictReport | null;
+  audit: CrossModeAuditRecord[];
+}) {
+  const conflictCount = conflicts?.conflicts.length ?? 0;
+  const pendingReview = drafts.filter((draft) => draft.status !== "applied").length;
+  return (
+    <section className="cross-mode-dashboard">
+      <div className="safe-summary-grid">
+        <SafeSummaryCard title="Draft count" value={String(drafts.length)} detail="Drafts are not world facts." />
+        <SafeSummaryCard title="Proposal count" value={String(drafts.filter((draft) => draft.artifact_type.includes("proposal")).length)} detail="Apply requires validation." />
+        <SafeSummaryCard title="Pending review" value={String(pendingReview)} detail="Review rows show safe summaries only." />
+        <SafeSummaryCard title="Conflict count" value={String(conflictCount)} detail="Conflicts do not auto-apply." />
+        <SafeSummaryCard title="Recent audit" value={String(audit.length)} detail="Audit entries are safe summaries." />
+        <SafeSummaryCard title="Timeline" value={String(timeline.length)} detail="Normal dashboard excludes raw state deltas." />
+      </div>
+      <div className="mode-landing-grid">
+        {["Novel to World", "World to Novel", "Tavern to World", "World to Tavern", "Tavern to Novel", "Novel to Tavern"].map((direction) => (
+          <FeatureCard
+            key={direction}
+            title={direction}
+            detail="Draft/proposal lane. Validation and confirmation required before apply."
+            status={<ValidationStatusBadge status={conflictCount ? "warning" : "not_run"} />}
+          />
+        ))}
+      </div>
+      {links && (
+        <p className="muted">
+          Link review: broken {links.broken_links.length}, hidden risk {links.hidden_target_risks.length}, duplicate {links.duplicate_links.length}.
+        </p>
+      )}
+    </section>
+  );
+}
+
 function ProjectShell({
   projects,
   selectedProjectId,
@@ -5950,6 +6585,29 @@ function ProjectShell({
           <ProjectModeCard key={status.mode} title={status.mode} status={status} message="Project mode entry is routed through the v2.1 Mode Router." />
         ))}
       </section>
+      <section className="mode-landing-grid">
+        <ModeLandingPage
+          title="Novel Studio"
+          localStatus="Project-local drafts"
+          features={["Manuscripts", "Outlines", "Chapters", "Scenes", "Character arcs", "Plot threads", "Foreshadowing", "Exports", "World to Novel imports"]}
+          warnings={["Hidden World facts are not displayed in normal Novel UI.", "Drafts do not modify GameState."]}
+          actions={["Create manuscript", "Open outline", "Open chapter editor", "Run novel quality", "Export draft"]}
+        />
+        <ModeLandingPage
+          title="Tavern Studio"
+          localStatus="RP expression layer"
+          features={["Characters", "Sessions", "Single-character chat", "Multi-NPC scenes", "RP memory", "Emotion", "Relationship tone", "Scene mood", "Voice Lab"]}
+          warnings={["Tavern does not directly modify World state.", "Mature Module is disabled by default."]}
+          actions={["Import character card", "Create session", "Open chat", "Open multi-NPC scene", "Open RP safety settings"]}
+        />
+        <ModeLandingPage
+          title="Cross-Mode Bridge"
+          localStatus="Proposal and validation flow"
+          features={["Novel to World", "World to Novel", "Tavern to World", "World to Tavern", "Tavern to Novel", "Novel to Tavern"]}
+          warnings={["Apply requires validation and confirmation.", "Raw state deltas are not shown in normal review."]}
+          actions={["Review drafts", "Validate bridge", "Inspect conflicts", "Open audit"]}
+        />
+      </section>
       <section className="tool-card">
         <h3>Novel Studio MVP</h3>
         <p className="muted">Novel drafts remain project-local and never write World GameState. Hidden facts, raw env, and API keys are not shown here.</p>
@@ -6190,6 +6848,13 @@ function ProjectShell({
       <section className="tool-card">
         <h3>Cross-Mode Bridge</h3>
         <p className="muted">Cross-mode artifacts are drafts, proposals, reviews, validation reports, or audit records. Apply to World requires backend validation and explicit confirmation.</p>
+        <CrossModeDashboardPanel
+          drafts={crossModeDrafts}
+          timeline={crossModeTimeline}
+          links={crossModeLinks}
+          conflicts={crossModeConflicts}
+          audit={crossModeAudit}
+        />
         <ErrorPanel message={crossModeError} compact />
         <SuccessPanel message={crossModeMessage} compact />
         <div className="card-grid">
@@ -6218,7 +6883,7 @@ function ProjectShell({
             <h4>World → Novel</h4>
             <button type="button" disabled={!selectedProjectId} onClick={handlePreviewWorldToNovel}>Preview Chapter Draft</button>
             {worldToNovelPreview && (
-              <pre className="code-block">{JSON.stringify(worldToNovelPreview, null, 2)}</pre>
+              <SafeJSON value={worldToNovelPreview} />
             )}
             <p className="muted">Preview excludes raw state_deltas and hidden/debug events.</p>
           </div>
@@ -6299,6 +6964,13 @@ function ProjectShell({
       <section className="tool-card">
         <h3>Script / Mod Platform Pro</h3>
         <p className="muted">Local-only Module Browser. No online marketplace, no package download, and no arbitrary code execution.</p>
+        <ScriptModEntryPanel
+          modules={modules}
+          moduleDetail={moduleDetail}
+          compatibilityMatrix={moduleMatrix}
+          moduleQualityGate={moduleQualityGate}
+          auditRecords={moduleAudit}
+        />
         <ErrorPanel message={moduleError} compact />
         <SuccessPanel message={moduleMessage} compact />
         <div className="button-row">
@@ -17801,17 +18473,18 @@ function groupValidationIssues(validation: AuthoringValidation) {
 }
 
 function toErrorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return "Request failed.";
+  return getErrorMessageSafe(error);
 }
 
 function sanitizeDisplayError(message: string): string {
   return message
     .replace(/sk-[A-Za-z0-9_-]+/g, "sk-[redacted]")
+    .replace(/(authorization\s*[:=]\s*)(bearer\s+)?[A-Za-z0-9._~+/=-]+/gi, "$1[redacted]")
+    .replace(/(api[_-]?key|secret|token|password)\s*[:=]\s*['"]?[^'",\s}]+/gi, "$1=[redacted]")
     .replace(/[A-Z]:\\[^\s"'<>]+/g, "[local path redacted]")
-    .replace(/\/[^\s"'<>]*(?:\.env|\.db|logs?)[^\s"'<>]*/gi, "[local path redacted]");
+    .replace(/\/[^\s"'<>]*(?:\.env|\.db|\.sqlite|logs?|cache|backups?|crash-reports|node_modules|dist)[^\s"'<>]*/gi, "[local path redacted]")
+    .replace(/(hidden[_\s-]?facts?|npc[_\s-]?secrets?|raw[_\s-]?prompts?|state[_\s-]?deltas?)\s*[:=]\s*[^}\n]+/gi, "$1=[redacted]")
+    .replace(/Traceback[\s\S]*/i, "[stack trace redacted]");
 }
 
 function authoringErrorMessage(error: unknown): string {

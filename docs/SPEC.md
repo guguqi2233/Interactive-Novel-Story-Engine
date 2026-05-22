@@ -1,5 +1,57 @@
 # Project Specification
 
+## v2.9+ Strategic Direction: Local UI / UX Foundation
+
+After v2.8, the project strategy is local-first, UI-first, and
+experience-first. v2.9 is **Local UI / UX Foundation**, not Online-Ready
+Architecture.
+
+Planned local roadmap:
+
+- v2.9: Local UI / UX Foundation
+- v3.0: Local Desktop Studio Polish
+- v3.1: Novel Studio UI Pro
+- v3.2: Tavern Studio UI Pro
+- v3.3: World Studio UI Pro
+- v3.4: Authoring / Mod UI Pro
+- v3.5: Local QA / Debug / Replay UI Pro
+- v3.6: Local Performance & Accessibility Polish
+
+Near-term non-goals:
+
+- account system;
+- cloud sync;
+- online marketplace;
+- remote package registry;
+- online narrative platform;
+- online mature-content platform;
+- online-first provider, package, or project hosting.
+
+Online-Ready Architecture is demoted to a long-term optional direction. It
+should not be treated as a v2.9 or v3.x near-term commitment. UI/UX work must
+not weaken local privacy, provider routing, visibility, package validation,
+export filtering, `StateDelta`, or `EventLog` boundaries.
+
+### v2.9 Implemented UI Scope
+
+v2.9 implements a lightweight Local UI / UX Foundation on top of the existing
+frontend rather than a full UI rewrite. The implementation adds or polishes:
+
+- Unified Navigation over the existing state-router modes.
+- Project Home, Local Status Bar, and mode landing surfaces.
+- Provider Setup UX with `api_key_env` / `secret_ref` only.
+- Module Browser, Quality Gate, and Cross-Mode dashboard summaries.
+- Settings / Privacy, Local Help / Onboarding, and Diagnostics Export UI.
+- Frontend API client hardening for safe errors, disabled API detection, debug
+  gating, and secret/path/raw-debug redaction.
+- `npm.cmd run check:v29-ui` plus pytest coverage in
+  `backend/tests/test_v29_ui_regression.py`.
+
+These changes are presentation and workflow improvements. They do not change
+World Engine rules, Provider Gateway authority, package validation, import/apply
+semantics, or LLM boundaries. Frontend world-state changes still require backend
+APIs and the normal `StateDelta` / `EventLog` flow.
+
 ## v2.8 Roleplay Immersion & Mature Module
 
 v2.8 adds Roleplay Immersion & Mature Module infrastructure on top of Tavern
