@@ -1,5 +1,83 @@
 # Project Specification
 
+## v2.6 Script / Mod Platform Pro
+
+v2.6 adds Script / Mod Platform Pro: a local extension platform for declarative
+packages, authoring templates, profiles, controlled action definitions, rule
+module contracts, validation, compatibility checks, certification, quality
+gates, and audit trails.
+
+v2.6 is not an online marketplace, cloud plugin system, account platform,
+remote package downloader, sandbox runtime, or arbitrary-code plugin system.
+It does not allow mods to run Python, JavaScript, shell scripts, binaries, or
+native code.
+
+Package types:
+
+- `script_pack`: reusable scenarios, quest drafts, Novel/Tavern/Cross-Mode
+  templates, and quality-check metadata.
+- `world_extension_pack`: additive or reviewed patch candidates for locations,
+  NPCs, items, quests, facts, factions, rumors, and relationships.
+- `character_pack`: character profiles, Tavern character drafts, RP/Voice
+  profile drafts, character cards, and World NPC draft candidates.
+- `prompt_profile_pack`: mode-scoped prompt profiles and style presets that
+  cannot grant hidden-fact or state-write authority.
+- `provider_profile_pack`: ProviderProfileV2 templates, model metadata,
+  routing templates, and capability data with only `api_key_env` /
+  `secret_ref` references.
+- `narrative_style_mod`: expression-only style metadata for Novel, Tavern,
+  World narration, and Cross-Mode drafting.
+- `rp_profile_mod`: RP/voice patch data that can adjust presentation but not
+  World NPC knowledge.
+- `action_mod`: declarative action definitions registered through
+  `ActionRegistry`.
+- `rule_module`: manifest-only rule module contract metadata; v2.6 does not
+  execute runtime rule module code.
+- `template_pack`: local templates and authoring metadata.
+
+Core contracts:
+
+- `PackageManifestV2` is required for v2.6 packages.
+- `ModulePermissionSet` defaults dangerous permissions to denied.
+- Dangerous permissions such as `execute_code`, `access_filesystem`,
+  `access_network`, `read_secrets`, `write_database`,
+  `modify_game_state_directly`, `bypass_visibility`, and `call_llm` are
+  blockers in v2.6.
+- Module Browser APIs scan and report local package metadata only. They do not
+  execute package code.
+- Mod Quality Gate blocks invalid manifests, dangerous permissions,
+  executables, secrets, compatibility blockers, hidden leak risks, and failing
+  action tests.
+- Mod Audit Trail records safe summaries for scan, validate, certify,
+  quality-gate, import/export, and reject-style operations.
+
+Action Mod boundary:
+
+- Action Mods must register through `ActionRegistry`.
+- Mod actions are declarative data with target specs, preconditions, checks,
+  outcomes, visibility policy, and StateDelta proposal templates.
+- `ModActionEvaluator` does not use `eval`, `exec`, filesystem access, network
+  access, database access, or LLM calls.
+- Action Mod execution returns `ActionResult` plus StateDelta proposals and
+  Event metadata. Runtime state changes remain an engine responsibility and
+  must go through `StateDelta` / `EventLog`.
+
+Rule Module boundary:
+
+- `RuleModuleManifest` can declare provided systems, action refs, rules,
+  state schema extension requests, permissions, and compatibility notes.
+- v2.6 does not execute rule module runtime code.
+- State schema extensions require validation and migration review.
+- Rule modules cannot access databases, secrets, filesystem, network, or LLMs
+  by default.
+
+Known v2.6 hardening note:
+
+- `docs/V2_6_IMPORT_EXPORT_SECRET_AUDIT.md` flags read-before-skip paths in
+  import dry-run and module scan as release blockers until fixed. These issues
+  do not make v2.6 an executable plugin platform, but they must be resolved
+  before final acceptance.
+
 ## v2.5 Provider Gateway Pro
 
 v2.5 upgrades the provider layer into Provider Gateway Pro: a local,

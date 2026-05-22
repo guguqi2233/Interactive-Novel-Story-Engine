@@ -6136,6 +6136,134 @@ def get_project_provider_usage_by_provider(project_id: str, since_minutes: int |
     return {"local_only": True, "enabled": usage_tracking_enabled(), "by_provider": [group.model_dump(mode="json") for group in groups]}
 
 
+def get_module_browser_service(project_id: str):
+    from app.platform.module_browser import ModuleBrowserService
+
+    project = get_project_repository().load_project(project_id)
+    return ModuleBrowserService(Path(project.project_root))
+
+
+def get_mod_audit_repository(project_id: str):
+    from app.platform.mod_audit import ModAuditRepository
+
+    project = get_project_repository().load_project(project_id)
+    return ModAuditRepository(Path(project.project_root), project_id)
+
+
+@app.get("/projects/{project_id}/modules/audit", response_model=dict[str, Any])
+def list_project_module_audit(project_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    records = get_mod_audit_repository(project_id).list_records()
+    return {"local_only": True, "records": [record.normal_summary() for record in records]}
+
+
+@app.get("/projects/{project_id}/modules/audit/{audit_id}", response_model=dict[str, Any])
+def get_project_module_audit(project_id: str, audit_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    try:
+        return {"local_only": True, "record": get_mod_audit_repository(project_id).get(audit_id).normal_summary()}
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/projects/{project_id}/modules/permissions-summary", response_model=dict[str, Any])
+def get_project_module_permissions_summary(project_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    return {"local_only": True, "permissions": [item.model_dump(mode="json") for item in get_module_browser_service(project_id).permissions_summary()]}
+
+
+@app.post("/projects/{project_id}/modules/compatibility-matrix", response_model=dict[str, Any])
+def build_project_module_compatibility_matrix(project_id: str, request: dict[str, Any] | None = None) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.mod_compatibility_matrix import ModCompatibilityService
+
+    selected = (request or {}).get("package_ids")
+    matrix = ModCompatibilityService(get_module_browser_service(project_id)).build_matrix(selected if isinstance(selected, list) else None)
+    return {"local_only": True, "matrix": matrix.model_dump(mode="json")}
+
+
+@app.post("/projects/{project_id}/modules/check-selection", response_model=dict[str, Any])
+def check_project_module_selection(project_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.mod_compatibility_matrix import ModCompatibilityService, ModSelectionCheckRequest
+
+    result = ModCompatibilityService(get_module_browser_service(project_id)).check_selection(ModSelectionCheckRequest.model_validate(request))
+    return {"local_only": True, "result": result.model_dump(mode="json")}
+
+
+@app.get("/projects/{project_id}/modules", response_model=dict[str, Any])
+def list_project_modules(project_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    modules = get_module_browser_service(project_id).list_modules()
+    return {"local_only": True, "modules": [module.model_dump(mode="json") for module in modules]}
+
+
+@app.post("/projects/{project_id}/modules/scan", response_model=dict[str, Any])
+def scan_project_modules(project_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.mod_audit import ModAuditResult
+
+    report = get_module_browser_service(project_id).scan()
+    get_mod_audit_repository(project_id).append_action(package_id="*", action_type="scan", result=ModAuditResult.SUCCESS if report.ok else ModAuditResult.FAILURE, safe_summary=f"Scanned {len(report.modules)} local modules")
+    return report.model_dump(mode="json")
+
+
+@app.get("/projects/{project_id}/modules/{package_id}", response_model=dict[str, Any])
+def get_project_module(project_id: str, package_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    try:
+        detail = get_module_browser_service(project_id).get_module(package_id)
+        return {"local_only": True, "module": detail.model_dump(mode="json")}
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/projects/{project_id}/modules/{package_id}/validate", response_model=dict[str, Any])
+def validate_project_module(project_id: str, package_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.mod_audit import ModAuditResult
+
+    result = get_module_browser_service(project_id).validate_module(package_id)
+    get_mod_audit_repository(project_id).append_action(package_id=package_id, action_type="validate", result=ModAuditResult.SUCCESS if result["ok"] else ModAuditResult.FAILURE, safe_summary="Validated local module manifest")
+    return {"local_only": True, "validation": result}
+
+
+@app.get("/projects/{project_id}/modules/{package_id}/permissions", response_model=dict[str, Any])
+def get_project_module_permissions(project_id: str, package_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    return {"local_only": True, "permissions": get_module_browser_service(project_id).permissions(package_id).model_dump(mode="json")}
+
+
+@app.get("/projects/{project_id}/modules/{package_id}/compatibility", response_model=dict[str, Any])
+def get_project_module_compatibility(project_id: str, package_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    return {"local_only": True, "compatibility": get_module_browser_service(project_id).compatibility(package_id)}
+
+
+@app.post("/projects/{project_id}/modules/{package_id}/certify", response_model=dict[str, Any])
+def certify_project_module(project_id: str, package_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.extension_certification import CertificationService
+    from app.platform.mod_audit import ModAuditResult
+
+    report = CertificationService(get_module_browser_service(project_id)).certify_package(package_id)
+    get_mod_audit_repository(project_id).append_action(package_id=package_id, action_type="certify", result=ModAuditResult.SUCCESS if report.ok else ModAuditResult.FAILURE, safe_summary=f"Certification level: {report.level.value}")
+    return {"local_only": True, "certification": report.model_dump(mode="json")}
+
+
+@app.post("/projects/{project_id}/modules/{package_id}/quality-gate", response_model=dict[str, Any])
+def run_project_module_quality_gate(project_id: str, package_id: str, request: dict[str, Any] | None = None) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.mod_audit import ModAuditResult
+    from app.quality.mod_quality_gate import ModQualityGateConfig, run_mod_quality_gate
+
+    project = get_project_repository().load_project(project_id)
+    config = ModQualityGateConfig.model_validate(request or {})
+    report = run_mod_quality_gate(Path(project.project_root), package_id, config)
+    get_mod_audit_repository(project_id).append_action(package_id=package_id, action_type="quality_gate", result=ModAuditResult.SUCCESS if report.ok else ModAuditResult.FAILURE, safe_summary=f"Quality gate {'passed' if report.ok else 'failed'}")
+    return {"local_only": True, "quality_gate": report.model_dump(mode="json")}
+
+
 @app.get("/projects")
 def list_narrative_projects() -> dict[str, Any]:
     require_authoring_api()

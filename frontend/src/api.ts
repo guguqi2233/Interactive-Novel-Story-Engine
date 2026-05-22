@@ -954,6 +954,84 @@ export type LocalContentLibrary = {
   items: LocalContentLibraryItem[];
 };
 
+export type ModuleBrowserSummary = {
+  package_id: string;
+  name: string;
+  version: string;
+  package_type: string;
+  permissions: Record<string, unknown>;
+  validation_status: string;
+  compatibility_status: string;
+  permission_risk_level: string;
+  local_only: boolean;
+  safe_path_hint: string;
+  warnings: string[];
+  errors: string[];
+};
+
+export type ModuleBrowserDetail = {
+  summary: ModuleBrowserSummary;
+  manifest: Record<string, unknown>;
+  dependencies: string[];
+  conflicts: string[];
+  target_worlds: string[];
+  target_project_modes: string[];
+};
+
+export type ModulePermissionSummary = {
+  package_id: string;
+  package_type: string;
+  permission_summary: Record<string, unknown>;
+  dangerous_permissions: string[];
+  risk_level: string;
+};
+
+export type ModCompatibilityEntry = {
+  package_id: string;
+  compatible: boolean;
+  status: string;
+  errors: string[];
+  warnings: string[];
+  load_order_index?: number | null;
+};
+
+export type ModCompatibilityMatrix = {
+  ok: boolean;
+  entries: ModCompatibilityEntry[];
+  conflicts_summary: string[];
+  load_order: string[];
+};
+
+export type ExtensionCertificationReport = {
+  package_id: string;
+  level: string;
+  ok: boolean;
+  reasons: string[];
+  safe_summary: Record<string, string>;
+};
+
+export type ModQualityGateResult = {
+  ok: boolean;
+  package_id: string;
+  blockers: string[];
+  warnings: string[];
+  certification_level: string;
+  compatibility_status: string;
+};
+
+export type ModAuditRecord = {
+  audit_id: string;
+  project_id: string;
+  package_id: string;
+  action_type: string;
+  actor: string;
+  timestamp: string;
+  result: string;
+  safe_summary: string;
+  risk_level: string;
+  related_report_ids: string[];
+};
+
 export type AuthoringProjectStatus = {
   status: string;
   errors: number;
@@ -5903,6 +5981,54 @@ export async function fetchCrossModeAudit(projectId: string): Promise<{ project_
 
 export async function buildTavernApplyPlan(projectId: string, proposalId: string): Promise<Record<string, unknown>> {
   return requestJson<Record<string, unknown>>(`/projects/${encodeURIComponent(projectId)}/cross-mode/tavern-to-world/proposals/${encodeURIComponent(proposalId)}/apply-plan`, { method: "POST" });
+}
+
+export async function fetchProjectModules(projectId: string): Promise<{ local_only: boolean; modules: ModuleBrowserSummary[] }> {
+  return requestJson<{ local_only: boolean; modules: ModuleBrowserSummary[] }>(`/projects/${encodeURIComponent(projectId)}/modules`);
+}
+
+export async function scanProjectModules(projectId: string): Promise<{ local_only: boolean; modules: ModuleBrowserSummary[]; errors: string[] }> {
+  return requestJson<{ local_only: boolean; modules: ModuleBrowserSummary[]; errors: string[] }>(`/projects/${encodeURIComponent(projectId)}/modules/scan`, { method: "POST" });
+}
+
+export async function fetchProjectModule(projectId: string, packageId: string): Promise<{ local_only: boolean; module: ModuleBrowserDetail }> {
+  return requestJson<{ local_only: boolean; module: ModuleBrowserDetail }>(`/projects/${encodeURIComponent(projectId)}/modules/${encodeURIComponent(packageId)}`);
+}
+
+export async function validateProjectModule(projectId: string, packageId: string): Promise<{ local_only: boolean; validation: { ok: boolean; errors: string[]; warnings: string[] } }> {
+  return requestJson<{ local_only: boolean; validation: { ok: boolean; errors: string[]; warnings: string[] } }>(`/projects/${encodeURIComponent(projectId)}/modules/${encodeURIComponent(packageId)}/validate`, { method: "POST" });
+}
+
+export async function fetchProjectModulePermissions(projectId: string, packageId: string): Promise<{ local_only: boolean; permissions: ModulePermissionSummary }> {
+  return requestJson<{ local_only: boolean; permissions: ModulePermissionSummary }>(`/projects/${encodeURIComponent(projectId)}/modules/${encodeURIComponent(packageId)}/permissions`);
+}
+
+export async function fetchProjectModuleCompatibility(projectId: string, packageId: string): Promise<{ local_only: boolean; compatibility: Record<string, unknown> }> {
+  return requestJson<{ local_only: boolean; compatibility: Record<string, unknown> }>(`/projects/${encodeURIComponent(projectId)}/modules/${encodeURIComponent(packageId)}/compatibility`);
+}
+
+export async function fetchProjectModulePermissionsSummary(projectId: string): Promise<{ local_only: boolean; permissions: ModulePermissionSummary[] }> {
+  return requestJson<{ local_only: boolean; permissions: ModulePermissionSummary[] }>(`/projects/${encodeURIComponent(projectId)}/modules/permissions-summary`);
+}
+
+export async function buildProjectModuleCompatibilityMatrix(projectId: string, packageIds?: string[]): Promise<{ local_only: boolean; matrix: ModCompatibilityMatrix }> {
+  return requestJson<{ local_only: boolean; matrix: ModCompatibilityMatrix }>(`/projects/${encodeURIComponent(projectId)}/modules/compatibility-matrix`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ package_ids: packageIds })
+  });
+}
+
+export async function certifyProjectModule(projectId: string, packageId: string): Promise<{ local_only: boolean; certification: ExtensionCertificationReport }> {
+  return requestJson<{ local_only: boolean; certification: ExtensionCertificationReport }>(`/projects/${encodeURIComponent(projectId)}/modules/${encodeURIComponent(packageId)}/certify`, { method: "POST" });
+}
+
+export async function runProjectModuleQualityGate(projectId: string, packageId: string): Promise<{ local_only: boolean; quality_gate: ModQualityGateResult }> {
+  return requestJson<{ local_only: boolean; quality_gate: ModQualityGateResult }>(`/projects/${encodeURIComponent(projectId)}/modules/${encodeURIComponent(packageId)}/quality-gate`, { method: "POST" });
+}
+
+export async function fetchProjectModuleAudit(projectId: string): Promise<{ local_only: boolean; records: ModAuditRecord[] }> {
+  return requestJson<{ local_only: boolean; records: ModAuditRecord[] }>(`/projects/${encodeURIComponent(projectId)}/modules/audit`);
 }
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {

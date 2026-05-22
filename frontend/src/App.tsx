@@ -101,9 +101,26 @@ import {
   validateCrossMode,
   fetchCrossModeAudit,
   buildTavernApplyPlan,
+  buildProjectModuleCompatibilityMatrix,
+  certifyProjectModule,
   NovelManuscript,
   NovelChapter,
   NovelScene,
+  ModuleBrowserDetail,
+  ModuleBrowserSummary,
+  ModulePermissionSummary,
+  ModAuditRecord,
+  ModCompatibilityMatrix,
+  ModQualityGateResult,
+  fetchProjectModule,
+  fetchProjectModuleAudit,
+  fetchProjectModuleCompatibility,
+  fetchProjectModulePermissions,
+  fetchProjectModulePermissionsSummary,
+  fetchProjectModules,
+  runProjectModuleQualityGate,
+  scanProjectModules,
+  validateProjectModule,
   fetchAuthoringMap,
   fetchItemEconomyAuthoring,
   fetchNPCGoalGraph,
@@ -5278,6 +5295,18 @@ function ProjectShell({
   const [crossModeDraftType, setCrossModeDraftType] = useState("fact_draft");
   const [worldToNovelPreview, setWorldToNovelPreview] = useState<Record<string, unknown> | null>(null);
   const [tavernProposalId, setTavernProposalId] = useState("proposal_m1");
+  const [modules, setModules] = useState<ModuleBrowserSummary[]>([]);
+  const [selectedModuleId, setSelectedModuleId] = useState("");
+  const [moduleDetail, setModuleDetail] = useState<ModuleBrowserDetail | null>(null);
+  const [modulePermissions, setModulePermissions] = useState<ModulePermissionSummary | null>(null);
+  const [modulePermissionSummaries, setModulePermissionSummaries] = useState<ModulePermissionSummary[]>([]);
+  const [moduleCompatibility, setModuleCompatibility] = useState<Record<string, unknown> | null>(null);
+  const [moduleMatrix, setModuleMatrix] = useState<ModCompatibilityMatrix | null>(null);
+  const [moduleQualityGate, setModuleQualityGate] = useState<ModQualityGateResult | null>(null);
+  const [moduleAudit, setModuleAudit] = useState<ModAuditRecord[]>([]);
+  const [moduleError, setModuleError] = useState("");
+  const [moduleMessage, setModuleMessage] = useState("");
+  const [moduleRiskFilter, setModuleRiskFilter] = useState("all");
   const selected = projects.find((project) => project.project_id === selectedProjectId) ?? null;
   const novel = modeStatuses.find((status) => status.mode === "novel");
   const tavern = modeStatuses.find((status) => status.mode === "tavern");
@@ -5370,6 +5399,112 @@ function ProjectShell({
   useEffect(() => {
     void loadCrossModeData();
   }, [selectedProjectId]);
+
+  async function loadModuleData(nextModuleId = selectedModuleId) {
+    if (!selectedProjectId) {
+      return;
+    }
+    setModuleError("");
+    try {
+      const [moduleList, permissions, matrix, audit] = await Promise.all([
+        fetchProjectModules(selectedProjectId),
+        fetchProjectModulePermissionsSummary(selectedProjectId),
+        buildProjectModuleCompatibilityMatrix(selectedProjectId),
+        fetchProjectModuleAudit(selectedProjectId)
+      ]);
+      setModules(moduleList.modules);
+      setModulePermissionSummaries(permissions.permissions);
+      setModuleMatrix(matrix.matrix);
+      setModuleAudit(audit.records);
+      const next = nextModuleId || moduleList.modules[0]?.package_id || "";
+      setSelectedModuleId(next);
+      if (next) {
+        const [detail, modulePermission, compatibility] = await Promise.all([
+          fetchProjectModule(selectedProjectId, next),
+          fetchProjectModulePermissions(selectedProjectId, next),
+          fetchProjectModuleCompatibility(selectedProjectId, next)
+        ]);
+        setModuleDetail(detail.module);
+        setModulePermissions(modulePermission.permissions);
+        setModuleCompatibility(compatibility.compatibility);
+      } else {
+        setModuleDetail(null);
+        setModulePermissions(null);
+        setModuleCompatibility(null);
+      }
+    } catch (err) {
+      setModules([]);
+      setModuleError(toErrorMessage(err));
+    }
+  }
+
+  useEffect(() => {
+    void loadModuleData();
+  }, [selectedProjectId]);
+
+  async function handleScanModules() {
+    setModuleError("");
+    setModuleMessage("");
+    try {
+      const report = await scanProjectModules(selectedProjectId);
+      setModules(report.modules);
+      setModuleMessage(`Scanned ${report.modules.length} local modules. No package code was executed.`);
+      await loadModuleData(report.modules[0]?.package_id || selectedModuleId);
+    } catch (err) {
+      setModuleError(toErrorMessage(err));
+    }
+  }
+
+  async function handleSelectModule(packageId: string) {
+    setSelectedModuleId(packageId);
+    await loadModuleData(packageId);
+  }
+
+  async function handleValidateModule() {
+    if (!selectedModuleId) {
+      return;
+    }
+    setModuleError("");
+    setModuleMessage("");
+    try {
+      const result = await validateProjectModule(selectedProjectId, selectedModuleId);
+      setModuleMessage(result.validation.ok ? "Module validation passed." : `Module validation failed: ${result.validation.errors.length} blockers.`);
+      await loadModuleData(selectedModuleId);
+    } catch (err) {
+      setModuleError(toErrorMessage(err));
+    }
+  }
+
+  async function handleCertifyModule() {
+    if (!selectedModuleId) {
+      return;
+    }
+    setModuleError("");
+    setModuleMessage("");
+    try {
+      const report = await certifyProjectModule(selectedProjectId, selectedModuleId);
+      setModuleMessage(`Certification: ${report.certification.level}. This is local advisory certification only.`);
+      await loadModuleData(selectedModuleId);
+    } catch (err) {
+      setModuleError(toErrorMessage(err));
+    }
+  }
+
+  async function handleModuleQualityGate() {
+    if (!selectedModuleId) {
+      return;
+    }
+    setModuleError("");
+    setModuleMessage("");
+    try {
+      const report = await runProjectModuleQualityGate(selectedProjectId, selectedModuleId);
+      setModuleQualityGate(report.quality_gate);
+      setModuleMessage(report.quality_gate.ok ? "Mod Quality Gate passed." : "Mod Quality Gate found blockers.");
+      await loadModuleData(selectedModuleId);
+    } catch (err) {
+      setModuleError(toErrorMessage(err));
+    }
+  }
 
   async function handleCreateManuscript() {
     setNovelError("");
@@ -5972,6 +6107,122 @@ function ProjectShell({
             <p className="muted">Normal reports do not show hidden facts, NPC secrets, debug memory, raw env, API keys, or raw state_deltas.</p>
           </div>
         </div>
+      </section>
+      <section className="tool-card">
+        <h3>Script / Mod Platform Pro</h3>
+        <p className="muted">Local-only Module Browser. No online marketplace, no package download, and no arbitrary code execution.</p>
+        <ErrorPanel message={moduleError} compact />
+        <SuccessPanel message={moduleMessage} compact />
+        <div className="button-row">
+          <button type="button" disabled={!selectedProjectId} onClick={handleScanModules}>Scan Local Modules</button>
+          <button type="button" disabled={!selectedProjectId} onClick={() => void loadModuleData()}>Refresh</button>
+          <button type="button" disabled={!selectedModuleId} onClick={handleValidateModule}>Validate</button>
+          <button type="button" disabled={!selectedModuleId} onClick={handleCertifyModule}>Certify</button>
+          <button type="button" disabled={!selectedModuleId} onClick={handleModuleQualityGate}>Quality Gate</button>
+        </div>
+        <div className="card-grid">
+          <div>
+            <h4>Module Browser</h4>
+            <label>
+              Risk filter
+              <select value={moduleRiskFilter} onChange={(event) => setModuleRiskFilter(event.target.value)}>
+                <option value="all">All</option>
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+                <option value="blocked">Blocked</option>
+              </select>
+            </label>
+            <ItemList
+              emptyText="No local modules found."
+              items={modules
+                .filter((module) => moduleRiskFilter === "all" || module.permission_risk_level === moduleRiskFilter)
+                .map((module) => (
+                  <button
+                    key={module.package_id}
+                    type="button"
+                    className={module.package_id === selectedModuleId ? "selected-list-button" : ""}
+                    onClick={() => void handleSelectModule(module.package_id)}
+                  >
+                    {module.name} · {module.package_type} · {module.validation_status} · {module.permission_risk_level}
+                  </button>
+                ))}
+            />
+          </div>
+          <div>
+            <h4>Module Detail</h4>
+            {moduleDetail ? (
+              <div className="stack">
+                <p><strong>{moduleDetail.summary.name}</strong> {moduleDetail.summary.version}</p>
+                <p className="muted">{moduleDetail.summary.package_id}</p>
+                <p>Validation: {moduleDetail.summary.validation_status}</p>
+                <p>Compatibility: {moduleDetail.summary.compatibility_status}</p>
+                <p>Targets: {moduleDetail.target_project_modes.join(", ") || "not specified"}</p>
+                <ItemList emptyText="No errors." items={moduleDetail.summary.errors.map((item) => <span key={item} className="danger-text">{item}</span>)} />
+                <ItemList emptyText="No warnings." items={moduleDetail.summary.warnings.map((item) => <span key={item}>{item}</span>)} />
+              </div>
+            ) : (
+              <EmptyState title="Select a local module." detail="Scan the project modules directory to populate this panel." />
+            )}
+          </div>
+          <div>
+            <h4>Permission Dashboard</h4>
+            <p className="muted">Blocked in v2.6: execute_code, read_secrets, access_network, modify_game_state_directly.</p>
+            {modulePermissions ? (
+              <div className="stack">
+                <p>Risk: {modulePermissions.risk_level}</p>
+                <ItemList
+                  emptyText="No dangerous permissions."
+                  items={modulePermissions.dangerous_permissions.map((permission) => <span key={permission} className="danger-text">{permission} blocked</span>)}
+                />
+              </div>
+            ) : (
+              <EmptyState title="No permission summary." />
+            )}
+          </div>
+          <div>
+            <h4>Compatibility Matrix</h4>
+            {moduleMatrix ? (
+              <div className="stack">
+                <p>Status: {moduleMatrix.ok ? "compatible" : "blocked"}</p>
+                <p className="muted">Load order: {moduleMatrix.load_order.join(" → ") || "none"}</p>
+                <ItemList emptyText="No compatibility entries." items={moduleMatrix.entries.map((entry) => <span key={entry.package_id}>{entry.package_id}: {entry.status}</span>)} />
+              </div>
+            ) : (
+              <EmptyState title="No compatibility matrix." />
+            )}
+          </div>
+          <div>
+            <h4>Quality Gate</h4>
+            {moduleQualityGate ? (
+              <div className="stack">
+                <p>{moduleQualityGate.ok ? "passed" : "failed"} · {moduleQualityGate.certification_level}</p>
+                <ItemList emptyText="No blockers." items={moduleQualityGate.blockers.map((item) => <span key={item} className="danger-text">{item}</span>)} />
+              </div>
+            ) : (
+              <EmptyState title="Run the Mod Quality Gate." />
+            )}
+          </div>
+          <div>
+            <h4>Audit Trail</h4>
+            <ItemList
+              emptyText="No module audit records."
+              items={moduleAudit.slice(0, 5).map((record) => (
+                <span key={record.audit_id}>{record.action_type} · {record.package_id} · {record.result}</span>
+              ))}
+            />
+          </div>
+        </div>
+        <details>
+          <summary>All permissions</summary>
+          <ItemList
+            emptyText="No permission summaries."
+            items={modulePermissionSummaries.map((item) => (
+              <span key={item.package_id}>{item.package_id}: {item.risk_level} · {item.dangerous_permissions.join(", ") || "no dangerous permissions"}</span>
+            ))}
+          />
+        </details>
+        {moduleCompatibility && <p className="muted">Selected compatibility: {String(moduleCompatibility.status ?? "unknown")}</p>}
       </section>
     </div>
   );

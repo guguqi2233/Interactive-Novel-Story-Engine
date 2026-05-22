@@ -1,5 +1,52 @@
 # World Engine
 
+## v2.6 Script / Mod Platform Pro Integration
+
+v2.6 adds local Script / Mod Platform Pro services around the World Engine. It
+does not change World Engine authority.
+
+World Engine rules remain unchanged:
+
+- `GameState` is still the authoritative runtime state.
+- Runtime state changes still go through `StateDelta`.
+- Runtime World consequences still record `EventLog`.
+- Player-facing state still comes from visibility-filtered projections.
+- Mods, packages, prompt profiles, RP profiles, style metadata, and provider
+  profile packs cannot create authoritative facts.
+
+Action Mod rules:
+
+- Declarative Action Mods must register through `ActionRegistry`.
+- Action IDs and aliases are checked for core-action and mod-action conflicts.
+- `ModActionHandler` / `ModActionEvaluator` interprets declarative definitions
+  only. It does not execute arbitrary code.
+- Preconditions, checks, and outcomes are restricted DSL records, not Python,
+  JavaScript, or shell code.
+- State changes are emitted as `StateDelta` proposals through `ActionResult`;
+  the engine apply flow remains responsible for applying valid deltas.
+- Mod action events must be recorded through the engine/EventLog flow when a
+  runtime action changes state.
+
+Rule Module rules:
+
+- `RuleModuleManifest` is a contract and permission declaration.
+- v2.6 Rule Modules do not execute runtime code.
+- Rule Modules may declare state schema extensions, but those require
+  validation and migration review before runtime use.
+- Rule Modules cannot directly access databases, filesystem, network,
+  secrets, provider credentials, or `GameState`.
+
+Package and import/export rules:
+
+- Script packs, world extension packs, character packs, prompt/provider
+  profile packs, narrative style mods, RP profile mods, action mods, and rule
+  modules are local extension packages with manifests and validation.
+- Imports and exports must reject zip slip, path traversal, executables,
+  `.env`, API keys, provider secrets, databases, logs, caches, build outputs,
+  and hidden/debug payloads in normal package paths.
+- Package import/export and Module Browser operations are authoring/studio
+  services. They do not modify active runtime `GameState`.
+
 ## v2.5 Provider Gateway Pro Integration
 
 v2.5 Provider Gateway Pro changes provider management, routing, fallback,

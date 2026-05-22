@@ -1,5 +1,69 @@
 # Local LLM Interactive Novel World Engine
 
+## v2.6 Script / Mod Platform Pro
+
+v2.6 adds Script / Mod Platform Pro: a local, manifest-driven extension
+platform for script packs, world extension packs, character packs, prompt
+profile packs, provider profile packs, narrative style mods, RP profile mods,
+declarative action mods, and rule module contracts.
+
+It is not an online marketplace, cloud plugin platform, account system, remote
+download service, or arbitrary-code plugin runtime. v2.6 packages are local
+data, templates, profiles, and controlled DSL definitions. They must not read
+`.env`, API keys, databases, logs, caches, private user files, or execute
+Python/JavaScript/shell code.
+
+Useful local workflows:
+
+```powershell
+$env:ENABLE_AUTHORING_API="true"
+```
+
+Module Browser local API:
+
+```text
+GET  /projects/{project_id}/modules
+POST /projects/{project_id}/modules/scan
+GET  /projects/{project_id}/modules/{package_id}
+POST /projects/{project_id}/modules/{package_id}/validate
+GET  /projects/{project_id}/modules/{package_id}/permissions
+GET  /projects/{project_id}/modules/{package_id}/compatibility
+POST /projects/{project_id}/modules/compatibility-matrix
+POST /projects/{project_id}/modules/check-selection
+POST /projects/{project_id}/modules/{package_id}/certify
+POST /projects/{project_id}/modules/{package_id}/quality-gate
+GET  /projects/{project_id}/modules/permissions-summary
+GET  /projects/{project_id}/modules/audit
+GET  /projects/{project_id}/modules/audit/{audit_id}
+```
+
+Action mod tests and package certification:
+
+```powershell
+$env:PYTHONPATH="backend"
+python -m backend.app.tools.test_action_mod <mod_path> --json
+python -m backend.app.tools.certify_extension <package_path> --json
+python -m backend.app.tools.mod_quality_gate <package_path> --json
+```
+
+The frontend Module Browser shows local package summaries, validation status,
+compatibility status, permission risk, certification, quality gate status, and
+audit summaries. It does not download packages, execute modules, display
+secrets, or show local sensitive paths.
+
+Import/export boundaries:
+
+- Imports are dry-run first and require explicit confirmation for apply.
+- High-risk modules are not automatically enabled.
+- Exports reject `.env`, API keys, provider secrets, database files, logs,
+  caches, `node_modules`, `dist`, desktop build outputs, executables, and
+  secret-like content.
+- Provider Profile Packs may contain only `api_key_env` / `secret_ref`
+  references, never real keys.
+- v2.6 hardening note: the import/export/secret audit's forbidden-file
+  read-before-skip blocker has been fixed and is covered by v2.6 acceptance,
+  security/import-export/secret audits, and regression tests.
+
 ## v2.5 Provider Gateway Pro
 
 v2.5 adds Provider Gateway Pro: a local provider management, routing,

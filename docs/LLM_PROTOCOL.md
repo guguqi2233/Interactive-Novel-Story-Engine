@@ -1,5 +1,50 @@
 # LLM Protocol
 
+## v2.6 Script / Mod Platform LLM Boundary
+
+v2.6 Script / Mod Platform Pro does not grant mods any LLM authority. Provider
+Gateway remains the only model entry, and package/profile/mod metadata cannot
+change the fact boundary.
+
+Prompt, narrative, and RP mod rules:
+
+- Prompt Profile Packs may add prompt profile metadata and style presets only.
+  They cannot set `can_access_hidden_facts`, `can_modify_state`,
+  `can_override_action_result`, or `can_bypass_visibility`.
+- Narrative Style Mods can change tone, pacing, perspective, sensory focus,
+  sentence style, and length hints. They cannot change world facts, create key
+  items, complete quests, override action results, or reveal hidden facts.
+- RP Profile Mods can adjust RP/voice presentation fields. They cannot patch
+  World NPC knowledge, expand NPC facts, modify `GameState`, or enable hidden
+  fact access.
+
+Action and rule mod rules:
+
+- Action Mods are declarative data and cannot call LLMs.
+- Rule Modules default `can_call_llm=false`, and v2.6 rejects `can_call_llm`
+  as an unsafe permission.
+- Action outcome selection is performed by deterministic DSL rules, not by an
+  LLM.
+- Action Mods cannot let LLM output become `StateDelta`, `EventLog`, or
+  `GameState`.
+- Mod Quality Gate, certification, validation, compatibility checks,
+  import/export checks, and audit reports are deterministic local checks; they
+  do not use an LLM as safety judge.
+
+Provider Profile Pack rules:
+
+- Provider Profile Packs may contain `api_key_env` and `secret_ref`
+  references only.
+- They must not contain raw API keys, authorization headers, provider secrets,
+  raw env, or frontend-visible credential values.
+- Provider configuration still resolves through Provider Gateway /
+  `ProviderSecretResolver`; a package cannot instantiate or bypass providers.
+
+Prompt context exclusions remain unchanged for Novel, Tavern, World, and
+Cross-Mode: hidden facts, NPC secrets, debug memory, raw `GameState`, raw
+`state_deltas`, raw prompts, API keys, provider secrets, and raw env must not
+enter normal provider inputs.
+
 ## v2.5 Provider Gateway Pro Boundary
 
 v2.5 upgrades Provider Gateway into the single safe model-entry boundary for

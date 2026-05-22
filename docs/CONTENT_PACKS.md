@@ -1,5 +1,66 @@
 # Content Pack Format
 
+## v2.6 Script / Mod Platform Pro Packages
+
+v2.6 introduces `PackageManifestV2` as the common manifest for local extension
+packages. These packages are not ordinary runtime world content until an
+explicit, validated authoring flow accepts the relevant draft/proposal. They do
+not execute code and do not directly modify active `GameState`.
+
+`PackageManifestV2` contains package id, name, version, package type, engine
+version bounds, schema version, target modes/worlds, dependencies, conflicts,
+permissions, included files, checksums, entry points, compatibility notes,
+migration notes, and creation time. Entry points are declarative only; Python,
+JavaScript, shell, binary, and executable entry points are blocked.
+
+Supported v2.6 package types:
+
+- `script_pack`: scenarios, quest drafts, novel outline drafts, Tavern scene
+  presets, cross-mode templates, and quality checks. Imports produce drafts or
+  templates only.
+- `world_extension_pack`: additive world content candidates and reviewed patch
+  candidates for locations, NPCs, items, quests, facts, factions, rumors, and
+  relationships. Destructive overrides are blocked by default.
+- `character_pack`: character profiles, Tavern character drafts, RP/Voice
+  profiles, character cards, and World NPC draft candidates. It does not
+  overwrite World NPCs.
+- `prompt_profile_pack`: prompt profile metadata and style presets. It cannot
+  grant hidden fact access, state modification, visibility bypass, or action
+  result override.
+- `provider_profile_pack`: ProviderProfileV2/model/routing/capability
+  templates. It can include `api_key_env` or `secret_ref`, never real API keys
+  or authorization headers.
+- `narrative_style_mod`: expression-only narrative style metadata.
+- `rp_profile_mod`: RP/voice presentation patches. It cannot patch World NPC
+  knowledge or facts.
+- `action_mod`: declarative action definitions. Action Mods register through
+  `ActionRegistry` and produce `ActionResult` / `StateDelta` proposals.
+- `rule_module`: manifest-only rule module contract metadata. v2.6 does not
+  execute rule module runtime code.
+- `template_pack`: local templates and authoring metadata.
+
+Module permissions use `ModulePermissionSet`. Safe permissions allow adding
+content, templates, prompt profiles, provider profile templates, declarative
+actions, RP profiles, and narrative style. Dangerous permissions such as
+`execute_code`, `access_filesystem`, `access_network`, `read_secrets`,
+`write_database`, `modify_game_state_directly`, `bypass_visibility`, and
+`call_llm` are blocked in v2.6.
+
+Import/export rules:
+
+- Import is dry-run first and apply requires explicit confirmation.
+- Import/export must reject zip slip, path traversal, executables, `.env`, API
+  keys, provider secrets, databases, logs, caches, `node_modules`, `dist`,
+  desktop build outputs, raw prompts, raw `state_deltas`, and hidden/debug
+  payloads in normal package paths.
+- Checksums use `sha256:<hex>` values.
+- Duplicate package ids are reported.
+- High-risk modules are not automatically enabled after import.
+
+Known v2.6 hardening note: `docs/V2_6_IMPORT_EXPORT_SECRET_AUDIT.md` currently
+flags forbidden-file read-before-skip behavior in import dry-run and module
+scan. Resolve those blockers before v2.6 final acceptance.
+
 ## v2.4 Cross-Mode Bridge and Content Packs
 
 v2.4 Cross-Mode Bridge can create world-content drafts and proposals from
