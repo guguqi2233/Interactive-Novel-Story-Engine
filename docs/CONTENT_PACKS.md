@@ -104,6 +104,65 @@ World UI -> content-pack relationship:
   Richer module dashboards should use backend safe-summary contracts rather
   than reading raw module state in frontend.
 
+v3.4 Authoring / Mod UI Pro makes local content-pack and module-package
+authoring easier to manage without changing package authority. It adds Pro UI
+surfaces for World Pack, Script Pack, Character Pack, Quest Graph,
+Location/Map, NPC/Faction/Relationship, Item/Economy/Trade, Rumor/Crime/
+Consequence, Advanced Module configuration, Action Mod, Rule Module contract,
+Module Browser, Permission Dashboard, Compatibility Matrix, Certification,
+Import/Export, Mod Quality Gate, Validation Dashboard, Diff/Preview/Dry-Run,
+Audit, Backup/Restore, and Safe Apply workflows.
+
+v3.4 package/editor relationship:
+
+- `PackageManifestV2` remains the local package manifest authority for package
+  id, type, version, target modes/worlds, dependencies, conflicts,
+  permissions, entry points, checksums, compatibility notes, migration notes,
+  and mature policy.
+- World Pack Editor Pro edits local world-pack drafts/candidates. Hidden facts
+  must be marked authoring-only and excluded from player previews.
+- Script Pack Editor Pro edits data package drafts for scenarios, quest drafts,
+  Novel outline drafts, Tavern scene presets, cross-mode templates, and quality
+  checks. Script packs are not executable scripts.
+- Character Pack Editor Pro edits character/profile/card/NPC-draft package
+  data. Private notes and NPC secrets stay authoring-only; character card
+  scripts are not executed and World NPCs are not overwritten automatically.
+- Quest, location, NPC/faction/relationship, item/economy/trade, and
+  rumor/crime/consequence editors write local content-file drafts/candidates
+  only. They do not modify active saves or runtime `GameState`.
+- Advanced Module Authoring panels show module configuration/status drafts and
+  validation/migration/quality state. They do not modify active module runtime
+  state.
+- Action Mod Editor edits declarative action definitions only. Action Mods must
+  go through `ActionRegistry` and runtime `StateDelta` / `EventLog` paths when
+  used; the editor/test harness does not execute arbitrary code.
+- Rule Module Contract UI edits/reviews manifest contracts only. v3.4 does not
+  execute Rule Module runtime code.
+- Import/export is local and safe-summary oriented. Dry-run/preview happens
+  before apply/export confirmation, and provider profile package export may
+  include `api_key_env` / `secret_ref` references only.
+- Safe Apply / Publish-to-Local writes local project/content-pack/package files
+  only after the applicable validation, preview/dry-run, and explicit
+  confirmation gates. It does not modify active `GameState`, active saves,
+  `StateDelta`, or `EventLog`.
+- Mod Quality Gate, Compatibility Matrix, Extension Certification, and
+  Authoring Validation Dashboard are deterministic local checks. They do not
+  upload reports and do not use an LLM judge.
+
+v3.4 import/export and safety rules:
+
+- No online marketplace, remote package auto-download, account sync, cloud
+  package sync, multiplayer editing, or arbitrary-code plugin runtime is
+  implemented.
+- Packages and backups must exclude or block `.env`, API keys, provider
+  secrets, databases, logs, caches, `node_modules`, `dist`, desktop build
+  outputs, backups, crash reports, diagnostics bundles, mature/private content,
+  hidden/debug payloads in normal package paths, executable files, path
+  traversal, and zip slip by default.
+- Normal authoring UI and reports must use safe summaries/redacted messages
+  rather than hidden fact text, NPC secrets, debug memory, raw prompts, raw
+  `state_deltas`, raw env, or provider secrets.
+
 ## v2.8 RP / Mature Content and Package Policy
 
 v2.8 adds RP immersion and mature-policy metadata that can appear in local

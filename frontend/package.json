@@ -11,6 +11,7 @@
     "check:v31-novel-ui": "node scripts/check-v31-novel-ui.mjs",
     "check:v32-tavern-ui": "node scripts/check-v32-tavern-ui.mjs",
     "check:v33-world-ui": "node scripts/check-v33-world-ui.mjs",
+    "check:v34-authoring-ui": "node scripts/check-v34-authoring-ui.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

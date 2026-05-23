@@ -31,6 +31,31 @@ const requiredAppTokens = [
   "Mature Module default off"
 ];
 
+const requiredCompletionTokens = [
+  "Retry Health Check",
+  "Open Local Config Wizard",
+  "View Local Logs",
+  "SQLite / Database",
+  "Workspace",
+  "Logs",
+  "Workspace root",
+  "Log directory",
+  "Backup directory",
+  "Privacy defaults",
+  "safe provider status",
+  "Explicit Confirm Create Backup",
+  "Restore Dry-Run Preview",
+  "Restart backend/frontend",
+  "Reload project summary",
+  "Level filter",
+  "Component filter",
+  "Last run summary",
+  "Project id",
+  "Mode status",
+  "Pin",
+  "Desktop Packaging"
+];
+
 const requiredApiTokens = [
   "fetchLocalStudioStatus",
   "fetchLocalStudioConfigSummary",
@@ -46,6 +71,10 @@ const failures = [];
 
 for (const token of requiredAppTokens) {
   if (!app.includes(token)) failures.push(`Missing v3.0 UX token: ${token}`);
+}
+
+for (const token of requiredCompletionTokens) {
+  if (!app.includes(token)) failures.push(`Missing v3.0 completion token: ${token}`);
 }
 
 for (const token of requiredApiTokens) {

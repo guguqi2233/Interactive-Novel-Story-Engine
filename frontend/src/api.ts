@@ -5427,6 +5427,33 @@ export type ActionModExportResponse = {
   executes_code: boolean;
 };
 
+export type ActionModSafeTestResult = {
+  test_id: string;
+  action_id: string;
+  passed: boolean;
+  expected_result_type: string;
+  actual_result_type: string;
+  expected_state_delta_summary: string[];
+  event_tags: string[];
+  hidden_leak_warnings: string[];
+  state_unchanged: boolean;
+  errors: string[];
+};
+
+export type ActionModTestRunResponse = {
+  local_only: boolean;
+  ok: boolean;
+  module_id: string;
+  test_count: number;
+  passed_count: number;
+  results: ActionModSafeTestResult[];
+  validation: ActionModValidationReport;
+  writes_to_disk: boolean;
+  executes_code: boolean;
+  active_game_state_modified: boolean;
+  raw_state_deltas_included: boolean;
+};
+
 export async function previewActionModDraft(draft: ActionModDraft): Promise<ActionModPreviewResponse> {
   return requestJson<ActionModPreviewResponse>("/authoring/action-mods/preview", {
     method: "POST",
@@ -5448,6 +5475,14 @@ export async function exportActionModDraft(draft: ActionModDraft): Promise<Actio
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(draft)
+  });
+}
+
+export async function runActionModDraftTests(draft: ActionModDraft): Promise<ActionModTestRunResponse> {
+  return requestJson<ActionModTestRunResponse>("/authoring/action-mods/tests/run", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ draft })
   });
 }
 

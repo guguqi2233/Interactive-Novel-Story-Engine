@@ -225,6 +225,53 @@ World UI boundary rules:
 - Tactical combat, economy, faction war, deduction, survival/travel, magic,
   hacking, crafting, and cultivation panels do not judge results in frontend.
 
+### v3.4 Implemented Authoring / Mod UI Pro Scope
+
+v3.4 implements **Authoring / Mod UI Pro** as a local authoring and package
+management UI polish layer. Authoring outputs are drafts, content-pack
+candidates, package candidates, validation reports, previews, dry-run results,
+or proposals until an explicit local apply path accepts them. Authoring UI is
+not a runtime World Engine authority layer.
+
+Implemented v3.4 Authoring / Mod UI scope includes:
+
+- Authoring Workspace Shell with editor navigation, central editor/dashboard
+  area, validation/preview/diff/permission/quality sidebar, and local status.
+- World Pack, Script Pack, and Character Pack editor surfaces.
+- Quest Graph, Location / Map, NPC / Faction / Relationship, Item / Economy /
+  Trade, Rumor / Crime / Consequence, and Advanced Module authoring panels.
+- Action Mod Editor and Action Mod Test Harness for declarative action drafts,
+  validation, safe StateDelta proposal summaries, and local test reports.
+- Rule Module Contract UI for manifest-only contract review; v3.4 does not
+  execute Rule Module runtime code.
+- Module Browser Pro, Permission Dashboard Pro, Compatibility Matrix UI Pro,
+  Extension Certification UI Pro, and Mod Quality Gate UI Pro.
+- Import / Export Wizard Pro, Authoring Validation Dashboard,
+  AuthoringDiffPreview, Audit Trail, Backup / Restore, and Safe Apply /
+  Publish-to-Local workflow.
+- Authoring UI regression checks through `npm.cmd run check:v34-authoring-ui`
+  and focused v3.4 integration regression tests.
+
+Authoring / Mod boundary rules:
+
+- Authoring UI does not directly modify active `GameState`, active saves,
+  runtime module state, `StateDelta`, or `EventLog`.
+- Safe Apply writes local project/content-pack/package files only after the
+  applicable validation, preview/dry-run, and explicit confirmation gates.
+- Active World changes still require World Engine runtime flows and must be
+  expressed through `StateDelta` and recorded in `EventLog`.
+- Action Mods are declarative; they do not execute arbitrary code and must go
+  through `ActionRegistry` when used at runtime.
+- Rule Modules are contract-only in v3.4 and cannot execute runtime code, call
+  providers, access the filesystem/network, or modify game state directly.
+- Module Browser, Import/Export, Certification, Compatibility, and Quality Gate
+  read local package manifests/metadata and safe summaries. They do not execute
+  packages, download remote packages, or present an online marketplace.
+- Provider Profile Packs may reference `api_key_env` / `secret_ref` only.
+  Real API keys, Authorization headers, provider secrets, raw env, hidden
+  facts, NPC secrets, debug memory, raw prompts, and raw `state_deltas` must not
+  enter normal authoring UI, packages, exports, backups, logs, or reports.
+
 ## v2.8 Roleplay Immersion & Mature Module
 
 v2.8 adds Roleplay Immersion & Mature Module infrastructure on top of Tavern

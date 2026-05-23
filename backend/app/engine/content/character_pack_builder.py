@@ -301,12 +301,26 @@ def _merge_profile_payload(character: dict[str, Any], pack: CharacterPack) -> di
     npc_id = str(character.get("id", ""))
     merged = dict(character)
     if npc_id in pack.rp_profiles:
-        merged["rp_profile"] = pack.rp_profiles[npc_id]
+        merged["rp_profile"] = _safe_profile_payload(pack.rp_profiles[npc_id])
     if npc_id in pack.voice_profiles:
-        merged["voice_profile"] = pack.voice_profiles[npc_id]
+        merged["voice_profile"] = _safe_profile_payload(pack.voice_profiles[npc_id])
     merged.pop("player_visible_facts", None)
     merged.pop("api_key", None)
     return {key: value for key, value in merged.items() if value not in (None, [], {})}
+
+
+def _safe_profile_payload(profile: dict[str, Any]) -> dict[str, Any]:
+    blocked = {
+        "api_key",
+        "private_notes",
+        "private_persona",
+        "private_persona_authoring_only",
+        "private_self_summary",
+        "provider_secret",
+        "secret",
+        "secrets",
+    }
+    return {key: value for key, value in dict(profile).items() if key not in blocked}
 
 
 def _append_list_file(

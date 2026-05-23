@@ -119,7 +119,73 @@ export function WorldToolbar({
 }
 
 export function WorldPlayMainView({ children }: { children: ReactNode }) {
-  return <section className="world-play-main-view">{children}</section>;
+  return <section id="world-play" className="world-play-main-view">{children}</section>;
+}
+
+export function WorldStudioNavigation({ onJump }: { onJump?: (targetId: string) => void }) {
+  const entries = [
+    ["world-play", "Story"],
+    ["world-map", "Map"],
+    ["world-npcs", "NPCs"],
+    ["world-quests", "Quests"],
+    ["world-inventory", "Inventory"],
+    ["world-modules", "Modules"],
+    ["world-timeline", "Timeline"],
+    ["world-saves", "Saves"],
+    ["world-quality", "Quality"],
+    ["world-debug", "Debug"]
+  ];
+  return (
+    <section className="world-nav-panel" aria-label="World Studio sections">
+      <h3>World Navigation</h3>
+      <p className="muted">Local play workspace. UI calls backend APIs and never directly modifies GameState.</p>
+      <div className="chip-list vertical">
+        {entries.map(([targetId, label]) => (
+          <button type="button" className="chip-button" key={targetId} onClick={() => onJump?.(targetId)}>
+            {label}
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+export function WorldWorkspaceNavigation({
+  visibleState,
+  debugEnabled,
+  onJump
+}: {
+  visibleState: VisibleState | null;
+  debugEnabled: boolean;
+  onJump?: (targetId: string) => void;
+}) {
+  const entries = [
+    { id: "world-play", label: "Story", value: visibleState ? `Turn ${visibleState.turn}` : "No session" },
+    { id: "world-map", label: "Map", value: visibleState?.location.name ?? "Start session" },
+    { id: "world-npcs", label: "NPCs", value: String(visibleState?.visible_npcs.length ?? 0) },
+    { id: "world-quests", label: "Quests", value: String(visibleState?.quests.length ?? 0) },
+    { id: "world-inventory", label: "Inventory", value: String(visibleState?.inventory.length ?? 0) },
+    { id: "world-modules", label: "Modules", value: visibleState?.active_combat ? "Combat active" : "Safe summaries" },
+    { id: "world-timeline", label: "Timeline", value: "Visible events" },
+    { id: "world-saves", label: "Saves", value: "Local slots" },
+    { id: "world-quality", label: "Quality", value: "Local checks" },
+    { id: "world-debug", label: "Debug", value: debugEnabled ? "Gated on" : "Gated off" }
+  ];
+  return (
+    <section className="world-nav-panel" aria-label="World Studio Pro navigation">
+      <h3>World Workspace</h3>
+      <p className="muted">Daily local play workspace. Actions call backend APIs and never directly modify GameState.</p>
+      <div className="world-nav-link-list">
+        {entries.map((entry) => (
+          <button type="button" className="world-nav-link" key={entry.id} onClick={() => onJump?.(entry.id)}>
+            <span>{entry.label}</span>
+            <small>{entry.value}</small>
+          </button>
+        ))}
+      </div>
+      <p className="muted">No account. No cloud sync. No online play. No online marketplace.</p>
+    </section>
+  );
 }
 
 export function WorldStatusCard({ title, value, detail }: { title: string; value: string; detail?: string }) {
@@ -135,7 +201,7 @@ export function WorldStatusCard({ title, value, detail }: { title: string; value
 export function LocationCard({ visibleState, onAction }: { visibleState: VisibleState | null; onAction?: (action: string) => void }) {
   const exits = Object.entries(visibleState?.location.exits ?? {});
   return (
-    <VisibleStateSection title="Map / Location Panel" empty={!visibleState} emptyDetail="Start a session to inspect known locations.">
+    <VisibleStateSection id="world-map" title="Map / Location Panel" empty={!visibleState} emptyDetail="Start a session to inspect known locations.">
       <LocationSummary locationName={visibleState?.location.name ?? "Unknown"} locationId={visibleState?.location.id ?? "none"} />
       <div className="chip-list">
         {exits.length ? exits.map(([direction, target]) => (
@@ -177,7 +243,7 @@ export function NPCRelationshipPanel({ visibleState, onAction }: { visibleState:
   const npcs = visibleState?.visible_npcs ?? [];
   const relationships = visibleState?.relationships ?? [];
   return (
-    <VisibleStateSection title="NPC / Relationship Panel" empty={!visibleState} emptyDetail="Start a session to inspect visible NPCs.">
+    <VisibleStateSection id="world-npcs" title="NPC / Relationship Panel" empty={!visibleState} emptyDetail="Start a session to inspect visible NPCs.">
       <div className="world-card-list">
         {npcs.length ? npcs.map((npc) => <NPCSafeCard key={npc.id} npc={npc} onAction={onAction} />) : <p className="muted">No visible NPCs.</p>}
       </div>
@@ -221,7 +287,7 @@ export function QuestCard({ quest }: { quest: VisibleQuest }) {
 export function QuestJournalPanel({ visibleState }: { visibleState: VisibleState | null }) {
   const quests = visibleState?.quests ?? [];
   return (
-    <VisibleStateSection title="Quest / Journal Panel" empty={!visibleState} emptyDetail="Start a session to inspect known quests.">
+    <VisibleStateSection id="world-quests" title="Quest / Journal Panel" empty={!visibleState} emptyDetail="Start a session to inspect known quests.">
       <div className="world-card-list">
         {quests.length ? quests.map((quest) => <QuestCard key={quest.id} quest={quest} />) : <p className="muted">No known quests.</p>}
       </div>
@@ -242,11 +308,13 @@ export function InventoryItemCard({ item, onAction }: { item: VisibleObject; onA
 
 export function InventoryTradePanel({ visibleState, onAction }: { visibleState: VisibleState | null; onAction?: (action: string) => void }) {
   const inventory = visibleState?.inventory ?? [];
+  const visibleObjects = visibleState?.visible_objects ?? [];
   return (
-    <VisibleStateSection title="Inventory / Trade UI" empty={!visibleState} emptyDetail="Start a session to inspect visible inventory.">
+    <VisibleStateSection id="world-inventory" title="Inventory / Trade UI" empty={!visibleState} emptyDetail="Start a session to inspect visible inventory.">
       <div className="world-card-list">
         {inventory.length ? inventory.map((item) => <InventoryItemCard key={item.id} item={item} onAction={onAction} />) : <p className="muted">Inventory empty.</p>}
       </div>
+      <WorldStatusCard title="Visible containers / objects" value={String(visibleObjects.length)} detail={visibleObjects.map((item) => item.id).join(", ") || "No visible trade container."} />
       <WorldStatusCard title="Trade" value="Backend validated" detail="No authoritative prices are calculated in the frontend." />
     </VisibleStateSection>
   );
@@ -350,18 +418,20 @@ export function ModuleStatusBadge({ label, enabled }: { label: string; enabled: 
 }
 
 export function VisibleStateSection({
+  id,
   title,
   children,
   empty,
   emptyDetail
 }: {
+  id?: string;
   title: string;
   children: ReactNode;
   empty?: boolean;
   emptyDetail?: string;
 }) {
   return (
-    <section className="section-card player">
+    <section id={id} className="section-card player">
       <div className="section-card-header">
         <div>
           <h3>{title}</h3>
@@ -375,7 +445,7 @@ export function VisibleStateSection({
 
 export function VisibleStateInspector({ visibleState }: { visibleState: VisibleState | null }) {
   return (
-    <VisibleStateSection title="Visible State Inspector" empty={!visibleState} emptyDetail="Start or load a session to inspect player-visible state.">
+    <VisibleStateSection id="world-visible-state" title="Visible State Inspector" empty={!visibleState} emptyDetail="Start or load a session to inspect player-visible state.">
       <div className="safe-summary-grid">
         <WorldStatusCard title="Player" value={visibleState?.player_condition?.condition ?? "healthy"} />
         <WorldStatusCard title="Location" value={visibleState?.location.name ?? "Unknown"} />
@@ -403,7 +473,7 @@ export function EventSafeSummaryCard({ event }: { event: DebugEvent | TimelineEv
 export function WorldTimelineEventLogPanel({ events, debugEnabled }: { events: DebugEvent[]; debugEnabled: boolean }) {
   const visibleEvents = events.filter((event) => event.visible_to_player);
   return (
-    <VisibleStateSection title="World Timeline / EventLog UI Pro" empty={false}>
+    <VisibleStateSection id="world-timeline" title="World Timeline / EventLog UI Pro" empty={false}>
       <div className="world-card-list">
         {visibleEvents.length ? visibleEvents.map((event) => <EventSafeSummaryCard key={event.event_id} event={event} />) : <p className="muted">No player-visible events loaded.</p>}
       </div>
@@ -444,15 +514,33 @@ export function WorldSaveLoadPanel({
   saves,
   selectedSaveId,
   migrationStatusBySaveId,
-  onSelectSave
+  onSelectSave,
+  onSaveCurrent,
+  onLoadSelected,
+  onDeleteSelected,
+  onRefresh,
+  hasSession = false,
+  busy = false
 }: {
   saves: SaveSummary[];
   selectedSaveId: string;
   migrationStatusBySaveId: Record<string, SaveMigrationStatus>;
   onSelectSave: (saveId: string) => void;
+  onSaveCurrent?: () => void;
+  onLoadSelected?: () => void;
+  onDeleteSelected?: () => void;
+  onRefresh?: () => void;
+  hasSession?: boolean;
+  busy?: boolean;
 }) {
   return (
-    <VisibleStateSection title="World Save / Load UX Pro" empty={false}>
+    <VisibleStateSection id="world-saves" title="World Save / Load UX Pro" empty={false}>
+      <div className="button-row">
+        <button type="button" onClick={onSaveCurrent} disabled={!hasSession || busy}>Create save</button>
+        <button type="button" onClick={onLoadSelected} disabled={!selectedSaveId || busy}>Load selected</button>
+        <button type="button" onClick={onDeleteSelected} disabled={!selectedSaveId || busy}>Delete selected</button>
+        <button type="button" onClick={onRefresh} disabled={busy}>Refresh saves</button>
+      </div>
       <div className="save-list">
         {saves.length ? saves.map((save) => (
           <SaveSlotCard
@@ -464,7 +552,7 @@ export function WorldSaveLoadPanel({
           />
         )) : <p className="muted">No saves yet.</p>}
       </div>
-      <p className="muted">Save summaries exclude raw GameState, hidden facts, API keys, and raw state_deltas.</p>
+      <p className="muted">Save summaries exclude raw GameState, hidden facts, API keys, and raw state_deltas. Load and delete operations stay behind backend flows and confirmation where destructive.</p>
     </VisibleStateSection>
   );
 }
@@ -473,11 +561,12 @@ export function TacticalCombatPanel({ visibleState, onAction }: { visibleState: 
   const combat = visibleState?.active_combat;
   const actions = ["tactical_move", "take_cover", "aim", "strike", "defend", "guard", "flee_tactical"];
   return (
-    <VisibleStateSection title="Tactical Combat UI Pro" empty={!visibleState} emptyDetail="Start a session to inspect combat state.">
+    <VisibleStateSection id="world-tactical" title="Tactical Combat UI Pro" empty={!visibleState} emptyDetail="Start a session to inspect combat state.">
       {combat ? (
         <>
           <WorldStatusCard title="Encounter" value={`${combat.combat_id} (${combat.status})`} detail={`Location ${combat.location_id}`} />
           <WorldStatusCard title="Player stance" value={combat.player_stance} detail={combat.player_condition} />
+          <WorldStatusCard title="Player effects" value={combat.player_status_effects.join(", ") || "none"} detail="Hit and damage rolls stay backend/debug-gated." />
           <div className="chip-list">
             {combat.visible_combatants.map((combatant) => <span className="badge" key={combatant}>{combatant}</span>)}
           </div>
@@ -492,9 +581,12 @@ export function TacticalCombatPanel({ visibleState, onAction }: { visibleState: 
 }
 
 export function EconomyDashboardPanel({ visibleState }: { visibleState: VisibleState | null }) {
+  const rumors = visibleState?.known_rumors ?? [];
+  const factions = visibleState?.factions ?? [];
   return (
-    <VisibleStateSection title="Economy Dashboard UI" empty={!visibleState} emptyDetail="Start a session to inspect known market hints.">
-      <WorldStatusCard title="Known markets" value="Safe summary unavailable" detail="No normal economy safe endpoint is exposed; raw economy state is not shown." />
+    <VisibleStateSection id="world-economy" title="Economy Dashboard UI" empty={!visibleState} emptyDetail="Start a session to inspect known market hints.">
+      <WorldStatusCard title="Known market hints" value={String(rumors.filter((rumor) => rumor.tags.some((tag) => /market|trade|price|scarcity/i.test(tag))).length)} detail="Derived from player-known rumors only." />
+      <WorldStatusCard title="Known factions / merchants" value={String(factions.length)} detail={factions.map((faction) => `${faction.name}: ${faction.band}`).join(", ") || "No known market actor."} />
       <p className="muted">Hidden market info and debug economy data are excluded.</p>
     </VisibleStateSection>
   );
@@ -503,7 +595,7 @@ export function EconomyDashboardPanel({ visibleState }: { visibleState: VisibleS
 export function FactionWarDashboardPanel({ visibleState }: { visibleState: VisibleState | null }) {
   const conflicts = visibleState?.faction_conflicts ?? [];
   return (
-    <VisibleStateSection title="Faction War Dashboard UI" empty={!visibleState} emptyDetail="Start a session to inspect known faction conflicts.">
+    <VisibleStateSection id="world-factions" title="Faction War Dashboard UI" empty={!visibleState} emptyDetail="Start a session to inspect known faction conflicts.">
       {conflicts.length ? (
         <ul className="compact-list">
           {conflicts.map((conflict) => (
@@ -520,8 +612,15 @@ export function FactionWarDashboardPanel({ visibleState }: { visibleState: Visib
 
 export function DeductionBoardPanel({ visibleState, onAction }: { visibleState: VisibleState | null; onAction?: (action: string) => void }) {
   const facts = visibleState?.known_facts ?? [];
+  const rumors = visibleState?.known_rumors ?? [];
+  const crimes = visibleState?.known_crimes ?? [];
   return (
-    <VisibleStateSection title="Deduction Board UI" empty={!visibleState} emptyDetail="Start a session to inspect known evidence.">
+    <VisibleStateSection id="world-deduction" title="Deduction Board UI" empty={!visibleState} emptyDetail="Start a session to inspect known evidence.">
+      <div className="safe-summary-grid">
+        <WorldStatusCard title="Known evidence / facts" value={String(facts.length)} />
+        <WorldStatusCard title="Known claims / rumors" value={String(rumors.length)} />
+        <WorldStatusCard title="Known crimes" value={String(crimes.length)} />
+      </div>
       {facts.length ? (
         <ul className="compact-list">
           {facts.map((fact) => <li key={fact.id}>{fact.id} <span className="muted">{fact.tags.join(", ")}</span></li>)}
@@ -539,8 +638,9 @@ export function DeductionBoardPanel({ visibleState, onAction }: { visibleState: 
 export function SurvivalTravelPanel({ visibleState, onAction }: { visibleState: VisibleState | null; onAction?: (action: string) => void }) {
   const exits = Object.keys(visibleState?.location.exits ?? {});
   return (
-    <VisibleStateSection title="Survival / Travel UI" empty={!visibleState} emptyDetail="Start a session to inspect travel options.">
-      <WorldStatusCard title="Survival status" value="Backend validated" detail="Fatigue, hunger, thirst, and route risk are shown only when safe summaries exist." />
+    <VisibleStateSection id="world-survival" title="Survival / Travel UI" empty={!visibleState} emptyDetail="Start a session to inspect travel options.">
+      <WorldStatusCard title="Survival status" value={visibleState?.player_condition?.condition ?? "safe summary unavailable"} detail="Fatigue, hunger, thirst, and route risk are shown only when safe summaries exist." />
+      <WorldStatusCard title="Known routes" value={String(exits.length)} detail={exits.join(", ") || "No visible routes."} />
       <div className="chip-list">
         {exits.map((exit) => <button className="chip-button" type="button" key={exit} onClick={() => onAction?.(`travel_route ${exit}`)}>{exit}</button>)}
         {["make_camp", "forage", "rest_travel"].map((action) => <button className="chip-button" type="button" key={action} onClick={() => onAction?.(action)}>{action}</button>)}
@@ -558,7 +658,7 @@ export function WorldAdvancedModulePanels({ visibleState, onAction }: { visibleS
     { title: "Cultivation Panel", actions: ["meditate", "practice", "breakthrough", "consume_pill"] }
   ];
   return (
-    <VisibleStateSection title="Magic / Hacking / Crafting / Cultivation Module UI" empty={!visibleState} emptyDetail="Start a session to inspect enabled module actions.">
+    <VisibleStateSection id="world-modules" title="Magic / Hacking / Crafting / Cultivation Module UI" empty={!visibleState} emptyDetail="Start a session to inspect enabled module actions.">
       <div className="safe-summary-grid">
         {groups.map((group) => (
           <section className="world-mini-card" key={group.title}>
@@ -606,21 +706,24 @@ export function WorldQualityPlaytestPanel({
   worldHealthStatus,
   playtestCount,
   onRunWorldHealth,
+  onRunPlaytest,
   onOpenQuality
 }: {
   worldHealthStatus: string;
   playtestCount: number;
   onRunWorldHealth: () => void;
+  onRunPlaytest?: () => void;
   onOpenQuality: () => void;
 }) {
   return (
-    <VisibleStateSection title="World Quality / Playtest UI">
+    <VisibleStateSection id="world-quality" title="World Quality / Playtest UI">
       <div className="safe-summary-grid">
         <WorldStatusCard title="World quality" value={worldHealthStatus} detail="Safe report rows only." />
         <WorldStatusCard title="Recent playtests" value={String(playtestCount)} detail="No real provider calls are launched by this panel." />
       </div>
       <div className="chip-list">
         <button type="button" className="chip-button" onClick={onRunWorldHealth}>Run world quality gate</button>
+        <button type="button" className="chip-button" onClick={onRunPlaytest} disabled={!onRunPlaytest}>Run default playtest</button>
         <button type="button" className="chip-button" onClick={onOpenQuality}>Open Quality Dashboard</button>
       </div>
       <p className="muted">Hidden text, raw state_deltas, and API key are not shown. Reports are local-only and not uploaded.</p>

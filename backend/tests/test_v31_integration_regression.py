@@ -200,11 +200,19 @@ def test_v31_frontend_static_regression_surfaces_and_no_onlineization() -> None:
         "NovelExportWizard",
         "NovelQualityDashboard",
         "NovelPromptProviderPanel",
+        "DraftVersionPanel",
+        "WritingSessionDashboard",
+        "WorldToNovelImportPanel",
+        "buildNovelQualityIssues",
     ]:
         assert token in combined
 
     assert "check:v31-novel-ui" in package_source
     assert "Plaintext api_key input" in check_source
+    assert "Filter scenes, tags, POV, location" in combined
+    assert "missing_chapter_summary" in combined
+    assert "Novel draft / authoring mode" in combined
+    assert "source event range" in combined
     assert not re.search(r"<input[^>]+name=[\"']api_key[\"']", combined, flags=re.IGNORECASE)
     assert "API key not shown" in combined
     assert "raw state_deltas" in combined

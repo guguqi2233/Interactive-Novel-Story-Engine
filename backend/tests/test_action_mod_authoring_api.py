@@ -1,4 +1,5 @@
 import base64
+import json
 import zipfile
 from io import BytesIO
 from pathlib import Path
@@ -110,6 +111,26 @@ def test_action_mod_export_rejects_secret_like_text(tmp_path: Path) -> None:
     assert payload["contains_api_key"] is True
     assert payload["archive_base64"] == ""
     assert payload["validation"]["errors"][0]["code"] == "action_mod_export_secret_forbidden"
+
+
+def test_action_mod_test_harness_safe_report_does_not_mutate_state(tmp_path: Path) -> None:
+    app.state.worlds_root = tmp_path
+    app.state.settings = Settings(enable_authoring_api=True, llm_provider="mock")
+    client = TestClient(app)
+
+    response = client.post("/authoring/action-mods/tests/run", json={"draft": _draft()})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is True
+    assert payload["local_only"] is True
+    assert payload["writes_to_disk"] is False
+    assert payload["executes_code"] is False
+    assert payload["active_game_state_modified"] is False
+    assert payload["raw_state_deltas_included"] is False
+    assert payload["results"][0]["state_unchanged"] is True
+    assert payload["results"][0]["expected_state_delta_summary"] == ["set:flags.prayed"]
+    assert "state_deltas" not in json.dumps(payload["results"])
 
 
 def test_action_mod_authoring_api_disabled(tmp_path: Path) -> None:

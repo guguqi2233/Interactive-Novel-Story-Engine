@@ -32,8 +32,12 @@ const requiredNovelTokens = [
   "NovelExportWizard",
   "NovelQualityDashboard",
   "NovelPromptProviderPanel",
+  "DraftVersionPanel",
+  "WritingSessionDashboard",
+  "WorldToNovelImportPanel",
   "DraftSaveStatus",
-  "WordCountBadge"
+  "WordCountBadge",
+  "buildNovelQualityIssues"
 ];
 
 const requiredSafetyCopy = [
@@ -41,9 +45,21 @@ const requiredSafetyCopy = [
   "hidden facts",
   "raw state_deltas",
   "does not directly modify GameState",
+  "Novel draft / authoring mode",
+  "provider status",
+  "World -> Novel Import UX Pro",
   "No account",
   "No cloud sync",
   "No online marketplace"
+];
+
+const requiredUsabilityTokens = [
+  "Filter scenes, tags, POV, location",
+  "missing_chapter_summary",
+  "Suggested action",
+  "Draft Version Compare",
+  "Writing Session Dashboard",
+  "source event range"
 ];
 
 const failures = [];
@@ -54,6 +70,10 @@ for (const token of requiredNovelTokens) {
 
 for (const token of requiredSafetyCopy) {
   if (!source.includes(token)) failures.push(`Missing Novel safety/local-first copy: ${token}`);
+}
+
+for (const token of requiredUsabilityTokens) {
+  if (!source.includes(token)) failures.push(`Missing v3.1 Novel completion usability token: ${token}`);
 }
 
 if (/<input[^>]+name=["']api_key["']/i.test(source) || /api_key:\s*["'][^"']+/i.test(source)) {

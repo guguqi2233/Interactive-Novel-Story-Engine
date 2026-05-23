@@ -38,6 +38,25 @@ const requiredTavernTokens = [
   "Tavern Prompt / Provider"
 ];
 
+const requiredCompletionTokens = [
+  "Search characters, tags, linked refs",
+  "Tavern Character Editor / RP / Voice Profile Editor",
+  "Private persona / authoring notes",
+  "Show safety notes",
+  "Knowledge-safe status",
+  "mature_only hidden",
+  "Current EmotionState",
+  "Propose relationship change",
+  "Scene Mood Preset UI",
+  "Text voice only",
+  "No minors / unknown age",
+  "Provider profile",
+  "Safety categories",
+  "Cross-Mode / Export Safety",
+  "proposal / validation / dry-run / explicit confirm",
+  "remote character downloads are not offered"
+];
+
 const requiredSafetyCopy = [
   "API key not shown",
   "hidden facts",
@@ -58,6 +77,10 @@ for (const token of requiredTavernTokens) {
 
 for (const token of requiredSafetyCopy) {
   if (!source.includes(token)) failures.push(`Missing Tavern safety/local-first copy: ${token}`);
+}
+
+for (const token of requiredCompletionTokens) {
+  if (!source.includes(token)) failures.push(`Missing v3.2 Tavern completion token: ${token}`);
 }
 
 if (/<input[^>]+name=["']api_key["']/i.test(source) || /api_key:\s*["'][^"']+/i.test(source)) {

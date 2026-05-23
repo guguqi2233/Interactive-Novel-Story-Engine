@@ -21,6 +21,7 @@ const pkg = readFileSync(resolve(root, "package.json"), "utf8");
 
 const requiredWorldTokens = [
   "WorldWorkspaceShell",
+  "WorldWorkspaceNavigation",
   "WorldPlayMainView",
   "MapLocationPanel",
   "NPCRelationshipPanel",

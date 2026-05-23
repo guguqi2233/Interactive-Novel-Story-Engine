@@ -116,6 +116,36 @@ World prompt / provider rules:
   default and must not call real providers unless a local trusted run explicitly
   opts in.
 
+v3.4 Authoring / Mod UI Pro does not expand LLM authority. Authoring editors,
+Module Browser, Action Mod Editor, Rule Module Contract UI, Import/Export,
+Certification, Compatibility, Quality Gate, Validation Dashboard, Diff/Preview,
+Audit, Backup/Restore, and Safe Apply are local deterministic UI/workflow
+surfaces. They must not call providers directly, use an LLM as a package safety
+judge, or allow prompt/profile/mod metadata to change visibility or fact
+authority.
+
+Authoring / Mod LLM boundary rules:
+
+- Provider Gateway remains the only model entry point.
+- Authoring drafts and package candidates can reference prompt/style/profile
+  metadata, but they cannot grant hidden fact access, state mutation, proposal
+  apply, visibility bypass, provider-secret access, or direct GameState writes.
+- Prompt Profile Packs, Narrative Style Mods, RP Profile Mods, scene mood,
+  voice, and other style metadata affect expression only. They must not access
+  hidden facts, NPC secrets, debug memory, raw `GameState`, raw `state_deltas`,
+  API keys, raw env, or provider secrets.
+- Provider Profile Packs may contain `api_key_env` or `secret_ref` references
+  only. They must not contain plaintext API keys, Authorization headers, or
+  provider secrets.
+- Action Mods are declarative local action definitions. They do not call LLMs,
+  execute arbitrary code, or bypass `ActionRegistry`, `StateDelta`, or
+  `EventLog`.
+- Rule Modules are contract-only in v3.4. They cannot call LLMs or execute
+  runtime code.
+- Mod Quality Gate, Compatibility Matrix, Extension Certification, import
+  validation, and authoring validation are deterministic local checks, not
+  external LLM judge flows.
+
 ## v2.8 Roleplay / Mature LLM Boundary
 
 v2.8 does not grant LLMs new authority. Provider Gateway remains the only model

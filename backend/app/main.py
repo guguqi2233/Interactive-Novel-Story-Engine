@@ -217,8 +217,11 @@ from app.engine.action_mod_validator import (
     ActionModDraft,
     ActionModExportResponse,
     ActionModPreviewResponse,
+    ActionModTestRunRequest,
+    ActionModTestRunResponse,
     preview_action_mod_draft,
     export_action_mod_draft,
+    run_action_mod_draft_tests,
 )
 from app.engine.gameplay_module_debugger import (
     ModuleActionDryRunRequest,
@@ -4196,6 +4199,12 @@ def validate_authoring_action_mod(request: ActionModDraft) -> ActionModPreviewRe
 def export_authoring_action_mod(request: ActionModDraft) -> ActionModExportResponse:
     require_authoring_api()
     return export_action_mod_draft(request)
+
+
+@app.post("/authoring/action-mods/tests/run", response_model=ActionModTestRunResponse)
+def run_authoring_action_mod_tests(request: ActionModTestRunRequest) -> ActionModTestRunResponse:
+    require_authoring_api()
+    return run_action_mod_draft_tests(request)
 
 
 @app.post("/modules/export", response_model=GameplayModulePackageExport)

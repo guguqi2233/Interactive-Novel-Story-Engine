@@ -273,6 +273,79 @@ npm.cmd run build
 npm.cmd run check:v33-world-ui
 ```
 
+## v3.4 Authoring / Mod UI Pro
+
+v3.4 polishes the local Authoring / Mod workflow. Authoring Mode is a local
+draft / candidate / proposal workspace for content packs, script packs,
+character packs, Action Mods, Rule Module contracts, validation, import/export,
+quality gates, and safe local apply. It is not an online marketplace, account
+system, cloud sync feature, remote package downloader, multiplayer editor, or
+arbitrary-code plugin runtime.
+
+Implemented v3.4 Authoring / Mod surfaces:
+
+- Authoring Workspace Shell with editor navigation, central editor/dashboard
+  area, validation/preview/diff/permission/quality sidebar, and local status.
+- World Pack Editor Pro for local world-pack draft metadata and content
+  sections such as locations, NPCs, items, quests, facts, factions, rumors, and
+  relationships.
+- Script Pack Editor Pro for local scenarios, quest drafts, Novel outline
+  drafts, Tavern scene presets, cross-mode templates, quality checks, and
+  export preview. Script packs are data packages; they are not executed.
+- Character Pack Editor Pro for CharacterProfile, TavernCharacter, RPProfile,
+  VoiceProfile, character card, and World NPC draft review. Private notes are
+  authoring-only, character card scripts are not executed, and World NPCs are
+  not overwritten.
+- Quest Graph Editor Pro, Location / Map Authoring Pro, NPC / Faction /
+  Relationship Authoring Pro, Item / Economy / Trade Authoring Pro, and Rumor /
+  Crime / Consequence Authoring Pro for local content-file drafts and safe
+  player-preview guidance.
+- Advanced Module Authoring Panels for tactical_combat, economy_sim,
+  faction_war, magic, hacking, crafting, deduction, survival_travel, and
+  cultivation configuration/status drafts.
+- Action Mod Editor and Action Mod Test Harness for declarative action
+  definitions, validation, safe StateDelta proposal summaries, and local
+  pass/fail reports. Action Mods do not execute JS/Python and do not register
+  into an active game session from the editor.
+- Rule Module Contract UI for manifest-only contract review. Rule Modules are
+  contract-only in v3.4 and cannot execute runtime code.
+- Module Browser Pro, Permission Dashboard Pro, Compatibility Matrix UI Pro,
+  Extension Certification UI Pro, and Mod Quality Gate UI Pro for local package
+  metadata, permissions, dependency/conflict checks, advisory certification,
+  and deterministic quality status.
+- Import / Export Wizard Pro, Authoring Validation Dashboard,
+  AuthoringDiffPreview, Authoring Audit Trail UI, Authoring Backup / Restore
+  UX, and Safe Apply / Publish-to-Local workflow.
+
+v3.4 boundaries:
+
+- Authoring outputs default to drafts, content-pack candidates, package
+  candidates, or proposals.
+- Authoring UI does not directly modify active `GameState`, active saves,
+  runtime module state, `StateDelta`, or `EventLog`.
+- Safe Apply writes local project/content-pack/package files only after the
+  applicable validation, dry-run/preview, and explicit confirmation gates.
+- Active World changes still require World Engine runtime flows, `StateDelta`,
+  and `EventLog`.
+- Action Mods remain declarative and must go through `ActionRegistry` at
+  runtime. Rule Modules remain contract-only.
+- Package import/export filters `.env`, API keys, provider secrets, databases,
+  logs/cache, build outputs, debug reports, mature/private content, executable
+  payloads, path traversal, and zip slip by default.
+- Provider Profile Packs may contain `api_key_env` / `secret_ref` references
+  only, never real API keys.
+- Normal authoring UI must not show hidden facts, NPC secrets, debug memory,
+  raw prompts, raw `state_deltas`, raw env, provider secrets, or API keys.
+
+Useful v3.4 checks:
+
+```powershell
+python -m pytest backend/tests/test_v34_integration_regression.py
+cd frontend
+npm.cmd run build
+npm.cmd run check:v34-authoring-ui
+```
+
 ## v2.9 Local UI / UX Foundation
 
 v2.9 is a local UI foundation release. It does not rewrite the whole app and

@@ -78,6 +78,37 @@ class ActionModExportResponse(BaseModel):
     executes_code: bool = False
 
 
+class ActionModTestRunRequest(BaseModel):
+    draft: ActionModDraft
+
+
+class ActionModSafeTestResult(BaseModel):
+    test_id: str
+    action_id: str
+    passed: bool
+    expected_result_type: str = "success"
+    actual_result_type: str = "success"
+    expected_state_delta_summary: list[str] = Field(default_factory=list)
+    event_tags: list[str] = Field(default_factory=list)
+    hidden_leak_warnings: list[str] = Field(default_factory=list)
+    state_unchanged: bool = True
+    errors: list[str] = Field(default_factory=list)
+
+
+class ActionModTestRunResponse(BaseModel):
+    local_only: bool = True
+    ok: bool
+    module_id: str
+    test_count: int
+    passed_count: int
+    results: list[ActionModSafeTestResult] = Field(default_factory=list)
+    validation: ActionModValidationReport
+    writes_to_disk: bool = False
+    executes_code: bool = False
+    active_game_state_modified: bool = False
+    raw_state_deltas_included: bool = False
+
+
 def validate_action_mods(
     action_definitions: list[DeclarativeActionDefinition],
     *,
@@ -139,6 +170,42 @@ def export_action_mod_draft(draft: ActionModDraft) -> ActionModExportResponse:
         file_name=file_name,
         archive_base64=b64encode(archive.getvalue()).decode("ascii"),
         validation=preview.validation,
+    )
+
+
+def run_action_mod_draft_tests(request: ActionModTestRunRequest) -> ActionModTestRunResponse:
+    validation = validate_action_mods(request.draft.actions, module_id=request.draft.module_id)
+    results: list[ActionModSafeTestResult] = []
+    validation_errors = [issue.message for issue in validation.errors]
+    for index, action in enumerate(request.draft.actions):
+        hidden_leak_warnings: list[str] = []
+        event_tags = [action.event_type]
+        expected_delta_summary: list[str] = []
+        success = action.outcomes.get("success")
+        if success is not None:
+            for delta in success.state_delta_templates:
+                expected_delta_summary.append(f"{delta.operation}:{delta.path}")
+            if success.hidden_facts or success.hidden_outcome:
+                hidden_leak_warnings.append("Hidden outcome data is authoring-only and excluded from normal preview.")
+        errors = validation_errors if not validation.ok else []
+        results.append(
+            ActionModSafeTestResult(
+                test_id=f"{request.draft.module_id}.action_{index + 1}",
+                action_id=action.id,
+                passed=validation.ok,
+                expected_state_delta_summary=expected_delta_summary,
+                event_tags=event_tags,
+                hidden_leak_warnings=hidden_leak_warnings,
+                errors=errors,
+            )
+        )
+    return ActionModTestRunResponse(
+        ok=validation.ok and all(result.passed for result in results),
+        module_id=request.draft.module_id,
+        test_count=len(results),
+        passed_count=sum(1 for result in results if result.passed),
+        results=results,
+        validation=validation,
     )
 
 

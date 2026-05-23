@@ -110,6 +110,39 @@ World UI rules:
 - Save / Load UI shows safe save-slot summaries and must not directly read or
   write database files.
 
+v3.4 focuses on Authoring / Mod UI Pro. Authoring Workspace, World Pack Editor,
+Script Pack Editor, Character Pack Editor, Quest Graph, Location/Map,
+NPC/Faction/Relationship, Item/Economy/Trade, Rumor/Crime/Consequence,
+Advanced Module Authoring, Action Mod Editor, Rule Module Contract UI, Module
+Browser, Permission Dashboard, Compatibility Matrix, Certification, Import /
+Export, Mod Quality Gate, Validation Dashboard, Diff/Preview/Dry-Run, Audit,
+Backup/Restore, and Safe Apply panels are local content/package authoring
+surfaces. They do not change World Engine fact authority.
+
+Authoring / Mod UI rules:
+
+- Authoring UI must not directly modify active `GameState`, active saves,
+  runtime module state, `StateDelta`, or `EventLog`.
+- Authoring outputs are drafts, content-pack candidates, package candidates,
+  validation reports, previews, dry-run summaries, or proposals until a local
+  apply path accepts them.
+- Safe Apply writes local project/content-pack/package files only after the
+  applicable validation, preview/dry-run, and explicit confirmation gates. It
+  must not bypass World Engine runtime rules.
+- Applying authoring content to local files does not itself create World facts
+  in an active session. Active World changes still require World Engine runtime
+  flows, `StateDelta`, and `EventLog`.
+- Action Mods remain declarative and must go through `ActionRegistry` when
+  enabled/used at runtime. The editor/test harness must not register drafts
+  into an active game without validation.
+- Rule Modules are contract-only in v3.4 and cannot execute runtime code,
+  access the network/filesystem, call providers, or modify game state directly.
+- Normal authoring UI must not show hidden facts, NPC secrets, debug memory,
+  raw prompts, raw `state_deltas`, provider secrets, API keys, or raw env.
+- Import/export and backup/restore must filter secrets, debug data,
+  mature/private content, executable payloads, path traversal, and zip slip by
+  default.
+
 ## v2.8 Roleplay Immersion & Mature Module Integration
 
 v2.8 strengthens Tavern/RP immersion and adds default-off mature safety policy

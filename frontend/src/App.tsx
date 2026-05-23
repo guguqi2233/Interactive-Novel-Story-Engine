@@ -11,6 +11,7 @@ import {
   AuthoringProjectSummary,
   ActionModDraft,
   ActionModPreviewResponse,
+  ActionModTestRunResponse,
   DeclarativeActionDefinition,
   DeclarativeOutcome,
   ReferenceIndex,
@@ -174,6 +175,7 @@ import {
   previewActionModDraft,
   validateActionModDraft,
   exportActionModDraft,
+  runActionModDraftTests,
   fetchImportExportProfiles,
   fetchProductionPipelineSummary,
   fetchModelCompatibilityMatrix,
@@ -497,6 +499,7 @@ import {
   ChapterCard,
   ChapterEditorPro,
   DraftSaveStatus,
+  DraftVersionPanel,
   LinkedRefList,
   ManuscriptCard,
   ManuscriptDashboard,
@@ -512,8 +515,11 @@ import {
   PlotForeshadowingBoard,
   SceneCardsBoard,
   TimelineLinkPanel,
+  WorldToNovelImportPanel,
   WordCountBadge,
-  WorldBibleSidebar
+  WorldBibleSidebar,
+  WritingSessionDashboard,
+  buildNovelQualityIssues
 } from "./novelUi";
 import {
   BoundaryMatureSettingsPanel,
@@ -528,6 +534,7 @@ import {
   SceneMoodPresetPanel,
   SingleCharacterChatPro,
   TavernCharacterEditor,
+  TavernCrossModeSafetyPanel,
   TavernPromptProviderPanel,
   TavernSafeSummaryPanel,
   TavernSessionCard,
@@ -553,7 +560,9 @@ import {
   WorldPromptProviderPanel,
   WorldQualityPlaytestPanel,
   WorldSaveLoadPanel,
+  WorldPlayMainView,
   WorldTimelineEventLogPanel,
+  WorldWorkspaceNavigation,
   WorldWorkspaceShell
 } from "./worldUi";
 
@@ -2412,6 +2421,14 @@ export function App() {
             providerSummary={studioConfigSummary?.provider_status ?? studioConfigSummary?.llm_provider ?? "Provider Gateway"}
             left={
               <>
+                <WorldWorkspaceNavigation
+                  visibleState={visibleState}
+                  debugEnabled={studioStatus?.debug_api_enabled ?? false}
+                  onJump={(targetId) => {
+                    const target = document.getElementById(targetId);
+                    target?.scrollIntoView({ behavior: "smooth", block: "start" });
+                  }}
+                />
                 <WorldStudioLanding
                   visibleState={visibleState}
                   sessionId={sessionId}
@@ -2427,7 +2444,7 @@ export function App() {
             }
             main={
               <>
-                <section className="world-play-main-view">
+                <WorldPlayMainView>
                   <PageHeader
                     eyebrow="World Play Main View Pro"
                     title="Story / Narration"
@@ -2455,7 +2472,7 @@ export function App() {
                     onSubmit={handleSubmit}
                   />
                   <ErrorPanel message={error} />
-                </section>
+                </WorldPlayMainView>
                 <TacticalCombatPanel visibleState={visibleState} onAction={setInput} />
                 <EconomyDashboardPanel visibleState={visibleState} />
                 <FactionWarDashboardPanel visibleState={visibleState} />
@@ -2468,11 +2485,24 @@ export function App() {
                   selectedSaveId={selectedSaveId}
                   migrationStatusBySaveId={migrationStatusBySaveId}
                   onSelectSave={setSelectedSaveId}
+                  onSaveCurrent={() => void handleSave()}
+                  onLoadSelected={() => void handleLoad()}
+                  onDeleteSelected={() => void handleDeleteSave(selectedSaveId)}
+                  onRefresh={() => void refreshSaves(selectedSaveId)}
+                  hasSession={Boolean(sessionId)}
+                  busy={isLoading}
                 />
                 <WorldQualityPlaytestPanel
                   worldHealthStatus={worldHealth ? `${worldHealth.overall_score}` : "not run"}
                   playtestCount={playtestReports.length}
                   onRunWorldHealth={() => void handleRunWorldHealth()}
+                  onRunPlaytest={() => void handleRunPlaytest({
+                    worldId: selectedWorldId,
+                    agentType: "curious",
+                    steps: 20,
+                    seed: 123,
+                    saveLoadCheck: false
+                  })}
                   onOpenQuality={() => setMode("studio")}
                 />
               </>
@@ -3599,7 +3629,9 @@ function redactEvalReason(reason: string): string {
 }
 
 function redactReportText(value: string): string {
-  return value.replace(/hidden_fact_text_visible:[^\s,;]+/g, "hidden_fact_text_visible:[redacted]");
+  return redactAuthoringPreviewText(value)
+    .replace(/hidden_fact_text_visible:[^\s,;]+/g, "hidden_fact_text_visible:[redacted]")
+    .replace(/(hidden[_\s-]?truth|hidden[_\s-]?witness|npc[_\s-]?knowledge|private[_\s-]?notes?)\s*[:=]\s*[^,;\n]+/gi, "$1=[redacted]");
 }
 
 function parseCsvList(value: string): string[] {
@@ -4126,11 +4158,11 @@ function ScenarioRegressionDashboard({
                 <div className="scenario-result-grid">
                   <div>
                     <strong>Expected</strong>
-                    <pre>{JSON.stringify(result.expected_summary, null, 2)}</pre>
+                    <AuthoringPreviewCode content={JSON.stringify(result.expected_summary, null, 2)} />
                   </div>
                   <div>
                     <strong>Actual</strong>
-                    <pre>{JSON.stringify(result.actual_summary, null, 2)}</pre>
+                    <AuthoringPreviewCode content={JSON.stringify(result.actual_summary, null, 2)} />
                   </div>
                 </div>
               </details>
@@ -4989,7 +5021,7 @@ function SettingsPrivacyPanel({
                     emptyText="No config issues reported."
                     items={(localConfigIssues ?? []).map((issue) => (
                       <span key={`${issue.code}-${issue.safe_field}`}>
-                        {issue.severity}: {issue.safe_field} - {issue.message}
+                        {issue.severity}: {redactReportText(issue.safe_field)} - {redactReportText(issue.message)}
                       </span>
                     ))}
                   />
@@ -4999,7 +5031,7 @@ function SettingsPrivacyPanel({
                   {localEnvTemplate ? (
                     <details>
                       <summary>{localEnvTemplate.file_name} preview</summary>
-                      <pre>{localEnvTemplate.template}</pre>
+                      <AuthoringPreviewCode content={localEnvTemplate.template} />
                     </details>
                   ) : (
                     <p className="muted">Generate a safe .env.example-like template with blank secrets.</p>
@@ -5905,6 +5937,94 @@ function ValidationStatusBadge({ status }: { status: "passed" | "warning" | "fai
   return <span className={`validation-status-badge ${status}`}>{status.replace("_", " ")}</span>;
 }
 
+function moduleRiskBadgeLevel(level: string): "safe" | "warning" | "blocked" | "unknown" {
+  if (level === "low" || level === "safe") {
+    return "safe";
+  }
+  if (level === "blocked") {
+    return "blocked";
+  }
+  if (level === "medium" || level === "high" || level === "warning") {
+    return "warning";
+  }
+  return "unknown";
+}
+
+function moduleValidationBadgeStatus(status: string): "passed" | "warning" | "failed" | "not_run" {
+  if (["valid", "passed", "ok", "compatible"].includes(status)) {
+    return "passed";
+  }
+  if (["invalid", "failed", "blocked", "error"].includes(status)) {
+    return "failed";
+  }
+  if (["warning", "warnings"].includes(status)) {
+    return "warning";
+  }
+  return "not_run";
+}
+
+const DANGEROUS_MODULE_PERMISSIONS = [
+  "execute_code",
+  "access_filesystem",
+  "access_network",
+  "read_secrets",
+  "write_database",
+  "modify_game_state_directly",
+  "bypass_visibility",
+  "call_llm"
+];
+
+const AUTHORING_VALIDATION_CATEGORIES = [
+  "world pack",
+  "script pack",
+  "character pack",
+  "quest graph",
+  "locations",
+  "NPCs/factions/relationships",
+  "items/economy",
+  "rumors/crime/consequences",
+  "action mods",
+  "rule modules",
+  "import/export"
+];
+
+const CERTIFICATION_LEVELS = [
+  "safe_content",
+  "safe_style",
+  "verified_action",
+  "experimental_rule_module",
+  "unsafe_blocked"
+];
+
+function stringListFromUnknown(value: unknown): string[] {
+  return Array.isArray(value) ? value.map((item) => String(item)).filter(Boolean) : [];
+}
+
+function moduleSafePermissions(summary: ModulePermissionSummary | null): string[] {
+  if (!summary) {
+    return [];
+  }
+  return stringListFromUnknown(summary.permission_summary.safe_permissions);
+}
+
+function moduleRequestedPermissions(summary: ModulePermissionSummary | null): string[] {
+  if (!summary) {
+    return [];
+  }
+  return stringListFromUnknown(summary.permission_summary.requested_permissions);
+}
+
+function modulePermissionReason(permission: string, requested: boolean, dangerous: boolean): string {
+  if (dangerous) {
+    return requested
+      ? `${permission} is requested and blocked by the local default-deny policy.`
+      : `${permission} is dangerous and remains blocked unless a future audited sandbox exists.`;
+  }
+  return requested
+    ? `${permission} is declarative metadata only and cannot execute package code.`
+    : `${permission} is not requested by the selected package.`;
+}
+
 function SecretSafeNotice({ compact = false }: { compact?: boolean }) {
   return (
     <div className={`secret-safe-notice ${compact ? "compact" : ""}`}>
@@ -6058,16 +6178,21 @@ function LocalLauncherStatusPanel({
       <ErrorPanel message={error} compact />
       <div className="safe-summary-grid">
         <SafeSummaryCard title="Backend" value={status?.backend_running ? "running" : "unavailable"} detail={`App ${status?.app_version ?? "unknown"}`} />
+        <SafeSummaryCard title="Frontend" value="local UI" detail="Vite/desktop surface calls local backend APIs only." />
         <SafeSummaryCard title="Project root" value={status?.project_root_configured ? "configured" : "missing"} detail={status?.current_workspace?.path_redacted ?? "Safe path summary unavailable"} />
-        <SafeSummaryCard title="Database" value={status?.database_configured ? "configured" : "missing"} detail="Connection string is never displayed." />
+        <SafeSummaryCard title="SQLite / Database" value={status?.database_configured ? "configured" : "missing"} detail="Connection string is never displayed." />
+        <SafeSummaryCard title="Workspace" value={status?.current_workspace?.safe_status ?? "not selected"} detail={status?.current_workspace?.path_redacted ?? "Safe path summary unavailable"} />
+        <SafeSummaryCard title="Logs" value="redacted" detail="Local logs are read as safe summaries from ignored log directories." />
         <SafeSummaryCard title="Provider profiles" value={String(status?.provider_profiles_count ?? 0)} detail={`${status?.provider_secrets_configured_count ?? 0} secret reference(s) configured; values hidden.`} />
         <SafeSummaryCard title="Debug" value={status?.debug_enabled ? "enabled" : "disabled"} detail="Debug views remain gated by ENABLE_DEBUG_API." />
         <SafeSummaryCard title="Quality API" value={status?.quality_api_enabled ? "available" : "not available"} detail="Quality reports are local safe summaries." />
       </div>
       <div className="quick-actions">
+        <button type="button" onClick={onRefresh}>Retry Health Check</button>
         <button type="button" onClick={() => onNavigate("project")}>Project Picker</button>
-        <button type="button" onClick={() => onNavigate("studio")}>Settings</button>
-        <button type="button" onClick={() => onNavigate("prompt_lab")}>Providers</button>
+        <button type="button" onClick={() => onNavigate("studio")}>Open Local Config Wizard</button>
+        <button type="button" onClick={() => onNavigate("prompt_lab")}>Open Provider Setup Wizard</button>
+        <button type="button" onClick={() => onNavigate("studio")}>View Local Logs</button>
       </div>
       {startupChecks ? (
         <div className="desktop-health-list">
@@ -6172,6 +6297,7 @@ function LocalHelpOnboardingPanel() {
         <FeatureCard title="Backup / Restore" detail="Dry-run first; .env, API keys, logs/cache/build outputs, debug and mature/private content are excluded by default." />
         <FeatureCard title="Diagnostics / Logs" detail="Local diagnostics and logs are redacted and never uploaded." />
         <FeatureCard title="Privacy and secrets" detail="Exports and diagnostics default to filtered safe summaries." />
+        <FeatureCard title="Desktop Packaging" detail="Packaging excludes .env, databases, logs/cache, node_modules, frontend/dist, desktop build outputs, backups, crash reports, and diagnostics bundles." />
         <FeatureCard title="Mature Module default off" detail="Mature/private content stays disabled and excluded unless explicit local policy allows it." />
       </div>
     </SectionCard>
@@ -6435,6 +6561,10 @@ function LocalConfigWizardPanel({
       <ErrorPanel message={error} compact />
       <div className="safe-summary-grid">
         <SafeSummaryCard title="Database" value={summary?.database_configured ? "configured" : "missing"} detail="DATABASE_URL value is not displayed." />
+        <SafeSummaryCard title="Workspace root" value={summary?.project_root_configured ? "configured" : "missing"} detail="Only redacted safe path summaries are shown." />
+        <SafeSummaryCard title="Log directory" value="local ignored" detail="Log paths stay local and are summarized, not exposed as sensitive full paths." />
+        <SafeSummaryCard title="Backup directory" value="local ignored" detail="Backups are dry-run first and excluded from git/desktop bundles." />
+        <SafeSummaryCard title="Privacy defaults" value="safe" detail="Secrets, raw env, hidden/debug, and mature/private content are excluded by default." />
         <SafeSummaryCard title="Provider profiles" value={String(summary?.provider_profiles_count ?? 0)} detail="Use api_key_env or secret_ref only." />
         <SafeSummaryCard title="Debug API" value={summary?.debug_enabled ? "enabled" : "disabled"} detail="Debug views require ENABLE_DEBUG_API." />
         <SafeSummaryCard title="Authoring API" value={summary?.authoring_enabled ? "enabled" : "disabled"} detail="Authoring actions still use backend validation." />
@@ -6456,7 +6586,7 @@ function ProviderSetupWizardPanel() {
         <FeatureCard title="Step 2: model and base URL" detail="Fill display_name, model_id, and base_url or base_url_env." />
         <FeatureCard title="Step 3: secret reference" detail="Use api_key_env or secret_ref. No plaintext api_key field is provided." />
         <FeatureCard title="Step 4: allowed modes" detail={allowedModes.join(", ")} />
-        <FeatureCard title="Step 5: capability summary" detail="Review local/provider capability warnings before routing." />
+        <FeatureCard title="Step 5: safe provider status" detail="Shows configured / missing env / model capability / routing warning only; key values stay hidden." />
         <FeatureCard title="Step 6: dry-run validation" detail="Validation is safe and does not call real providers by default." />
       </div>
       <SecretSafeNotice compact />
@@ -6488,7 +6618,12 @@ function BackupRestoreWizardPanel({
       <ErrorPanel message={error} compact />
       <div className="quick-actions">
         <button type="button" onClick={onDryRun}>Backup Dry-Run Preview</button>
-        <button type="button" onClick={onCreate}>Confirm Create Backup</button>
+        <button type="button" onClick={onCreate} disabled={!plan || plan.blockers.length > 0}>Explicit Confirm Create Backup</button>
+      </div>
+      <div className="safe-summary-grid">
+        <SafeSummaryCard title="Backup policy" value="dry-run first" detail="Create is disabled until a backup dry-run preview exists and has no blockers." />
+        <SafeSummaryCard title="Default exclusions" value="safe" detail=".env, API keys, provider secrets, databases, logs/cache, build outputs, debug-only data, and mature/private content." />
+        <SafeSummaryCard title="Restore policy" value="dry-run first" detail="Restore apply requires zip/path/executable/secret blockers to be clear and explicit confirmation." />
       </div>
       {plan ? (
         <div className="safe-summary-grid">
@@ -6517,6 +6652,7 @@ function BackupRestoreWizardPanel({
           <SafeSummaryCard title="Restore valid" value={restorePlan.backup_valid ? "yes" : "no"} detail={restorePlan.target_project_id} />
           <SafeSummaryCard title="Conflicts" value={String(restorePlan.conflicts.length)} detail={restorePlan.conflicts.join(", ") || "none"} />
           <SafeSummaryCard title="Blockers" value={String(restorePlan.blockers.length)} detail={restorePlan.blockers.join(", ") || "none"} />
+          <SafeSummaryCard title="Confirm restore" value="manual required" detail="This UI only previews restore safety; overwrite/apply remains confirm-gated." />
         </div>
       )}
     </SectionCard>
@@ -6560,6 +6696,12 @@ function ErrorRecoveryWizardPanel({
         <EmptyState title="No recovery issues." detail="Refresh to detect local recovery suggestions." />
       )}
       {plan && <p className="muted">Plan {plan.plan_id}: {plan.actions.length} suggested action(s), {plan.blockers.length} blocker(s).</p>}
+      <div className="safe-summary-grid">
+        <SafeSummaryCard title="Restart backend/frontend" value="manual safe action" detail="Use the local launcher scripts; recovery UI does not run destructive shell commands." />
+        <SafeSummaryCard title="Reload project summary" value="safe" detail="Refreshes local safe summaries without reading arbitrary files." />
+        <SafeSummaryCard title="Restore from backup" value="dry-run required" detail="Use Backup / Restore Wizard before any confirmed restore." />
+        <SafeSummaryCard title="Open diagnostics preview" value="local-only" detail="Diagnostics preview is redacted and does not write or upload by default." />
+      </div>
     </SectionCard>
   );
 }
@@ -6575,6 +6717,16 @@ function LocalLogViewerPanel({
   debugEnabled: boolean;
   onRefresh: () => void;
 }) {
+  const [levelFilter, setLevelFilter] = useState("all");
+  const [categoryFilter, setCategoryFilter] = useState("all");
+  const entries = logs?.logs ?? [];
+  const levels = Array.from(new Set(entries.map((entry) => entry.level))).sort();
+  const categories = Array.from(new Set(entries.map((entry) => entry.category))).sort();
+  const filteredEntries = entries.filter((entry) => (
+    (levelFilter === "all" || entry.level === levelFilter) &&
+    (categoryFilter === "all" || entry.category === categoryFilter)
+  ));
+  const redactedCount = entries.filter((entry) => entry.redacted).length;
   return (
     <SectionCard title="Local Log Viewer" description="Shows redacted local log summaries from the allowed logs directory only. API keys, Authorization headers, raw env, DB URLs, hidden facts, mature/private content, and raw state_deltas are redacted.">
       <div className="section-heading-row">
@@ -6586,11 +6738,28 @@ function LocalLogViewerPanel({
       </div>
       <ErrorPanel message={error} compact />
       {logs?.warnings.length ? <p className="muted">{logs.warnings.join(", ")}</p> : null}
-      {logs?.logs.length ? (
+      <div className="template-grid">
+        <label>
+          Level filter
+          <select value={levelFilter} onChange={(event) => setLevelFilter(event.target.value)}>
+            <option value="all">all</option>
+            {levels.map((level) => <option key={level} value={level}>{level}</option>)}
+          </select>
+        </label>
+        <label>
+          Component filter
+          <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}>
+            <option value="all">all</option>
+            {categories.map((category) => <option key={category} value={category}>{category}</option>)}
+          </select>
+        </label>
+        <SafeSummaryCard title="Redacted entries" value={String(redactedCount)} detail="Copy safe summary only; raw log lines and secrets are not exposed." />
+      </div>
+      {filteredEntries.length ? (
         <ul className="compact-list">
-          {logs.logs.slice(0, 20).map((entry, index) => (
+          {filteredEntries.slice(0, 20).map((entry, index) => (
             <li key={`${entry.source}-${index}`}>
-              <strong>{entry.level}</strong> {entry.source}: {entry.message}
+              <strong>{entry.level}</strong> {entry.category} / {entry.source}: {entry.message}
               {entry.redacted && <span className="badge">redacted</span>}
             </li>
           ))}
@@ -6625,7 +6794,7 @@ function QualityDashboardUXPanel({
           <h4>One-Click Quality Gate</h4>
           <p className="muted">Scope choices: project, world, novel, tavern, cross-mode, providers, mods, modules, rp/mature, all. Reports are safe summaries only.</p>
         </div>
-        <button type="button" disabled>Run Quality Gate</button>
+        <button type="button" disabled title="Connects to local quality APIs; disabled here until a project/world scope is selected.">Run One-Click Quality Gate</button>
       </div>
       <div className="safe-summary-grid">
         <SafeSummaryCard title="Overall status" value={blockerCount ? "blocked" : worldHealth ? "review" : "not run"} detail="Run the relevant local quality gates before release." />
@@ -6633,6 +6802,7 @@ function QualityDashboardUXPanel({
         <SafeSummaryCard title="Warnings" value={String(warningCount)} detail="Warnings guide the next manual review." />
         <SafeSummaryCard title="Playtests" value={String(playtestReports.length)} detail="Existing reports remain local." />
         <SafeSummaryCard title="Scenario runs" value={String(scenarioRegressionRuns.length)} detail="Regression results are local-only." />
+        <SafeSummaryCard title="Last run summary" value={worldHealth ? "available" : "not run"} detail="Shows local blocker/warning counts and safe suggestions, never hidden text." />
       </div>
       <div className="mode-landing-grid">
         {categories.map((category) => (
@@ -6737,6 +6907,570 @@ function ScriptModEntryPanel({
   );
 }
 
+function AuthoringWorkspaceShell({
+  title,
+  status,
+  children,
+  sidebar,
+  footer
+}: {
+  title: string;
+  status: string;
+  children: ReactNode;
+  sidebar?: ReactNode;
+  footer?: ReactNode;
+}) {
+  return (
+    <section className="authoring-workspace-shell">
+      <div className="authoring-shell-header">
+        <div>
+          <h3>{title}</h3>
+          <p className="muted">Local authoring workspace. Drafts and package candidates require validation, dry-run, and explicit confirm before local apply.</p>
+        </div>
+        <LocalOnlyBadge />
+      </div>
+      <div className="authoring-shell-grid">
+        <div className="authoring-shell-main">{children}</div>
+        <aside className="authoring-shell-sidebar">
+          {sidebar ?? <EmptyState title="No authoring sidebar." detail="Validation, preview, permissions, and quality summaries appear here." />}
+        </aside>
+      </div>
+      <div className="local-status-bar">
+        <span>{status}</span>
+        <span>No online marketplace</span>
+        <span>No remote download</span>
+        <span>No arbitrary code execution</span>
+      </div>
+      {footer}
+    </section>
+  );
+}
+
+function AuthoringStudioProDashboard({
+  activeTool,
+  selectedWorldId,
+  selectedFile,
+  isDirty,
+  validation,
+  preview,
+  onOpenTool
+}: {
+  activeTool: AuthoringToolId;
+  selectedWorldId: string;
+  selectedFile: string;
+  isDirty: boolean;
+  validation: AuthoringValidation | null;
+  preview: AuthoringFilePreviewResponse | null;
+  onOpenTool: (toolId: AuthoringToolId) => void;
+}) {
+  const editorGroups = [
+    { title: "World Pack Editor Pro", detail: "metadata, locations, NPCs, items, quests, facts, factions, rumors, relationships", tool: "world_pack_wizard" as AuthoringToolId },
+    { title: "Script Pack Editor Pro", detail: "scenarios, quest drafts, novel/tavern templates, cross-mode templates, quality checks", tool: "template_wizard" as AuthoringToolId },
+    { title: "Character Pack Editor Pro", detail: "CharacterProfile, TavernCharacter, RPProfile, VoiceProfile, cards, World NPC drafts", tool: "rp_characters" as AuthoringToolId },
+    { title: "Quest Graph Editor Pro", detail: "nodes, objectives, triggers, conditions, rewards, failures, player-visible preview", tool: "quests" as AuthoringToolId },
+    { title: "Location / Map Authoring Pro", detail: "locations, exits, regions, hidden/discovery conditions, map preview", tool: "map" as AuthoringToolId },
+    { title: "NPC / Faction / Relationship Authoring Pro", detail: "public NPC fields, faction refs, secrets authoring-only, safe relationship preview", tool: "social" as AuthoringToolId },
+    { title: "Item / Economy / Trade Authoring Pro", detail: "items, prices, merchants, markets, trade routes, crafting recipes", tool: "economy" as AuthoringToolId },
+    { title: "Rumor / Crime / Consequence Authoring Pro", detail: "rumor spread, witness conditions, faction reactions, quest flags, event tags", tool: "rumor_crime" as AuthoringToolId },
+    { title: "Advanced Module Authoring Panels", detail: "tactical, economy, faction, magic, hacking, crafting, deduction, survival, cultivation", tool: "advanced_modules" as AuthoringToolId },
+    { title: "Action Mod Editor / Test Harness", detail: "structured DSL form, StateDelta proposal preview, local safe test report", tool: "action_mods" as AuthoringToolId }
+  ];
+  const blockers = validation?.errors.length ?? 0;
+  const warnings = validation?.warnings.length ?? 0;
+  return (
+    <section className="module-pro-panel">
+      <div className="authoring-shell-header">
+        <div>
+          <h3>Authoring / Mod Workspace Pro</h3>
+          <p className="muted">Field-level local editors route through preview, validation, dry-run, and explicit save/apply. Authoring does not modify active GameState.</p>
+        </div>
+        <div className="button-row">
+          <span className="badge">{selectedWorldId || "no world"}</span>
+          <span className="badge">{selectedFile}</span>
+          <span className={`badge ${isDirty ? "warning" : "ok"}`}>{isDirty ? "dirty" : "clean"}</span>
+        </div>
+      </div>
+      <div className="safe-summary-grid">
+        <SafeSummaryCard title="Validation state" value={validation?.ok ? "pass" : blockers ? "blocked" : "not clear"} detail={`${blockers} blockers · ${warnings} warnings`} />
+        <SafeSummaryCard title="Preview state" value={preview ? "ready" : "not run"} detail="Preview is safe summary only; hidden facts stay authoring-only." />
+        <SafeSummaryCard title="Safe apply" value="confirm required" detail="Apply writes local content pack/project files only after validation and dry-run." />
+      </div>
+      <div className="module-filter-grid">
+        {editorGroups.map((group) => (
+          <button
+            type="button"
+            key={group.title}
+            className={`module-browser-row ${activeTool === group.tool ? "selected-list-button" : ""}`}
+            onClick={() => onOpenTool(group.tool)}
+          >
+            <strong>{group.title}</strong>
+            <span>{group.detail}</span>
+            <small>Open editor</small>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ModuleBrowserProPanel({
+  modules,
+  selectedModuleId,
+  moduleSearchQuery,
+  moduleTypeFilter,
+  moduleRiskFilter,
+  moduleValidationFilter,
+  moduleCertificationFilter,
+  moduleCertificationLevel,
+  moduleQualityGate,
+  onSearchChange,
+  onTypeFilterChange,
+  onRiskFilterChange,
+  onValidationFilterChange,
+  onCertificationFilterChange,
+  onSelectModule
+}: {
+  modules: ModuleBrowserSummary[];
+  selectedModuleId: string;
+  moduleSearchQuery: string;
+  moduleTypeFilter: string;
+  moduleRiskFilter: string;
+  moduleValidationFilter: string;
+  moduleCertificationFilter: string;
+  moduleCertificationLevel: string;
+  moduleQualityGate: ModQualityGateResult | null;
+  onSearchChange: (value: string) => void;
+  onTypeFilterChange: (value: string) => void;
+  onRiskFilterChange: (value: string) => void;
+  onValidationFilterChange: (value: string) => void;
+  onCertificationFilterChange: (value: string) => void;
+  onSelectModule: (packageId: string) => void;
+}) {
+  const packageTypes = Array.from(new Set(modules.map((module) => module.package_type))).sort();
+  const validationStatuses = Array.from(new Set(modules.map((module) => module.validation_status))).sort();
+  const query = moduleSearchQuery.trim().toLowerCase();
+  const filtered = modules.filter((module) => {
+    const selectedCertification = module.package_id === selectedModuleId ? moduleCertificationLevel || moduleQualityGate?.certification_level || "not_run" : "not_run";
+    return (
+      (!query || `${module.package_id} ${module.name}`.toLowerCase().includes(query)) &&
+      (moduleTypeFilter === "all" || module.package_type === moduleTypeFilter) &&
+      (moduleRiskFilter === "all" || module.permission_risk_level === moduleRiskFilter) &&
+      (moduleValidationFilter === "all" || module.validation_status === moduleValidationFilter) &&
+      (moduleCertificationFilter === "all" || selectedCertification === moduleCertificationFilter)
+    );
+  });
+  return (
+    <section className="module-pro-panel">
+      <div className="section-heading-row">
+        <div>
+          <h4>Module Browser Pro</h4>
+          <p className="muted">Package list is local-only metadata. No online marketplace, no remote download, no package execution.</p>
+        </div>
+        <LocalOnlyBadge />
+      </div>
+      <div className="module-filter-grid">
+        <label>
+          Search package
+          <input value={moduleSearchQuery} onChange={(event) => onSearchChange(event.target.value)} placeholder="package id or name" />
+        </label>
+        <label>
+          Package type
+          <select value={moduleTypeFilter} onChange={(event) => onTypeFilterChange(event.target.value)}>
+            <option value="all">All</option>
+            {packageTypes.map((type) => <option key={type} value={type}>{type}</option>)}
+          </select>
+        </label>
+        <label>
+          Risk level
+          <select value={moduleRiskFilter} onChange={(event) => onRiskFilterChange(event.target.value)}>
+            <option value="all">All</option>
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+            <option value="blocked">Blocked</option>
+          </select>
+        </label>
+        <label>
+          Validation
+          <select value={moduleValidationFilter} onChange={(event) => onValidationFilterChange(event.target.value)}>
+            <option value="all">All</option>
+            {validationStatuses.map((status) => <option key={status} value={status}>{status}</option>)}
+          </select>
+        </label>
+        <label>
+          Certification
+          <select value={moduleCertificationFilter} onChange={(event) => onCertificationFilterChange(event.target.value)}>
+            <option value="all">All</option>
+            <option value="not_run">Not run</option>
+            {CERTIFICATION_LEVELS.map((level) => <option key={level} value={level}>{level}</option>)}
+          </select>
+        </label>
+      </div>
+      <div className="module-browser-table">
+        {filtered.length === 0 ? (
+          <EmptyState title="No local modules match the filters." detail="Scan local modules or adjust filters. This UI never downloads remote packages." />
+        ) : filtered.map((module) => {
+          const selectedCertification = module.package_id === selectedModuleId ? moduleCertificationLevel || moduleQualityGate?.certification_level || "not_run" : "not_run";
+          return (
+            <button
+              key={module.package_id}
+              type="button"
+              className={`module-browser-row ${module.package_id === selectedModuleId ? "selected-list-button" : ""}`}
+              onClick={() => onSelectModule(module.package_id)}
+            >
+              <span><strong>{module.name}</strong><small>{module.package_id}</small></span>
+              <span>{module.package_type}<small>v{module.version}</small></span>
+              <ValidationStatusBadge status={moduleValidationBadgeStatus(module.validation_status)} />
+              <RiskBadge level={moduleRiskBadgeLevel(module.permission_risk_level)} />
+              <span>{module.compatibility_status}</span>
+              <span>{selectedCertification}</span>
+              <span>{module.local_only ? "local-only" : "review"}</span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function ModPermissionDashboardProPanel({
+  modulePermissions,
+  permissionSummaries,
+  riskFilter,
+  onRiskFilterChange
+}: {
+  modulePermissions: ModulePermissionSummary | null;
+  permissionSummaries: ModulePermissionSummary[];
+  riskFilter: string;
+  onRiskFilterChange: (value: string) => void;
+}) {
+  const requested = new Set(moduleRequestedPermissions(modulePermissions));
+  const dangerousRequested = new Set(modulePermissions?.dangerous_permissions ?? []);
+  const safePermissions = moduleSafePermissions(modulePermissions);
+  const affectedPackages = permissionSummaries.filter((summary) => riskFilter === "all" || summary.risk_level === riskFilter);
+  return (
+    <section className="module-pro-panel">
+      <div className="section-heading-row">
+        <div>
+          <h4>Mod Permission Dashboard Pro</h4>
+          <p className="muted">Dangerous permissions are default-deny. There is no UI to enable arbitrary code, network, filesystem, secrets, direct GameState writes, visibility bypass, or LLM calls.</p>
+        </div>
+        <RiskBadge level={moduleRiskBadgeLevel(modulePermissions?.risk_level ?? "unknown")} />
+      </div>
+      <label>
+        Affected package risk filter
+        <select value={riskFilter} onChange={(event) => onRiskFilterChange(event.target.value)}>
+          <option value="all">All</option>
+          <option value="low">Low</option>
+          <option value="medium">Medium</option>
+          <option value="high">High</option>
+          <option value="blocked">Blocked</option>
+        </select>
+      </label>
+      {modulePermissions ? (
+        <div className="permission-matrix">
+          {DANGEROUS_MODULE_PERMISSIONS.map((permission) => {
+            const isRequested = requested.has(permission) || dangerousRequested.has(permission);
+            return (
+              <div key={permission} className="permission-row">
+                <strong>{permission}</strong>
+                <RiskBadge level="blocked" />
+                <span>{isRequested ? "requested / blocked" : "blocked by default"}</span>
+                <small>{modulePermissionReason(permission, isRequested, true)}</small>
+              </div>
+            );
+          })}
+          {safePermissions.map((permission) => (
+            <div key={permission} className="permission-row">
+              <strong>{permission}</strong>
+              <RiskBadge level="safe" />
+              <span>allowed</span>
+              <small>{modulePermissionReason(permission, true, false)}</small>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <EmptyState title="No selected permission summary." detail="Select a local package to review permission details." />
+      )}
+      <details>
+        <summary>Package affected list</summary>
+        <ItemList
+          emptyText="No packages match this risk filter."
+          items={affectedPackages.map((summary) => (
+            <span key={summary.package_id}>{summary.package_id}: {summary.risk_level} · {summary.dangerous_permissions.join(", ") || "safe declarative permissions"}</span>
+          ))}
+        />
+      </details>
+    </section>
+  );
+}
+
+function CompatibilityMatrixProPanel({ matrix, selectedCompatibility }: { matrix: ModCompatibilityMatrix | null; selectedCompatibility: Record<string, unknown> | null }) {
+  return (
+    <section className="module-pro-panel">
+      <div className="section-heading-row">
+        <div>
+          <h4>Compatibility Matrix UI Pro</h4>
+          <p className="muted">Checks local package metadata only. It does not execute, enable, disable, or auto-resolve packages.</p>
+        </div>
+        <ValidationStatusBadge status={matrix?.ok ? "passed" : matrix ? "failed" : "not_run"} />
+      </div>
+      {matrix ? (
+        <div className="stack">
+          <div className="safe-summary-grid">
+            <SafeSummaryCard title="Selected package set" value={String(matrix.entries.length)} detail="Current matrix selection is local." />
+            <SafeSummaryCard title="Load order draft" value={String(matrix.load_order.length)} detail={matrix.load_order.join(" -> ") || "none"} />
+            <SafeSummaryCard title="Conflicts" value={String(matrix.conflicts_summary.length)} detail={matrix.conflicts_summary.join(", ") || "none"} />
+          </div>
+          <div className="module-browser-table">
+            {matrix.entries.map((entry) => (
+              <div key={entry.package_id} className="module-browser-row static">
+                <span><strong>{entry.package_id}</strong><small>order {entry.load_order_index ?? "n/a"}</small></span>
+                <ValidationStatusBadge status={entry.compatible ? "passed" : "failed"} />
+                <span>{entry.status}</span>
+                <span>engine/schema safe summary</span>
+                <span>permissions checked</span>
+                <span>action/state namespace not executed</span>
+                <span>{entry.errors.length ? `${entry.errors.length} blocker(s)` : "no blockers"}</span>
+              </div>
+            ))}
+          </div>
+          <ItemList emptyText="No matrix warnings." items={matrix.entries.flatMap((entry) => entry.warnings.map((warning) => <span key={`${entry.package_id}-${warning}`}>{entry.package_id}: {warning}</span>))} />
+          <ItemList emptyText="No matrix blockers." items={matrix.entries.flatMap((entry) => entry.errors.map((error) => <span key={`${entry.package_id}-${error}`} className="danger-text">{entry.package_id}: {error}</span>))} />
+        </div>
+      ) : (
+        <EmptyState title="No compatibility matrix." detail="Build the local module matrix after scanning packages." />
+      )}
+      {selectedCompatibility && (
+        <p className="muted">Selected compatibility: {String(selectedCompatibility.status ?? "unknown")}; missing dependencies {stringListFromUnknown(selectedCompatibility.missing_dependencies).join(", ") || "none"}.</p>
+      )}
+    </section>
+  );
+}
+
+function ExtensionCertificationProPanel({ moduleCertificationLevel, moduleQualityGate }: { moduleCertificationLevel: string; moduleQualityGate: ModQualityGateResult | null }) {
+  return (
+    <section className="module-pro-panel">
+      <h4>Extension Certification UI Pro</h4>
+      <p className="muted">Certification is local advisory only. It is not online certification, upload, package execution, or an absolute safety guarantee.</p>
+      <div className="mode-landing-grid">
+        {CERTIFICATION_LEVELS.map((level) => (
+          <FeatureCard
+            key={level}
+            title={level}
+            detail={level === "unsafe_blocked" ? "Blocked packages require manifest, permission, executable, secret, compatibility, and quality review." : "Local advisory level based on manifest and quality summaries."}
+            status={<ValidationStatusBadge status={(moduleCertificationLevel || moduleQualityGate?.certification_level) === level ? (level === "unsafe_blocked" ? "failed" : "passed") : "not_run"} />}
+          />
+        ))}
+      </div>
+      {moduleQualityGate && (
+        <ItemList
+          emptyText="No certification blockers."
+          items={[...moduleQualityGate.blockers, ...moduleQualityGate.warnings].map((item) => <span key={item}>{redactReportText(item)}</span>)}
+        />
+      )}
+    </section>
+  );
+}
+
+function ModQualityGateProPanel({ gate }: { gate: ModQualityGateResult | null }) {
+  const categories = ["manifest", "permissions", "compatibility", "secrets", "executable files", "action tests", "hidden leaks", "migration impact"];
+  return (
+    <section className="module-pro-panel">
+      <h4>Mod Quality Gate UI Pro</h4>
+      <p className="muted">Local quality reports do not upload, execute packages, call LLMs, auto-fix, or expose hidden text/secrets.</p>
+      <div className="safe-summary-grid">
+        <SafeSummaryCard title="Overall" value={gate ? (gate.ok ? "passed" : "blocked") : "not run"} detail={gate?.package_id ?? "Select a package and run gate."} />
+        <SafeSummaryCard title="Blockers" value={String(gate?.blockers.length ?? 0)} detail="Safe summaries only." />
+        <SafeSummaryCard title="Warnings" value={String(gate?.warnings.length ?? 0)} detail="Review before export/apply." />
+        <SafeSummaryCard title="Compatibility" value={gate?.compatibility_status ?? "not run"} detail="Matrix remains local." />
+      </div>
+      <div className="mode-landing-grid">
+        {categories.map((category) => (
+          <FeatureCard key={category} title={category} detail="Review safe blockers/warnings for this category." status={<ValidationStatusBadge status={gate ? (gate.ok ? "passed" : "warning") : "not_run"} />} />
+        ))}
+      </div>
+      {gate && <ItemList emptyText="No blockers." items={gate.blockers.map((item) => <span key={item} className="danger-text">{redactReportText(item)}</span>)} />}
+      {gate && <ItemList emptyText="No warnings." items={gate.warnings.map((item) => <span key={item}>{redactReportText(item)}</span>)} />}
+    </section>
+  );
+}
+
+function RuleModuleContractPanel() {
+  return (
+    <section className="module-pro-panel">
+      <h4>Rule Module Contract UI</h4>
+      <p className="muted">Rule Modules are contract-only in v3.4. This view reviews manifests, provided systems, state schema extensions, actions, rules, permissions, compatibility notes, and migration warnings without running module code.</p>
+      <div className="safe-summary-grid">
+        <SafeSummaryCard title="Runtime" value="contract-only" detail="No sandbox runtime, JS, Python, or arbitrary code execution." />
+        <SafeSummaryCard title="Migration" value="warning required" detail="State schema extensions need migration review before local apply." />
+      </div>
+      <div className="permission-matrix">
+        {DANGEROUS_MODULE_PERMISSIONS.map((permission) => (
+          <div key={permission} className="permission-row blocked">
+            <strong>{permission}</strong>
+            <span>blocked</span>
+            <small>Dangerous permission is denied by default and cannot be enabled from the frontend.</small>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ImportExportWizardProPanel() {
+  const filtered = [".env", "API keys", "provider secrets", "database files", "logs/cache", "node_modules/dist", "debug reports", "mature/private content"];
+  return (
+    <section className="module-pro-panel">
+      <h4>Import / Export Wizard Pro</h4>
+      <p className="muted">Import is dry-run first; export previews safe manifests. No upload, no remote download, no online marketplace, no package execution.</p>
+      <div className="mode-landing-grid">
+        {["select local package", "validate manifest", "show permissions", "show compatibility", "quality gate status", "dry-run preview", "confirm import"].map((step) => (
+          <FeatureCard key={step} title={step} detail="Required before local import apply." status={<ValidationStatusBadge status="not_run" />} />
+        ))}
+      </div>
+      <ItemList emptyText="No filtering policy." items={filtered.map((item) => <span key={item}>{item} excluded by default</span>)} />
+      <p className="muted">Provider Profile Pack export may contain api_key_env or secret_ref only, never a raw key.</p>
+    </section>
+  );
+}
+
+function AuthoringValidationDashboardPanel({ modules }: { modules: ModuleBrowserSummary[] }) {
+  const blockers = modules.filter((module) => module.validation_status === "invalid" || module.errors.length > 0);
+  return (
+    <section className="module-pro-panel">
+      <h4>Authoring Validation Dashboard</h4>
+      <p className="muted">Central safe validation overview. No auto-fix, no LLM, no upload, no hidden/debug details.</p>
+      <div className="safe-summary-grid">
+        <SafeSummaryCard title="Overall authoring validation" value={blockers.length ? "blocked" : "review"} detail="Run dedicated validators before safe apply." />
+        <SafeSummaryCard title="Module blockers" value={String(blockers.length)} detail="Local manifest blockers only." />
+        <SafeSummaryCard title="Categories" value={String(AUTHORING_VALIDATION_CATEGORIES.length)} detail="World/script/character/mod/import-export coverage." />
+      </div>
+      <div className="mode-landing-grid">
+        {AUTHORING_VALIDATION_CATEGORIES.map((category) => (
+          <FeatureCard key={category} title={category} detail="Open the affected editor for safe issue details." status={<ValidationStatusBadge status={blockers.length ? "warning" : "not_run"} />} />
+        ))}
+      </div>
+      <ItemList emptyText="No module validation blockers." items={blockers.map((module) => <span key={module.package_id} className="danger-text">{module.package_id}: {redactReportText(module.errors.join(", "))}</span>)} />
+    </section>
+  );
+}
+
+function AuthoringDiffPreview({ validationStatus, destructive }: { validationStatus: string; destructive: boolean }) {
+  return (
+    <section className="module-pro-panel">
+      <h4>AuthoringDiffPreview</h4>
+      <p className="muted">Dry-run result must be reviewed before apply/import/export. Normal preview excludes hidden facts, raw state_deltas, and secrets.</p>
+      <div className="safe-summary-grid">
+        <SafeSummaryCard title="Before / after" value="safe summary" detail="Raw YAML and hidden text are not shown here." />
+        <SafeSummaryCard title="Changed entities" value="review" detail="Added, removed, modified counts appear after dry-run." />
+        <SafeSummaryCard title="Validation" value={validationStatus} detail="Validation blockers prevent apply." />
+        <SafeSummaryCard title="Destructive risk" value={destructive ? "high risk" : "not detected"} detail="Deletes/overwrites require explicit confirm." />
+      </div>
+    </section>
+  );
+}
+
+function AuthoringAuditTrailPanel({ moduleAudit, crossModeAudit, riskFilter, resultFilter, onRiskFilterChange, onResultFilterChange, onJumpPackage }: {
+  moduleAudit: ModAuditRecord[];
+  crossModeAudit: CrossModeAuditRecord[];
+  riskFilter: string;
+  resultFilter: string;
+  onRiskFilterChange: (value: string) => void;
+  onResultFilterChange: (value: string) => void;
+  onJumpPackage: (packageId: string) => void;
+}) {
+  const rows = [
+    ...moduleAudit.map((record) => ({
+      id: record.audit_id,
+      timestamp: record.timestamp,
+      actor: record.actor,
+      action: record.action_type,
+      entity: record.package_id,
+      result: record.result,
+      risk: record.risk_level,
+      summary: record.safe_summary,
+      source: "mod"
+    })),
+    ...crossModeAudit.map((record) => ({
+      id: record.audit_id,
+      timestamp: record.timestamp,
+      actor: record.actor,
+      action: record.action_type,
+      entity: record.source_artifact_id ?? "cross-mode",
+      result: record.result,
+      risk: "low",
+      summary: record.safe_summary,
+      source: "cross-mode"
+    }))
+  ].filter((row) => (riskFilter === "all" || row.risk === riskFilter) && (resultFilter === "all" || row.result === resultFilter));
+  return (
+    <section className="module-pro-panel">
+      <h4>Authoring Audit Trail UI</h4>
+      <p className="muted">Local authoring audit is not EventLog. It does not upload, mutate GameState, or show raw state_deltas/secrets.</p>
+      <div className="module-filter-grid">
+        <label>
+          Risk
+          <select value={riskFilter} onChange={(event) => onRiskFilterChange(event.target.value)}>
+            <option value="all">All</option>
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+            <option value="blocked">Blocked</option>
+          </select>
+        </label>
+        <label>
+          Result
+          <select value={resultFilter} onChange={(event) => onResultFilterChange(event.target.value)}>
+            <option value="all">All</option>
+            <option value="success">Success</option>
+            <option value="failure">Failure</option>
+            <option value="rejected">Rejected</option>
+            <option value="dry_run">Dry run</option>
+          </select>
+        </label>
+      </div>
+      <ItemList
+        emptyText="No audit records match the filters."
+        items={rows.slice(0, 12).map((row) => (
+          <span key={row.id}>
+            {row.timestamp} · {row.actor} · {row.action} · {row.entity} · {row.result} · {row.risk}: {row.summary}
+            {row.source === "mod" && <button type="button" onClick={() => onJumpPackage(row.entity)}>Jump</button>}
+          </span>
+        ))}
+      />
+    </section>
+  );
+}
+
+function AuthoringBackupRestorePanel() {
+  const sections = ["world pack drafts", "script packs", "character packs", "mod packages", "validation reports safe summaries"];
+  return (
+    <section className="module-pro-panel">
+      <h4>Authoring Backup / Restore UX</h4>
+      <p className="muted">Authoring backups are local and dry-run first. Restore requires dry-run preview and explicit confirm.</p>
+      <ItemList emptyText="No authoring backup sections." items={sections.map((section) => <span key={section}>{section}</span>)} />
+      <p className="muted">Excluded by default: .env, API keys, provider secrets, logs/cache/build outputs, debug-only data, mature/private content.</p>
+    </section>
+  );
+}
+
+function SafeApplyWorkflowPanel({ canApply }: { canApply: boolean }) {
+  const steps = ["select draft/package", "validate", "quality gate", "diff preview", "dry-run", "explicit confirm", "apply to local content pack/project files", "audit record"];
+  return (
+    <section className="module-pro-panel">
+      <h4>Safe Apply / Publish-to-Local Workflow</h4>
+      <p className="muted">Safe apply writes local content/project files only after validation, dry-run, and explicit confirm. It does not modify active GameState, upload, or call LLMs.</p>
+      <div className="mode-landing-grid">
+        {steps.map((step, index) => (
+          <FeatureCard key={step} title={`${index + 1}. ${step}`} detail={step === "explicit confirm" ? "Required for apply/import/export." : "Safe summary step."} status={<ValidationStatusBadge status={canApply && index < 5 ? "passed" : "not_run"} />} />
+        ))}
+      </div>
+      {!canApply && <p className="danger-text">Apply is blocked until validation, dry-run, and confirmation are complete. Secret-like content blocks apply.</p>}
+    </section>
+  );
+}
+
 function CrossModeDashboardPanel({
   drafts,
   timeline,
@@ -6818,6 +7552,8 @@ function ProjectShell({
   const [chapterDraftText, setChapterDraftText] = useState("");
   const [chapterDraftSavedText, setChapterDraftSavedText] = useState("");
   const [novelSearchQuery, setNovelSearchQuery] = useState("");
+  const [novelSearchStatus, setNovelSearchStatus] = useState("");
+  const [novelSearchTag, setNovelSearchTag] = useState("");
   const [novelSearchResults, setNovelSearchResults] = useState<NovelSearchResult[]>([]);
   const [novelSnapshots, setNovelSnapshots] = useState<NovelDraftSnapshot[]>([]);
   const [novelSnapshotMessage, setNovelSnapshotMessage] = useState("");
@@ -6875,9 +7611,19 @@ function ProjectShell({
   const [moduleError, setModuleError] = useState("");
   const [moduleMessage, setModuleMessage] = useState("");
   const [moduleRiskFilter, setModuleRiskFilter] = useState("all");
+  const [moduleTypeFilter, setModuleTypeFilter] = useState("all");
+  const [moduleValidationFilter, setModuleValidationFilter] = useState("all");
+  const [moduleCertificationFilter, setModuleCertificationFilter] = useState("all");
+  const [moduleSearchQuery, setModuleSearchQuery] = useState("");
+  const [moduleCertificationLevel, setModuleCertificationLevel] = useState("");
+  const [auditRiskFilter, setAuditRiskFilter] = useState("all");
+  const [auditResultFilter, setAuditResultFilter] = useState("all");
   const selected = projects.find((project) => project.project_id === selectedProjectId) ?? null;
   const novel = modeStatuses.find((status) => status.mode === "novel");
   const tavern = modeStatuses.find((status) => status.mode === "tavern");
+  const selectedChapter = novelChapters.find((chapter) => chapter.chapter_id === selectedChapterId) ?? null;
+  const novelQualityIssues = useMemo(() => buildNovelQualityIssues(novelChapters, novelScenes), [novelChapters, novelScenes]);
+  const chapterCurrentWordCount = chapterDraftText.split(/\s+/).filter(Boolean).length;
 
   async function loadNovelData() {
     if (!selectedProjectId) {
@@ -7046,7 +7792,7 @@ function ProjectShell({
     try {
       const report = await scanProjectModules(selectedProjectId);
       setModules(report.modules);
-      setModuleMessage(`Scanned ${report.modules.length} local modules. No package code was executed.`);
+      setModuleMessage(`Scanned ${report.modules.length} local modules. ${report.errors.length} scan issue(s). No package code was executed.`);
       await loadModuleData(report.modules[0]?.package_id || selectedModuleId);
     } catch (err) {
       setModuleError(toErrorMessage(err));
@@ -7055,6 +7801,7 @@ function ProjectShell({
 
   async function handleSelectModule(packageId: string) {
     setSelectedModuleId(packageId);
+    setModuleCertificationLevel("");
     await loadModuleData(packageId);
   }
 
@@ -7081,6 +7828,7 @@ function ProjectShell({
     setModuleMessage("");
     try {
       const report = await certifyProjectModule(selectedProjectId, selectedModuleId);
+      setModuleCertificationLevel(report.certification.level);
       setModuleMessage(`Certification: ${report.certification.level}. This is local advisory certification only.`);
       await loadModuleData(selectedModuleId);
     } catch (err) {
@@ -7097,6 +7845,7 @@ function ProjectShell({
     try {
       const report = await runProjectModuleQualityGate(selectedProjectId, selectedModuleId);
       setModuleQualityGate(report.quality_gate);
+      setModuleCertificationLevel(report.quality_gate.certification_level);
       setModuleMessage(report.quality_gate.ok ? "Mod Quality Gate passed." : "Mod Quality Gate found blockers.");
       await loadModuleData(selectedModuleId);
     } catch (err) {
@@ -7249,13 +7998,20 @@ function ProjectShell({
     }
   }
 
-  async function handleNovelSearch(nextQuery = novelSearchQuery) {
+  async function handleNovelSearch(nextQuery = novelSearchQuery, nextStatus = novelSearchStatus, nextTag = novelSearchTag) {
     setNovelSearchQuery(nextQuery);
+    setNovelSearchStatus(nextStatus);
+    setNovelSearchTag(nextTag);
     if (!selectedProjectId) {
       return;
     }
     try {
-      const result = await searchNovel(selectedProjectId, { keyword: nextQuery, chapter_id: selectedChapterId || undefined });
+      const result = await searchNovel(selectedProjectId, {
+        keyword: nextQuery,
+        status: nextStatus || undefined,
+        tag: nextTag || undefined,
+        chapter_id: selectedChapterId || undefined
+      });
       setNovelSearchResults(result.results);
     } catch (err) {
       setNovelError(toErrorMessage(err));
@@ -7574,7 +8330,6 @@ function ProjectShell({
     }
   }
 
-  const selectedChapter = novelChapters.find((chapter) => chapter.chapter_id === selectedChapterId) ?? null;
   return (
     <div className="studio-page">
       <PageHeader
@@ -7675,7 +8430,7 @@ function ProjectShell({
           navigation={(
             <div className="stack">
               <strong>Novel Workspace</strong>
-              {["Manuscript Dashboard", "Outline Tree Pro", "Chapter Editor Pro", "Scene Cards Board", "Character Arc Panel", "Plot / Foreshadowing Board", "Timeline Link Panel", "World Bible Sidebar", "Novel Export Wizard", "Novel Quality Dashboard"].map((item) => (
+              {["Manuscript", "Outline", "Chapters", "Scenes", "Characters", "Plot", "Foreshadowing", "Timeline", "World Bible", "Search", "Export", "Quality"].map((item) => (
                 <span key={item}>{item}</span>
               ))}
             </div>
@@ -7697,7 +8452,14 @@ function ProjectShell({
                   ))}
                 </div>
               )}
-              <NovelSearchFilterBar value={novelSearchQuery} onChange={(value) => void handleNovelSearch(value)} />
+              <NovelSearchFilterBar
+                value={novelSearchQuery}
+                status={novelSearchStatus}
+                tag={novelSearchTag}
+                onChange={(value) => void handleNovelSearch(value, novelSearchStatus, novelSearchTag)}
+                onStatusChange={(value) => void handleNovelSearch(novelSearchQuery, value, novelSearchTag)}
+                onTagChange={(value) => void handleNovelSearch(novelSearchQuery, novelSearchStatus, value)}
+              />
               {novelSearchResults.length > 0 && (
                 <ItemList
                   emptyText="No search results"
@@ -7740,14 +8502,7 @@ function ProjectShell({
                 <LinkedRefList title="Linked scenes" refs={selectedChapter.scene_refs ?? []} />
                 <LinkedRefList title="Linked characters" refs={selectedChapter.linked_character_ids ?? []} />
                 <LinkedRefList title="Linked timeline events" refs={selectedChapter.linked_timeline_event_ids ?? []} />
-                <ItemList
-                  emptyText="No snapshots"
-                  items={novelSnapshots.map((snapshot) => (
-                    <button key={snapshot.snapshot_id} type="button" onClick={() => void handleCompareSnapshot(snapshot.snapshot_id)}>
-                      {snapshot.title || snapshot.snapshot_id} · {snapshot.created_at}
-                    </button>
-                  ))}
-                />
+                <DraftVersionPanel snapshots={novelSnapshots} onCompare={(snapshotId) => void handleCompareSnapshot(snapshotId)} />
               </div>
             ) : (
               <EmptyState title="Select a chapter." />
@@ -7759,19 +8514,29 @@ function ProjectShell({
                 <NovelSafeSummaryPanel title="Structure Tools">
                   <p>Outline editor, character arcs, plot threads, foreshadowing, timeline links, and quality checks remain local Novel drafts.</p>
                 </NovelSafeSummaryPanel>
-                <OutlineTreePro />
-                <CharacterArcPanel />
-                <PlotForeshadowingBoard />
-                <TimelineLinkPanel />
-                <WorldBibleSidebar />
+                <OutlineTreePro
+                  chapters={novelChapters}
+                  scenes={novelScenes}
+                  selectedChapterId={selectedChapterId}
+                  onSelectChapter={(chapterId) => {
+                    const chapter = novelChapters.find((item) => item.chapter_id === chapterId);
+                    setSelectedChapterId(chapterId);
+                    setChapterDraftText(chapter?.draft_text ?? "");
+                    setChapterDraftSavedText(chapter?.draft_text ?? "");
+                    void fetchNovelDraftSnapshots(selectedProjectId, chapterId).then((snapshots) => setNovelSnapshots(snapshots.snapshots));
+                  }}
+                />
+                <CharacterArcPanel chapters={novelChapters} scenes={novelScenes} />
+                <PlotForeshadowingBoard chapters={novelChapters} scenes={novelScenes} />
+                <TimelineLinkPanel chapters={novelChapters} scenes={novelScenes} />
+                <WorldBibleSidebar chapters={novelChapters} scenes={novelScenes} />
               </div>
               <div className="mode-landing-grid">
                 <NovelPromptProviderPanel promptProfileId={selectedChapter?.prompt_profile_id ?? novelPreferences?.default_prompt_profile_id} providerSummary="Provider Gateway safe route; no API key shown." />
                 <NovelExportWizard onExportMarkdown={() => void handleExport("markdown")} onExportTxt={() => void handleExport("txt")} />
-                <NovelQualityDashboard issues={[]} />
-                <NovelSafeSummaryPanel title="World to Novel Import UX Pro">
-                  <p>Preview uses safe event summaries only. Apply confirmation does not modify World EventLog or GameState, and raw state_deltas are excluded.</p>
-                </NovelSafeSummaryPanel>
+                <NovelQualityDashboard issues={novelQualityIssues} />
+                <WorldToNovelImportPanel preview={worldToNovelPreview} />
+                <WritingSessionDashboard session={writingSession} currentWordCount={chapterCurrentWordCount} />
                 <NovelSafeSummaryPanel title="Novel Local Preferences">
                   <p>Default export: {novelPreferences?.default_export_format ?? "markdown"}. Preferences are local and contain no secrets.</p>
                 </NovelSafeSummaryPanel>
@@ -7794,6 +8559,9 @@ function ProjectShell({
           status={(
             <div className="button-row">
               <span>local-only</span>
+              <span>save status: {chapterDraftText !== chapterDraftSavedText ? "unsaved draft" : "saved locally"}</span>
+              <span>provider status: Provider Gateway safe route</span>
+              <span>Novel draft / authoring mode</span>
               <span>{writingSession && !writingSession.ended_at ? `session words ${writingSession.word_count_current - writingSession.word_count_start}` : "no active writing session"}</span>
               <span>Novel UI does not directly modify GameState</span>
             </div>
@@ -7808,8 +8576,8 @@ function ProjectShell({
         <TavernWorkspaceShell
           navigation={(
             <div className="stack">
-              <TavernToolbar title="Characters / Sessions" meta={<p className="muted">Local RP workspace navigation.</p>} />
-              <CharacterCardLibrary characters={tavernCharacters} onSelect={setSelectedTavernCharacterId} />
+              <TavernToolbar title="Characters / Sessions" meta={<p className="muted">Local RP workspace navigation: Characters, Sessions, Multi-NPC Scenes, Memory, Voice, Boundaries, Safety, Export, Cross-Mode.</p>} />
+              <CharacterCardLibrary characters={tavernCharacters} selectedCharacterId={selectedTavernCharacterId} onSelect={setSelectedTavernCharacterId} />
               <div className="stack">
                 {tavernSessions.map((session) => (
                   <TavernSessionCard
@@ -7832,33 +8600,32 @@ function ProjectShell({
           )}
           main={(
             <div className="stack">
-              <TavernToolbar
-                title="Single Character Chat Pro"
-                meta={<ChatSaveStatus dirty={Boolean(chatInput.trim())} message="saved locally" />}
-                actions={<button type="button" disabled={!chatInput.trim()} onClick={handleCreateTavernRecoveryDraft}>Create Recovery Draft</button>}
+              <SingleCharacterChatPro
+                session={tavernSessions.find((session) => session.session_id === selectedTavernSessionId) ?? null}
+                character={tavernCharacters.find((character) => character.tavern_character_id === selectedTavernCharacterId) ?? null}
+                messages={tavernMessages}
+                input={chatInput}
+                providerStatus="Provider Gateway safe route; API key not shown"
+                memoryHints={tavernRecoveryRecords.slice(0, 3).map((record) => record.safe_draft_text)}
+                safetyNotes={chatSafetyNotes}
+                onInputChange={setChatInput}
+                onSend={handleSendTavernMessage}
+                onRecoveryDraft={handleCreateTavernRecoveryDraft}
               />
-              <SingleCharacterChatPro messages={tavernMessages} />
-              <div className="form-grid">
-                <select value={selectedTavernCharacterId} onChange={(event) => setSelectedTavernCharacterId(event.target.value)}>
-                  <option value="">Select character</option>
-                  {tavernCharacters.map((character) => <option key={character.tavern_character_id} value={character.tavern_character_id}>{character.display_name}</option>)}
-                </select>
-                <textarea value={chatInput} onChange={(event) => setChatInput(event.target.value)} rows={3} placeholder="Write a local RP message..." />
-                <button type="button" disabled={!selectedTavernSessionId || !selectedTavernCharacterId || !chatInput.trim()} onClick={handleSendTavernMessage}>Send</button>
-              </div>
-              <MultiNPCScenePro scenes={multiNPCScenes} />
+              <MultiNPCScenePro scenes={multiNPCScenes} selectedSceneId={selectedMultiNPCSceneId} onSelect={setSelectedMultiNPCSceneId} onGenerateNext={handleGenerateMultiNPCReply} />
             </div>
           )}
           context={(
             <div className="stack">
-              <TavernPromptProviderPanel />
-              <RPMemoryPanel />
-              <EmotionArcPanel />
-              <RelationshipTonePanel />
-              <SceneMoodPresetPanel presets={tavernScenePresets} />
-              <CharacterVoiceLabPanel />
-              <BoundaryMatureSettingsPanel />
-              <RPSafetyDashboardPanel />
+              <TavernPromptProviderPanel promptProfileId={tavernPreferences?.default_prompt_profile_id} providerProfileId={tavernPreferences?.default_provider_profile_id} modelId="safe summary only" />
+              <RPMemoryPanel sessions={tavernSessions} recoveryRecords={tavernRecoveryRecords} matureVisible={Boolean(tavernPreferences?.mature_module_visible)} />
+              <EmotionArcPanel messages={tavernMessages} />
+              <RelationshipTonePanel characters={tavernCharacters} sessions={tavernSessions} onPropose={() => void handleBuildTavernApplyPlan()} />
+              <SceneMoodPresetPanel presets={tavernScenePresets} selectedPresetId={tavernPreferences?.default_scene_mood_preset_id ?? ""} onSelect={setNewScenePresetId} onCreate={handleCreateScenePreset} />
+              <CharacterVoiceLabPanel character={tavernCharacters.find((character) => character.tavern_character_id === selectedTavernCharacterId) ?? null} />
+              <BoundaryMatureSettingsPanel preferences={tavernPreferences} />
+              <RPSafetyDashboardPanel report={rpSafetyDashboard} onRun={handleRunRPSafety} />
+              <TavernCrossModeSafetyPanel worldNpcs={worldNpcSummaries} exportPreview={tavernExportPreview} />
             </div>
           )}
           status={(
@@ -7874,7 +8641,7 @@ function ProjectShell({
           <TavernSafeSummaryPanel title="Character Card Library">
             <p>Local character cards can be imported as drafts. Embedded scripts are not executed and remote character downloads are not offered.</p>
           </TavernSafeSummaryPanel>
-          <TavernCharacterEditor />
+          <TavernCharacterEditor character={tavernCharacters.find((character) => character.tavern_character_id === selectedTavernCharacterId) ?? null} />
           <TavernSafeSummaryPanel title="World NPC to Tavern Character UX Pro">
             <p>Player-safe mode excludes NPC secrets and unknown facts. Apply to Tavern creates a Tavern draft only.</p>
             <div className="form-grid">
@@ -8190,99 +8957,79 @@ function ProjectShell({
           <button type="button" disabled={!selectedModuleId} onClick={handleCertifyModule}>Certify</button>
           <button type="button" disabled={!selectedModuleId} onClick={handleModuleQualityGate}>Quality Gate</button>
         </div>
-        <div className="card-grid">
-          <div>
-            <h4>Module Browser</h4>
-            <label>
-              Risk filter
-              <select value={moduleRiskFilter} onChange={(event) => setModuleRiskFilter(event.target.value)}>
-                <option value="all">All</option>
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
-                <option value="high">High</option>
-                <option value="blocked">Blocked</option>
-              </select>
-            </label>
-            <ItemList
-              emptyText="No local modules found."
-              items={modules
-                .filter((module) => moduleRiskFilter === "all" || module.permission_risk_level === moduleRiskFilter)
-                .map((module) => (
-                  <button
-                    key={module.package_id}
-                    type="button"
-                    className={module.package_id === selectedModuleId ? "selected-list-button" : ""}
-                    onClick={() => void handleSelectModule(module.package_id)}
-                  >
-                    {module.name} · {module.package_type} · {module.validation_status} · {module.permission_risk_level}
-                  </button>
-                ))}
-            />
+        <AuthoringWorkspaceShell
+          title="Authoring / Mod Workspace Layout Pro"
+          status="dirty state: local UI only · validation status: review · package status: local-only"
+          sidebar={
+            <div className="stack">
+              <SafeSummaryCard title="Validation" value={moduleDetail?.summary.validation_status ?? "not loaded"} detail="Safe summary only." />
+              <SafeSummaryCard title="Permissions" value={modulePermissions?.risk_level ?? "not loaded"} detail="Dangerous permissions are default blocked." />
+              <SafeSummaryCard title="Quality" value={moduleQualityGate ? (moduleQualityGate.ok ? "passed" : "blocked") : "not run"} detail="No auto-fix or package execution." />
+            </div>
+          }
+        >
+          <ModuleBrowserProPanel
+            modules={modules}
+            selectedModuleId={selectedModuleId}
+            moduleSearchQuery={moduleSearchQuery}
+            moduleTypeFilter={moduleTypeFilter}
+            moduleRiskFilter={moduleRiskFilter}
+            moduleValidationFilter={moduleValidationFilter}
+            moduleCertificationFilter={moduleCertificationFilter}
+            moduleCertificationLevel={moduleCertificationLevel}
+            moduleQualityGate={moduleQualityGate}
+            onSearchChange={setModuleSearchQuery}
+            onTypeFilterChange={setModuleTypeFilter}
+            onRiskFilterChange={setModuleRiskFilter}
+            onValidationFilterChange={setModuleValidationFilter}
+            onCertificationFilterChange={setModuleCertificationFilter}
+            onSelectModule={(packageId) => void handleSelectModule(packageId)}
+          />
+          <div className="card-grid">
+            <div>
+              <h4>Module Detail</h4>
+              {moduleDetail ? (
+                <div className="stack">
+                  <p><strong>{moduleDetail.summary.name}</strong> {moduleDetail.summary.version}</p>
+                  <p className="muted">{moduleDetail.summary.package_id} · {moduleDetail.summary.safe_path_hint}</p>
+                  <p>Validation: {moduleDetail.summary.validation_status}</p>
+                  <p>Compatibility: {moduleDetail.summary.compatibility_status}</p>
+                  <p>Targets: {moduleDetail.target_project_modes.join(", ") || "not specified"}</p>
+                  <p>Dependencies: {moduleDetail.dependencies.join(", ") || "none"}</p>
+                  <p>Conflicts: {moduleDetail.conflicts.join(", ") || "none"}</p>
+                  <ItemList emptyText="No errors." items={moduleDetail.summary.errors.map((item) => <span key={item} className="danger-text">{redactReportText(item)}</span>)} />
+                  <ItemList emptyText="No warnings." items={moduleDetail.summary.warnings.map((item) => <span key={item}>{redactReportText(item)}</span>)} />
+                </div>
+              ) : (
+                <EmptyState title="Select a local module." detail="Scan the project modules directory to populate this panel." />
+              )}
+            </div>
+            <ExtensionCertificationProPanel moduleCertificationLevel={moduleCertificationLevel} moduleQualityGate={moduleQualityGate} />
           </div>
-          <div>
-            <h4>Module Detail</h4>
-            {moduleDetail ? (
-              <div className="stack">
-                <p><strong>{moduleDetail.summary.name}</strong> {moduleDetail.summary.version}</p>
-                <p className="muted">{moduleDetail.summary.package_id}</p>
-                <p>Validation: {moduleDetail.summary.validation_status}</p>
-                <p>Compatibility: {moduleDetail.summary.compatibility_status}</p>
-                <p>Targets: {moduleDetail.target_project_modes.join(", ") || "not specified"}</p>
-                <ItemList emptyText="No errors." items={moduleDetail.summary.errors.map((item) => <span key={item} className="danger-text">{item}</span>)} />
-                <ItemList emptyText="No warnings." items={moduleDetail.summary.warnings.map((item) => <span key={item}>{item}</span>)} />
-              </div>
-            ) : (
-              <EmptyState title="Select a local module." detail="Scan the project modules directory to populate this panel." />
-            )}
-          </div>
-          <div>
-            <h4>Permission Dashboard</h4>
-            <p className="muted">Blocked in v2.6: execute_code, read_secrets, access_network, modify_game_state_directly.</p>
-            {modulePermissions ? (
-              <div className="stack">
-                <p>Risk: {modulePermissions.risk_level}</p>
-                <ItemList
-                  emptyText="No dangerous permissions."
-                  items={modulePermissions.dangerous_permissions.map((permission) => <span key={permission} className="danger-text">{permission} blocked</span>)}
-                />
-              </div>
-            ) : (
-              <EmptyState title="No permission summary." />
-            )}
-          </div>
-          <div>
-            <h4>Compatibility Matrix</h4>
-            {moduleMatrix ? (
-              <div className="stack">
-                <p>Status: {moduleMatrix.ok ? "compatible" : "blocked"}</p>
-                <p className="muted">Load order: {moduleMatrix.load_order.join(" → ") || "none"}</p>
-                <ItemList emptyText="No compatibility entries." items={moduleMatrix.entries.map((entry) => <span key={entry.package_id}>{entry.package_id}: {entry.status}</span>)} />
-              </div>
-            ) : (
-              <EmptyState title="No compatibility matrix." />
-            )}
-          </div>
-          <div>
-            <h4>Quality Gate</h4>
-            {moduleQualityGate ? (
-              <div className="stack">
-                <p>{moduleQualityGate.ok ? "passed" : "failed"} · {moduleQualityGate.certification_level}</p>
-                <ItemList emptyText="No blockers." items={moduleQualityGate.blockers.map((item) => <span key={item} className="danger-text">{item}</span>)} />
-              </div>
-            ) : (
-              <EmptyState title="Run the Mod Quality Gate." />
-            )}
-          </div>
-          <div>
-            <h4>Audit Trail</h4>
-            <ItemList
-              emptyText="No module audit records."
-              items={moduleAudit.slice(0, 5).map((record) => (
-                <span key={record.audit_id}>{record.action_type} · {record.package_id} · {record.result}</span>
-              ))}
-            />
-          </div>
-        </div>
+          <ModPermissionDashboardProPanel
+            modulePermissions={modulePermissions}
+            permissionSummaries={modulePermissionSummaries}
+            riskFilter={moduleRiskFilter}
+            onRiskFilterChange={setModuleRiskFilter}
+          />
+          <CompatibilityMatrixProPanel matrix={moduleMatrix} selectedCompatibility={moduleCompatibility} />
+          <ImportExportWizardProPanel />
+          <ModQualityGateProPanel gate={moduleQualityGate} />
+          <RuleModuleContractPanel />
+          <AuthoringValidationDashboardPanel modules={modules} />
+          <AuthoringDiffPreview validationStatus={moduleDetail?.summary.validation_status ?? "not_run"} destructive={Boolean(moduleCompatibility && String(moduleCompatibility.status ?? "") === "blocked")} />
+          <AuthoringAuditTrailPanel
+            moduleAudit={moduleAudit}
+            crossModeAudit={crossModeAudit}
+            riskFilter={auditRiskFilter}
+            resultFilter={auditResultFilter}
+            onRiskFilterChange={setAuditRiskFilter}
+            onResultFilterChange={setAuditResultFilter}
+            onJumpPackage={(packageId) => void handleSelectModule(packageId)}
+          />
+          <AuthoringBackupRestorePanel />
+          <SafeApplyWorkflowPanel canApply={Boolean(moduleDetail && moduleDetail.summary.validation_status === "valid" && moduleQualityGate?.ok)} />
+        </AuthoringWorkspaceShell>
         <details>
           <summary>All permissions</summary>
           <ItemList
@@ -9249,13 +9996,30 @@ function PreviewResultPanel({
         />
       )}
       {previewContent && (
-        <details>
-          <summary>Preview output</summary>
-          <pre>{previewContent}</pre>
-        </details>
+        <AuthoringOnlyPreviewDetails content={previewContent} />
       )}
     </section>
   );
+}
+
+function AuthoringOnlyPreviewDetails({
+  content,
+  title = "Authoring-only preview"
+}: {
+  content: string;
+  title?: string;
+}) {
+  return (
+    <details className="authoring-only-preview">
+      <summary>{title} - hidden/private/debug fields are redacted</summary>
+      <p className="muted">This preview is for local authoring review only. Player-safe previews must not include hidden facts, NPC secrets, private notes, debug data, raw prompts, raw state_deltas, or provider secrets.</p>
+      <pre className="template-preview-code">{redactAuthoringPreviewText(content)}</pre>
+    </details>
+  );
+}
+
+function AuthoringPreviewCode({ content }: { content: string }) {
+  return <pre className="template-preview-code">{redactAuthoringPreviewText(content)}</pre>;
 }
 
 function confirmDangerousAction(message: string): boolean {
@@ -9319,6 +10083,10 @@ function ProjectSelectorPanel({
             <dl className="metadata-list">
               <dt>Path</dt>
               <dd><SafePathSummary value={currentWorkspace.path_redacted} /></dd>
+              <dt>Project id</dt>
+              <dd>{currentWorkspace.workspace_id}</dd>
+              <dt>Mode status</dt>
+              <dd>{currentWorkspace.safe_status}</dd>
               <dt>Worlds</dt>
               <dd>{currentWorkspace.world_count}</dd>
               <dt>Last opened</dt>
@@ -9414,7 +10182,7 @@ function RecentProjectsPanel({
       <div className="section-heading-row">
         <div>
           <h3>Recent Projects</h3>
-          <p className="muted">Reopen trusted local workspace references. Paths are redacted.</p>
+          <p className="muted">Reopen trusted local workspace references. Paths are redacted and only safe summaries are stored.</p>
         </div>
         <button type="button" onClick={onClear} disabled={projects.length === 0}>
           Clear
@@ -9434,6 +10202,9 @@ function RecentProjectsPanel({
               </span>
               <span className="muted"> - {project.last_opened_at}</span>
               <div className="authoring-action-bar">
+                <button type="button" disabled title="Pinning is stored as local safe metadata when enabled by the backend.">
+                  Pin
+                </button>
                 <button type="button" onClick={() => onOpen(project.workspace_id)}>
                   Open
                 </button>
@@ -10083,6 +10854,16 @@ function AuthoringPanel({
       </div>
 
       <DirtyStateBanner dirty={isDirty} label={`${selectedFile} has local edits that are not saved yet.`} />
+
+      <AuthoringStudioProDashboard
+        activeTool={activeAuthoringTool}
+        selectedWorldId={selectedWorldId}
+        selectedFile={selectedFile}
+        isDirty={isDirty}
+        validation={validation}
+        preview={preview}
+        onOpenTool={handleSelectAuthoringTool}
+      />
 
       <div className="authoring-workspace">
         <WorldFileTree
@@ -10925,11 +11706,47 @@ function StatusList({ title, items, emptyText }: { title: string; items: string[
   );
 }
 
+function ActionModTestHarnessPanel({ report, onRun, disabled }: { report: ActionModTestRunResponse | null; onRun: () => void; disabled: boolean }) {
+  return (
+    <section className="module-pro-panel">
+      <div className="section-heading-row">
+        <div>
+          <h4>Action Mod Test Harness UI</h4>
+          <p className="muted">Runs local safe checks for declarative actions. It does not execute arbitrary code, write active saves, call providers, or expose raw state_deltas.</p>
+        </div>
+        <button type="button" onClick={onRun} disabled={disabled}>Run Tests</button>
+      </div>
+      <div className="safe-summary-grid">
+        <SafeSummaryCard title="Report" value={report ? (report.ok ? "passed" : "failed") : "not run"} detail={report ? `${report.passed_count}/${report.test_count} tests passed` : "Run tests after preview/validation."} />
+        <SafeSummaryCard title="State mutation" value={report?.active_game_state_modified ? "blocked" : "none"} detail="Harness verifies active GameState is unchanged." />
+        <SafeSummaryCard title="Raw deltas" value={report?.raw_state_deltas_included ? "blocked" : "excluded"} detail="Only StateDelta safe summaries are shown." />
+      </div>
+      {report ? (
+        <div className="module-browser-table">
+          {report.results.map((result) => (
+            <div key={result.test_id} className="module-browser-row static">
+              <span><strong>{result.test_id}</strong><small>{result.action_id}</small></span>
+              <ValidationStatusBadge status={result.passed ? "passed" : "failed"} />
+              <span>{result.expected_result_type} {"->"} {result.actual_result_type}</span>
+              <span>{result.expected_state_delta_summary.join(", ") || "no StateDelta proposal"}</span>
+              <span>{result.event_tags.join(", ") || "no event tags"}</span>
+              <span>{result.hidden_leak_warnings.join(", ") || "no hidden leak warning"}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <EmptyState title="No Action Mod test report." detail="Use Run Tests to generate a local safe report from the current declarative draft." />
+      )}
+    </section>
+  );
+}
+
 function ActionModEditorPanel({ worldId }: { worldId: string }) {
   const referenceIndex = useReferenceIndex(worldId);
   const [draft, setDraft] = useState<ActionModDraft>(() => defaultActionModDraft());
   const [selectedActionIndex, setSelectedActionIndex] = useState<number>(0);
   const [preview, setPreview] = useState<ActionModPreviewResponse | null>(null);
+  const [testReport, setTestReport] = useState<ActionModTestRunResponse | null>(null);
   const [jsonError, setJsonError] = useState<string>("");
   const [message, setMessage] = useState<string>("");
   const [error, setError] = useState<string>("");
@@ -10940,11 +11757,13 @@ function ActionModEditorPanel({ worldId }: { worldId: string }) {
 
   function updateDraft(update: Partial<ActionModDraft>) {
     setPreview(null);
+    setTestReport(null);
     setDraft((current) => ({ ...current, ...update }));
   }
 
   function updateSelectedAction(update: (action: DeclarativeActionDefinition) => DeclarativeActionDefinition) {
     setPreview(null);
+    setTestReport(null);
     setDraft((current) => ({
       ...current,
       actions: current.actions.map((action, index) => index === selectedActionIndex ? update(action) : action)
@@ -10965,6 +11784,22 @@ function ActionModEditorPanel({ worldId }: { worldId: string }) {
       const response = kind === "preview" ? await previewActionModDraft(draft) : await validateActionModDraft(draft);
       setPreview(response);
       setMessage(response.validation.ok ? `${kind === "preview" ? "Preview" : "Validation"} passed.` : "Validation found blocking errors.");
+    } catch (err) {
+      setError(authoringErrorMessage(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function runTests() {
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await runActionModDraftTests(draft);
+      setTestReport(response);
+      setPreview({ local_only: response.local_only, draft, validation: response.validation, writes_to_disk: false, executes_code: false, active_game_state_modified: false, normalized_yaml: preview?.normalized_yaml ?? "" });
+      setMessage(response.ok ? "Action Mod tests passed." : "Action Mod tests found blockers.");
     } catch (err) {
       setError(authoringErrorMessage(err));
     } finally {
@@ -11072,6 +11907,7 @@ function ActionModEditorPanel({ worldId }: { worldId: string }) {
           <ErrorPanel message={error} />
         </section>
       </div>
+      <ActionModTestHarnessPanel report={testReport} onRun={() => void runTests()} disabled={isBusy || Boolean(jsonError)} />
     </section>
   );
 }
@@ -11178,6 +12014,10 @@ function updateJsonList(
   setError: (message: string) => void
 ) {
   try {
+    if (containsForbiddenActionModLogic(raw)) {
+      setError("Action Mod DSL must stay declarative. exec/eval/code/script/function fields are blocked.");
+      return;
+    }
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed) || parsed.some((item) => item === null || typeof item !== "object" || Array.isArray(item))) {
       setError("JSON must be an array of objects.");
@@ -11188,6 +12028,10 @@ function updateJsonList(
   } catch {
     setError("Invalid JSON.");
   }
+}
+
+function containsForbiddenActionModLogic(raw: string): boolean {
+  return /\b(exec|eval|function|script|python|javascript|read_secrets|access_network|access_filesystem)\b/i.test(raw);
 }
 
 function actionModValidationAsAuthoring(report: ActionModPreviewResponse["validation"]): AuthoringValidation {
@@ -11808,7 +12652,7 @@ function RPCharacterAuthoringPanel({
                     })}
                   </ul>
                   {batchImportReport.unsafe_entries.length > 0 && (
-                    <pre className="template-preview-code">{JSON.stringify(batchImportReport.unsafe_entries, null, 2)}</pre>
+                    <AuthoringPreviewCode content={JSON.stringify(batchImportReport.unsafe_entries, null, 2)} />
                   )}
                 </div>
               )}
@@ -12041,7 +12885,7 @@ function ExampleDialogueManagerPanel({
       {previewYaml && (
         <details className="authoring-preview-box">
           <summary>Generated example_dialogues.yaml</summary>
-          <pre>{previewYaml}</pre>
+          <AuthoringPreviewCode content={previewYaml} />
         </details>
       )}
       <SuccessPanel message={message} />
@@ -13167,7 +14011,7 @@ function TemplateWizardPanel({ worldId }: { worldId: string }) {
           {preview.generated_files.map((file) => (
             <details key={file.file_name} open>
               <summary>{file.file_name}</summary>
-              <pre className="template-preview-code">{file.content}</pre>
+              <AuthoringPreviewCode content={file.content} />
             </details>
           ))}
         </div>
@@ -13279,7 +14123,7 @@ function BatchLorebookClassificationPanel({ worldId }: { worldId: string }) {
             })}
           </ul>
           {report.validation && <ValidationPanel validation={report.validation} onSelectIssue={() => undefined} />}
-          {report.yaml_draft && <pre className="template-preview-code">{report.yaml_draft}</pre>}
+          {report.yaml_draft && <AuthoringPreviewCode content={report.yaml_draft} />}
         </div>
       )}
       {message && <p className="muted">{message}</p>}
@@ -13425,7 +14269,7 @@ function ScriptPackageBuilderPanel({ worldId }: { worldId: string }) {
           <p className="muted">Dependencies: {report.dependencies.join(", ") || "none"}</p>
           <p className="muted">Conflicts: {report.conflicts.join(", ") || "none"}</p>
           <h4>Normal manifest</h4>
-          <pre className="template-preview-code">{JSON.stringify(report.normal_manifest, null, 2)}</pre>
+          <AuthoringPreviewCode content={JSON.stringify(report.normal_manifest, null, 2)} />
         </div>
       )}
       {message && <p className="muted">{message}</p>}
@@ -13557,7 +14401,7 @@ function CampaignStarterKitBuilderPanel() {
             <li>Script package: {preview.script_package_draft.manifest.package_id}</li>
           </ul>
           <h4>Quality gate dry-run</h4>
-          <pre className="template-preview-code">{JSON.stringify(preview.quality_gate_dry_run, null, 2)}</pre>
+          <AuthoringPreviewCode content={JSON.stringify(preview.quality_gate_dry_run, null, 2)} />
         </div>
       )}
       {exportReport && (
@@ -13752,7 +14596,7 @@ function WorldPackWizardPanel() {
           {preview.generated_files.map((file) => (
             <details key={file.file_name} open>
               <summary>{file.file_name}</summary>
-              <pre className="template-preview-code">{file.content}</pre>
+              <AuthoringPreviewCode content={file.content} />
             </details>
           ))}
         </div>
@@ -13932,7 +14776,7 @@ function NPCPackGeneratorPanel({ worldId, onOpenEditor }: { worldId: string; onO
           {Object.entries(preview.yaml_contents).map(([fileName, content]) => (
             <details key={fileName}>
               <summary>{fileName}</summary>
-              <pre className="template-preview-code">{content}</pre>
+              <AuthoringPreviewCode content={content} />
             </details>
           ))}
         </div>
@@ -14102,7 +14946,7 @@ function QuestPackGeneratorPanel({ worldId }: { worldId: string }) {
           {Object.entries(preview.yaml_contents).map(([fileName, content]) => (
             <details key={fileName}>
               <summary>{fileName}</summary>
-              <pre className="template-preview-code">{content}</pre>
+              <AuthoringPreviewCode content={content} />
             </details>
           ))}
         </div>
@@ -14237,7 +15081,7 @@ function LocationClusterTemplatePanel({ worldId }: { worldId: string }) {
             onMoveNode={() => undefined}
           />
           <h3>Generated locations.yaml</h3>
-          <pre className="template-preview-code">{preview.yaml_content}</pre>
+          <AuthoringPreviewCode content={preview.yaml_content} />
         </div>
       )}
       {message && <p className="muted">{message}</p>}
@@ -14376,7 +15220,7 @@ function WorldMergeAssistantPanel({ worldId }: { worldId: string }) {
             </div>
           )) : <EmptyState title="No conflicts." detail="The merge draft can be validated and saved explicitly." />}
           <h3>Merge Draft Files</h3>
-          {Object.entries(draft.proposed_files).slice(0, 3).map(([fileName, content]) => <details key={fileName}><summary>{fileName}</summary><pre className="template-preview-code">{content}</pre></details>)}
+          {Object.entries(draft.proposed_files).slice(0, 3).map(([fileName, content]) => <details key={fileName}><summary>{fileName}</summary><AuthoringPreviewCode content={content} /></details>)}
         </div>
       )}
       {message && <p className="muted">{message}</p>}
@@ -14650,8 +15494,8 @@ function LocalContentLibraryPanel({ onOpenEditor }: { onOpenEditor: (toolId: Aut
           <p>Path: {selected.path_label}</p>
           <p>Tags: {selected.tags.length ? selected.tags.join(", ") : "none"}</p>
           <p>Dependencies: {selected.dependencies.length ? selected.dependencies.join(", ") : "none"}</p>
-          <pre className="template-preview-code">{JSON.stringify(selected.quality_summary, null, 2)}</pre>
-          <pre className="template-preview-code">{JSON.stringify(selected.metadata, null, 2)}</pre>
+          <AuthoringPreviewCode content={JSON.stringify(selected.quality_summary, null, 2)} />
+          <AuthoringPreviewCode content={JSON.stringify(selected.metadata, null, 2)} />
           <div className="authoring-header-actions">
             <button type="button" onClick={() => void handleValidate()} disabled={isBusy || !selected.capabilities.includes("validate")}>Validate</button>
             <button type="button" onClick={() => void handleExport()} disabled={isBusy || !selected.capabilities.includes("export")}>Export</button>
@@ -14661,7 +15505,7 @@ function LocalContentLibraryPanel({ onOpenEditor }: { onOpenEditor: (toolId: Aut
         </div>
       ) : <EmptyState title="No content items." detail="The local library did not find matching items." />}
       {validation && <ValidationPanel validation={validation} onSelectIssue={() => undefined} />}
-      {batchReport && <pre className="template-preview-code">{JSON.stringify(batchReport, null, 2)}</pre>}
+      {batchReport && <AuthoringPreviewCode content={JSON.stringify(batchReport, null, 2)} />}
       <label className="full-width-field">Import archive payload<textarea value={archiveDraft} onChange={(event) => setArchiveDraft(event.target.value)} /></label>
       <div className="authoring-header-actions">
         <button type="button" onClick={() => void handleImport(false)} disabled={isBusy}>Import Dry-run</button>
@@ -15269,9 +16113,7 @@ function ScenarioTemplatePanel() {
               />
             </div>
           )}
-          <pre className="template-preview-code">
-            {preview.rendered.files[0]?.content || "No rendered content."}
-          </pre>
+          <AuthoringPreviewCode content={preview.rendered.files[0]?.content || "No rendered content."} />
         </div>
       )}
 
@@ -16035,7 +16877,7 @@ function QuestGraphEditor({
                   </button>
                   {validationIssuesForStage(selectedStage.id).map((issue) => (
                     <p className={issue.severity === "error" ? "error" : "muted"} key={`${issue.code}-${issue.path}`}>
-                      {issue.path}: {issue.message}
+                      {redactReportText(issue.path)}: {redactReportText(issue.message)}
                     </p>
                   ))}
                 </div>
@@ -16201,7 +17043,7 @@ function QuestGraphEditor({
             {scenarioDraftJson && (
               <section className="studio-section">
                 <h3>Scenario Draft</h3>
-                <pre className="authoring-preview-box">{scenarioDraftJson}</pre>
+                <AuthoringPreviewCode content={scenarioDraftJson} />
               </section>
             )}
             <PreviewResultPanel title="Quest Graph Validation" validation={validation} />
@@ -16720,7 +17562,7 @@ function NPCGoalEditorPanel({
                   </button>
                   {goalIssues.map((issue) => (
                     <p className={issue.severity === "error" ? "error" : "muted"} key={`${issue.code}-${issue.path}`}>
-                      {issue.path}: {issue.message}
+                      {redactReportText(issue.path)}: {redactReportText(issue.message)}
                     </p>
                   ))}
                 </div>
@@ -18785,7 +19627,7 @@ function AuthoringPreviewPanel({
       {selectedEntity ? (
         <div>
           <h3>{selectedEntity.id}</h3>
-          <pre>{JSON.stringify(selectedEntity.fields, null, 2)}</pre>
+          <AuthoringPreviewCode content={JSON.stringify(selectedEntity.fields, null, 2)} />
         </div>
       ) : (
         <p className="muted">Select an entity or use Raw YAML for manifest-level files.</p>
@@ -18809,7 +19651,7 @@ function AuthoringPreviewPanel({
           {preview.impact.notes.length > 0 && (
             <ul className="compact-list">
               {preview.impact.notes.map((note) => (
-                <li key={note}>{note}</li>
+                <li key={note}>{redactReportText(note)}</li>
               ))}
             </ul>
           )}
@@ -18840,11 +19682,11 @@ function ValidationIssueList({
                 onClick={() => onSelectIssue(issue)}
               >
                 <span className={`severity ${issue.severity}`}>{issue.severity}</span>
-                <strong>{issue.path}</strong>
-                <span>{issue.code}</span>
-                <span>{issue.message}</span>
-                {issue.ref_id && <span>ref: {issue.ref_id}</span>}
-                {issue.suggestion && <span>fix: {issue.suggestion}</span>}
+                <strong>{redactReportText(issue.path)}</strong>
+                <span>{redactReportText(issue.code)}</span>
+                <span>{redactReportText(issue.message)}</span>
+                {issue.ref_id && <span>ref: {redactReportText(issue.ref_id)}</span>}
+                {issue.suggestion && <span>fix: {redactReportText(issue.suggestion)}</span>}
               </button>
             </li>
           ))}
@@ -18952,24 +19794,24 @@ function GameplayModuleDebugger({
                   <strong>{action.label}</strong>
                   <span className="muted"> {action.id}</span>
                   <button type="button" onClick={() => onDryRun(action.id)} disabled={disabled}>Dry-run</button>
-                  <pre>{JSON.stringify({
+                  <AuthoringPreviewCode content={JSON.stringify({
                     aliases: action.aliases,
                     target_types: action.target_types,
                     preconditions: action.precondition_count,
                     checks: action.check_count,
                     state_delta_templates: action.state_delta_templates
-                  }, null, 2)}</pre>
+                  }, null, 2)} />
                 </div>
               ))}
             />
           </div>
           <div>
             <h3>Permissions</h3>
-            <pre>{JSON.stringify(detail.permissions, null, 2)}</pre>
+            <AuthoringPreviewCode content={JSON.stringify(detail.permissions, null, 2)} />
           </div>
           <div>
             <h3>State Extensions</h3>
-            <pre>{JSON.stringify(detail.state_schema_extensions, null, 2)}</pre>
+            <AuthoringPreviewCode content={JSON.stringify(detail.state_schema_extensions, null, 2)} />
           </div>
         </div>
       )}
@@ -18986,13 +19828,13 @@ function GameplayModuleDebugger({
             <dt>Hidden facts</dt>
             <dd>{dryRun.hidden_facts_redacted ? "redacted" : "debug"}</dd>
           </dl>
-          <pre>{JSON.stringify({
+          <AuthoringPreviewCode content={JSON.stringify({
             preconditions: dryRun.preconditions_result,
             checks: dryRun.checks_result,
             state_delta_preview: dryRun.state_delta_preview,
             event_preview: dryRun.event_preview,
             visibility_summary: dryRun.visibility_summary
-          }, null, 2)}</pre>
+          }, null, 2)} />
         </div>
       )}
       {!selectedActionId && detail && <p className="muted">No action available for dry-run.</p>}
@@ -19695,6 +20537,31 @@ function sanitizeDisplayError(message: string): string {
     .replace(/\/[^\s"'<>]*(?:\.env|\.db|\.sqlite|logs?|cache|backups?|crash-reports|node_modules|dist)[^\s"'<>]*/gi, "[local path redacted]")
     .replace(/(hidden[_\s-]?facts?|npc[_\s-]?secrets?|raw[_\s-]?prompts?|state[_\s-]?deltas?)\s*[:=]\s*[^}\n]+/gi, "$1=[redacted]")
     .replace(/Traceback[\s\S]*/i, "[stack trace redacted]");
+}
+
+function redactAuthoringPreviewText(value: string): string {
+  const sanitized = sanitizeDisplayError(value)
+    .replace(/sk-[A-Za-z0-9_-]+/g, "sk-[redacted]")
+    .replace(/(authorization\s*[:=]\s*)(bearer\s+)?[A-Za-z0-9._~+/=-]+/gi, "$1[redacted]")
+    .replace(/(api[_-]?key|provider[_-]?secret|secret[_-]?ref|token|password)\s*[:=]\s*['"]?[^'",\s}]+/gi, "$1=[redacted]");
+  const sensitiveLine = /(hidden|secret|private|npc[_-]?knowledge|witness|raw[_-]?state[_-]?delta|state[_-]?deltas|debug|api[_-]?key|authorization|provider[_-]?secret|mature_only|raw[_-]?prompt)/i;
+  return sanitized
+    .split(/\r?\n/)
+    .map((line) => {
+      if (!sensitiveLine.test(line)) {
+        return line;
+      }
+      const keyed = line.match(/^(\s*[-]?\s*["']?[^:#\n"']+["']?\s*:\s*)(.*)$/);
+      if (keyed) {
+        return `${keyed[1]}[authoring-only redacted]`;
+      }
+      const listItem = line.match(/^(\s*-\s*)(.*)$/);
+      if (listItem) {
+        return `${listItem[1]}[authoring-only redacted]`;
+      }
+      return "[authoring-only redacted]";
+    })
+    .join("\n");
 }
 
 function authoringErrorMessage(error: unknown): string {
