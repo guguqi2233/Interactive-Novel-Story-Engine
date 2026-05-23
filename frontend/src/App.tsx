@@ -105,6 +105,16 @@ import {
   fetchTavernMultiNPCScenes,
   createTavernMultiNPCScene,
   generateTavernMultiNPCReply,
+  fetchTavernPreferences,
+  saveTavernPreferences,
+  fetchTavernRecoveryRecords,
+  createTavernRecoveryRecord,
+  previewTavernSessionExport,
+  createTavernSessionExport,
+  fetchRPSafetyDashboard,
+  runRPSafetyDashboard,
+  fetchWorldNpcSafeSummaries,
+  adaptWorldNpcToTavern,
   createNovelToWorldDraft,
   validateNovelToWorldDraft,
   fetchNovelToWorldDrafts,
@@ -420,6 +430,11 @@ import {
   TavernSession,
   TavernMessage,
   TavernScenePreset,
+  TavernPreferences,
+  TavernSessionRecoveryRecord,
+  TavernSessionExportPreview,
+  RPSafetyDashboardReport,
+  WorldNpcSafeSummary,
   MatureSettingsResponse,
   MultiNPCSceneSummary,
   CrossModeDraftSummary,
@@ -500,6 +515,25 @@ import {
   WordCountBadge,
   WorldBibleSidebar
 } from "./novelUi";
+import {
+  BoundaryMatureSettingsPanel,
+  CharacterCardLibrary,
+  CharacterVoiceLabPanel,
+  ChatSaveStatus,
+  EmotionArcPanel,
+  MultiNPCScenePro,
+  RelationshipTonePanel,
+  RPMemoryPanel,
+  RPSafetyDashboardPanel,
+  SceneMoodPresetPanel,
+  SingleCharacterChatPro,
+  TavernCharacterEditor,
+  TavernPromptProviderPanel,
+  TavernSafeSummaryPanel,
+  TavernSessionCard,
+  TavernToolbar,
+  TavernWorkspaceShell
+} from "./tavernUi";
 
 type StoryEntry = {
   id: number;
@@ -6717,6 +6751,14 @@ function ProjectShell({
   const [tavernMessages, setTavernMessages] = useState<TavernMessage[]>([]);
   const [tavernScenePresets, setTavernScenePresets] = useState<TavernScenePreset[]>([]);
   const [multiNPCScenes, setMultiNPCScenes] = useState<MultiNPCSceneSummary[]>([]);
+  const [tavernPreferences, setTavernPreferences] = useState<TavernPreferences | null>(null);
+  const [tavernRecoveryRecords, setTavernRecoveryRecords] = useState<TavernSessionRecoveryRecord[]>([]);
+  const [tavernExportPreview, setTavernExportPreview] = useState<TavernSessionExportPreview | null>(null);
+  const [rpSafetyDashboard, setRpSafetyDashboard] = useState<RPSafetyDashboardReport | null>(null);
+  const [worldNpcSummaries, setWorldNpcSummaries] = useState<WorldNpcSafeSummary[]>([]);
+  const [selectedWorldNpcId, setSelectedWorldNpcId] = useState("");
+  const [worldNpcMode, setWorldNpcMode] = useState<"player_safe" | "authoring">("player_safe");
+  const [worldNpcAdapterPreview, setWorldNpcAdapterPreview] = useState<Record<string, unknown> | null>(null);
   const [tavernError, setTavernError] = useState("");
   const [tavernMessage, setTavernMessage] = useState("");
   const [newTavernCharacterId, setNewTavernCharacterId] = useState("tavern_character");
@@ -6819,6 +6861,19 @@ function ProjectShell({
       setTavernSessions(sessions.sessions);
       setTavernScenePresets(presets.scene_presets);
       setMultiNPCScenes(multiScenes.scenes);
+      const [preferences, recovery, safety, npcs] = await Promise.allSettled([
+        fetchTavernPreferences(selectedProjectId),
+        fetchTavernRecoveryRecords(selectedProjectId),
+        fetchRPSafetyDashboard(selectedProjectId),
+        fetchWorldNpcSafeSummaries(selectedProjectId)
+      ]);
+      if (preferences.status === "fulfilled") setTavernPreferences(preferences.value);
+      if (recovery.status === "fulfilled") setTavernRecoveryRecords(recovery.value.records);
+      if (safety.status === "fulfilled") setRpSafetyDashboard(safety.value);
+      if (npcs.status === "fulfilled") {
+        setWorldNpcSummaries(npcs.value.npcs);
+        setSelectedWorldNpcId((current) => current || npcs.value.npcs[0]?.npc_id || "");
+      }
       const firstCharacter = characters.characters[0]?.tavern_character_id ?? "";
       const firstSession = sessions.sessions[0]?.session_id ?? "";
       setSelectedTavernCharacterId((current) => current || firstCharacter);
@@ -7272,6 +7327,109 @@ function ProjectShell({
     }
   }
 
+  async function handleSaveTavernPreferences() {
+    setTavernError("");
+    setTavernMessage("");
+    try {
+      const saved = await saveTavernPreferences(selectedProjectId, {
+        default_character_id: selectedTavernCharacterId || null,
+        default_session_id: selectedTavernSessionId || null,
+        default_prompt_profile_id: tavernPreferences?.default_prompt_profile_id ?? null,
+        default_provider_profile_id: tavernPreferences?.default_provider_profile_id ?? null,
+        show_rp_memory_panel: tavernPreferences?.show_rp_memory_panel ?? true,
+        show_emotion_panel: tavernPreferences?.show_emotion_panel ?? true,
+        show_relationship_tone_panel: tavernPreferences?.show_relationship_tone_panel ?? true,
+        default_scene_mood_preset_id: tavernPreferences?.default_scene_mood_preset_id ?? tavernScenePresets[0]?.preset_id ?? null,
+        mature_module_visible: false
+      });
+      setTavernPreferences(saved);
+      setTavernMessage("Tavern preferences saved locally without secrets. Mature Module visibility remains off by default.");
+    } catch (err) {
+      setTavernError(toErrorMessage(err));
+    }
+  }
+
+  async function handleCreateTavernRecoveryDraft() {
+    if (!selectedTavernSessionId || !chatInput.trim()) {
+      return;
+    }
+    setTavernError("");
+    try {
+      const record = await createTavernRecoveryRecord(selectedProjectId, {
+        record_id: `message_${Date.now()}`,
+        target_type: "message",
+        target_id: selectedTavernSessionId,
+        safe_draft_text: chatInput,
+        safe_metadata: { local_only: true, source: "chat_input" }
+      });
+      setTavernRecoveryRecords((records) => [record, ...records]);
+      setTavernMessage("Local Tavern recovery draft created. Hidden context, mature/private content, raw prompts, and API keys are excluded.");
+    } catch (err) {
+      setTavernError(toErrorMessage(err));
+    }
+  }
+
+  async function handlePreviewTavernExport() {
+    setTavernError("");
+    try {
+      const preview = await previewTavernSessionExport(selectedProjectId, {
+        scope: selectedTavernSessionId ? "current_session" : "all_sessions",
+        session_ids: selectedTavernSessionId ? [selectedTavernSessionId] : [],
+        format: "json_safe"
+      });
+      setTavernExportPreview(preview);
+      setTavernMessage("Tavern export preview generated. No file was written.");
+    } catch (err) {
+      setTavernError(toErrorMessage(err));
+    }
+  }
+
+  async function handleCreateTavernExport() {
+    if (!confirmDangerousAction("Export selected Tavern sessions locally? Default filtering excludes API keys, hidden facts, NPC secrets, mature/private memory, debug data, raw prompts, and raw state_deltas.")) {
+      return;
+    }
+    setTavernError("");
+    try {
+      const result = await createTavernSessionExport(selectedProjectId, {
+        scope: selectedTavernSessionId ? "current_session" : "all_sessions",
+        session_ids: selectedTavernSessionId ? [selectedTavernSessionId] : [],
+        format: "json_safe",
+        explicit_confirm: true
+      });
+      setTavernExportPreview(result);
+      setTavernMessage(`Tavern export ${result.export_id} created locally. Nothing was uploaded.`);
+    } catch (err) {
+      setTavernError(toErrorMessage(err));
+    }
+  }
+
+  async function handleRunRPSafety() {
+    setTavernError("");
+    try {
+      const report = await runRPSafetyDashboard(selectedProjectId);
+      setRpSafetyDashboard(report);
+      setTavernMessage(`RP Safety Dashboard ${report.overall_status}: ${report.blocker_count} blocker(s), ${report.warning_count} warning(s).`);
+    } catch (err) {
+      setTavernError(toErrorMessage(err));
+    }
+  }
+
+  async function handleAdaptWorldNpc(apply = false) {
+    if (!selectedWorldNpcId) return;
+    if (apply && !confirmDangerousAction("Create Tavern draft from this World NPC? This does not modify the World NPC or GameState.")) {
+      return;
+    }
+    setTavernError("");
+    try {
+      const result = await adaptWorldNpcToTavern(selectedProjectId, { npc_id: selectedWorldNpcId, mode: worldNpcMode, apply });
+      setWorldNpcAdapterPreview(result);
+      setTavernMessage(apply ? "World NPC adapted into a Tavern draft. World NPC unchanged." : "World NPC to Tavern preview generated safely.");
+      if (apply) await loadTavernData();
+    } catch (err) {
+      setTavernError(toErrorMessage(err));
+    }
+  }
+
   async function handleCreateCrossModeDraft() {
     setCrossModeError("");
     setCrossModeMessage("");
@@ -7566,10 +7724,116 @@ function ProjectShell({
         />
       </section>
       <section className="tool-card">
-        <h3>Tavern Studio MVP</h3>
+        <h3>Tavern Studio UI Pro</h3>
         <p className="muted">Tavern data is local RP material: sessions, messages, memory, and proposals. It never writes World GameState, EventLog, raw env, API keys, hidden facts, or raw state_deltas.</p>
         <ErrorPanel message={tavernError} compact />
         <SuccessPanel message={tavernMessage} compact />
+        <TavernWorkspaceShell
+          navigation={(
+            <div className="stack">
+              <TavernToolbar title="Characters / Sessions" meta={<p className="muted">Local RP workspace navigation.</p>} />
+              <CharacterCardLibrary characters={tavernCharacters} onSelect={setSelectedTavernCharacterId} />
+              <div className="stack">
+                {tavernSessions.map((session) => (
+                  <TavernSessionCard
+                    key={session.session_id}
+                    session={session}
+                    selected={session.session_id === selectedTavernSessionId}
+                    onSelect={async () => {
+                      setSelectedTavernSessionId(session.session_id);
+                      try {
+                        const messages = await fetchTavernMessages(selectedProjectId, session.session_id);
+                        setTavernMessages(messages.messages);
+                      } catch (err) {
+                        setTavernError(toErrorMessage(err));
+                      }
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+          main={(
+            <div className="stack">
+              <TavernToolbar
+                title="Single Character Chat Pro"
+                meta={<ChatSaveStatus dirty={Boolean(chatInput.trim())} message="saved locally" />}
+                actions={<button type="button" disabled={!chatInput.trim()} onClick={handleCreateTavernRecoveryDraft}>Create Recovery Draft</button>}
+              />
+              <SingleCharacterChatPro messages={tavernMessages} />
+              <div className="form-grid">
+                <select value={selectedTavernCharacterId} onChange={(event) => setSelectedTavernCharacterId(event.target.value)}>
+                  <option value="">Select character</option>
+                  {tavernCharacters.map((character) => <option key={character.tavern_character_id} value={character.tavern_character_id}>{character.display_name}</option>)}
+                </select>
+                <textarea value={chatInput} onChange={(event) => setChatInput(event.target.value)} rows={3} placeholder="Write a local RP message..." />
+                <button type="button" disabled={!selectedTavernSessionId || !selectedTavernCharacterId || !chatInput.trim()} onClick={handleSendTavernMessage}>Send</button>
+              </div>
+              <MultiNPCScenePro scenes={multiNPCScenes} />
+            </div>
+          )}
+          context={(
+            <div className="stack">
+              <TavernPromptProviderPanel />
+              <RPMemoryPanel />
+              <EmotionArcPanel />
+              <RelationshipTonePanel />
+              <SceneMoodPresetPanel presets={tavernScenePresets} />
+              <CharacterVoiceLabPanel />
+              <BoundaryMatureSettingsPanel />
+              <RPSafetyDashboardPanel />
+            </div>
+          )}
+          status={(
+            <div className="button-row">
+              <span>local-only</span>
+              <span>provider safe summary; API key not shown</span>
+              <span>Mature Module is disabled by default</span>
+              <span>Tavern UI does not modify World GameState</span>
+            </div>
+          )}
+        />
+        <div className="mode-landing-grid">
+          <TavernSafeSummaryPanel title="Character Card Library">
+            <p>Local character cards can be imported as drafts. Embedded scripts are not executed and remote character downloads are not offered.</p>
+          </TavernSafeSummaryPanel>
+          <TavernCharacterEditor />
+          <TavernSafeSummaryPanel title="World NPC to Tavern Character UX Pro">
+            <p>Player-safe mode excludes NPC secrets and unknown facts. Apply to Tavern creates a Tavern draft only.</p>
+            <div className="form-grid">
+              <select value={selectedWorldNpcId} onChange={(event) => setSelectedWorldNpcId(event.target.value)}>
+                <option value="">Select safe world NPC</option>
+                {worldNpcSummaries.map((npc) => <option key={npc.npc_id} value={npc.npc_id}>{npc.display_name}</option>)}
+              </select>
+              <select value={worldNpcMode} onChange={(event) => setWorldNpcMode(event.target.value as "player_safe" | "authoring")}>
+                <option value="player_safe">player_safe</option>
+                <option value="authoring">authoring-only</option>
+              </select>
+              <button type="button" disabled={!selectedWorldNpcId} onClick={() => void handleAdaptWorldNpc(false)}>Preview</button>
+              <button type="button" disabled={!selectedWorldNpcId} onClick={() => void handleAdaptWorldNpc(true)}>Apply to Tavern Draft</button>
+            </div>
+            {worldNpcAdapterPreview && <pre className="safe-json-preview">{JSON.stringify(worldNpcAdapterPreview, null, 2)}</pre>}
+          </TavernSafeSummaryPanel>
+          <TavernSafeSummaryPanel title="RP Safety Dashboard">
+            <p>Overall status: {rpSafetyDashboard?.overall_status ?? "not_run"}. Safe issue rows only; hidden/mature/private text is not printed.</p>
+            <button type="button" disabled={!selectedProjectId} onClick={handleRunRPSafety}>Run RP Safety Eval</button>
+          </TavernSafeSummaryPanel>
+          <TavernSafeSummaryPanel title="Tavern Session Export / Backup UX">
+            <p>JSON safe export and Markdown transcript preview exclude API keys, hidden facts, NPC secrets, mature/private memory, debug data, raw prompts, and raw state_deltas.</p>
+            <div className="button-row">
+              <button type="button" disabled={!selectedProjectId} onClick={handlePreviewTavernExport}>Preview Export</button>
+              <button type="button" disabled={!selectedProjectId} onClick={handleCreateTavernExport}>Confirm Export</button>
+            </div>
+            {tavernExportPreview && <p className="muted">{tavernExportPreview.session_count} session(s), {tavernExportPreview.message_count} safe message(s). {tavernExportPreview.filtering_policy.join("; ")}</p>}
+          </TavernSafeSummaryPanel>
+          <TavernSafeSummaryPanel title="Tavern Local Preferences">
+            <p>Default character/session, panel visibility, prompt/provider profile IDs, and scene mood are saved locally. Mature module visible is default off.</p>
+            <button type="button" disabled={!selectedProjectId} onClick={handleSaveTavernPreferences}>Save Tavern Preferences</button>
+          </TavernSafeSummaryPanel>
+          <TavernSafeSummaryPanel title="Tavern Recovery / Unsaved Session UX">
+            <p>{tavernRecoveryRecords.length} safe recovery draft(s). Recovery drafts exclude prompt context, hidden facts, NPC secrets, mature/private content, debug memory, and API keys.</p>
+          </TavernSafeSummaryPanel>
+        </div>
         <div className="card-grid">
           <div>
             <h4>Characters</h4>

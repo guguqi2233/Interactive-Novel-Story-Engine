@@ -58,6 +58,36 @@ Novel prompt context rules:
 - Novel quality checks remain deterministic local checks; they must not use an
   external LLM judge for pass/fail.
 
+v3.2 Tavern Studio UI Pro keeps Tavern LLM use behind Provider Gateway /
+provider abstractions. Tavern UI may show selected prompt profile, provider
+safe summary, model/use-case hints, provider safety policy status, and mature
+routing status, but it must not show API keys, provider secrets, raw env, raw
+prompts, hidden facts, NPC secrets, private persona, mature memory, debug
+memory, raw `GameState`, or raw `state_deltas`.
+
+Tavern prompt context rules:
+
+- `TavernPromptContext` may include safe Tavern character summaries, safe RP
+  profile summaries, safe voice profile summaries, safe scene mood, tavern-safe
+  memory, relationship/emotion safe summaries, and recent safe messages.
+- `TavernPromptContext` must filter hidden facts, NPC secrets, NPC unknown
+  facts, private persona, mature-only memory, debug memory, raw prompts, raw
+  `state_deltas`, raw env, provider secrets, Authorization headers, and API
+  keys.
+- Multi-NPC Scene generation must build each speaker's prompt from that NPC's
+  safe/known information only. One NPC's unknown facts or secrets must not leak
+  into another NPC's context.
+- Tavern-scoped prompt profiles can tune expression and style only. They cannot
+  enable hidden fact access, NPC omniscience, state mutation, visibility bypass,
+  provider-policy bypass, or proposal apply.
+- Generated replies are Tavern messages only. They cannot directly create
+  World facts, modify `GameState`, emit `StateDelta`, append `EventLog`, or
+  decide Tavern -> World apply.
+- Tavern -> World remains proposal / validation / explicit apply, and LLM
+  output cannot decide whether an apply plan is accepted.
+- Tavern safety and quality checks remain deterministic local checks; they must
+  not call an external LLM judge for pass/fail.
+
 ## v2.8 Roleplay / Mature LLM Boundary
 
 v2.8 does not grant LLMs new authority. Provider Gateway remains the only model

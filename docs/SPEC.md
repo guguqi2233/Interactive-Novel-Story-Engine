@@ -129,6 +129,51 @@ implemented, or an LLM-based literary judge. UI polish must not make Novel
 drafts authoritative World facts, bypass Cross-Mode validation, expose hidden
 facts, or allow Provider/Prompt settings to expand LLM authority.
 
+### v3.2 Implemented Tavern Studio UI Pro Scope
+
+v3.2 implements **Tavern Studio UI Pro** as a local RP UI / UX polish layer.
+Tavern Mode remains an RP session / memory / proposal mode. Tavern artifacts are
+not World facts and cannot affect World state unless a Tavern -> World proposal
+passes validation and explicit apply.
+
+Implemented v3.2 Tavern UI scope includes:
+
+- Tavern Workspace Shell for local Tavern navigation, chat/scene workspace,
+  safe context sidebar, and local/provider/mature status.
+- Character Card Library UI and Tavern Character / RP / Voice Profile Editor.
+- Single Character Chat Pro and Multi-NPC Scene UI Pro.
+- RP Memory Panel, Emotion Arc Panel, Relationship Tone Panel, Scene Mood
+  Preset UI, and Character Voice Lab UI.
+- Boundary / Mature Settings UI Polish with Mature Module disabled by default.
+- Tavern Prompt / Provider UX Polish with safe provider and prompt summaries.
+- Tavern Session Search / Tags / Filters for local review.
+- Tavern -> World Proposal Review UX Pro.
+- Tavern -> Novel Scene Draft UX Pro.
+- World NPC -> Tavern Character UX Pro.
+- RP Safety Dashboard, Tavern Session Export / Backup UX, Tavern Local
+  Preferences, Tavern Recovery / Unsaved Session UX, and Tavern UI regression
+  checks.
+
+v3.2 does not implement online RP, accounts, cloud sync, online marketplaces,
+remote character-card downloads, multi-user online chat, mature default
+enablement, or new World authority. Character cards are local structured data;
+imports do not execute scripts or auto-create World NPCs.
+
+Tavern boundary rules:
+
+- Tavern sessions, messages, memory, emotion, relationship tone, scene mood,
+  voice, preferences, and recovery drafts are local RP data.
+- Tavern UI does not directly modify `GameState`, emit `StateDelta`, or append
+  `EventLog`.
+- Tavern -> World remains proposal / validation / dry-run / explicit apply.
+- Tavern -> Novel creates Novel scene draft material only.
+- World NPC -> Tavern creates player-safe or authoring-labeled Tavern drafts
+  and never overwrites the source World NPC.
+- Hidden facts, NPC secrets, private persona, mature memory, debug memory, raw
+  prompts, raw `state_deltas`, raw env, provider secrets, and API keys must not
+  enter normal Tavern UI, prompt context, export, backup, logs, or safety
+  reports.
+
 ## v2.8 Roleplay Immersion & Mature Module
 
 v2.8 adds Roleplay Immersion & Mature Module infrastructure on top of Tavern

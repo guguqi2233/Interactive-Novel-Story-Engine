@@ -49,6 +49,35 @@ Novel -> content-pack relationship:
   into Novel draft data only. It does not write EventLog, world YAML, content
   packs, saves, or World facts.
 
+v3.2 Tavern Studio UI Pro keeps Tavern/RP data separate from World content
+packs while making local Tavern workflows easier to inspect. Tavern characters,
+RP profiles, voice profiles, scene mood presets, boundary profiles, sessions,
+memory, recovery drafts, and exports are project-local Tavern data unless a
+separate validated content-pack or Cross-Mode flow accepts a draft/proposal.
+
+Tavern -> content-pack relationship:
+
+- `TavernCharacter`, `TavernRPProfile`, and `TavernVoiceProfile` may link to
+  shared Character Library entries or World NPC refs, but they do not overwrite
+  World NPC records or NPC knowledge.
+- Character card import creates local Tavern/CharacterProfile/RP/Voice drafts
+  only. It must not execute scripts, download remote cards, auto-create World
+  NPCs, read secrets, or bypass package validation.
+- RP Profile Mods and Tavern profile packages can change expression, voice,
+  roleplay style, and presentation metadata only. They must not patch NPC
+  knowledge, reveal hidden facts, modify `GameState`, or grant LLM authority.
+- Scene Mood and Voice metadata affect expression only. They cannot change
+  World facts, enable hidden-fact access, or force mature content.
+- Boundary profiles and mature-related metadata are policy/configuration data.
+  Mature Module remains default-off, and mature/private content is not exported
+  by default.
+- Tavern session export / backup is local and safe-summary oriented. Normal
+  export must exclude API keys, provider secrets, raw env, hidden facts, NPC
+  secrets, mature/private memory, debug data, raw prompts, raw `state_deltas`,
+  databases, logs, caches, and build outputs.
+- Tavern -> World proposals are not content-pack changes until a future
+  explicit content validation/apply flow accepts them.
+
 ## v2.8 RP / Mature Content and Package Policy
 
 v2.8 adds RP immersion and mature-policy metadata that can appear in local

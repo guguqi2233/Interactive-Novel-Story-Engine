@@ -7316,7 +7316,13 @@ def list_tavern_multi_scenes(project_id: str, session_id: str | None = None) -> 
 @app.post("/projects/{project_id}/tavern/multi-scenes/{scene_id}/next-reply")
 def generate_tavern_multi_scene_next_reply(project_id: str, scene_id: str) -> dict[str, Any]:
     require_authoring_api()
-    from app.platform.tavern_studio import TavernMessage, TavernSpeakerType
+    from app.platform.tavern_studio import (
+        GeneratedTavernReply,
+        TavernMessage,
+        TavernPromptContextBuilder,
+        TavernResponseGenerationService,
+        TavernSpeakerType,
+    )
 
     scenes = getattr(app.state, "v28_multi_scenes", {}).get(project_id, {})
     scene = scenes.get(scene_id)
@@ -7326,8 +7332,36 @@ def generate_tavern_multi_scene_next_reply(project_id: str, scene_id: str) -> di
         raise HTTPException(status_code=400, detail="Multi-NPC scene has no turn order")
     speaker_id = scene.active_speaker_id or scene.turn_order[0]
     text = "I will stay within what I know in this Tavern scene."
+    safety_notes: list[str] = ["local_stub"]
+    repo = get_tavern_repository(project_id)
+    try:
+        from app.llm.fake_provider import FakeLLMProvider
+        from app.llm.provider_gateway import routed_provider_from_provider, routed_provider_from_settings
+        from app.llm.provider_router import ProviderRoutingUseCase
+
+        raw_provider = getattr(app.state, "tavern_llm_provider", None)
+        if raw_provider is not None:
+            provider = routed_provider_from_provider(raw_provider, provider_id="local_stub", model_id="local_stub", mode="tavern", use_case=ProviderRoutingUseCase.TAVERN_REPLY)
+        else:
+            provider = routed_provider_from_settings(getattr(app.state, "settings", settings), mode="tavern", use_case=ProviderRoutingUseCase.TAVERN_REPLY)
+            if getattr(provider, "__class__", type(provider)).__name__ == "MockLLMProvider":
+                provider = routed_provider_from_provider(
+                    FakeLLMProvider(json_responses=[GeneratedTavernReply(content=text, speaker_id=speaker_id, safety_notes=safety_notes).model_dump(mode="json")]),
+                    provider_id="mock",
+                    model_id="mock",
+                    mode="tavern",
+                    use_case=ProviderRoutingUseCase.TAVERN_REPLY,
+                )
+        session = repo.load_session(scene.session_id)
+        character = repo.load_tavern_character(speaker_id)
+        context = TavernPromptContextBuilder().build(session=session, character=character)
+        generated = TavernResponseGenerationService(provider, repo).generate_character_reply(context)
+        text = generated.content
+        safety_notes = generated.safety_notes
+    except (FileNotFoundError, LLMProviderError, ValueError):
+        pass
     timestamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S%f")
-    message = get_tavern_repository(project_id).append_message(
+    message = repo.append_message(
         TavernMessage(
             message_id=f"multi_{scene_id}_{timestamp}",
             session_id=scene.session_id,
@@ -7378,7 +7412,7 @@ def chat_tavern_session(project_id: str, session_id: str, request: dict[str, Any
         service = SingleCharacterChatService(repo, TavernResponseGenerationService(provider, repo))
         return service.chat(project_id=project_id, session_id=session_id, user_message=str(request.get("user_message", "")), character_id=str(request.get("character_id", ""))).model_dump(mode="json")
     except (FileNotFoundError, ValueError) as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail="Tavern chat request failed") from exc
 
 
 @app.get("/projects/{project_id}/tavern/scene-presets")
@@ -7487,7 +7521,122 @@ def adapt_world_npc_to_tavern(project_id: str, request: dict[str, Any]) -> dict[
             get_tavern_repository(project_id).save_tavern_character(result.tavern_character)
         return result.safe_summary()
     except (ValueError, WorldLoaderError) as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail="World NPC to Tavern adaptation failed") from exc
+
+
+@app.get("/projects/{project_id}/world/npcs/safe-summary")
+def list_world_npcs_safe_summary(project_id: str, world_id: str = "mist_valley") -> dict[str, Any]:
+    require_authoring_api()
+    try:
+        state = WorldLoader(get_worlds_root()).load(world_id).to_game_state()
+        npcs = [
+            {
+                "npc_id": npc.id,
+                "display_name": npc.id,
+                "location_id": npc.location_id,
+                "player_safe_available": bool(npc.visible and not npc.hidden),
+                "safe_summary": "Player-safe NPC summary; secrets and unknown facts are excluded.",
+            }
+            for npc in state.npcs.values()
+            if npc.visible and not npc.hidden
+        ]
+        return {"project_id": project_id, "world_id": world_id, "npcs": npcs}
+    except WorldLoaderError as exc:
+        raise HTTPException(status_code=400, detail="World NPC safe summary unavailable") from exc
+
+
+@app.get("/projects/{project_id}/tavern/preferences")
+def get_tavern_preferences(project_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    return get_tavern_repository(project_id).load_preferences(project_id).model_dump(mode="json")
+
+
+@app.put("/projects/{project_id}/tavern/preferences")
+def put_tavern_preferences(project_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.tavern_studio import TavernPreferences
+
+    try:
+        return get_tavern_repository(project_id).save_preferences(TavernPreferences(project_id=project_id, **request)).model_dump(mode="json")
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="Invalid Tavern preferences payload") from exc
+
+
+@app.get("/projects/{project_id}/tavern/recovery")
+def list_tavern_recovery(project_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    return {"project_id": project_id, "records": [record.safe_summary() for record in get_tavern_repository(project_id).list_recovery_records()]}
+
+
+@app.post("/projects/{project_id}/tavern/recovery")
+def create_tavern_recovery(project_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.tavern_studio import TavernSessionRecoveryRecord
+
+    try:
+        record = TavernSessionRecoveryRecord(project_id=project_id, **request)
+        return get_tavern_repository(project_id).save_recovery_record(record).safe_summary()
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="Invalid Tavern recovery payload") from exc
+
+
+@app.post("/projects/{project_id}/tavern/recovery/{record_id}/restore")
+def restore_tavern_recovery(project_id: str, record_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    if not bool(request.get("explicit_confirm", False)):
+        raise HTTPException(status_code=400, detail="explicit_confirm is required")
+    try:
+        record = get_tavern_repository(project_id).load_recovery_record(record_id)
+        return {"project_id": project_id, "restored": True, "record": record.safe_summary(), "message": "Recovery draft restored to Tavern UI draft state only; World GameState unchanged."}
+    except (FileNotFoundError, ValueError) as exc:
+        raise HTTPException(status_code=404, detail="Tavern recovery record not found") from exc
+
+
+@app.delete("/projects/{project_id}/tavern/recovery/{record_id}")
+def delete_tavern_recovery(project_id: str, record_id: str, explicit_confirm: bool = False) -> dict[str, Any]:
+    require_authoring_api()
+    if not explicit_confirm:
+        raise HTTPException(status_code=400, detail="explicit_confirm is required")
+    get_tavern_repository(project_id).delete_recovery_record(record_id)
+    return {"project_id": project_id, "deleted": True, "record_id": record_id}
+
+
+@app.post("/projects/{project_id}/tavern/sessions/export-preview")
+def preview_tavern_session_export(project_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.tavern_studio import TavernSessionExportRequest, TavernSessionExportService
+
+    try:
+        return TavernSessionExportService(get_tavern_repository(project_id)).preview_export(project_id, TavernSessionExportRequest(**request)).model_dump(mode="json")
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="Invalid Tavern export preview request") from exc
+
+
+@app.post("/projects/{project_id}/tavern/sessions/export")
+def create_tavern_session_export(project_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.tavern_studio import TavernSessionExportRequest, TavernSessionExportService
+
+    try:
+        return TavernSessionExportService(get_tavern_repository(project_id)).create_export(project_id, TavernSessionExportRequest(**request)).model_dump(mode="json")
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="Invalid Tavern export request") from exc
+
+
+@app.get("/projects/{project_id}/tavern/rp-safety/latest")
+def get_tavern_rp_safety(project_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.tavern_studio import TavernRPSafetyDashboardService
+
+    return TavernRPSafetyDashboardService(get_tavern_repository(project_id)).run(project_id).model_dump(mode="json")
+
+
+@app.post("/projects/{project_id}/tavern/rp-safety/run")
+def run_tavern_rp_safety(project_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.tavern_studio import TavernRPSafetyDashboardService
+
+    return TavernRPSafetyDashboardService(get_tavern_repository(project_id)).run(project_id).model_dump(mode="json")
 
 
 # v2.2 Novel Studio MVP APIs. These endpoints manage local Novel drafts only.

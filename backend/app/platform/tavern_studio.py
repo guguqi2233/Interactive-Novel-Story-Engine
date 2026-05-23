@@ -13,7 +13,7 @@ from app.core.world_state import GameState, NPCState
 from app.llm.provider_base import LLMProvider, Message
 from app.platform.narrative_project import validate_project_relative_path
 from app.platform.project_repository import ProjectRepository
-from app.platform.rp_mature import CrossModeRPSafetyMetadata
+from app.platform.rp_mature import CrossModeRPSafetyMetadata, MatureExportFilter, MatureExportPolicy, run_rp_mature_quality_gate
 from app.platform.security import contains_secret_text, redact_text
 from app.platform.shared_libraries import (
     CharacterLibrary,
@@ -60,6 +60,10 @@ def _redacted_list(values: Iterable[str]) -> list[str]:
     return [redact_text(value) for value in values if value]
 
 
+def _contains_key_like_text(text: str) -> bool:
+    return bool(re.search(r"\bsk-[A-Za-z0-9_-]{8,}\b", text))
+
+
 class TavernModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -103,6 +107,110 @@ class TavernProjectSection(TavernModel):
     @classmethod
     def validate_paths(cls, value: str) -> str:
         return validate_project_relative_path(value)
+
+
+class TavernPreferences(TavernModel):
+    project_id: str
+    default_character_id: str | None = None
+    default_session_id: str | None = None
+    default_prompt_profile_id: str | None = None
+    default_provider_profile_id: str | None = None
+    show_rp_memory_panel: bool = True
+    show_emotion_panel: bool = True
+    show_relationship_tone_panel: bool = True
+    default_scene_mood_preset_id: str | None = None
+    mature_module_visible: bool = False
+    updated_at: str = Field(default_factory=now_iso)
+
+    @model_validator(mode="after")
+    def validate_safe_preferences(self) -> "TavernPreferences":
+        payload = self.model_dump_json()
+        lowered = payload.lower()
+        if contains_secret_text(payload) or _contains_key_like_text(payload) or any(
+            token in lowered for token in ("hidden fact", "npc secret", "mature_only", "private persona", "state_delta", "raw prompt")
+        ):
+            raise ValueError("TavernPreferences contain forbidden content")
+        return self
+
+
+class TavernSessionRecoveryRecord(TavernModel):
+    record_id: str
+    project_id: str
+    target_type: Literal["message", "session_settings", "multi_npc_scene"] = "message"
+    target_id: str
+    safe_draft_text: str = ""
+    safe_metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: str = Field(default_factory=now_iso)
+    updated_at: str = Field(default_factory=now_iso)
+
+    @model_validator(mode="after")
+    def validate_safe_recovery(self) -> "TavernSessionRecoveryRecord":
+        payload = self.model_dump_json()
+        lowered = payload.lower()
+        if contains_secret_text(payload) or _contains_key_like_text(payload) or any(
+            token in lowered for token in ("hidden fact", "npc secret", "mature_only", "private persona", "raw prompt", "debug memory", "state_delta")
+        ):
+            raise ValueError("Tavern recovery record contains forbidden content")
+        return self
+
+    def safe_summary(self) -> dict[str, Any]:
+        return {
+            "record_id": self.record_id,
+            "project_id": self.project_id,
+            "target_type": self.target_type,
+            "target_id": self.target_id,
+            "safe_draft_text": redact_text(self.safe_draft_text),
+            "safe_metadata": _redact_obj(self.safe_metadata),
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+        }
+
+
+class TavernSessionExportRequest(TavernModel):
+    scope: Literal["current_session", "selected_sessions", "all_sessions"] = "current_session"
+    session_ids: list[str] = Field(default_factory=list)
+    format: Literal["json_safe", "markdown_transcript"] = "json_safe"
+    include_mature_private: bool = False
+    include_debug: bool = False
+    explicit_confirm: bool = False
+
+
+class TavernSessionExportPreview(TavernModel):
+    project_id: str
+    dry_run: bool = True
+    format: Literal["json_safe", "markdown_transcript"] = "json_safe"
+    session_count: int = 0
+    message_count: int = 0
+    safe_sample_summaries: list[str] = Field(default_factory=list)
+    excluded_items: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    filtering_policy: list[str] = Field(default_factory=list)
+
+
+class TavernSessionExportResult(TavernSessionExportPreview):
+    dry_run: bool = False
+    exported: bool = False
+    export_id: str = ""
+    content_preview: str = ""
+
+
+class RPSafetyDashboardIssue(TavernModel):
+    severity: Literal["info", "warning", "error", "blocker"] = "warning"
+    category: str
+    safe_summary: str
+    affected_session_id: str | None = None
+    affected_character_id: str | None = None
+    suggested_action: str = "Review local RP safety settings."
+
+
+class RPSafetyDashboardReport(TavernModel):
+    project_id: str
+    overall_status: Literal["pass", "warning", "fail", "not_run"] = "not_run"
+    blocker_count: int = 0
+    error_count: int = 0
+    warning_count: int = 0
+    categories: dict[str, Literal["pass", "warning", "fail", "not_run"]] = Field(default_factory=dict)
+    issues: list[RPSafetyDashboardIssue] = Field(default_factory=list)
 
 
 class TavernSceneContext(TavernModel):
@@ -971,6 +1079,8 @@ class TavernRepository:
             self.section.scene_presets_path,
             self.section.memory_path,
             self.section.proposals_path,
+            "tavern/preferences",
+            "tavern/recovery",
             "tavern/scenes",
             "tavern/profiles",
         ):
@@ -1050,6 +1160,33 @@ class TavernRepository:
     def list_proposals(self) -> list[TavernWorldProposal]:
         return sorted([TavernWorldProposal.model_validate(item) for item in self._read_all(self.section.proposals_path)], key=lambda item: item.created_at)
 
+    def load_preferences(self, project_id: str) -> TavernPreferences:
+        path = self._path("tavern/preferences", "tavern_preferences")
+        if not path.exists():
+            return TavernPreferences(project_id=project_id)
+        return TavernPreferences.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")) or {})
+
+    def save_preferences(self, preferences: TavernPreferences) -> TavernPreferences:
+        updated = preferences.model_copy(update={"updated_at": now_iso()})
+        self._write_yaml("tavern/preferences", "tavern_preferences", updated)
+        return updated
+
+    def save_recovery_record(self, record: TavernSessionRecoveryRecord) -> TavernSessionRecoveryRecord:
+        updated = record.model_copy(update={"updated_at": now_iso()})
+        self._write_yaml("tavern/recovery", updated.record_id, updated)
+        return updated
+
+    def list_recovery_records(self) -> list[TavernSessionRecoveryRecord]:
+        return sorted([TavernSessionRecoveryRecord.model_validate(item) for item in self._read_all("tavern/recovery")], key=lambda item: item.created_at)
+
+    def load_recovery_record(self, record_id: str) -> TavernSessionRecoveryRecord:
+        return TavernSessionRecoveryRecord.model_validate(self._read_yaml("tavern/recovery", record_id))
+
+    def delete_recovery_record(self, record_id: str) -> None:
+        path = self._path("tavern/recovery", record_id)
+        if path.exists():
+            path.unlink()
+
     def _dir(self, rel: str) -> Path:
         safe = validate_project_relative_path(rel)
         path = (self.project_root / safe).resolve()
@@ -1085,6 +1222,126 @@ class TavernRepository:
                 continue
             items.append(yaml.safe_load(path.read_text(encoding="utf-8")) or {})
         return items
+
+
+class TavernSessionExportService:
+    filtering_policy = [
+        "API key excluded",
+        "hidden facts excluded",
+        "NPC secrets excluded",
+        "mature/private excluded by default",
+        "debug data excluded",
+    ]
+
+    def __init__(self, repository: TavernRepository) -> None:
+        self.repository = repository
+
+    def preview_export(self, project_id: str, request: TavernSessionExportRequest) -> TavernSessionExportPreview:
+        sessions = self._select_sessions(request)
+        messages = [(session, message) for session in sessions for message in self.repository.list_messages(session.session_id)]
+        safe_messages = [message for _, message in messages if message.safe_summary() is not None]
+        excluded = len(messages) - len(safe_messages)
+        samples = [str(message.safe_summary().get("content", ""))[:160] for message in safe_messages[:5] if message.safe_summary()]
+        return TavernSessionExportPreview(
+            project_id=project_id,
+            format=request.format,
+            session_count=len(sessions),
+            message_count=len(safe_messages),
+            safe_sample_summaries=samples,
+            excluded_items=[f"{excluded} non-normal or filtered message(s)"] if excluded else [],
+            warnings=[],
+            filtering_policy=list(self.filtering_policy),
+        )
+
+    def create_export(self, project_id: str, request: TavernSessionExportRequest) -> TavernSessionExportResult:
+        if not request.explicit_confirm:
+            raise ValueError("explicit_confirm is required")
+        preview = self.preview_export(project_id, request)
+        content = self._render_export(request)
+        if contains_secret_text(content) or _contains_key_like_text(content) or "state_delta" in content.lower():
+            raise ValueError("Tavern export contains forbidden content")
+        return TavernSessionExportResult(
+            **preview.model_dump(mode="json", exclude={"dry_run"}),
+            dry_run=False,
+            exported=True,
+            export_id=f"tavern_export_{now_iso().replace(':', '').replace('-', '')}",
+            content_preview=content[:2000],
+        )
+
+    def _select_sessions(self, request: TavernSessionExportRequest) -> list[TavernSession]:
+        sessions = self.repository.list_sessions()
+        if request.scope == "all_sessions":
+            return sessions
+        selected = set(request.session_ids)
+        if request.scope == "current_session":
+            selected = {request.session_ids[0]} if request.session_ids else set()
+        return [session for session in sessions if session.session_id in selected]
+
+    def _render_export(self, request: TavernSessionExportRequest) -> str:
+        policy = MatureExportPolicy(include_mature_content=request.include_mature_private, include_mature_memory=request.include_mature_private, include_debug=request.include_debug)
+        export_filter = MatureExportFilter()
+        sessions = self._select_sessions(request)
+        if request.format == "markdown_transcript":
+            lines: list[str] = ["# Tavern Session Safe Export", ""]
+            for session in sessions:
+                lines.extend([f"## {redact_text(session.title)}", ""])
+                for message in self.repository.list_messages(session.session_id):
+                    summary = message.safe_summary()
+                    if summary is None:
+                        continue
+                    text = export_filter.filter_text(str(summary.get("content", "")), policy)
+                    if text:
+                        lines.append(f"- **{summary.get('speaker_type', 'speaker')}**: {text}")
+            return "\n".join(lines)
+        payload = {
+            "local_only": True,
+            "sessions": [
+                {
+                    "session": session.safe_summary(),
+                    "messages": [summary for message in self.repository.list_messages(session.session_id) if (summary := message.safe_summary()) is not None],
+                }
+                for session in sessions
+            ],
+            "filtering_policy": list(self.filtering_policy),
+        }
+        return json.dumps(export_filter.filter_payload(payload, policy), ensure_ascii=False, indent=2)
+
+
+class TavernRPSafetyDashboardService:
+    categories = {
+        "hidden_facts": "pass",
+        "npc_secrets_knowledge": "pass",
+        "private_persona": "pass",
+        "mature_memory": "pass",
+        "provider_safety_routing": "pass",
+        "world_consistency": "pass",
+        "proposal_validation": "pass",
+        "export_safety": "pass",
+    }
+
+    def __init__(self, repository: TavernRepository) -> None:
+        self.repository = repository
+
+    def run(self, project_id: str) -> RPSafetyDashboardReport:
+        issues: list[RPSafetyDashboardIssue] = []
+        gate = run_rp_mature_quality_gate(self.repository.project_root)
+        for blocker in gate.blockers:
+            issues.append(RPSafetyDashboardIssue(severity="blocker", category="mature_memory", safe_summary=redact_text(blocker), suggested_action="Review Mature Module and export settings."))
+        for error in gate.errors:
+            issues.append(RPSafetyDashboardIssue(severity="error", category="export_safety", safe_summary=redact_text(error), suggested_action="Review normal export filtering."))
+        for proposal in self.repository.list_proposals():
+            if proposal.validation_status in {"invalid", "warning", "unvalidated"}:
+                issues.append(RPSafetyDashboardIssue(severity="warning", category="proposal_validation", safe_summary=f"Proposal {proposal.proposal_id} requires validation.", affected_session_id=proposal.source_session_id, suggested_action="Validate the Tavern to World proposal before review."))
+            if proposal.rp_safety_metadata and proposal.rp_safety_metadata.contains_mature_memory:
+                issues.append(RPSafetyDashboardIssue(severity="warning", category="mature_memory", safe_summary="A proposal references mature memory metadata; normal view remains filtered.", affected_session_id=proposal.source_session_id, suggested_action="Keep mature memory excluded unless policy explicitly allows it."))
+        categories = dict(self.categories)
+        for issue in issues:
+            categories[issue.category] = "fail" if issue.severity in {"error", "blocker"} else "warning"
+        blockers = sum(1 for issue in issues if issue.severity == "blocker")
+        errors = sum(1 for issue in issues if issue.severity == "error")
+        warnings = sum(1 for issue in issues if issue.severity == "warning")
+        status: Literal["pass", "warning", "fail", "not_run"] = "fail" if blockers or errors else "warning" if warnings else "pass"
+        return RPSafetyDashboardReport(project_id=project_id, overall_status=status, blocker_count=blockers, error_count=errors, warning_count=warnings, categories=categories, issues=issues)
 
 
 class MultiCharacterSceneService:

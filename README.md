@@ -141,6 +141,66 @@ draft/proposal/validation/apply, World changes still go through backend APIs,
 `StateDelta`, and `EventLog`, and Novel LLM use remains behind Provider
 Gateway / injected mock provider paths.
 
+## v3.2 Tavern Studio UI Pro
+
+v3.2 polishes the local Tavern Studio RP workflow. Tavern Mode remains a local
+RP session / memory / proposal mode, not an online RP platform, account system,
+cloud sync feature, online marketplace, remote character-card downloader, or
+multi-user online chat service.
+
+Implemented v3.2 Tavern surfaces:
+
+- Tavern Workspace Shell with local navigation, central RP workspace, safe
+  context sidebar, and local/provider/mature status.
+- Character Card Library UI for local Tavern character lists, safe summaries,
+  local import/create entry points, and search/filter-oriented review.
+- Tavern Character / RP / Voice Profile Editor for public character fields,
+  RP safe fields, voice safe fields, example dialogue, and boundary refs.
+- Single Character Chat Pro with message list, speaker/timestamp badges,
+  local input state, safety notes, provider status, and recovery entry.
+- Multi-NPC Scene UI Pro with scene list, participants, turn order, active
+  speaker context, and safe next-reply generation.
+- RP Memory Panel, Emotion Arc Panel, Relationship Tone Panel, Scene Mood
+  Preset UI, and Character Voice Lab UI as safe-summary local RP surfaces.
+- Boundary / Mature Settings UI Polish. Mature Module is disabled by default,
+  mature export defaults off, consent is required, and unknown/minor scenes are
+  blocked by policy.
+- Tavern Prompt / Provider UX Polish with prompt/provider safe summaries only.
+  API keys, provider secrets, raw env, raw prompts, hidden facts, NPC secrets,
+  private persona, mature memory, debug memory, and raw `state_deltas` are not
+  shown in normal Tavern UI.
+- Tavern Session Search / Tags / Filters for local Tavern review without vector
+  search or LLM search.
+- Tavern -> World Proposal Review UX Pro. RP material is not a World fact until
+  a proposal passes validation and explicit apply.
+- Tavern -> Novel Scene Draft UX Pro. It creates Novel scene draft material
+  only and does not modify the source Tavern session or World `GameState`.
+- World NPC -> Tavern Character UX Pro. Player-safe mode excludes NPC secrets
+  and player-unknown facts; apply creates Tavern draft/adapter data only and
+  does not modify the World NPC.
+- RP Safety Dashboard, Tavern Session Export / Backup UX, Tavern Local
+  Preferences, and Tavern Recovery / Unsaved Session UX.
+
+v3.2 boundaries:
+
+- Tavern UI does not directly modify World `GameState`.
+- Tavern -> World remains proposal / validation / explicit apply.
+- World NPC -> Tavern only generates Tavern draft/adapter data.
+- Tavern -> Novel only generates scene drafts and does not modify World state.
+- Mature/private content is excluded from normal context and export by default.
+- API keys do not enter frontend code, Tavern exports, logs, prompts, or docs.
+- Provider Gateway remains the model access boundary.
+
+Useful v3.2 checks:
+
+```powershell
+python -m pytest backend/tests/test_v32_tavern_ui_pro.py
+python -m pytest backend/tests/test_v32_integration_regression.py
+cd frontend
+npm.cmd run build
+npm.cmd run check:v32-tavern-ui
+```
+
 ## v2.9 Local UI / UX Foundation
 
 v2.9 is a local UI foundation release. It does not rewrite the whole app and

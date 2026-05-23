@@ -55,6 +55,32 @@ Novel UI rules:
   enter normal Novel UI, prompt context, exports, diagnostics, or quality
   reports.
 
+v3.2 focuses on Tavern Studio UI Pro. Tavern Workspace, Character Card Library,
+Character/RP/Voice editor, Single Character Chat, Multi-NPC Scene, RP Memory,
+Emotion, Relationship Tone, Scene Mood, Voice Lab, Boundary/Mature Settings,
+Prompt/Provider, Cross-Mode review, RP Safety, export/backup, preferences, and
+recovery panels are local RP workflow surfaces. They do not change World Engine
+fact authority.
+
+Tavern UI rules:
+
+- Tavern UI must not directly modify `GameState`.
+- Tavern sessions, messages, memory, preferences, recovery drafts, and exports
+  are not World facts.
+- Tavern -> World still requires proposal / validation / dry-run / explicit
+  apply.
+- Tavern -> Novel creates Novel draft data only and does not modify World
+  `EventLog`, active saves, or `GameState`.
+- World NPC -> Tavern creates Tavern draft/adapter data only and does not
+  overwrite World NPC records.
+- World Engine remains the fact source. NPC knowledge, hidden facts,
+  `visible_state`, player-visible facts, and visibility filtering are unchanged
+  by Tavern UI polish.
+- Hidden facts, NPC secrets, NPC unknown facts, private persona, mature memory,
+  debug memory, raw prompts, raw `state_deltas`, API keys, provider secrets,
+  and raw env must not enter normal Tavern UI, Tavern prompt context, export,
+  backup, logs, or quality/safety reports.
+
 ## v2.8 Roleplay Immersion & Mature Module Integration
 
 v2.8 strengthens Tavern/RP immersion and adds default-off mature safety policy

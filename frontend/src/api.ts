@@ -6061,6 +6061,74 @@ export type TavernChatResponse = {
   created_at: string;
 };
 
+export type TavernPreferences = {
+  project_id: string;
+  default_character_id?: string | null;
+  default_session_id?: string | null;
+  default_prompt_profile_id?: string | null;
+  default_provider_profile_id?: string | null;
+  show_rp_memory_panel: boolean;
+  show_emotion_panel: boolean;
+  show_relationship_tone_panel: boolean;
+  default_scene_mood_preset_id?: string | null;
+  mature_module_visible: boolean;
+  updated_at?: string;
+};
+
+export type TavernSessionRecoveryRecord = {
+  record_id: string;
+  project_id: string;
+  target_type: "message" | "session_settings" | "multi_npc_scene";
+  target_id: string;
+  safe_draft_text: string;
+  safe_metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};
+
+export type TavernSessionExportPreview = {
+  project_id: string;
+  dry_run: boolean;
+  format: "json_safe" | "markdown_transcript";
+  session_count: number;
+  message_count: number;
+  safe_sample_summaries: string[];
+  excluded_items: string[];
+  warnings: string[];
+  filtering_policy: string[];
+};
+
+export type TavernSessionExportResult = TavernSessionExportPreview & {
+  exported: boolean;
+  export_id: string;
+  content_preview: string;
+};
+
+export type RPSafetyDashboardReport = {
+  project_id: string;
+  overall_status: "pass" | "warning" | "fail" | "not_run";
+  blocker_count: number;
+  error_count: number;
+  warning_count: number;
+  categories: Record<string, string>;
+  issues: Array<{
+    severity: string;
+    category: string;
+    safe_summary: string;
+    affected_session_id?: string | null;
+    affected_character_id?: string | null;
+    suggested_action: string;
+  }>;
+};
+
+export type WorldNpcSafeSummary = {
+  npc_id: string;
+  display_name: string;
+  location_id?: string | null;
+  player_safe_available: boolean;
+  safe_summary: string;
+};
+
 export type CrossModeDraftSummary = {
   artifact_id: string;
   project_id: string;
@@ -6347,6 +6415,66 @@ export async function createTavernMultiNPCScene(projectId: string, input: { scen
 export async function generateTavernMultiNPCReply(projectId: string, sceneId: string): Promise<{ scene: MultiNPCSceneSummary; message: TavernMessage }> {
   return requestJson<{ scene: MultiNPCSceneSummary; message: TavernMessage }>(`/projects/${encodeURIComponent(projectId)}/tavern/multi-scenes/${encodeURIComponent(sceneId)}/next-reply`, {
     method: "POST"
+  });
+}
+
+export async function fetchTavernPreferences(projectId: string): Promise<TavernPreferences> {
+  return requestJson<TavernPreferences>(`/projects/${encodeURIComponent(projectId)}/tavern/preferences`);
+}
+
+export async function saveTavernPreferences(projectId: string, input: Partial<TavernPreferences>): Promise<TavernPreferences> {
+  return requestJson<TavernPreferences>(`/projects/${encodeURIComponent(projectId)}/tavern/preferences`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input)
+  });
+}
+
+export async function fetchTavernRecoveryRecords(projectId: string): Promise<{ project_id: string; records: TavernSessionRecoveryRecord[] }> {
+  return requestJson<{ project_id: string; records: TavernSessionRecoveryRecord[] }>(`/projects/${encodeURIComponent(projectId)}/tavern/recovery`);
+}
+
+export async function createTavernRecoveryRecord(projectId: string, input: Omit<TavernSessionRecoveryRecord, "project_id" | "created_at" | "updated_at">): Promise<TavernSessionRecoveryRecord> {
+  return requestJson<TavernSessionRecoveryRecord>(`/projects/${encodeURIComponent(projectId)}/tavern/recovery`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input)
+  });
+}
+
+export async function previewTavernSessionExport(projectId: string, input: { scope: string; session_ids?: string[]; format: string; include_mature_private?: boolean; include_debug?: boolean }): Promise<TavernSessionExportPreview> {
+  return requestJson<TavernSessionExportPreview>(`/projects/${encodeURIComponent(projectId)}/tavern/sessions/export-preview`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input)
+  });
+}
+
+export async function createTavernSessionExport(projectId: string, input: { scope: string; session_ids?: string[]; format: string; include_mature_private?: boolean; include_debug?: boolean; explicit_confirm: boolean }): Promise<TavernSessionExportResult> {
+  return requestJson<TavernSessionExportResult>(`/projects/${encodeURIComponent(projectId)}/tavern/sessions/export`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input)
+  });
+}
+
+export async function fetchRPSafetyDashboard(projectId: string): Promise<RPSafetyDashboardReport> {
+  return requestJson<RPSafetyDashboardReport>(`/projects/${encodeURIComponent(projectId)}/tavern/rp-safety/latest`);
+}
+
+export async function runRPSafetyDashboard(projectId: string): Promise<RPSafetyDashboardReport> {
+  return requestJson<RPSafetyDashboardReport>(`/projects/${encodeURIComponent(projectId)}/tavern/rp-safety/run`, { method: "POST" });
+}
+
+export async function fetchWorldNpcSafeSummaries(projectId: string, worldId = "mist_valley"): Promise<{ project_id: string; world_id: string; npcs: WorldNpcSafeSummary[] }> {
+  return requestJson<{ project_id: string; world_id: string; npcs: WorldNpcSafeSummary[] }>(`/projects/${encodeURIComponent(projectId)}/world/npcs/safe-summary?world_id=${encodeURIComponent(worldId)}`);
+}
+
+export async function adaptWorldNpcToTavern(projectId: string, input: { world_id?: string; npc_id: string; mode?: "player_safe" | "authoring"; apply?: boolean }): Promise<Record<string, unknown>> {
+  return requestJson<Record<string, unknown>>(`/projects/${encodeURIComponent(projectId)}/tavern/adapt-world-npc`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input)
   });
 }
 
