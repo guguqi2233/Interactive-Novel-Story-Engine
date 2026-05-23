@@ -52,6 +52,42 @@ World Engine rules, Provider Gateway authority, package validation, import/apply
 semantics, or LLM boundaries. Frontend world-state changes still require backend
 APIs and the normal `StateDelta` / `EventLog` flow.
 
+### v3.0 Implemented Desktop Scope
+
+v3.0 implements **Local Desktop Studio Polish** on top of the v2.9 UI
+foundation. It improves startup, local project selection, configuration,
+provider setup, health checks, one-click quality checks, backup/restore,
+recovery, logs, diagnostics, offline help, settings, safe path display, and
+first-run onboarding.
+
+v3.0 implemented contracts and services include:
+
+- Local Studio safe-summary APIs: `/local-studio/status`,
+  `/local-studio/health`, `/local-studio/config-summary`,
+  `/local-studio/startup-checks`, `/local-studio/recent-errors`.
+- `RecentProjectEntry` / `RecentProjectsService` for local recent-project
+  references with redacted path summaries and no secrets.
+- `BackupManifest`, `BackupPlan`, `BackupService`, and `RestoreService` for
+  local dry-run-first backup and restore with explicit confirmation.
+- `RecoveryIssue`, `RecoveryPlan`, and `RecoveryService` for local deterministic
+  recovery suggestions; destructive recovery remains blocked.
+- `SafeLogEntry` / `LocalLogService` for redacted local log viewing from the
+  allowed logs directory.
+- `DiagnosticsBundleManifest` / `DiagnosticsBundleService` for local redacted
+  diagnostics bundle preview/create/validate.
+- Frontend panels for Local Launcher / Startup Status, Project Picker, Recent
+  Projects, Local Config Wizard, Provider Setup Wizard, Health Check,
+  One-click Quality Gate, Backup / Restore, Error Recovery, Local Log Viewer,
+  Diagnostics Bundle, Offline Help Center, Settings / Preferences, and
+  first-run onboarding.
+
+v3.0 does not implement a formal signed installer, account system, cloud sync,
+online marketplace, remote package auto-download, telemetry upload, online
+diagnostics, or online desktop platform. Desktop/UI polish remains local-first
+and must not weaken `GameState`, `StateDelta`, `EventLog`, visibility,
+Provider Gateway, import/export, backup, diagnostics, or package-validation
+boundaries.
+
 ## v2.8 Roleplay Immersion & Mature Module
 
 v2.8 adds Roleplay Immersion & Mature Module infrastructure on top of Tavern

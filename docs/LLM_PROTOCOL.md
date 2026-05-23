@@ -22,6 +22,16 @@ or redaction. UI polish may make provider configuration easier to understand,
 but it cannot route around Provider Gateway, log raw prompts, display provider
 secrets, or allow LLM output to directly modify World state.
 
+v3.0 Local Desktop Studio Polish keeps the same LLM boundary. Local launcher,
+Project Picker, Recent Projects, Config Wizard, Provider Setup Wizard, Health
+Check, Backup / Restore, Error Recovery, Log Viewer, Diagnostics Bundle,
+Offline Help, and Settings UI do not call providers directly and do not expand
+LLM authority. Provider setup continues to use `api_key_env` or `secret_ref`;
+the frontend must not display API key values or raw env. Diagnostics, logs,
+backups, crash reports, and desktop bundles must not include raw prompts,
+outputs, provider secrets, Authorization headers, hidden facts, mature/private
+content, or raw `state_deltas` by default.
+
 ## v2.8 Roleplay / Mature LLM Boundary
 
 v2.8 does not grant LLMs new authority. Provider Gateway remains the only model

@@ -2308,6 +2308,152 @@ export type DesktopHealthCheckReport = {
   recent_errors: string[];
 };
 
+export type LocalStudioStatus = {
+  local_only: boolean;
+  backend_running: boolean;
+  app_version: string;
+  project_root_configured: boolean;
+  database_configured: boolean;
+  provider_profiles_count: number;
+  provider_secrets_configured_count: number;
+  debug_enabled: boolean;
+  authoring_enabled: boolean;
+  quality_api_enabled: boolean;
+  current_workspace?: ProjectWorkspace | null;
+  warnings: string[];
+  safe_errors: string[];
+};
+
+export type LocalStudioConfigSummary = {
+  local_only: boolean;
+  app_version: string;
+  project_root_configured: boolean;
+  database_configured: boolean;
+  provider_profiles_count: number;
+  provider_secrets_configured_count: number;
+  debug_enabled: boolean;
+  authoring_enabled: boolean;
+  module_api_enabled: boolean;
+  quality_api_enabled: boolean;
+  config: LocalConfigSummary;
+  warnings: string[];
+};
+
+export type LocalStudioStartupCheck = {
+  check_id: string;
+  label: string;
+  status: string;
+  safe_summary: string;
+};
+
+export type LocalStudioStartupChecks = {
+  local_only: boolean;
+  generated_at: string;
+  checks: LocalStudioStartupCheck[];
+  warnings: string[];
+};
+
+export type BackupManifest = {
+  manifest_id: string;
+  created_at: string;
+  local_only: boolean;
+  project_id: string;
+  scope: string[];
+  included_safe_items: string[];
+  excluded_items: string[];
+  contains_secrets: boolean;
+  contains_mature_private: boolean;
+  checksum_manifest: Record<string, string>;
+};
+
+export type BackupPlan = {
+  plan_id: string;
+  local_only: boolean;
+  dry_run: boolean;
+  project_id: string;
+  scope: string[];
+  target_dir_summary: string;
+  would_write_files: string[];
+  excluded_items: string[];
+  warnings: string[];
+  blockers: string[];
+};
+
+export type BackupCreateResponse = {
+  local_only: boolean;
+  created: boolean;
+  backup_path_summary?: string | null;
+  manifest: BackupManifest;
+  warnings: string[];
+};
+
+export type RestorePlan = {
+  local_only: boolean;
+  dry_run: boolean;
+  backup_valid: boolean;
+  target_project_id: string;
+  would_create_project: boolean;
+  conflicts: string[];
+  warnings: string[];
+  blockers: string[];
+};
+
+export type RecoveryIssue = {
+  issue_id: string;
+  category: string;
+  severity: string;
+  safe_summary: string;
+  suggested_action: string;
+  disposition: string;
+};
+
+export type RecoveryPlan = {
+  plan_id: string;
+  local_only: boolean;
+  generated_at: string;
+  dry_run: boolean;
+  issues: RecoveryIssue[];
+  actions: string[];
+  blockers: string[];
+  warnings: string[];
+};
+
+export type SafeLogEntry = {
+  timestamp: string;
+  level: string;
+  category: string;
+  source: string;
+  message: string;
+  redacted: boolean;
+};
+
+export type LocalLogListResponse = {
+  local_only: boolean;
+  debug_included: boolean;
+  logs: SafeLogEntry[];
+  warnings: string[];
+};
+
+export type DiagnosticsBundleManifest = {
+  bundle_id: string;
+  created_at: string;
+  local_only: boolean;
+  debug_bundle: boolean;
+  included_sections: string[];
+  excluded_sections: string[];
+  redaction_policy: string;
+  contains_secrets: boolean;
+  contains_hidden_debug_mature_private: boolean;
+};
+
+export type DiagnosticsBundlePreview = {
+  local_only: boolean;
+  writes_file: boolean;
+  manifest: DiagnosticsBundleManifest;
+  safe_payload: Record<string, unknown>;
+  warnings: string[];
+};
+
 export type CrashReport = {
   id: string;
   timestamp: string;
@@ -3035,6 +3181,66 @@ export async function fetchDesktopHealth(): Promise<DesktopHealthCheckReport> {
 export async function runDesktopHealthCheck(): Promise<DesktopHealthCheckReport> {
   return requestJson<DesktopHealthCheckReport>("/studio/health/check", {
     method: "POST"
+  });
+}
+
+export async function fetchLocalStudioStatus(): Promise<LocalStudioStatus> {
+  return requestJson<LocalStudioStatus>("/local-studio/status");
+}
+
+export async function fetchLocalStudioConfigSummary(): Promise<LocalStudioConfigSummary> {
+  return requestJson<LocalStudioConfigSummary>("/local-studio/config-summary");
+}
+
+export async function fetchLocalStudioStartupChecks(): Promise<LocalStudioStartupChecks> {
+  return requestJson<LocalStudioStartupChecks>("/local-studio/startup-checks");
+}
+
+export async function createBackupDryRun(projectId: string): Promise<BackupPlan> {
+  return requestJson<BackupPlan>("/local-studio/backups/dry-run", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ project_id: projectId || "local_project", scope: ["all"], target_dir: "backups" })
+  });
+}
+
+export async function createLocalBackup(projectId: string): Promise<BackupCreateResponse> {
+  return requestJson<BackupCreateResponse>("/local-studio/backups", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ project_id: projectId || "local_project", scope: ["all"], target_dir: "backups", explicit_confirm: true })
+  });
+}
+
+export async function restoreBackupDryRun(backupPath: string, targetProjectId: string): Promise<RestorePlan> {
+  return requestJson<RestorePlan>("/local-studio/restore/dry-run", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ backup_path: backupPath, target_project_id: targetProjectId || "restored_project" })
+  });
+}
+
+export async function fetchRecoveryIssues(): Promise<RecoveryIssue[]> {
+  return requestJson<RecoveryIssue[]>("/local-studio/recovery/issues");
+}
+
+export async function buildRecoveryPlan(): Promise<RecoveryPlan> {
+  return requestJson<RecoveryPlan>("/local-studio/recovery/plan", { method: "POST" });
+}
+
+export async function dryRunRecovery(): Promise<RecoveryPlan> {
+  return requestJson<RecoveryPlan>("/local-studio/recovery/dry-run", { method: "POST" });
+}
+
+export async function fetchLocalLogs(limit = 50): Promise<LocalLogListResponse> {
+  return requestJson<LocalLogListResponse>(`/local-studio/logs/recent?limit=${limit}`);
+}
+
+export async function previewDiagnosticsBundle(projectId: string, includeDebug = false): Promise<DiagnosticsBundlePreview> {
+  return requestJson<DiagnosticsBundlePreview>("/local-studio/diagnostics/preview", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ project_id: projectId || "local_project", include_debug: includeDebug, explicit_confirm_debug: false })
   });
 }
 

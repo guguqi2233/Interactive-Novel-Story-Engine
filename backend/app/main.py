@@ -168,7 +168,38 @@ from app.desktop.local_config import (
     LocalEnvTemplateResponse,
 )
 from app.desktop.health import DesktopHealthCheckReport, DesktopHealthCheckService
+from app.desktop.backup_restore import (
+    BackupCreateRequest,
+    BackupCreateResponse,
+    BackupListResponse,
+    BackupPlan,
+    BackupService,
+    RestoreApplyRequest,
+    RestoreApplyResponse,
+    RestoreDryRunRequest,
+    RestorePlan,
+    RestoreService,
+)
 from app.desktop.crash_reports import CrashReport, CrashReportListResponse, CrashReportService
+from app.desktop.diagnostics_bundle import (
+    DiagnosticsBundleCreateRequest,
+    DiagnosticsBundleCreateResponse,
+    DiagnosticsBundlePreview,
+    DiagnosticsBundleService,
+    DiagnosticsBundleValidation,
+)
+from app.desktop.local_logs import LocalLogListResponse, LocalLogService
+from app.desktop.local_studio import (
+    LocalStudioConfigSummary,
+    LocalStudioHealth,
+    LocalStudioRecentErrors,
+    LocalStudioStartupChecks,
+    LocalStudioStatus,
+    build_local_studio_config_summary,
+    build_local_studio_status,
+    build_startup_checks,
+)
+from app.desktop.recovery import RecoveryApplyRequest, RecoveryApplyResponse, RecoveryIssue, RecoveryPlan, RecoveryService
 from app.desktop.update_notes import LocalUpdateNotesIndex, LocalUpdateNotesService
 from app.desktop.workspaces import (
     ProjectWorkspace,
@@ -942,6 +973,171 @@ def get_desktop_health() -> DesktopHealthCheckReport:
 @app.post("/studio/health/check", response_model=DesktopHealthCheckReport)
 def run_desktop_health_check() -> DesktopHealthCheckReport:
     return get_desktop_health_service().run()
+
+
+def _local_recent_safe_errors() -> list[str]:
+    errors: list[str] = []
+    for value in (
+        getattr(app.state, "startup_errors", []),
+        getattr(app.state, "recent_safe_errors", []),
+    ):
+        if isinstance(value, list):
+            errors.extend(str(item) for item in value[:10])
+    return errors[:20]
+
+
+@app.get("/local-studio/status", response_model=LocalStudioStatus)
+def get_local_studio_status() -> LocalStudioStatus:
+    sync_runtime_settings()
+    active_settings = getattr(app.state, "settings", settings)
+    return build_local_studio_status(
+        active_settings,
+        workspace=get_workspace_service().get_current_workspace(),
+        app_version=app.version,
+        recent_errors=_local_recent_safe_errors(),
+    )
+
+
+@app.get("/local-studio/health", response_model=LocalStudioHealth)
+def get_local_studio_health() -> LocalStudioHealth:
+    return LocalStudioHealth(app_version=app.version, health=get_desktop_health_service().run())
+
+
+@app.get("/local-studio/config-summary", response_model=LocalStudioConfigSummary)
+def get_local_studio_config_summary() -> LocalStudioConfigSummary:
+    sync_runtime_settings()
+    active_settings = getattr(app.state, "settings", settings)
+    return build_local_studio_config_summary(
+        active_settings,
+        get_local_config_manager().get_safe_summary(),
+        app_version=app.version,
+        workspace=get_workspace_service().get_current_workspace(),
+    )
+
+
+@app.get("/local-studio/startup-checks", response_model=LocalStudioStartupChecks)
+def get_local_studio_startup_checks() -> LocalStudioStartupChecks:
+    sync_runtime_settings()
+    active_settings = getattr(app.state, "settings", settings)
+    return build_startup_checks(active_settings, repo_root=Path.cwd())
+
+
+@app.get("/local-studio/recent-errors", response_model=LocalStudioRecentErrors)
+def get_local_studio_recent_errors() -> LocalStudioRecentErrors:
+    return LocalStudioRecentErrors(safe_errors=_local_recent_safe_errors())
+
+
+def get_backup_service() -> BackupService:
+    return BackupService(Path.cwd())
+
+
+def get_restore_service() -> RestoreService:
+    return RestoreService(Path.cwd(), get_backup_service())
+
+
+@app.post("/local-studio/backups/dry-run", response_model=BackupPlan)
+def create_local_backup_dry_run(request: BackupCreateRequest) -> BackupPlan:
+    try:
+        return get_backup_service().create_backup_dry_run(request)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/local-studio/backups", response_model=BackupCreateResponse)
+def create_local_backup(request: BackupCreateRequest) -> BackupCreateResponse:
+    try:
+        return get_backup_service().create_backup(request)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/local-studio/backups", response_model=BackupListResponse)
+def list_local_backups() -> BackupListResponse:
+    return get_backup_service().list_backups()
+
+
+@app.post("/local-studio/restore/dry-run", response_model=RestorePlan)
+def restore_local_backup_dry_run(request: RestoreDryRunRequest) -> RestorePlan:
+    return get_restore_service().restore_dry_run(request)
+
+
+@app.post("/local-studio/restore/apply", response_model=RestoreApplyResponse)
+def restore_local_backup_apply(request: RestoreApplyRequest) -> RestoreApplyResponse:
+    try:
+        return get_restore_service().restore_apply_confirmed(request)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _recovery_issues() -> list[RecoveryIssue]:
+    sync_runtime_settings()
+    active_settings = getattr(app.state, "settings", settings)
+    return RecoveryService().detect_recovery_issues(
+        provider_secret_configured=bool(active_settings.llm_api_key) or active_settings.llm_provider.lower() in {"mock", "local_stub"},
+        database_configured=bool(active_settings.database_url),
+        debug_enabled=bool(active_settings.enable_debug_api),
+        quality_blockers=0,
+    )
+
+
+@app.get("/local-studio/recovery/issues", response_model=list[RecoveryIssue])
+def get_local_recovery_issues() -> list[RecoveryIssue]:
+    return _recovery_issues()
+
+
+@app.post("/local-studio/recovery/plan", response_model=RecoveryPlan)
+def build_local_recovery_plan() -> RecoveryPlan:
+    return RecoveryService().build_recovery_plan(_recovery_issues())
+
+
+@app.post("/local-studio/recovery/dry-run", response_model=RecoveryPlan)
+def dry_run_local_recovery() -> RecoveryPlan:
+    return RecoveryService().dry_run_recovery(_recovery_issues())
+
+
+@app.post("/local-studio/recovery/apply", response_model=RecoveryApplyResponse)
+def apply_local_recovery(request: RecoveryApplyRequest) -> RecoveryApplyResponse:
+    try:
+        return RecoveryService().apply_safe_recovery_confirmed(_recovery_issues(), request)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def get_local_log_service() -> LocalLogService:
+    sync_runtime_settings()
+    active_settings = getattr(app.state, "settings", settings)
+    return LocalLogService(Path.cwd(), debug_enabled=bool(active_settings.enable_debug_api))
+
+
+@app.get("/local-studio/logs", response_model=LocalLogListResponse)
+def list_local_studio_logs(level: str | None = None, category: str | None = None, limit: int = 100, include_debug: bool = False) -> LocalLogListResponse:
+    return get_local_log_service().list_safe_logs(level=level, category=category, limit=min(max(limit, 1), 500), include_debug=include_debug)
+
+
+@app.get("/local-studio/logs/recent", response_model=LocalLogListResponse)
+def list_recent_local_studio_logs(limit: int = 20) -> LocalLogListResponse:
+    return get_local_log_service().list_safe_logs(limit=min(max(limit, 1), 100))
+
+
+def get_diagnostics_bundle_service() -> DiagnosticsBundleService:
+    sync_runtime_settings()
+    active_settings = getattr(app.state, "settings", settings)
+    return DiagnosticsBundleService(Path.cwd(), debug_enabled=bool(active_settings.enable_debug_api))
+
+
+@app.post("/local-studio/diagnostics/preview", response_model=DiagnosticsBundlePreview)
+def preview_local_diagnostics_bundle(request: DiagnosticsBundleCreateRequest) -> DiagnosticsBundlePreview:
+    return get_diagnostics_bundle_service().preview_bundle(request)
+
+
+@app.post("/local-studio/diagnostics", response_model=DiagnosticsBundleCreateResponse)
+def create_local_diagnostics_bundle(request: DiagnosticsBundleCreateRequest) -> DiagnosticsBundleCreateResponse:
+    return get_diagnostics_bundle_service().create_bundle(request)
+
+
+@app.post("/local-studio/diagnostics/validate", response_model=DiagnosticsBundleValidation)
+def validate_local_diagnostics_bundle(request: dict[str, str]) -> DiagnosticsBundleValidation:
+    return get_diagnostics_bundle_service().validate_bundle(str(request.get("bundle_path", "")))
 
 
 def get_workspace_service() -> WorkspaceService:

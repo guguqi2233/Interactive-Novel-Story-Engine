@@ -217,6 +217,17 @@ import {
   fetchLocalUpdateNotes,
   fetchDesktopHealth,
   runDesktopHealthCheck,
+  fetchLocalStudioStatus,
+  fetchLocalStudioConfigSummary,
+  fetchLocalStudioStartupChecks,
+  createBackupDryRun,
+  createLocalBackup,
+  restoreBackupDryRun,
+  fetchRecoveryIssues,
+  buildRecoveryPlan,
+  dryRunRecovery,
+  fetchLocalLogs,
+  previewDiagnosticsBundle,
   fetchCrashReports,
   fetchCrashReport,
   deleteCrashReport,
@@ -335,6 +346,16 @@ import {
   LocalEnvTemplateResponse,
   LocalUpdateNotesIndex,
   DesktopHealthCheckReport,
+  LocalStudioStatus,
+  LocalStudioConfigSummary,
+  LocalStudioStartupChecks,
+  BackupPlan,
+  BackupCreateResponse,
+  RestorePlan,
+  RecoveryIssue,
+  RecoveryPlan,
+  LocalLogListResponse,
+  DiagnosticsBundlePreview,
   CrashReport,
   StudioStatus,
   submitPlayerInput,
@@ -628,6 +649,15 @@ const SCENE_MOOD_PRESETS = [
 
 const DIALOGUE_MODES = ["focused", "casual", "interrogation", "negotiation", "intimate", "conflict"];
 type AppMode = "project" | "studio" | "play" | "authoring" | "prompt_lab";
+const FIRST_RUN_ONBOARDING_KEY = "ai-narrative-studio:first-run-onboarding:v3";
+
+function firstRunOnboardingDismissed(): boolean {
+  try {
+    return window.localStorage.getItem(FIRST_RUN_ONBOARDING_KEY) === "completed";
+  } catch {
+    return false;
+  }
+}
 
 export function App() {
   const [sessionId, setSessionId] = useState<string>("");
@@ -697,6 +727,22 @@ export function App() {
   const [localUpdateNotesError, setLocalUpdateNotesError] = useState<string>("");
   const [desktopHealth, setDesktopHealth] = useState<DesktopHealthCheckReport | null>(null);
   const [desktopHealthError, setDesktopHealthError] = useState<string>("");
+  const [localStudioStatus, setLocalStudioStatus] = useState<LocalStudioStatus | null>(null);
+  const [localStudioConfig, setLocalStudioConfig] = useState<LocalStudioConfigSummary | null>(null);
+  const [localStudioStartupChecks, setLocalStudioStartupChecks] = useState<LocalStudioStartupChecks | null>(null);
+  const [localStudioError, setLocalStudioError] = useState<string>("");
+  const [backupPlan, setBackupPlan] = useState<BackupPlan | null>(null);
+  const [backupResult, setBackupResult] = useState<BackupCreateResponse | null>(null);
+  const [restorePlan, setRestorePlan] = useState<RestorePlan | null>(null);
+  const [backupRestoreError, setBackupRestoreError] = useState<string>("");
+  const [recoveryIssues, setRecoveryIssues] = useState<RecoveryIssue[]>([]);
+  const [recoveryPlan, setRecoveryPlan] = useState<RecoveryPlan | null>(null);
+  const [recoveryError, setRecoveryError] = useState<string>("");
+  const [localLogs, setLocalLogs] = useState<LocalLogListResponse | null>(null);
+  const [localLogsError, setLocalLogsError] = useState<string>("");
+  const [diagnosticsBundlePreview, setDiagnosticsBundlePreview] = useState<DiagnosticsBundlePreview | null>(null);
+  const [diagnosticsBundleError, setDiagnosticsBundleError] = useState<string>("");
+  const [firstRunDismissed, setFirstRunDismissed] = useState<boolean>(() => firstRunOnboardingDismissed());
   const [studioConfigError, setStudioConfigError] = useState<string>("");
   const [projectWorkspaces, setProjectWorkspaces] = useState<ProjectWorkspace[]>([]);
   const [workspaceTemplates, setWorkspaceTemplates] = useState<WorkspaceTemplate[]>([]);
@@ -736,6 +782,10 @@ export function App() {
     void refreshLocalConfig();
     void refreshLocalUpdateNotes();
     void refreshDesktopHealth();
+    void refreshLocalStudioUX();
+    void refreshRecovery();
+    void refreshLocalLogs();
+    void refreshDiagnosticsBundlePreview();
     void refreshProjectWorkspaces();
     void refreshNarrativeProjects();
     void refreshWorkspaceTemplates();
@@ -879,6 +929,110 @@ export function App() {
       setDesktopHealth(null);
       setDesktopHealthError(toErrorMessage(err));
     }
+  }
+
+  async function refreshLocalStudioUX() {
+    setLocalStudioError("");
+    try {
+      const [status, config, startupChecks] = await Promise.all([
+        fetchLocalStudioStatus(),
+        fetchLocalStudioConfigSummary(),
+        fetchLocalStudioStartupChecks()
+      ]);
+      setLocalStudioStatus(status);
+      setLocalStudioConfig(config);
+      setLocalStudioStartupChecks(startupChecks);
+    } catch (err) {
+      setLocalStudioStatus(null);
+      setLocalStudioConfig(null);
+      setLocalStudioStartupChecks(null);
+      setLocalStudioError(toErrorMessage(err));
+    }
+  }
+
+  async function handleBackupDryRun() {
+    setBackupRestoreError("");
+    try {
+      setBackupPlan(await createBackupDryRun(currentNarrativeProjectId || currentWorkspaceId || "local_project"));
+    } catch (err) {
+      setBackupPlan(null);
+      setBackupRestoreError(toErrorMessage(err));
+    }
+  }
+
+  async function handleCreateBackup() {
+    if (!confirmDangerousAction("Create a local backup after dry-run? Secrets, .env, logs/cache/build outputs, and mature/private content are excluded by default.")) {
+      return;
+    }
+    setBackupRestoreError("");
+    try {
+      setBackupResult(await createLocalBackup(currentNarrativeProjectId || currentWorkspaceId || "local_project"));
+    } catch (err) {
+      setBackupResult(null);
+      setBackupRestoreError(toErrorMessage(err));
+    }
+  }
+
+  async function handleRestoreDryRun(backupPath: string, targetProjectId: string) {
+    setBackupRestoreError("");
+    try {
+      setRestorePlan(await restoreBackupDryRun(backupPath, targetProjectId));
+    } catch (err) {
+      setRestorePlan(null);
+      setBackupRestoreError(toErrorMessage(err));
+    }
+  }
+
+  async function refreshRecovery() {
+    setRecoveryError("");
+    try {
+      const [issues, plan] = await Promise.all([fetchRecoveryIssues(), buildRecoveryPlan()]);
+      setRecoveryIssues(issues);
+      setRecoveryPlan(plan);
+    } catch (err) {
+      setRecoveryIssues([]);
+      setRecoveryPlan(null);
+      setRecoveryError(toErrorMessage(err));
+    }
+  }
+
+  async function handleDryRunRecovery() {
+    setRecoveryError("");
+    try {
+      setRecoveryPlan(await dryRunRecovery());
+    } catch (err) {
+      setRecoveryPlan(null);
+      setRecoveryError(toErrorMessage(err));
+    }
+  }
+
+  async function refreshLocalLogs() {
+    setLocalLogsError("");
+    try {
+      setLocalLogs(await fetchLocalLogs(50));
+    } catch (err) {
+      setLocalLogs(null);
+      setLocalLogsError(toErrorMessage(err));
+    }
+  }
+
+  async function refreshDiagnosticsBundlePreview() {
+    setDiagnosticsBundleError("");
+    try {
+      setDiagnosticsBundlePreview(await previewDiagnosticsBundle(currentNarrativeProjectId || currentWorkspaceId || "local_project", false));
+    } catch (err) {
+      setDiagnosticsBundlePreview(null);
+      setDiagnosticsBundleError(toErrorMessage(err));
+    }
+  }
+
+  function dismissFirstRunOnboarding() {
+    try {
+      window.localStorage.setItem(FIRST_RUN_ONBOARDING_KEY, "completed");
+    } catch {
+      // Local browser storage may be unavailable; keep dismissal in memory.
+    }
+    setFirstRunDismissed(true);
   }
 
   async function refreshProjectWorkspaces() {
@@ -2005,6 +2159,15 @@ export function App() {
       </aside>
 
       <section className="story-panel">
+        {!firstRunDismissed && (
+          <FirstRunOnboardingFlow
+            hasProject={Boolean(currentNarrativeProjectId || currentWorkspaceId)}
+            onOpenProjectHome={() => setMode("project")}
+            onOpenProviderSetup={() => setMode("prompt_lab")}
+            onSkip={dismissFirstRunOnboarding}
+            onComplete={dismissFirstRunOnboarding}
+          />
+        )}
         {mode === "project" ? (
           <ProjectShell
             projects={narrativeProjects}
@@ -2043,6 +2206,21 @@ export function App() {
             localEnvTemplate={localEnvTemplate}
             localUpdateNotes={localUpdateNotes}
             desktopHealth={desktopHealth}
+            localStudioStatus={localStudioStatus}
+            localStudioConfig={localStudioConfig}
+            localStudioStartupChecks={localStudioStartupChecks}
+            localStudioError={localStudioError}
+            backupPlan={backupPlan}
+            backupResult={backupResult}
+            restorePlan={restorePlan}
+            backupRestoreError={backupRestoreError}
+            recoveryIssues={recoveryIssues}
+            recoveryPlan={recoveryPlan}
+            recoveryError={recoveryError}
+            localLogs={localLogs}
+            localLogsError={localLogsError}
+            diagnosticsBundlePreview={diagnosticsBundlePreview}
+            diagnosticsBundleError={diagnosticsBundleError}
             workspaces={projectWorkspaces}
             workspaceTemplates={workspaceTemplates}
             recentProjects={recentProjects}
@@ -2078,6 +2256,10 @@ export function App() {
               void refreshLocalConfig();
               void refreshLocalUpdateNotes();
               void refreshDesktopHealth();
+              void refreshLocalStudioUX();
+              void refreshRecovery();
+              void refreshLocalLogs();
+              void refreshDiagnosticsBundlePreview();
               void refreshProjectWorkspaces();
               void refreshWorkspaceTemplates();
               void refreshRecentProjects();
@@ -2097,6 +2279,14 @@ export function App() {
             onGenerateLocalEnvTemplate={() => void handleGenerateLocalEnvTemplate()}
             onRefreshUpdateNotes={() => void refreshLocalUpdateNotes()}
             onRunDesktopHealthCheck={() => void handleRunDesktopHealthCheck()}
+            onRefreshLocalStudio={() => void refreshLocalStudioUX()}
+            onBackupDryRun={() => void handleBackupDryRun()}
+            onCreateBackup={() => void handleCreateBackup()}
+            onRestoreDryRun={(backupPath, targetProjectId) => void handleRestoreDryRun(backupPath, targetProjectId)}
+            onRefreshRecovery={() => void refreshRecovery()}
+            onDryRunRecovery={() => void handleDryRunRecovery()}
+            onRefreshLocalLogs={() => void refreshLocalLogs()}
+            onPreviewDiagnosticsBundle={() => void refreshDiagnosticsBundlePreview()}
             onSelectPromptProfile={(profileId) => void handleSelectPromptProfile(profileId)}
             onRunNarrativeEval={() => void handleRunNarrativeEval()}
             onSelectNarrativeEval={(runId) => void handleSelectNarrativeEval(runId)}
@@ -2369,6 +2559,21 @@ function StudioHome({
   localEnvTemplate,
   localUpdateNotes,
   desktopHealth,
+  localStudioStatus,
+  localStudioConfig,
+  localStudioStartupChecks,
+  localStudioError,
+  backupPlan,
+  backupResult,
+  restorePlan,
+  backupRestoreError,
+  recoveryIssues,
+  recoveryPlan,
+  recoveryError,
+  localLogs,
+  localLogsError,
+  diagnosticsBundlePreview,
+  diagnosticsBundleError,
   workspaces,
   workspaceTemplates,
   recentProjects,
@@ -2422,6 +2627,14 @@ function StudioHome({
   onGenerateLocalEnvTemplate,
   onRefreshUpdateNotes,
   onRunDesktopHealthCheck,
+  onRefreshLocalStudio,
+  onBackupDryRun,
+  onCreateBackup,
+  onRestoreDryRun,
+  onRefreshRecovery,
+  onDryRunRecovery,
+  onRefreshLocalLogs,
+  onPreviewDiagnosticsBundle,
   onSelectPromptProfile,
   onNavigate
 }: {
@@ -2433,6 +2646,21 @@ function StudioHome({
   localEnvTemplate: LocalEnvTemplateResponse | null;
   localUpdateNotes: LocalUpdateNotesIndex | null;
   desktopHealth: DesktopHealthCheckReport | null;
+  localStudioStatus: LocalStudioStatus | null;
+  localStudioConfig: LocalStudioConfigSummary | null;
+  localStudioStartupChecks: LocalStudioStartupChecks | null;
+  localStudioError: string;
+  backupPlan: BackupPlan | null;
+  backupResult: BackupCreateResponse | null;
+  restorePlan: RestorePlan | null;
+  backupRestoreError: string;
+  recoveryIssues: RecoveryIssue[];
+  recoveryPlan: RecoveryPlan | null;
+  recoveryError: string;
+  localLogs: LocalLogListResponse | null;
+  localLogsError: string;
+  diagnosticsBundlePreview: DiagnosticsBundlePreview | null;
+  diagnosticsBundleError: string;
   workspaces: ProjectWorkspace[];
   workspaceTemplates: WorkspaceTemplate[];
   recentProjects: RecentProjectEntry[];
@@ -2499,6 +2727,14 @@ function StudioHome({
   onGenerateLocalEnvTemplate: () => void;
   onRefreshUpdateNotes: () => void;
   onRunDesktopHealthCheck: () => void;
+  onRefreshLocalStudio: () => void;
+  onBackupDryRun: () => void;
+  onCreateBackup: () => void;
+  onRestoreDryRun: (backupPath: string, targetProjectId: string) => void;
+  onRefreshRecovery: () => void;
+  onDryRunRecovery: () => void;
+  onRefreshLocalLogs: () => void;
+  onPreviewDiagnosticsBundle: () => void;
   onSelectPromptProfile: (profileId: string) => void;
   onNavigate: (mode: AppMode, toolId?: AuthoringToolId) => void;
 }) {
@@ -2526,6 +2762,14 @@ function StudioHome({
         debugEnabled={status?.debug_api_enabled ?? false}
         apiKeyConfigured={configSummary?.api_key_configured ?? localConfigSummary?.api_key_configured}
       />
+      <LocalLauncherStatusPanel
+        status={localStudioStatus}
+        config={localStudioConfig}
+        startupChecks={localStudioStartupChecks}
+        error={localStudioError}
+        onRefresh={onRefreshLocalStudio}
+        onNavigate={onNavigate}
+      />
       <ProjectHomeRedesignPanel
         status={status}
         selectedProjectId={selectedProjectId}
@@ -2551,6 +2795,11 @@ function StudioHome({
         worldHealth={worldHealth}
         desktopHealth={desktopHealth}
         safeErrors={[error, configError, desktopHealthError, worldHealthError].filter(Boolean)}
+      />
+      <DiagnosticsBundlePanel
+        preview={diagnosticsBundlePreview}
+        error={diagnosticsBundleError}
+        onPreview={onPreviewDiagnosticsBundle}
       />
       <ProjectSelectorPanel
         workspaces={workspaces}
@@ -2579,6 +2828,35 @@ function StudioHome({
         onOpen={onSelectWorkspace}
         onRemove={onRemoveRecentProject}
         onClear={onClearRecentProjects}
+      />
+      <LocalConfigWizardPanel
+        summary={localStudioConfig}
+        startupChecks={localStudioStartupChecks}
+        error={localStudioError || configError}
+        onRefresh={onRefreshLocalStudio}
+        onOpenProviders={() => onNavigate("prompt_lab")}
+      />
+      <BackupRestoreWizardPanel
+        plan={backupPlan}
+        result={backupResult}
+        restorePlan={restorePlan}
+        error={backupRestoreError}
+        onDryRun={onBackupDryRun}
+        onCreate={onCreateBackup}
+        onRestoreDryRun={onRestoreDryRun}
+      />
+      <ErrorRecoveryWizardPanel
+        issues={recoveryIssues}
+        plan={recoveryPlan}
+        error={recoveryError}
+        onRefresh={onRefreshRecovery}
+        onDryRun={onDryRunRecovery}
+      />
+      <LocalLogViewerPanel
+        logs={localLogs}
+        error={localLogsError}
+        debugEnabled={status?.debug_api_enabled ?? false}
+        onRefresh={onRefreshLocalLogs}
       />
 
       <div className="studio-grid">
@@ -4511,6 +4789,17 @@ function SettingsPrivacyPanel({
         <>
           {!promptLabOnly && (
             <section className="studio-section">
+              <h4>Settings / Preferences Sections</h4>
+              <div className="mode-landing-grid">
+                {["General", "Local Privacy", "Providers", "Export", "Debug", "Backup / Restore", "Diagnostics", "Mature Module", "UI Preferences", "Quality Gate"].map((section) => (
+                  <FeatureCard key={section} title={section} detail="Local desktop preference summary; no account, cloud sync, online marketplace, raw env, or API key values." />
+                ))}
+              </div>
+            </section>
+          )}
+          {!promptLabOnly && <ProviderSetupWizardPanel />}
+          {!promptLabOnly && (
+            <section className="studio-section">
               <div className="section-heading-row">
                 <div>
                   <h4>Local Config Manager</h4>
@@ -5590,6 +5879,74 @@ function LocalStatusBar({
   );
 }
 
+function SafePathSummary({ value }: { value?: string | null }) {
+  const safeValue = value?.trim() || "Safe path summary unavailable";
+  return <span className="safe-path-summary" title="Safe path summary; full sensitive paths are not shown in normal UI.">{safeValue}</span>;
+}
+
+function LocalLauncherStatusPanel({
+  status,
+  config,
+  startupChecks,
+  error,
+  onRefresh,
+  onNavigate
+}: {
+  status: LocalStudioStatus | null;
+  config: LocalStudioConfigSummary | null;
+  startupChecks: LocalStudioStartupChecks | null;
+  error: string;
+  onRefresh: () => void;
+  onNavigate: (mode: AppMode, toolId?: AuthoringToolId) => void;
+}) {
+  return (
+    <SectionCard title="Local Launcher / Startup Status" description="Safe local desktop startup summary. No API keys, raw env, sensitive paths, hidden facts, or debug state are shown.">
+      <div className="section-heading-row">
+        <div>
+          <h4>Startup Status</h4>
+          <p className="muted">Backend health, config state, Provider profile count, Quality API, Debug, and local-only boundary.</p>
+        </div>
+        <button type="button" onClick={onRefresh}>Refresh Status</button>
+      </div>
+      <ErrorPanel message={error} compact />
+      <div className="safe-summary-grid">
+        <SafeSummaryCard title="Backend" value={status?.backend_running ? "running" : "unavailable"} detail={`App ${status?.app_version ?? "unknown"}`} />
+        <SafeSummaryCard title="Project root" value={status?.project_root_configured ? "configured" : "missing"} detail={status?.current_workspace?.path_redacted ?? "Safe path summary unavailable"} />
+        <SafeSummaryCard title="Database" value={status?.database_configured ? "configured" : "missing"} detail="Connection string is never displayed." />
+        <SafeSummaryCard title="Provider profiles" value={String(status?.provider_profiles_count ?? 0)} detail={`${status?.provider_secrets_configured_count ?? 0} secret reference(s) configured; values hidden.`} />
+        <SafeSummaryCard title="Debug" value={status?.debug_enabled ? "enabled" : "disabled"} detail="Debug views remain gated by ENABLE_DEBUG_API." />
+        <SafeSummaryCard title="Quality API" value={status?.quality_api_enabled ? "available" : "not available"} detail="Quality reports are local safe summaries." />
+      </div>
+      <div className="quick-actions">
+        <button type="button" onClick={() => onNavigate("project")}>Project Picker</button>
+        <button type="button" onClick={() => onNavigate("studio")}>Settings</button>
+        <button type="button" onClick={() => onNavigate("prompt_lab")}>Providers</button>
+      </div>
+      {startupChecks ? (
+        <div className="desktop-health-list">
+          {startupChecks.checks.map((check) => (
+            <article className={`desktop-health-item ${check.status}`} key={check.check_id}>
+              <div className="section-heading-row">
+                <strong>{check.label}</strong>
+                <span className={`status-pill ${check.status}`}>{check.status}</span>
+              </div>
+              <p>{check.safe_summary}</p>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <EmptyState title="No startup checks loaded." detail="Refresh the startup status to load safe local checks." />
+      )}
+      {config && (
+        <p className="muted">
+          Local Config Wizard summary: provider profiles {config.provider_profiles_count}, module API {config.module_api_enabled ? "enabled" : "disabled"}, authoring {config.authoring_enabled ? "enabled" : "disabled"}.
+        </p>
+      )}
+      <SecretSafeNotice compact />
+    </SectionCard>
+  );
+}
+
 function ProjectHomeRedesignPanel({
   status,
   selectedProjectId,
@@ -5654,17 +6011,76 @@ function ProjectHomeRedesignPanel({
 
 function LocalHelpOnboardingPanel() {
   return (
-    <SectionCard title="Local Help / Onboarding" description="Short guide to the local-first workflow.">
+    <SectionCard title="Offline Help Center / Local Help / Onboarding" description="Short guide to the local-first workflow. Content is bundled locally and does not load remote docs.">
       <div className="mode-landing-grid">
+        <FeatureCard title="Getting Started" detail="Create or open a local project, choose a mode, and run Quality Gate before release." />
         <FeatureCard title="What is AI Narrative Studio" detail="A local writing, Tavern RP, and World Studio workspace sharing one fact boundary." />
         <FeatureCard title="Local-first workflow" detail="No account, no cloud sync, no online marketplace, and API keys stay local." />
+        <FeatureCard title="Project Picker" detail="Open recent local projects with redacted path summaries; no cloud project registry." />
         <FeatureCard title="Novel / Tavern / World modes" detail="Draft prose, roleplay safely, and play the world without letting UI bypass rules." />
         <FeatureCard title="Cross-Mode proposals" detail="Drafts and proposals are reviewed before becoming world changes." />
         <FeatureCard title="Provider setup" detail="Use api_key_env or secret_ref; never paste plaintext API keys into the frontend." />
         <FeatureCard title="Mods and permissions" detail="Local packages are validated, never executed as arbitrary code." />
         <FeatureCard title="Quality Gate" detail="Run deterministic checks for leaks, migration, compatibility, and release readiness." />
+        <FeatureCard title="Backup / Restore" detail="Dry-run first; .env, API keys, logs/cache/build outputs, debug and mature/private content are excluded by default." />
+        <FeatureCard title="Diagnostics / Logs" detail="Local diagnostics and logs are redacted and never uploaded." />
         <FeatureCard title="Privacy and secrets" detail="Exports and diagnostics default to filtered safe summaries." />
+        <FeatureCard title="Mature Module default off" detail="Mature/private content stays disabled and excluded unless explicit local policy allows it." />
       </div>
+    </SectionCard>
+  );
+}
+
+function FirstRunOnboardingFlow({
+  hasProject,
+  onOpenProjectHome,
+  onOpenProviderSetup,
+  onSkip,
+  onComplete
+}: {
+  hasProject: boolean;
+  onOpenProjectHome: () => void;
+  onOpenProviderSetup: () => void;
+  onSkip: () => void;
+  onComplete: () => void;
+}) {
+  const [step, setStep] = useState<number>(0);
+  const steps = [
+    "Welcome / local-first explanation",
+    "Create or open project",
+    "Configure provider profile or skip",
+    "Privacy/secrets explanation",
+    "Open Project Home",
+  ];
+  return (
+    <SectionCard title="First-Run Onboarding" description="A local-only startup guide. No account needed, no cloud sync, and Provider setup can be skipped.">
+      <div className="safe-summary-grid">
+        <SafeSummaryCard title="No account needed" value="local" detail="The app runs against local backend APIs." />
+        <SafeSummaryCard title="No cloud sync" value="disabled" detail="Projects are not uploaded or synchronized." />
+        <SafeSummaryCard title="API keys stay local" value="secret ref only" detail="Use api_key_env or secret_ref in Provider Setup." />
+        <SafeSummaryCard title="World boundary" value="protected" detail="Onboarding never modifies GameState." />
+      </div>
+      <ol className="compact-list">
+        {steps.map((label, index) => (
+          <li key={label}>
+            <strong>{index === step ? "Current: " : ""}{label}</strong>
+          </li>
+        ))}
+      </ol>
+      {step === 0 && <p>Welcome to AI Narrative Studio. This is a local-first Novel, Tavern RP, and World Studio workspace.</p>}
+      {step === 1 && <p>{hasProject ? "A local project/workspace is already selected." : "Open Project Picker to create or select a local project. Paths are shown as safe summaries."}</p>}
+      {step === 2 && <p>Provider setup is optional. You can skip it and use mock/local_stub. Do not paste plaintext API keys into the frontend.</p>}
+      {step === 3 && <p>Exports, backups, diagnostics, and logs filter secrets, hidden/debug data, and mature/private content by default.</p>}
+      {step === 4 && <p>Open Project Home when you are ready. You can revisit local help from the dashboard.</p>}
+      <div className="quick-actions">
+        <button type="button" onClick={() => setStep(Math.max(0, step - 1))} disabled={step === 0}>Back</button>
+        <button type="button" onClick={() => setStep(Math.min(steps.length - 1, step + 1))} disabled={step === steps.length - 1}>Next</button>
+        <button type="button" onClick={onOpenProjectHome}>Open Project Home</button>
+        <button type="button" onClick={onOpenProviderSetup}>Provider Setup Wizard</button>
+        <button type="button" onClick={onSkip}>Skip onboarding</button>
+        <button type="button" onClick={onComplete}>Finish</button>
+      </div>
+      <p className="muted">Onboarding state is stored locally as completed/skipped only; it contains no secrets, raw env, project paths, or provider credentials.</p>
     </SectionCard>
   );
 }
@@ -5811,6 +6227,234 @@ function DiagnosticsExportPanel({
   );
 }
 
+function DiagnosticsBundlePanel({
+  preview,
+  error,
+  onPreview
+}: {
+  preview: DiagnosticsBundlePreview | null;
+  error: string;
+  onPreview: () => void;
+}) {
+  return (
+    <SectionCard title="Diagnostics Bundle UI" description="Preview a local diagnostics bundle. Default bundle excludes .env, API keys, provider secrets, raw env, raw prompts, hidden facts, raw state_deltas, debug memory, mature/private content, databases, and full saves.">
+      <div className="section-heading-row">
+        <div>
+          <h4>Diagnostics Bundle Preview</h4>
+          <p className="muted">Nothing is uploaded. Debug bundle requires explicit flag and ENABLE_DEBUG_API.</p>
+        </div>
+        <button type="button" onClick={onPreview}>Preview Bundle</button>
+      </div>
+      <ErrorPanel message={error} compact />
+      {preview ? (
+        <div className="safe-summary-grid">
+          <SafeSummaryCard title="Bundle" value={preview.manifest.bundle_id} detail={preview.writes_file ? "writes file" : "preview only"} />
+          <SafeSummaryCard title="Included" value={String(preview.manifest.included_sections.length)} detail={preview.manifest.included_sections.join(", ")} />
+          <SafeSummaryCard title="Excluded" value={String(preview.manifest.excluded_sections.length)} detail="Secrets, hidden/debug, mature/private, database and save files excluded by default." />
+          <SafeSummaryCard title="Secrets" value={preview.manifest.contains_secrets ? "blocked" : "excluded"} detail={preview.manifest.redaction_policy} />
+        </div>
+      ) : (
+        <EmptyState title="No diagnostics bundle preview." detail="Preview creates a safe manifest without writing files." />
+      )}
+    </SectionCard>
+  );
+}
+
+function LocalConfigWizardPanel({
+  summary,
+  startupChecks,
+  error,
+  onRefresh,
+  onOpenProviders
+}: {
+  summary: LocalStudioConfigSummary | null;
+  startupChecks: LocalStudioStartupChecks | null;
+  error: string;
+  onRefresh: () => void;
+  onOpenProviders: () => void;
+}) {
+  return (
+    <SectionCard title="Local Config Wizard" description="Review local configuration status without showing raw env, API keys, or database connection strings.">
+      <div className="section-heading-row">
+        <div>
+          <h4>Config Status</h4>
+          <p className="muted">This wizard cannot write .env and cannot store secrets.</p>
+        </div>
+        <div className="quick-actions">
+          <button type="button" onClick={onRefresh}>Refresh Config</button>
+          <button type="button" onClick={onOpenProviders}>Provider Setup Wizard</button>
+        </div>
+      </div>
+      <ErrorPanel message={error} compact />
+      <div className="safe-summary-grid">
+        <SafeSummaryCard title="Database" value={summary?.database_configured ? "configured" : "missing"} detail="DATABASE_URL value is not displayed." />
+        <SafeSummaryCard title="Provider profiles" value={String(summary?.provider_profiles_count ?? 0)} detail="Use api_key_env or secret_ref only." />
+        <SafeSummaryCard title="Debug API" value={summary?.debug_enabled ? "enabled" : "disabled"} detail="Debug views require ENABLE_DEBUG_API." />
+        <SafeSummaryCard title="Authoring API" value={summary?.authoring_enabled ? "enabled" : "disabled"} detail="Authoring actions still use backend validation." />
+        <SafeSummaryCard title="Module API" value={summary?.module_api_enabled ? "enabled" : "disabled"} detail="Modules cannot execute arbitrary code." />
+        <SafeSummaryCard title="Quality API" value={summary?.quality_api_enabled ? "available" : "unavailable"} detail="Quality reports are local safe summaries." />
+      </div>
+      {startupChecks?.warnings.length ? <p className="muted">{startupChecks.warnings.join(", ")}</p> : null}
+    </SectionCard>
+  );
+}
+
+function ProviderSetupWizardPanel() {
+  const providerTypes = ["openai", "openai_compatible", "local_http", "relay", "mock/local_stub"];
+  const allowedModes = ["Novel", "Tavern", "World", "Cross-Mode", "Quality"];
+  return (
+    <SectionCard title="Provider Setup Wizard" description="Guided local Provider setup. The frontend never asks for a plaintext API key; use api_key_env or secret_ref only.">
+      <div className="mode-landing-grid">
+        <FeatureCard title="Step 1: provider type" detail={providerTypes.join(", ")} />
+        <FeatureCard title="Step 2: model and base URL" detail="Fill display_name, model_id, and base_url or base_url_env." />
+        <FeatureCard title="Step 3: secret reference" detail="Use api_key_env or secret_ref. No plaintext api_key field is provided." />
+        <FeatureCard title="Step 4: allowed modes" detail={allowedModes.join(", ")} />
+        <FeatureCard title="Step 5: capability summary" detail="Review local/provider capability warnings before routing." />
+        <FeatureCard title="Step 6: dry-run validation" detail="Validation is safe and does not call real providers by default." />
+      </div>
+      <SecretSafeNotice compact />
+    </SectionCard>
+  );
+}
+
+function BackupRestoreWizardPanel({
+  plan,
+  result,
+  restorePlan,
+  error,
+  onDryRun,
+  onCreate,
+  onRestoreDryRun
+}: {
+  plan: BackupPlan | null;
+  result: BackupCreateResponse | null;
+  restorePlan: RestorePlan | null;
+  error: string;
+  onDryRun: () => void;
+  onCreate: () => void;
+  onRestoreDryRun: (backupPath: string, targetProjectId: string) => void;
+}) {
+  const [backupPath, setBackupPath] = useState<string>("backups/latest.zip");
+  const [targetProjectId, setTargetProjectId] = useState<string>("restored_project");
+  return (
+    <SectionCard title="Backup / Restore Wizard" description="Local backup and restore are dry-run first. Secrets, .env, logs/cache/build outputs, debug-only data, and mature/private content are excluded by default.">
+      <ErrorPanel message={error} compact />
+      <div className="quick-actions">
+        <button type="button" onClick={onDryRun}>Backup Dry-Run Preview</button>
+        <button type="button" onClick={onCreate}>Confirm Create Backup</button>
+      </div>
+      {plan ? (
+        <div className="safe-summary-grid">
+          <SafeSummaryCard title="Plan" value={plan.plan_id} detail={plan.dry_run ? "dry-run only" : "apply"} />
+          <SafeSummaryCard title="Would write" value={String(plan.would_write_files.length)} detail={plan.would_write_files.join(", ")} />
+          <SafeSummaryCard title="Excluded" value={String(plan.excluded_items.length)} detail={plan.excluded_items.join(", ")} />
+          <SafeSummaryCard title="Blockers" value={String(plan.blockers.length)} detail={plan.blockers.join(", ") || "none"} />
+        </div>
+      ) : (
+        <EmptyState title="No backup dry-run yet." detail="Run dry-run before creating a local backup." />
+      )}
+      {result && <SuccessPanel message={`Backup created: ${result.backup_path_summary ?? result.manifest.manifest_id}`} compact />}
+      <div className="template-grid">
+        <label>
+          Backup file for restore dry-run
+          <input value={backupPath} onChange={(event) => setBackupPath(event.target.value)} />
+        </label>
+        <label>
+          Target project id
+          <input value={targetProjectId} onChange={(event) => setTargetProjectId(event.target.value)} />
+        </label>
+      </div>
+      <button type="button" onClick={() => onRestoreDryRun(backupPath, targetProjectId)}>Restore Dry-Run Preview</button>
+      {restorePlan && (
+        <div className="safe-summary-grid">
+          <SafeSummaryCard title="Restore valid" value={restorePlan.backup_valid ? "yes" : "no"} detail={restorePlan.target_project_id} />
+          <SafeSummaryCard title="Conflicts" value={String(restorePlan.conflicts.length)} detail={restorePlan.conflicts.join(", ") || "none"} />
+          <SafeSummaryCard title="Blockers" value={String(restorePlan.blockers.length)} detail={restorePlan.blockers.join(", ") || "none"} />
+        </div>
+      )}
+    </SectionCard>
+  );
+}
+
+function ErrorRecoveryWizardPanel({
+  issues,
+  plan,
+  error,
+  onRefresh,
+  onDryRun
+}: {
+  issues: RecoveryIssue[];
+  plan: RecoveryPlan | null;
+  error: string;
+  onRefresh: () => void;
+  onDryRun: () => void;
+}) {
+  return (
+    <SectionCard title="Error Recovery Wizard" description="Local recovery suggestions are dry-run first. Destructive recovery is blocked/manual-only.">
+      <div className="quick-actions">
+        <button type="button" onClick={onRefresh}>Refresh Issues</button>
+        <button type="button" onClick={onDryRun}>Dry-Run Recovery</button>
+      </div>
+      <ErrorPanel message={error} compact />
+      {issues.length ? (
+        <div className="desktop-health-list">
+          {issues.map((issue) => (
+            <article className={`desktop-health-item ${issue.severity}`} key={issue.issue_id}>
+              <div className="section-heading-row">
+                <strong>{issue.category}: {issue.issue_id}</strong>
+                <span className={`status-pill ${issue.severity}`}>{issue.disposition}</span>
+              </div>
+              <p>{issue.safe_summary}</p>
+              <p className="muted">{issue.suggested_action}</p>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <EmptyState title="No recovery issues." detail="Refresh to detect local recovery suggestions." />
+      )}
+      {plan && <p className="muted">Plan {plan.plan_id}: {plan.actions.length} suggested action(s), {plan.blockers.length} blocker(s).</p>}
+    </SectionCard>
+  );
+}
+
+function LocalLogViewerPanel({
+  logs,
+  error,
+  debugEnabled,
+  onRefresh
+}: {
+  logs: LocalLogListResponse | null;
+  error: string;
+  debugEnabled: boolean;
+  onRefresh: () => void;
+}) {
+  return (
+    <SectionCard title="Local Log Viewer" description="Shows redacted local log summaries from the allowed logs directory only. API keys, Authorization headers, raw env, DB URLs, hidden facts, mature/private content, and raw state_deltas are redacted.">
+      <div className="section-heading-row">
+        <div>
+          <h4>Safe Logs</h4>
+          <p className="muted">Debug logs are gated by ENABLE_DEBUG_API: {debugEnabled ? "enabled" : "disabled"}.</p>
+        </div>
+        <button type="button" onClick={onRefresh}>Refresh Logs</button>
+      </div>
+      <ErrorPanel message={error} compact />
+      {logs?.warnings.length ? <p className="muted">{logs.warnings.join(", ")}</p> : null}
+      {logs?.logs.length ? (
+        <ul className="compact-list">
+          {logs.logs.slice(0, 20).map((entry, index) => (
+            <li key={`${entry.source}-${index}`}>
+              <strong>{entry.level}</strong> {entry.source}: {entry.message}
+              {entry.redacted && <span className="badge">redacted</span>}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <EmptyState title="No local logs." detail="Launcher logs live under ignored logs/ and are redacted before display." />
+      )}
+    </SectionCard>
+  );
+}
+
 function QualityDashboardUXPanel({
   worldHealth,
   narrativeEvalReports,
@@ -5829,6 +6473,13 @@ function QualityDashboardUXPanel({
   const categories = ["Project", "World", "Novel", "Tavern", "Cross-Mode", "Provider", "Mods", "Modules", "RP/Mature"];
   return (
     <SectionCard title="Quality Gate Dashboard" description="Safe overview of blockers, warnings, and next local actions.">
+      <div className="section-heading-row">
+        <div>
+          <h4>One-Click Quality Gate</h4>
+          <p className="muted">Scope choices: project, world, novel, tavern, cross-mode, providers, mods, modules, rp/mature, all. Reports are safe summaries only.</p>
+        </div>
+        <button type="button" disabled>Run Quality Gate</button>
+      </div>
       <div className="safe-summary-grid">
         <SafeSummaryCard title="Overall status" value={blockerCount ? "blocked" : worldHealth ? "review" : "not run"} detail="Run the relevant local quality gates before release." />
         <SafeSummaryCard title="Blockers" value={String(blockerCount)} detail="Safe summaries only; hidden facts are not printed." />
@@ -8108,7 +8759,7 @@ function ProjectSelectorPanel({
           {currentWorkspace && (
             <dl className="metadata-list">
               <dt>Path</dt>
-              <dd>{currentWorkspace.path_redacted}</dd>
+              <dd><SafePathSummary value={currentWorkspace.path_redacted} /></dd>
               <dt>Worlds</dt>
               <dd>{currentWorkspace.world_count}</dd>
               <dt>Last opened</dt>
@@ -8217,7 +8868,7 @@ function RecentProjectsPanel({
           {projects.map((project) => (
             <li key={project.workspace_id}>
               <strong>{project.display_name}</strong>
-              <span className="muted"> - {project.path_redacted}</span>
+              <span className="muted"> - <SafePathSummary value={project.path_redacted} /></span>
               <span className="muted">
                 {" "}
                 - {project.last_world_id ? `last world ${project.last_world_id}` : "no world selected"}

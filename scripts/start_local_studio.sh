@@ -244,6 +244,7 @@ echo "VITE_API_BASE_URL: ${VITE_API_BASE_URL}"
 echo "LLM_API_KEY is not read by this script and is never written to logs by the launcher."
 echo "Frontend env safety: only VITE_API_BASE_URL is passed to the frontend process."
 echo "State safety: launcher does not modify GameState, saves, databases, worlds, or content packs."
+echo "Local-first: no account, no cloud sync, no online marketplace, no telemetry upload."
 if [ "${LLM_PROVIDER}" = "openai" ] && [ -z "${LLM_API_KEY:-}" ]; then
   echo "Warning: LLM_PROVIDER=openai but LLM_API_KEY is not set. Use mock/local_stub for offline local startup."
 fi

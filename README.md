@@ -22,6 +22,63 @@ stable. The project remains local-first: API keys stay local, are not uploaded,
 are not synchronized, do not enter frontend code, and do not enter exports,
 mods, packages, logs, or documentation examples.
 
+## v3.0 Local Desktop Studio Polish
+
+v3.0 polishes the local desktop/studio workflow. It is still a local launcher
+and local backend/frontend experience, not a formal signed installer, account
+client, cloud sync client, online marketplace, telemetry uploader, or online
+platform.
+
+Implemented v3.0 local desktop surfaces:
+
+- Local launcher/startup status APIs: `/local-studio/status`,
+  `/local-studio/health`, `/local-studio/config-summary`,
+  `/local-studio/startup-checks`, and safe recent-error summaries.
+- Launcher script polish for Windows and shell workflows, including dependency
+  checks, `.env` presence hints, port hints, local-only reminders, and safe
+  `VITE_API_BASE_URL` frontend configuration.
+- Project Picker and Recent Projects safe summaries. Recent project entries
+  store local project id/name, redacted path summary, last opened time, last
+  mode/world hint, and health status only.
+- Local Config Wizard and Provider Setup Wizard. Provider setup uses
+  `api_key_env` or `secret_ref`; it does not ask for a plaintext API key.
+- Backend Health Check UI and One-click Quality Gate entry with safe status and
+  category summaries.
+- Backup / Restore core and wizard. Backup dry-run does not write files;
+  backup creation requires explicit confirmation; restore dry-run does not
+  write projects; restore apply requires explicit confirmation.
+- Error Recovery core and wizard. Recovery plans are deterministic local
+  suggestions; destructive recovery remains blocked/manual-only.
+- Local Log Viewer and Diagnostics Bundle. Logs are redacted, diagnostics
+  preview does not write files, and diagnostics bundle creation writes only
+  local redacted bundles under `exports/diagnostics/`.
+- Offline Help Center, Desktop Settings / Preferences polish, safe local path
+  summaries, and first-run onboarding.
+- v3.0 smoke/regression checks for desktop shell, local studio UX, backup /
+  restore, diagnostics, logs, scripts, packaging docs, and frontend safety.
+
+Default v3.0 exclusions and boundaries:
+
+- Backups, diagnostics, logs, crash reports, exports, and desktop bundles must
+  exclude `.env`, API keys, provider secrets, raw env, database connection
+  secrets, logs/cache/build outputs, mature/private content, hidden/debug data,
+  raw prompts, and raw `state_deltas` by default.
+- UI and desktop tools are convenience surfaces over backend APIs. They do not
+  directly modify `GameState`, bypass validation, apply proposals, or write
+  `EventLog`.
+- No account system, cloud sync, online marketplace, remote package
+  auto-download, telemetry upload, or online desktop platform is implemented.
+
+Useful v3.0 checks:
+
+```powershell
+python -m pytest backend/tests/test_v30_local_studio_services.py
+python -m pytest backend/tests/test_v30_integration_regression.py
+cd frontend
+npm.cmd run build
+npm.cmd run check:v30-ux
+```
+
 ## v2.9 Local UI / UX Foundation
 
 v2.9 is a local UI foundation release. It does not rewrite the whole app and

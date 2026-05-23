@@ -224,6 +224,16 @@ class DesktopStudioPolicy:
 _SECRET_PATTERNS = [
     re.compile(r"sk-[A-Za-z0-9_-]{16,}"),
     re.compile(r"(?i)(LLM_API_KEY|OPENAI_API_KEY|API_KEY|SECRET_KEY)\s*[:=]\s*[^\s,;]+"),
+    re.compile(r"(?i)(authorization\s*[:=]\s*)(bearer\s+)?[A-Za-z0-9._~+/=-]+"),
+    re.compile(r"(?i)(api[_-]?key|secret|token|password)\s*[:=]\s*['\"]?[^'\",\s}]+"),
+    re.compile(r"(?i)(database_url\s*[:=]\s*)[^\s,;]+"),
+    re.compile(r"(?i)\b(postgresql|postgres|mysql|mariadb)://[^\s'\"<>]+"),
+    re.compile(r"(?i)\bsqlite:///[^\s'\"<>]+"),
+    re.compile(r"(?is)(raw[_ -]?env|environment)\s*[:=]\s*\{.*?\}"),
+    re.compile(r"(?is)(raw[_ -]?(prompt|output)|prompt|output)\s*[:=]\s*([\"']).*?\3"),
+    re.compile(
+        r"(?i)(hidden[_\s-]?facts?|npc[_\s-]?secrets?|debug[_\s-]?memory|raw[_\s-]?state[_\s-]?deltas?|state[_\s-]?deltas?|mature[_\s-]?content|private[_\s-]?content)\s*[:=]\s*[^}\n]+"
+    ),
     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----", re.DOTALL),
 ]
 

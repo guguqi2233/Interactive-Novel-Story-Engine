@@ -261,6 +261,7 @@ Write-Host "VITE_API_BASE_URL: $($env:VITE_API_BASE_URL)"
 Write-Host "LLM_API_KEY is not read by this script and is never written to logs by the launcher."
 Write-Host "Frontend env safety: only VITE_API_BASE_URL is passed to the frontend process."
 Write-Host "State safety: launcher does not modify GameState, saves, databases, worlds, or content packs."
+Write-Host "Local-first: no account, no cloud sync, no online marketplace, no telemetry upload."
 Write-Host "PowerShell profile note: profile signing warnings are non-blocking launcher environment warnings."
 if ($env:LLM_PROVIDER -eq "openai" -and -not $env:LLM_API_KEY) {
     Write-Host "Warning: LLM_PROVIDER=openai but LLM_API_KEY is not set. Use mock/local_stub for offline local startup."

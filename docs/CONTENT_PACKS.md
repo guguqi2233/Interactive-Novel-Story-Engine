@@ -21,6 +21,15 @@ not execute packages, download remote packages, auto-enable risky modules,
 display provider secrets, or present an online marketplace as a near-term
 feature.
 
+v3.0 keeps package and desktop polish local-first. Project Picker, Backup /
+Restore, Diagnostics Bundle, Local Log Viewer, Offline Help, and Desktop
+Settings may reference local packages and module status, but they do not add a
+remote package registry, online marketplace, cloud sync, remote auto-download,
+or executable package runtime. Backups, diagnostics, packages, and desktop
+bundles must exclude `.env`, API keys, provider secrets, databases, logs,
+caches, build outputs, debug-only data, mature/private content, hidden facts,
+raw prompts, raw `state_deltas`, and executable payloads by default.
+
 ## v2.8 RP / Mature Content and Package Policy
 
 v2.8 adds RP immersion and mature-policy metadata that can appear in local

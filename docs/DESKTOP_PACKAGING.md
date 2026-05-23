@@ -1,16 +1,17 @@
 # Desktop Packaging Safety Pass
 
-## v2.0 Local Platform Packaging Notes
+## v3.0 Local Desktop Studio Positioning
 
-v2.0 adds local package, plugin, module, workspace, campaign, and browser
-services. Desktop packaging remains a local prototype, not a formal installer,
-signed app, marketplace client, or auto-updater. Packages, backups, exports,
-logs, and crash reports must not include `.env`, API keys, databases, caches,
-or build outputs by default.
+v3.0 focuses on **Local Desktop Studio Polish**. The desktop surface is a
+local launcher plus local backend/frontend UX, not a formal installer, signed
+app, account client, cloud sync client, marketplace client, telemetry uploader,
+or auto-updater. Packages, backups, exports, diagnostics bundles, logs, and
+crash reports must not include `.env`, API keys, provider secrets, databases,
+caches, mature/private content, or build outputs by default.
 
 ## Status
 
-v1.7 keeps desktop packaging as a local-only studio prototype. The supported
+v3.0 keeps desktop packaging as a local-only studio prototype. The supported
 workflow is still a transparent launcher that starts the FastAPI backend and
 the Vite frontend. There is no formal installer, code signing, automatic
 update channel, cloud sync, account system, marketplace, or telemetry upload.
@@ -134,35 +135,44 @@ The launcher scripts must not:
 - upload telemetry or crash reports;
 - start a real LLM service.
 
-## Backup, Export, And Crash Reports
+## Backup, Restore, Diagnostics, Logs, And Crash Reports
 
-Backups and world exports are local bundle workflows, not cloud sync. They must
-default to safe profiles and exclude `.env`, API keys, raw env, logs, caches,
-database connection secrets, frontend build outputs, desktop build outputs,
-and executable files.
+Backups, restores, diagnostics bundles, log views, and world exports are local
+workflows, not cloud sync. They must default to safe profiles and exclude
+`.env`, API keys, provider secrets, raw env, logs, caches, database connection
+secrets, database files, frontend build outputs, desktop build outputs,
+debug-only data, mature/private content, backups, crash reports, and executable
+files unless a future explicit safe policy says otherwise.
 
 Crash reports are local-only. They may store redacted exception type, component,
 safe message, redacted stack, and safe context summary. They must not include
 API keys, raw prompts, hidden fact text, raw env, or database passwords.
 
-Current v1.7 implementation note: the desktop boundary policy, crash report
-viewer, health check, startup diagnostics, workspace selector, update notes,
-and launcher scripts are implemented. Dedicated desktop Backup / Restore,
-Log Viewer, Error Recovery Wizard, One-click Quality Gate, One-click World
-Export, and Offline Help runtime flows are still partial or boundary-level in
-the current code. Do not describe those flows as complete desktop runtime
-features until their APIs/CLI/UI are implemented and tested.
+Current v3.0 implementation note: desktop boundary policy, crash report viewer,
+health check, startup diagnostics, workspace selector, recent projects, local
+config summaries, redacted log viewer, diagnostics bundle preview/create,
+backup/restore dry-run/apply-confirmed boundary, recovery suggestions, offline
+help UI, and launcher scripts are local-only surfaces. They remain safety-first
+desktop polish, not cloud backup, online diagnostics, or a signed installer.
+
+Additional v3.0 implementation note: Local Studio safe-summary endpoints
+(`/local-studio/status`, `/local-studio/health`,
+`/local-studio/config-summary`, `/local-studio/startup-checks`,
+`/local-studio/recent-errors`) are desktop convenience APIs. Backup,
+diagnostics, recovery, and log APIs are local-only and redacted by default.
+They must not be treated as a cloud diagnostics channel, remote support upload,
+or installer packaging mechanism.
 
 ## Tauri / Electron Review
 
-Tauri and Electron remain future options only. v1.7 does not add either runtime
+Tauri and Electron remain future options only. v3.0 does not add either runtime
 or produce an installer. A future desktop shell must preserve the same boundary:
 the shell calls backend APIs and cannot become a second engine, a privileged
 state editor, or a secret store exposed to frontend code.
 
-## Not In v1.7
+## Not In v3.0
 
-v1.7 does not include:
+v3.0 does not include:
 
 - formal installer generation;
 - code signing;
@@ -177,7 +187,7 @@ v1.7 does not include:
 
 ## Final Packaging Gate
 
-A v1.7 desktop packaging safety pass is acceptable only when:
+A v3.0 desktop packaging safety pass is acceptable only when:
 
 - tests and frontend build pass;
 - `.gitignore` covers all local secret/runtime/build outputs listed above;

@@ -22,6 +22,18 @@ authority to directly edit `GameState`, apply proposals, bypass validation, or
 write `EventLog`. Normal UI must continue to show visible/safe summaries only;
 debug/replay and diagnostics debug export remain gated by `ENABLE_DEBUG_API`.
 
+v3.0 extends this local-first direction with Local Desktop Studio Polish:
+launcher/startup status, Project Picker, Recent Projects, Local Config Wizard,
+Provider Setup Wizard, Health Check, One-click Quality Gate, Backup / Restore,
+Error Recovery, Local Log Viewer, Diagnostics Bundle, Offline Help Center,
+Desktop Settings, safe path summaries, and first-run onboarding. These desktop
+tools are convenience surfaces over backend APIs. They do not become a second
+World Engine, do not directly modify `GameState`, do not bypass validation or
+apply flow, and do not write `EventLog` except through existing backend
+world-changing paths. Backups, diagnostics, logs, and packaging must exclude
+secrets, hidden/debug data, mature/private content, databases, caches, build
+outputs, and raw `state_deltas` by default.
+
 ## v2.8 Roleplay Immersion & Mature Module Integration
 
 v2.8 strengthens Tavern/RP immersion and adds default-off mature safety policy

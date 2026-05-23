@@ -82,6 +82,34 @@ documentation examples.
 10. UI code may call local backend APIs, but it must not directly read or write
     arbitrary files.
 
+# v3.0 Local Desktop Studio Rules
+
+v3.0 Local Desktop Studio Polish is a local launcher/backend/frontend workflow,
+not a signed installer, account client, cloud sync client, marketplace client,
+telemetry uploader, online diagnostics channel, or remote support product.
+
+1. Local launcher scripts may print safe summaries and start local backend /
+   frontend processes, but must not print API keys, raw env, provider secrets,
+   raw prompts, database passwords, or hidden/debug/mature/private content.
+2. Project Picker and Recent Projects may store/display safe project summaries
+   only. They must not store API keys, raw env, full sensitive paths, `.env`
+   contents, databases, logs, caches, or raw `GameState`.
+3. Local Config Wizard and Provider Setup Wizard must use booleans,
+   `api_key_env`, or `secret_ref`. They must not expose plaintext key fields.
+4. Backup / Restore must be dry-run first, explicit-confirm for writes, and
+   exclude `.env`, API keys, provider secrets, logs, caches, databases, build
+   outputs, debug-only data, and mature/private content by default.
+5. Diagnostics bundles, log viewer, crash reports, and recovery reports must be
+   local-only and redacted. Debug bundles require explicit confirmation and
+   `ENABLE_DEBUG_API`.
+6. Desktop packaging docs and any future packaging scripts must exclude `.env`,
+   databases, logs, caches, `node_modules`, `frontend/dist`, desktop build
+   outputs, backups, diagnostics bundles, and crash reports unless a future
+   explicit safe policy says otherwise.
+7. Desktop/UI polish must not directly modify `GameState`, bypass validation,
+   apply proposals, or write `EventLog` outside existing backend world-changing
+   flows.
+
 # Core Architecture Principles
 
 1. The LLM is the language layer, not the world judge.
