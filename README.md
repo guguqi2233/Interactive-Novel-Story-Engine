@@ -79,6 +79,68 @@ npm.cmd run build
 npm.cmd run check:v30-ux
 ```
 
+## v3.1 Novel Studio UI Pro
+
+v3.1 polishes the local Novel Studio writing workflow. It is a local
+draft/authoring experience for manuscripts, outlines, chapters, scenes,
+continuity panels, exports, and World -> Novel draft import. It is not an
+online writing platform, cloud sync feature, account system, multiplayer
+collaboration tool, or complete publishing suite.
+
+Implemented v3.1 Novel surfaces:
+
+- Novel Workspace Shell with left Novel navigation, central writing workspace,
+  safe right-side context, and local status footer.
+- Manuscript Dashboard with manuscript/chapter/scene counts, word count
+  summary, local writing-session status, and quick writing entry points.
+- Outline Tree Pro entry for act / volume / chapter / scene / beat / note
+  outline work. Current UI is lightweight and safety-focused rather than a
+  complex drag/drop tree editor.
+- Chapter Editor Pro using a plain textarea / markdown-style draft field,
+  linked scene / character / timeline refs, dirty/save status, snapshot entry,
+  and word count.
+- Scene Cards Board for local scene summaries, status, chapter refs, and safe
+  draft metadata.
+- Character Arc Panel, Plot / Foreshadowing Board, Timeline Link Panel, and
+  World Bible Sidebar using safe summaries and redacted labels. Hidden truths,
+  NPC secrets, authoring-only notes, raw prompts, and raw `state_deltas` are
+  excluded from normal Novel views.
+- Draft Version Compare through local `NovelDraftSnapshot` and
+  `DraftVersionService` APIs. Snapshots store user draft text and safe metadata
+  only; restore requires explicit confirmation.
+- Writing Session Dashboard through local `WritingSessionState` and
+  `WritingSessionService` APIs. Session data is local-only and is not
+  telemetry.
+- Novel Search / Tags / Filters through `NovelSearchService`, excluding
+  hidden/private authoring notes in normal mode.
+- Novel Prompt / Provider panel showing prompt profile, provider safe summary,
+  model/use-case hints, and safe context notes without API keys or full
+  sensitive prompts.
+- Novel Export Wizard Pro for local Markdown / TXT export. Export policy
+  excludes authoring notes, hidden refs, mature/private content, debug data,
+  provider secrets, raw env, and API keys by default.
+- World -> Novel Import UX for safe EventLog/timeline summaries. Preview does
+  not write files; apply writes Novel draft data only and does not modify World
+  `EventLog` or `GameState`.
+- Novel Quality Dashboard entry for deterministic local checks. It is a writing
+  quality/consistency aid, not an external LLM judge.
+
+Useful v3.1 checks:
+
+```powershell
+python -m pytest backend/tests/test_v31_novel_ui_pro.py
+python -m pytest backend/tests/test_v31_integration_regression.py
+cd frontend
+npm.cmd run build
+npm.cmd run check:v31-novel-ui
+```
+
+v3.1 preserves the existing boundaries: Novel Mode stores drafts and authoring
+metadata, not World facts. Novel -> World changes still require
+draft/proposal/validation/apply, World changes still go through backend APIs,
+`StateDelta`, and `EventLog`, and Novel LLM use remains behind Provider
+Gateway / injected mock provider paths.
+
 ## v2.9 Local UI / UX Foundation
 
 v2.9 is a local UI foundation release. It does not rewrite the whole app and

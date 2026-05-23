@@ -88,6 +88,47 @@ and must not weaken `GameState`, `StateDelta`, `EventLog`, visibility,
 Provider Gateway, import/export, backup, diagnostics, or package-validation
 boundaries.
 
+### v3.1 Implemented Novel Studio UI Pro Scope
+
+v3.1 implements **Novel Studio UI Pro** as a local writing and authoring UI
+layer. Novel Mode remains draft-oriented: manuscripts, outlines, chapters,
+scenes, character arcs, plot threads, foreshadowing, timelines, World Bible
+references, snapshots, writing sessions, exports, and import previews are
+project-local authoring data until a separate reviewed flow proposes World
+changes.
+
+Implemented v3.1 contracts and services include:
+
+- `NovelWorkspaceShell` and Novel-specific UI cards/badges/toolbars for a
+  local writing workspace.
+- Outline Tree Pro, Chapter Editor Pro, Scene Cards Board, Manuscript
+  Dashboard, Character Arc Panel, Plot / Foreshadowing Board, Timeline Link
+  Panel, and World Bible Sidebar.
+- `NovelDraftSnapshot` / `DraftVersionService` for local draft snapshots,
+  compare, load, and confirmed restore.
+- `WritingSessionState` / `WritingSessionService` for local writing-session
+  progress without telemetry upload.
+- `NovelSearchService` for lightweight local search over chapters, scenes,
+  plot threads, foreshadowing items, and character arcs.
+- `NovelPreferences` / local preferences support for default manuscript,
+  export format, sidebar visibility, timeline panel visibility, autosave
+  reminder, and default prompt profile id.
+- Novel Prompt / Provider UX that shows safe provider/profile summaries and
+  keeps provider secrets hidden.
+- Novel Export Wizard Pro for local Markdown/TXT exports with default filtering
+  for authoring notes, hidden refs, mature/private content, debug data, raw env,
+  provider secrets, and API keys.
+- World -> Novel Import UX based on safe event summaries; it does not modify
+  World `EventLog` or `GameState`.
+- Novel Quality Dashboard Pro entry for deterministic local quality and
+  consistency checks.
+
+v3.1 does not implement online writing, cloud sync, accounts, multiplayer
+collaboration, online publishing, DOCX/EPUB publishing unless separately
+implemented, or an LLM-based literary judge. UI polish must not make Novel
+drafts authoritative World facts, bypass Cross-Mode validation, expose hidden
+facts, or allow Provider/Prompt settings to expand LLM authority.
+
 ## v2.8 Roleplay Immersion & Mature Module
 
 v2.8 adds Roleplay Immersion & Mature Module infrastructure on top of Tavern

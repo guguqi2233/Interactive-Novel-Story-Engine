@@ -32,6 +32,32 @@ backups, crash reports, and desktop bundles must not include raw prompts,
 outputs, provider secrets, Authorization headers, hidden facts, mature/private
 content, or raw `state_deltas` by default.
 
+v3.1 Novel Studio UI Pro keeps Novel LLM use behind Provider Gateway /
+`LLMProvider` injection. Novel Prompt / Provider UX may show the selected prompt
+profile id, provider safe summary, model id, use case, capability warnings, and
+safe context summary. It must not show API keys, provider secrets, raw env,
+full sensitive prompts, hidden facts, NPC secrets, authoring-only private notes,
+debug memory, raw `GameState`, or raw `state_deltas`.
+
+Novel prompt context rules:
+
+- `NovelPromptContext` may include safe manuscript/chapter/scene summaries,
+  safe character summaries, safe World Bible context, safe timeline summaries,
+  and style instructions.
+- Hidden World Bible entries, hidden Lore/Fact entries, NPC secrets, character
+  private notes, debug events, raw prompts, and raw `state_deltas` must be
+  filtered from normal Novel prompts.
+- Novel-scoped Prompt Profiles can tune style and generation preferences only.
+  They cannot enable hidden fact access, state modification, action-result
+  override, visibility bypass, or proposal apply.
+- Draft snapshots must not store provider prompts or hidden context. They store
+  user draft text and safe metadata only.
+- Novel draft/rewrite/summary output remains a Novel draft. It is not a World
+  fact, `StateDelta`, `EventLog` entry, content-pack write, or validation
+  result.
+- Novel quality checks remain deterministic local checks; they must not use an
+  external LLM judge for pass/fail.
+
 ## v2.8 Roleplay / Mature LLM Boundary
 
 v2.8 does not grant LLMs new authority. Provider Gateway remains the only model

@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "check:v29-ui": "node scripts/check-v29-ui-safety.mjs",
     "check:v30-ux": "node scripts/check-v30-local-studio-ux.mjs",
+    "check:v31-novel-ui": "node scripts/check-v31-novel-ui.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

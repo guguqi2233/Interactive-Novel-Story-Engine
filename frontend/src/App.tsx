@@ -82,6 +82,15 @@ import {
   fetchNovelScenes,
   createNovelScene,
   exportNovelManuscript,
+  createNovelDraftSnapshot,
+  fetchNovelDraftSnapshots,
+  compareNovelDraftSnapshots,
+  startNovelWritingSession,
+  fetchCurrentNovelWritingSession,
+  endNovelWritingSession,
+  searchNovel,
+  fetchNovelPreferences,
+  saveNovelPreferences,
   fetchTavernCharacters,
   createTavernCharacter,
   importTavernCharacterCard,
@@ -111,6 +120,10 @@ import {
   NovelManuscript,
   NovelChapter,
   NovelScene,
+  NovelDraftSnapshot,
+  WritingSessionState,
+  NovelPreferences,
+  NovelSearchResult,
   ModuleBrowserDetail,
   ModuleBrowserSummary,
   ModulePermissionSummary,
@@ -464,6 +477,29 @@ import {
   startGroupDialogue,
   startDialogue
 } from "./api";
+import {
+  CharacterArcPanel,
+  ChapterCard,
+  ChapterEditorPro,
+  DraftSaveStatus,
+  LinkedRefList,
+  ManuscriptCard,
+  ManuscriptDashboard,
+  NovelExportWizard,
+  NovelPromptProviderPanel,
+  NovelQualityDashboard,
+  NovelSafeSummaryPanel,
+  NovelSearchFilterBar,
+  NovelToolbar,
+  NovelWorkspaceShell,
+  OutlineNodeView,
+  OutlineTreePro,
+  PlotForeshadowingBoard,
+  SceneCardsBoard,
+  TimelineLinkPanel,
+  WordCountBadge,
+  WorldBibleSidebar
+} from "./novelUi";
 
 type StoryEntry = {
   id: number;
@@ -6669,6 +6705,13 @@ function ProjectShell({
   const [selectedManuscriptId, setSelectedManuscriptId] = useState("");
   const [selectedChapterId, setSelectedChapterId] = useState("");
   const [chapterDraftText, setChapterDraftText] = useState("");
+  const [chapterDraftSavedText, setChapterDraftSavedText] = useState("");
+  const [novelSearchQuery, setNovelSearchQuery] = useState("");
+  const [novelSearchResults, setNovelSearchResults] = useState<NovelSearchResult[]>([]);
+  const [novelSnapshots, setNovelSnapshots] = useState<NovelDraftSnapshot[]>([]);
+  const [novelSnapshotMessage, setNovelSnapshotMessage] = useState("");
+  const [writingSession, setWritingSession] = useState<WritingSessionState | null>(null);
+  const [novelPreferences, setNovelPreferences] = useState<NovelPreferences | null>(null);
   const [tavernCharacters, setTavernCharacters] = useState<TavernCharacter[]>([]);
   const [tavernSessions, setTavernSessions] = useState<TavernSession[]>([]);
   const [tavernMessages, setTavernMessages] = useState<TavernMessage[]>([]);
@@ -6736,7 +6779,21 @@ function ProjectShell({
       setSelectedManuscriptId((current) => current || firstManuscript);
       setSelectedChapterId((current) => current || firstChapter);
       const selectedChapter = chapters.chapters.find((chapter) => chapter.chapter_id === (selectedChapterId || firstChapter));
-      setChapterDraftText(selectedChapter?.draft_text ?? "");
+      const draftText = selectedChapter?.draft_text ?? "";
+      setChapterDraftText(draftText);
+      setChapterDraftSavedText(draftText);
+      if (firstChapter) {
+        const snapshots = await fetchNovelDraftSnapshots(selectedProjectId, selectedChapter?.chapter_id ?? firstChapter);
+        setNovelSnapshots(snapshots.snapshots);
+      } else {
+        setNovelSnapshots([]);
+      }
+      const [session, preferences] = await Promise.all([
+        fetchCurrentNovelWritingSession(selectedProjectId, firstManuscript),
+        fetchNovelPreferences(selectedProjectId)
+      ]);
+      setWritingSession(session.session);
+      setNovelPreferences(preferences);
     } catch (err) {
       setNovelError(toErrorMessage(err));
     }
@@ -6955,6 +7012,7 @@ function ProjectShell({
     setNovelMessage("");
     try {
       await updateNovelChapter(selectedProjectId, selectedChapterId, { draft_text: chapterDraftText });
+      setChapterDraftSavedText(chapterDraftText);
       setNovelMessage("Chapter draft saved locally.");
       await loadNovelData();
     } catch (err) {
@@ -6982,11 +7040,110 @@ function ProjectShell({
     if (!manuscriptId) {
       return;
     }
+    if (!confirmDangerousAction("Export this Novel draft locally? Default filtering excludes authoring notes, hidden refs, mature/private content, debug data, raw state_deltas, provider secrets, and API keys.")) {
+      return;
+    }
     setNovelError("");
     setNovelMessage("");
     try {
       const result = await exportNovelManuscript(selectedProjectId, { manuscript_id: manuscriptId, format });
       setNovelMessage(`Novel ${format} export created with ${result.chapters_exported.length} chapter(s).`);
+    } catch (err) {
+      setNovelError(toErrorMessage(err));
+    }
+  }
+
+  async function handleCreateSnapshot() {
+    if (!selectedChapterId) {
+      return;
+    }
+    setNovelError("");
+    setNovelSnapshotMessage("");
+    try {
+      await createNovelDraftSnapshot(selectedProjectId, {
+        target_type: "chapter",
+        target_id: selectedChapterId,
+        title: `Snapshot for ${selectedChapter?.title ?? selectedChapterId}`
+      });
+      const snapshots = await fetchNovelDraftSnapshots(selectedProjectId, selectedChapterId);
+      setNovelSnapshots(snapshots.snapshots);
+      setNovelSnapshotMessage("Draft snapshot created locally. Hidden context and API keys are not stored.");
+    } catch (err) {
+      setNovelError(toErrorMessage(err));
+    }
+  }
+
+  async function handleCompareSnapshot(snapshotId: string) {
+    setNovelError("");
+    try {
+      const result = await compareNovelDraftSnapshots(selectedProjectId, { left_snapshot_id: snapshotId, current_text: chapterDraftText });
+      setNovelSnapshotMessage(`${result.safe_summary} Added lines ${result.added_lines}, removed lines ${result.removed_lines}.`);
+    } catch (err) {
+      setNovelError(toErrorMessage(err));
+    }
+  }
+
+  async function handleStartWritingSession() {
+    const manuscriptId = selectedManuscriptId || novelManuscripts[0]?.manuscript_id;
+    if (!manuscriptId) {
+      return;
+    }
+    setNovelError("");
+    try {
+      const session = await startNovelWritingSession(selectedProjectId, {
+        session_id: `writing_${Date.now()}`,
+        manuscript_id: manuscriptId,
+        active_chapter_id: selectedChapterId || undefined,
+        local_goal_words: 500
+      });
+      setWritingSession(session);
+      setNovelMessage("Writing session started locally. No telemetry is uploaded.");
+    } catch (err) {
+      setNovelError(toErrorMessage(err));
+    }
+  }
+
+  async function handleEndWritingSession() {
+    if (!writingSession) {
+      return;
+    }
+    setNovelError("");
+    try {
+      const ended = await endNovelWritingSession(selectedProjectId, writingSession.session_id);
+      setWritingSession(ended);
+      setNovelMessage("Writing session ended locally.");
+    } catch (err) {
+      setNovelError(toErrorMessage(err));
+    }
+  }
+
+  async function handleNovelSearch(nextQuery = novelSearchQuery) {
+    setNovelSearchQuery(nextQuery);
+    if (!selectedProjectId) {
+      return;
+    }
+    try {
+      const result = await searchNovel(selectedProjectId, { keyword: nextQuery, chapter_id: selectedChapterId || undefined });
+      setNovelSearchResults(result.results);
+    } catch (err) {
+      setNovelError(toErrorMessage(err));
+    }
+  }
+
+  async function handleSaveNovelPreferences() {
+    setNovelError("");
+    try {
+      const saved = await saveNovelPreferences(selectedProjectId, {
+        default_manuscript_id: selectedManuscriptId || null,
+        default_export_format: novelPreferences?.default_export_format ?? "markdown",
+        show_word_count: true,
+        show_world_bible_sidebar: true,
+        show_timeline_panel: true,
+        autosave_reminder_enabled: true,
+        default_prompt_profile_id: novelPreferences?.default_prompt_profile_id ?? null
+      });
+      setNovelPreferences(saved);
+      setNovelMessage("Novel preferences saved locally without secrets.");
     } catch (err) {
       setNovelError(toErrorMessage(err));
     }
@@ -7260,10 +7417,11 @@ function ProjectShell({
         />
       </section>
       <section className="tool-card">
-        <h3>Novel Studio MVP</h3>
-        <p className="muted">Novel drafts remain project-local and never write World GameState. Hidden facts, raw env, and API keys are not shown here.</p>
+        <h3>Novel Studio UI Pro</h3>
+        <p className="muted">Novel drafts remain project-local and never write World GameState. Hidden facts, raw env, API keys, private notes, raw prompts, and raw state_deltas are not shown in normal Novel UI.</p>
         <ErrorPanel message={novelError} compact />
         <SuccessPanel message={novelMessage} compact />
+        <SuccessPanel message={novelSnapshotMessage} compact />
         <div className="form-grid">
           <label>
             Manuscript id
@@ -7274,83 +7432,138 @@ function ProjectShell({
             <input value={newManuscriptTitle} onChange={(event) => setNewManuscriptTitle(event.target.value)} />
           </label>
           <button type="button" disabled={!selectedProjectId} onClick={handleCreateManuscript}>Create Manuscript</button>
+          <button type="button" disabled={!selectedManuscriptId} onClick={handleStartWritingSession}>Start Writing Session</button>
+          <button type="button" disabled={!writingSession || Boolean(writingSession.ended_at)} onClick={handleEndWritingSession}>End Session</button>
+          <button type="button" disabled={!selectedProjectId} onClick={handleSaveNovelPreferences}>Save Novel Preferences</button>
         </div>
-        {novelManuscripts.length === 0 ? (
-          <EmptyState title="No manuscripts yet." detail="Create a manuscript to begin outlining and drafting." />
-        ) : (
-          <div className="form-grid">
-            <label>
-              Manuscript
-              <select value={selectedManuscriptId} onChange={(event) => setSelectedManuscriptId(event.target.value)}>
-                {novelManuscripts.map((manuscript) => (
-                  <option key={manuscript.manuscript_id} value={manuscript.manuscript_id}>{manuscript.title}</option>
-                ))}
-              </select>
-            </label>
-            <button type="button" onClick={() => void handleExport("markdown")}>Export Markdown</button>
-            <button type="button" onClick={() => void handleExport("txt")}>Export TXT</button>
-          </div>
-        )}
-        <div className="card-grid">
-          <div>
-            <h4>Chapters</h4>
-            <div className="form-grid">
-              <input value={newChapterTitle} onChange={(event) => setNewChapterTitle(event.target.value)} />
-              <button type="button" disabled={!selectedManuscriptId} onClick={handleCreateChapter}>Add Chapter</button>
-            </div>
-            <ItemList
-              emptyText="No chapters"
-              items={novelChapters.map((chapter) => (
-                <button
-                  key={chapter.chapter_id}
-                  type="button"
-                  className={chapter.chapter_id === selectedChapterId ? "selected-list-button" : ""}
-                  onClick={() => {
-                    setSelectedChapterId(chapter.chapter_id);
-                    setChapterDraftText(chapter.draft_text ?? "");
-                  }}
-                >
-                  {chapter.order_index + 1}. {chapter.title}
-                </button>
+        <NovelWorkspaceShell
+          navigation={(
+            <div className="stack">
+              <strong>Novel Workspace</strong>
+              {["Manuscript Dashboard", "Outline Tree Pro", "Chapter Editor Pro", "Scene Cards Board", "Character Arc Panel", "Plot / Foreshadowing Board", "Timeline Link Panel", "World Bible Sidebar", "Novel Export Wizard", "Novel Quality Dashboard"].map((item) => (
+                <span key={item}>{item}</span>
               ))}
-            />
-          </div>
-          <div>
-            <h4>Chapter Editor</h4>
-            {selectedChapter ? (
-              <div className="stack">
-                <p className="muted">{selectedChapter.title}</p>
-                <textarea value={chapterDraftText} onChange={(event) => setChapterDraftText(event.target.value)} rows={8} />
-                <div className="button-row">
-                  <button type="button" onClick={handleSaveChapterDraft}>Save Draft</button>
-                  <button type="button" onClick={handleCreateScene}>Add Scene</button>
+            </div>
+          )}
+          main={(
+            <div className="stack">
+              <ManuscriptDashboard manuscripts={novelManuscripts} chapters={novelChapters} scenes={novelScenes} />
+              {novelManuscripts.length === 0 ? (
+                <EmptyState title="No manuscripts yet." detail="Create a manuscript to begin outlining and drafting." />
+              ) : (
+                <div className="novel-card-list">
+                  {novelManuscripts.map((manuscript) => (
+                    <ManuscriptCard
+                      key={manuscript.manuscript_id}
+                      manuscript={manuscript}
+                      selected={manuscript.manuscript_id === selectedManuscriptId}
+                      onSelect={() => setSelectedManuscriptId(manuscript.manuscript_id)}
+                    />
+                  ))}
                 </div>
+              )}
+              <NovelSearchFilterBar value={novelSearchQuery} onChange={(value) => void handleNovelSearch(value)} />
+              {novelSearchResults.length > 0 && (
+                <ItemList
+                  emptyText="No search results"
+                  items={novelSearchResults.map((result) => (
+                    <span key={`${result.result_type}-${result.result_id}`}>{result.result_type}: {result.title} · {result.status}</span>
+                  ))}
+                />
+              )}
+              <div className="card-grid">
+                <div>
+                  <NovelToolbar
+                    title="Chapters"
+                    actions={<><input value={newChapterTitle} onChange={(event) => setNewChapterTitle(event.target.value)} /><button type="button" disabled={!selectedManuscriptId} onClick={handleCreateChapter}>Add Chapter</button></>}
+                  />
+                  <div className="novel-card-list">
+                    {novelChapters.length === 0 ? <EmptyState title="No chapters" /> : novelChapters.map((chapter) => (
+                      <ChapterCard
+                        key={chapter.chapter_id}
+                        chapter={chapter}
+                        selected={chapter.chapter_id === selectedChapterId}
+                        onSelect={() => {
+                          setSelectedChapterId(chapter.chapter_id);
+                          setChapterDraftText(chapter.draft_text ?? "");
+                          setChapterDraftSavedText(chapter.draft_text ?? "");
+                          void fetchNovelDraftSnapshots(selectedProjectId, chapter.chapter_id).then((snapshots) => setNovelSnapshots(snapshots.snapshots));
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+                <ChapterEditorPro>
+                  <NovelToolbar
+                    title="Chapter Editor Pro"
+                    meta={selectedChapter ? <><span className="muted">{selectedChapter.title}</span> <WordCountBadge text={chapterDraftText} /> <DraftSaveStatus dirty={chapterDraftText !== chapterDraftSavedText} /></> : <span className="muted">Select a chapter</span>}
+                    actions={<><button type="button" disabled={!selectedChapter} onClick={handleSaveChapterDraft}>Save Draft</button><button type="button" disabled={!selectedChapter} onClick={handleCreateScene}>Add Scene</button><button type="button" disabled={!selectedChapter} onClick={handleCreateSnapshot}>Create Snapshot</button></>}
+                  />
+                  {selectedChapter ? (
+              <div className="stack">
+                <textarea value={chapterDraftText} onChange={(event) => setChapterDraftText(event.target.value)} rows={8} />
+                <LinkedRefList title="Linked scenes" refs={selectedChapter.scene_refs ?? []} />
+                <LinkedRefList title="Linked characters" refs={selectedChapter.linked_character_ids ?? []} />
+                <LinkedRefList title="Linked timeline events" refs={selectedChapter.linked_timeline_event_ids ?? []} />
+                <ItemList
+                  emptyText="No snapshots"
+                  items={novelSnapshots.map((snapshot) => (
+                    <button key={snapshot.snapshot_id} type="button" onClick={() => void handleCompareSnapshot(snapshot.snapshot_id)}>
+                      {snapshot.title || snapshot.snapshot_id} · {snapshot.created_at}
+                    </button>
+                  ))}
+                />
               </div>
             ) : (
               <EmptyState title="Select a chapter." />
             )}
-          </div>
-          <div>
-            <h4>Scenes</h4>
-            <ItemList
-              emptyText="No scenes"
-              items={novelScenes.filter((scene) => !selectedChapterId || scene.chapter_id === selectedChapterId).map((scene) => (
-                <span key={scene.scene_id}>{scene.title}</span>
-              ))}
-            />
-          </div>
-          <div>
-            <h4>Structure Tools</h4>
-            <ItemList
-              emptyText="No tools"
-              items={[
-                <span key="outline">Outline editor backend is available through local Novel API.</span>,
-                <span key="arcs">Character arcs, plot threads, and foreshadowing are project-local drafts.</span>,
-                <span key="quality">Novel consistency and quality checks are deterministic and local.</span>
-              ]}
-            />
-          </div>
-        </div>
+                </ChapterEditorPro>
+              </div>
+              <SceneCardsBoard scenes={novelScenes.filter((scene) => !selectedChapterId || scene.chapter_id === selectedChapterId)} />
+              <div className="mode-landing-grid">
+                <NovelSafeSummaryPanel title="Structure Tools">
+                  <p>Outline editor, character arcs, plot threads, foreshadowing, timeline links, and quality checks remain local Novel drafts.</p>
+                </NovelSafeSummaryPanel>
+                <OutlineTreePro />
+                <CharacterArcPanel />
+                <PlotForeshadowingBoard />
+                <TimelineLinkPanel />
+                <WorldBibleSidebar />
+              </div>
+              <div className="mode-landing-grid">
+                <NovelPromptProviderPanel promptProfileId={selectedChapter?.prompt_profile_id ?? novelPreferences?.default_prompt_profile_id} providerSummary="Provider Gateway safe route; no API key shown." />
+                <NovelExportWizard onExportMarkdown={() => void handleExport("markdown")} onExportTxt={() => void handleExport("txt")} />
+                <NovelQualityDashboard issues={[]} />
+                <NovelSafeSummaryPanel title="World to Novel Import UX Pro">
+                  <p>Preview uses safe event summaries only. Apply confirmation does not modify World EventLog or GameState, and raw state_deltas are excluded.</p>
+                </NovelSafeSummaryPanel>
+                <NovelSafeSummaryPanel title="Novel Local Preferences">
+                  <p>Default export: {novelPreferences?.default_export_format ?? "markdown"}. Preferences are local and contain no secrets.</p>
+                </NovelSafeSummaryPanel>
+                <NovelSafeSummaryPanel title="Novel Recovery / Unsaved Draft UX">
+                  <p>Unsaved draft state is visible. Recovery drafts exclude provider prompts, hidden context, debug memory, and API keys.</p>
+                </NovelSafeSummaryPanel>
+                <OutlineNodeView node={{ node_id: "sample", node_type: "beat", title: "Safe outline node", summary: "Local outline nodes never become World facts automatically.", status: "draft" }} />
+              </div>
+            </div>
+          )}
+          context={(
+            <div className="stack">
+              <NovelSafeSummaryPanel title="Safe Context Sidebar">
+                <p>World Bible, character, timeline, quality, and prompt context tabs show safe summaries only.</p>
+              </NovelSafeSummaryPanel>
+              <LinkedRefList title="Cross-mode drafts" refs={crossModeDrafts.map((draft) => draft.artifact_id)} />
+              <LinkedRefList title="World to Novel source events" refs={worldToNovelPreview ? ((worldToNovelPreview.source_event_ids as string[] | undefined) ?? []) : []} />
+            </div>
+          )}
+          status={(
+            <div className="button-row">
+              <span>local-only</span>
+              <span>{writingSession && !writingSession.ended_at ? `session words ${writingSession.word_count_current - writingSession.word_count_start}` : "no active writing session"}</span>
+              <span>Novel UI does not directly modify GameState</span>
+            </div>
+          )}
+        />
       </section>
       <section className="tool-card">
         <h3>Tavern Studio MVP</h3>
@@ -7534,7 +7747,12 @@ function ProjectShell({
             <h4>World → Novel</h4>
             <button type="button" disabled={!selectedProjectId} onClick={handlePreviewWorldToNovel}>Preview Chapter Draft</button>
             {worldToNovelPreview && (
-              <SafeJSON value={worldToNovelPreview} />
+              <div className="safe-preview-list">
+                <p><strong>Suggested title:</strong> {String(worldToNovelPreview.suggested_title ?? "Draft preview")}</p>
+                <p><strong>Excluded hidden/debug events:</strong> {String(worldToNovelPreview.hidden_events_excluded_count ?? 0)}</p>
+                <p><strong>Source events:</strong> {((worldToNovelPreview.source_event_ids as string[] | undefined) ?? []).join(", ") || "none"}</p>
+                <p className="muted">Preview is safe-summary only and does not modify World EventLog or GameState.</p>
+              </div>
             )}
             <p className="muted">Preview excludes raw state_deltas and hidden/debug events.</p>
           </div>

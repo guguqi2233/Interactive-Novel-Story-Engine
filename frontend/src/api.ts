@@ -5896,6 +5896,11 @@ export type NovelChapter = {
   draft_text?: string;
   scene_refs?: string[];
   status?: string;
+  linked_timeline_event_ids?: string[];
+  linked_character_ids?: string[];
+  linked_fact_ids?: string[];
+  visibility?: string;
+  prompt_profile_id?: string | null;
 };
 
 export type NovelScene = {
@@ -5906,6 +5911,70 @@ export type NovelScene = {
   summary?: string;
   draft_text?: string;
   status?: string;
+  pov_character_id?: string | null;
+  location_ref?: string | null;
+  timeline_event_refs?: string[];
+  linked_world_event_ids?: string[];
+  linked_character_ids?: string[];
+  linked_fact_ids?: string[];
+  visibility?: string;
+  prompt_profile_id?: string | null;
+};
+
+export type NovelDraftSnapshot = {
+  snapshot_id: string;
+  project_id: string;
+  manuscript_id?: string | null;
+  target_type: "chapter" | "scene";
+  target_id: string;
+  title: string;
+  draft_text: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+};
+
+export type DraftVersionCompareResult = {
+  left_snapshot_id?: string | null;
+  right_snapshot_id?: string | null;
+  changed: boolean;
+  added_lines: number;
+  removed_lines: number;
+  safe_summary: string;
+};
+
+export type WritingSessionState = {
+  session_id: string;
+  project_id: string;
+  manuscript_id: string;
+  started_at: string;
+  ended_at?: string | null;
+  active_chapter_id?: string | null;
+  active_scene_id?: string | null;
+  word_count_start: number;
+  word_count_current: number;
+  local_goal_words?: number | null;
+  notes?: string;
+};
+
+export type NovelSearchResult = {
+  result_type: string;
+  result_id: string;
+  title: string;
+  status: string;
+  safe_summary: string;
+  tags: string[];
+};
+
+export type NovelPreferences = {
+  project_id: string;
+  default_manuscript_id?: string | null;
+  default_export_format: "markdown" | "txt";
+  show_word_count: boolean;
+  show_world_bible_sidebar: boolean;
+  show_timeline_panel: boolean;
+  autosave_reminder_enabled: boolean;
+  default_prompt_profile_id?: string | null;
+  updated_at?: string;
 };
 
 export type TavernCharacter = {
@@ -6131,6 +6200,65 @@ export async function createNovelScene(projectId: string, input: { scene_id: str
 export async function exportNovelManuscript(projectId: string, input: { manuscript_id: string; format: "markdown" | "txt"; chapter_ids?: string[] }): Promise<{ export_id: string; format: string; path: string; chapters_exported: string[] }> {
   return requestJson<{ export_id: string; format: string; path: string; chapters_exported: string[] }>(`/projects/${encodeURIComponent(projectId)}/novel/export`, {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input)
+  });
+}
+
+export async function createNovelDraftSnapshot(projectId: string, input: { target_type: "chapter" | "scene"; target_id: string; snapshot_id?: string; title?: string }): Promise<NovelDraftSnapshot> {
+  return requestJson<NovelDraftSnapshot>(`/projects/${encodeURIComponent(projectId)}/novel/draft-snapshots`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input)
+  });
+}
+
+export async function fetchNovelDraftSnapshots(projectId: string, targetId?: string): Promise<{ project_id: string; snapshots: NovelDraftSnapshot[] }> {
+  const query = targetId ? `?target_id=${encodeURIComponent(targetId)}` : "";
+  return requestJson<{ project_id: string; snapshots: NovelDraftSnapshot[] }>(`/projects/${encodeURIComponent(projectId)}/novel/draft-snapshots${query}`);
+}
+
+export async function compareNovelDraftSnapshots(projectId: string, input: { left_snapshot_id?: string | null; right_snapshot_id?: string | null; current_text?: string }): Promise<DraftVersionCompareResult> {
+  return requestJson<DraftVersionCompareResult>(`/projects/${encodeURIComponent(projectId)}/novel/draft-snapshots/compare`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input)
+  });
+}
+
+export async function startNovelWritingSession(projectId: string, input: { session_id: string; manuscript_id: string; active_chapter_id?: string; active_scene_id?: string; local_goal_words?: number }): Promise<WritingSessionState> {
+  return requestJson<WritingSessionState>(`/projects/${encodeURIComponent(projectId)}/novel/writing-sessions/start`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input)
+  });
+}
+
+export async function fetchCurrentNovelWritingSession(projectId: string, manuscriptId?: string): Promise<{ project_id: string; session: WritingSessionState | null }> {
+  const query = manuscriptId ? `?manuscript_id=${encodeURIComponent(manuscriptId)}` : "";
+  return requestJson<{ project_id: string; session: WritingSessionState | null }>(`/projects/${encodeURIComponent(projectId)}/novel/writing-sessions/current${query}`);
+}
+
+export async function endNovelWritingSession(projectId: string, sessionId: string): Promise<WritingSessionState> {
+  return requestJson<WritingSessionState>(`/projects/${encodeURIComponent(projectId)}/novel/writing-sessions/${encodeURIComponent(sessionId)}/end`, { method: "POST" });
+}
+
+export async function searchNovel(projectId: string, query: { keyword?: string; tag?: string; status?: string; character_id?: string; chapter_id?: string }): Promise<{ project_id: string; results: NovelSearchResult[] }> {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value) params.set(key, value);
+  }
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return requestJson<{ project_id: string; results: NovelSearchResult[] }>(`/projects/${encodeURIComponent(projectId)}/novel/search${suffix}`);
+}
+
+export async function fetchNovelPreferences(projectId: string): Promise<NovelPreferences> {
+  return requestJson<NovelPreferences>(`/projects/${encodeURIComponent(projectId)}/novel/preferences`);
+}
+
+export async function saveNovelPreferences(projectId: string, input: Partial<NovelPreferences>): Promise<NovelPreferences> {
+  return requestJson<NovelPreferences>(`/projects/${encodeURIComponent(projectId)}/novel/preferences`, {
+    method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input)
   });

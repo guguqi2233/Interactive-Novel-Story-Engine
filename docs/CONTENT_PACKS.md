@@ -30,6 +30,25 @@ bundles must exclude `.env`, API keys, provider secrets, databases, logs,
 caches, build outputs, debug-only data, mature/private content, hidden facts,
 raw prompts, raw `state_deltas`, and executable payloads by default.
 
+v3.1 Novel Studio UI Pro keeps Novel drafts separate from World content packs.
+Manuscripts, outlines, chapters, scenes, character arcs, plot threads,
+foreshadowing items, draft snapshots, writing sessions, Novel preferences,
+search results, export previews, and World -> Novel import previews are
+project-local Novel data. They are not content-pack facts and do not modify
+`worlds/`, active saves, `GameState`, or `EventLog`.
+
+Novel -> content-pack relationship:
+
+- Novel -> World produces draft/proposal candidates only.
+- Any future content-pack write must go through authoring review, schema
+  validation, compatibility checks, secret filtering, and explicit apply.
+- Hidden authoring notes, character private notes, hidden truth refs, mature/
+  private content, raw prompts, raw `state_deltas`, provider secrets, API keys,
+  and raw env must not be copied into public content-pack fields.
+- World -> Novel import reads player-visible or narrator-safe event summaries
+  into Novel draft data only. It does not write EventLog, world YAML, content
+  packs, saves, or World facts.
+
 ## v2.8 RP / Mature Content and Package Policy
 
 v2.8 adds RP immersion and mature-policy metadata that can appear in local

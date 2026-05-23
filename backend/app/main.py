@@ -6175,6 +6175,30 @@ def get_novel_repository(project_id: str):
     return get_novel_repository_for_project(project_id, get_project_repository())
 
 
+def _safe_novel_chapter_payload(chapter: Any) -> dict[str, Any]:
+    payload = chapter.model_dump(mode="json")
+    payload["authoring_notes"] = ""
+    if payload.get("visibility") != "normal":
+        payload["summary"] = "[redacted]"
+        payload["draft_text"] = "[redacted]"
+        payload["scene_refs"] = []
+        payload["linked_character_ids"] = []
+        payload["linked_timeline_event_ids"] = []
+    return payload
+
+
+def _safe_novel_scene_payload(scene: Any) -> dict[str, Any]:
+    payload = scene.model_dump(mode="json")
+    if payload.get("visibility") != "normal":
+        payload["summary"] = "[redacted]"
+        payload["draft_text"] = "[redacted]"
+        payload["pov_character_id"] = None
+        payload["location_ref"] = None
+        payload["timeline_event_refs"] = []
+        payload["linked_character_ids"] = []
+    return payload
+
+
 def get_tavern_repository(project_id: str):
     from app.platform.tavern_studio import get_tavern_repository_for_project
 
@@ -7516,7 +7540,7 @@ def patch_novel_manuscript(project_id: str, manuscript_id: str, request: dict[st
 def list_novel_chapters(project_id: str) -> dict[str, Any]:
     require_authoring_api()
     repo = get_novel_repository(project_id)
-    return {"project_id": project_id, "chapters": [item.model_dump(mode="json") for item in repo.list_chapters()]}
+    return {"project_id": project_id, "chapters": [_safe_novel_chapter_payload(item) for item in repo.list_chapters()]}
 
 
 @app.post("/projects/{project_id}/novel/chapters")
@@ -7525,7 +7549,7 @@ def create_novel_chapter(project_id: str, request: dict[str, Any]) -> dict[str, 
     from app.platform.novel_studio import NovelChapter
 
     try:
-        return get_novel_repository(project_id).create_chapter(NovelChapter(project_id=project_id, **request)).model_dump(mode="json")
+        return _safe_novel_chapter_payload(get_novel_repository(project_id).create_chapter(NovelChapter(project_id=project_id, **request)))
     except (TypeError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -7534,7 +7558,7 @@ def create_novel_chapter(project_id: str, request: dict[str, Any]) -> dict[str, 
 def get_novel_chapter(project_id: str, chapter_id: str) -> dict[str, Any]:
     require_authoring_api()
     try:
-        return get_novel_repository(project_id).load_chapter(chapter_id).model_dump(mode="json")
+        return _safe_novel_chapter_payload(get_novel_repository(project_id).load_chapter(chapter_id))
     except (FileNotFoundError, ValueError) as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -7545,7 +7569,7 @@ def patch_novel_chapter(project_id: str, chapter_id: str, request: dict[str, Any
     try:
         repo = get_novel_repository(project_id)
         chapter = repo.load_chapter(chapter_id).model_copy(update=request)
-        return repo.save_chapter(chapter).model_dump(mode="json")
+        return _safe_novel_chapter_payload(repo.save_chapter(chapter))
     except (FileNotFoundError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -7566,7 +7590,7 @@ def reorder_novel_chapters(project_id: str, request: dict[str, Any]) -> dict[str
 def list_novel_scenes(project_id: str) -> dict[str, Any]:
     require_authoring_api()
     repo = get_novel_repository(project_id)
-    return {"project_id": project_id, "scenes": [item.model_dump(mode="json") for item in repo.list_scenes()]}
+    return {"project_id": project_id, "scenes": [_safe_novel_scene_payload(item) for item in repo.list_scenes()]}
 
 
 @app.post("/projects/{project_id}/novel/scenes")
@@ -7575,7 +7599,7 @@ def create_novel_scene(project_id: str, request: dict[str, Any]) -> dict[str, An
     from app.platform.novel_studio import ChapterSceneService, NovelScene
 
     try:
-        return ChapterSceneService(get_novel_repository(project_id)).create_scene(NovelScene(project_id=project_id, **request)).model_dump(mode="json")
+        return _safe_novel_scene_payload(ChapterSceneService(get_novel_repository(project_id)).create_scene(NovelScene(project_id=project_id, **request)))
     except (TypeError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -7586,7 +7610,7 @@ def patch_novel_scene(project_id: str, scene_id: str, request: dict[str, Any]) -
     from app.platform.novel_studio import ChapterSceneService
 
     try:
-        return ChapterSceneService(get_novel_repository(project_id)).update_scene(scene_id, request).model_dump(mode="json")
+        return _safe_novel_scene_payload(ChapterSceneService(get_novel_repository(project_id)).update_scene(scene_id, request))
     except (FileNotFoundError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -7597,7 +7621,7 @@ def move_novel_scene(project_id: str, scene_id: str, request: dict[str, Any]) ->
     from app.platform.novel_studio import ChapterSceneService
 
     try:
-        return ChapterSceneService(get_novel_repository(project_id)).move_scene_to_chapter(scene_id, str(request.get("target_chapter_id"))).model_dump(mode="json")
+        return _safe_novel_scene_payload(ChapterSceneService(get_novel_repository(project_id)).move_scene_to_chapter(scene_id, str(request.get("target_chapter_id"))))
     except (FileNotFoundError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -7758,3 +7782,143 @@ def list_novel_exports(project_id: str) -> dict[str, Any]:
     repo = get_novel_repository(project_id)
     exports = sorted(path.name for path in repo._dir("exports").glob("*") if path.is_file())
     return {"exports": exports}
+
+
+@app.post("/projects/{project_id}/novel/draft-snapshots")
+def create_novel_draft_snapshot(project_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.novel_studio import DraftVersionService
+
+    try:
+        snapshot = DraftVersionService(get_novel_repository(project_id)).create_snapshot(
+            target_type=request.get("target_type", "chapter"),
+            target_id=str(request.get("target_id") or ""),
+            snapshot_id=request.get("snapshot_id"),
+            title=request.get("title"),
+        )
+        return snapshot.model_dump(mode="json") | {"draft_text": "[stored locally]"}
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/projects/{project_id}/novel/draft-snapshots")
+def list_novel_draft_snapshots(project_id: str, target_id: str | None = None) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.novel_studio import DraftVersionService
+
+    snapshots = DraftVersionService(get_novel_repository(project_id)).list_snapshots(target_id)
+    return {"project_id": project_id, "snapshots": [snapshot.model_dump(mode="json") | {"draft_text": "[stored locally]"} for snapshot in snapshots]}
+
+
+@app.post("/projects/{project_id}/novel/draft-snapshots/compare")
+def compare_novel_draft_snapshots(project_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.novel_studio import DraftVersionService
+
+    try:
+        return DraftVersionService(get_novel_repository(project_id)).compare_snapshots(
+            request.get("left_snapshot_id"),
+            request.get("right_snapshot_id"),
+            current_text=request.get("current_text"),
+        ).model_dump(mode="json")
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/projects/{project_id}/novel/draft-snapshots/{snapshot_id}/restore")
+def restore_novel_draft_snapshot(project_id: str, snapshot_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.novel_studio import DraftVersionService
+
+    try:
+        restored = DraftVersionService(get_novel_repository(project_id)).restore_snapshot_confirmed(
+            snapshot_id,
+            explicit_confirm=bool(request.get("explicit_confirm")),
+            overwrite=bool(request.get("overwrite")),
+        )
+        return restored.model_dump(mode="json")
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/projects/{project_id}/novel/writing-sessions/start")
+def start_novel_writing_session(project_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.novel_studio import WritingSessionService
+
+    try:
+        return WritingSessionService(get_novel_repository(project_id)).start_session(
+            session_id=str(request.get("session_id") or "session"),
+            manuscript_id=str(request.get("manuscript_id") or ""),
+            active_chapter_id=request.get("active_chapter_id"),
+            active_scene_id=request.get("active_scene_id"),
+            local_goal_words=request.get("local_goal_words"),
+        ).model_dump(mode="json")
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.patch("/projects/{project_id}/novel/writing-sessions/{session_id}")
+def update_novel_writing_session(project_id: str, session_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.novel_studio import WritingSessionService
+
+    try:
+        return WritingSessionService(get_novel_repository(project_id)).update_session_stats(session_id, **request).model_dump(mode="json")
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/projects/{project_id}/novel/writing-sessions/{session_id}/end")
+def end_novel_writing_session(project_id: str, session_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.novel_studio import WritingSessionService
+
+    try:
+        return WritingSessionService(get_novel_repository(project_id)).end_session(session_id).model_dump(mode="json")
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/projects/{project_id}/novel/writing-sessions/current")
+def get_current_novel_writing_session(project_id: str, manuscript_id: str | None = None) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.novel_studio import WritingSessionService
+
+    session = WritingSessionService(get_novel_repository(project_id)).get_current_session(manuscript_id)
+    return {"project_id": project_id, "session": session.model_dump(mode="json") if session else None}
+
+
+@app.get("/projects/{project_id}/novel/search")
+def search_novel(project_id: str, keyword: str = "", tag: str = "", status: str = "", character_id: str = "", chapter_id: str = "") -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.novel_studio import NovelSearchService
+
+    results = NovelSearchService(get_novel_repository(project_id)).search(
+        keyword=keyword,
+        tag=tag,
+        status=status,
+        character_id=character_id,
+        chapter_id=chapter_id,
+        include_authoring=False,
+    )
+    return {"project_id": project_id, "results": [result.model_dump(mode="json") for result in results]}
+
+
+@app.get("/projects/{project_id}/novel/preferences")
+def get_novel_preferences(project_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.novel_studio import NovelPreferencesService
+
+    return NovelPreferencesService(get_novel_repository(project_id)).load_preferences(project_id).model_dump(mode="json")
+
+
+@app.put("/projects/{project_id}/novel/preferences")
+def put_novel_preferences(project_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.novel_studio import NovelPreferences, NovelPreferencesService
+
+    try:
+        return NovelPreferencesService(get_novel_repository(project_id)).save_preferences(NovelPreferences(project_id=project_id, **request)).model_dump(mode="json")
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

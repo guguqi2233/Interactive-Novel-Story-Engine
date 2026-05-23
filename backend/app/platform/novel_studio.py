@@ -969,7 +969,12 @@ class NovelExportService:
 
     def export(self, request: NovelExportRequest) -> NovelExportResult:
         manuscript = self.repository.load_manuscript(request.manuscript_id)
-        chapters = [chapter for chapter in self.repository.list_chapters() if chapter.manuscript_id == manuscript.manuscript_id or not chapter.manuscript_id]
+        chapters = [
+            chapter
+            for chapter in self.repository.list_chapters()
+            if (chapter.manuscript_id == manuscript.manuscript_id or not chapter.manuscript_id)
+            and chapter.visibility == "normal"
+        ]
         if request.chapter_ids:
             wanted = set(request.chapter_ids)
             chapters = [chapter for chapter in chapters if chapter.chapter_id in wanted]
@@ -1016,6 +1021,328 @@ class NovelExportService:
                     if scene.chapter_id == chapter.chapter_id and scene.visibility == "normal":
                         lines.extend([scene.title, redact_text(scene.draft_text), ""])
         return "\n".join(lines)
+
+
+class NovelDraftSnapshot(NovelModel):
+    snapshot_id: str
+    project_id: str = "local_project"
+    manuscript_id: str | None = None
+    target_type: Literal["chapter", "scene"]
+    target_id: str
+    title: str = ""
+    draft_text: str = ""
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: str = Field(default_factory=now_iso)
+
+    @field_validator("snapshot_id", "target_id")
+    @classmethod
+    def validate_snapshot_ids(cls, value: str) -> str:
+        return _ensure_safe_id(value)
+
+    @model_validator(mode="after")
+    def validate_snapshot_safe(self) -> "NovelDraftSnapshot":
+        payload = json.dumps({"text": self.draft_text, "metadata": self.metadata}, sort_keys=True)
+        lowered = payload.lower()
+        if contains_secret_text(payload) or "hidden fact" in lowered or "state_delta" in lowered or "raw_prompt" in lowered:
+            raise ValueError("NovelDraftSnapshot contains forbidden context")
+        return self
+
+
+class DraftVersionCompareResult(NovelModel):
+    left_snapshot_id: str | None = None
+    right_snapshot_id: str | None = None
+    changed: bool
+    added_lines: int = 0
+    removed_lines: int = 0
+    safe_summary: str
+
+
+class DraftVersionService:
+    def __init__(self, repository: NovelRepository) -> None:
+        self.repository = repository
+
+    def _path(self, snapshot_id: str) -> Path:
+        return self.repository._path("draft_snapshots", snapshot_id)
+
+    def create_snapshot(
+        self,
+        *,
+        target_type: Literal["chapter", "scene"],
+        target_id: str,
+        snapshot_id: str | None = None,
+        title: str | None = None,
+    ) -> NovelDraftSnapshot:
+        if target_type == "chapter":
+            target = self.repository.load_chapter(target_id)
+            if target.visibility != "normal":
+                raise ValueError("Draft snapshots are available only for normal visible Novel drafts")
+            draft_text = target.draft_text
+            manuscript_id = target.manuscript_id
+            title = title or target.title
+            project_id = target.project_id
+        else:
+            target = self.repository.load_scene(target_id)
+            if target.visibility != "normal":
+                raise ValueError("Draft snapshots are available only for normal visible Novel drafts")
+            draft_text = target.draft_text
+            manuscript_id = None
+            title = title or target.title
+            project_id = target.project_id
+        sid = snapshot_id or f"{target_type}_{target_id}_{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}"
+        snapshot = NovelDraftSnapshot(
+            snapshot_id=sid,
+            project_id=project_id,
+            manuscript_id=manuscript_id,
+            target_type=target_type,
+            target_id=target_id,
+            title=title or "",
+            draft_text=draft_text,
+            metadata={"source": "user_draft_snapshot"},
+        )
+        _write_yaml(self._path(snapshot.snapshot_id), snapshot)
+        return snapshot
+
+    def list_snapshots(self, target_id: str | None = None) -> list[NovelDraftSnapshot]:
+        snapshots = [_read_yaml(path, NovelDraftSnapshot) for path in self.repository._dir("draft_snapshots").glob("*.yaml")]
+        if target_id:
+            snapshots = [snapshot for snapshot in snapshots if snapshot.target_id == target_id]
+        return sorted(snapshots, key=lambda item: item.created_at, reverse=True)
+
+    def load_snapshot(self, snapshot_id: str) -> NovelDraftSnapshot:
+        return _read_yaml(self._path(snapshot_id), NovelDraftSnapshot)
+
+    def compare_snapshots(self, left: str | None, right: str | None = None, *, current_text: str | None = None) -> DraftVersionCompareResult:
+        left_text = self.load_snapshot(left).draft_text if left else ""
+        right_text = self.load_snapshot(right).draft_text if right else current_text or ""
+        left_lines = left_text.splitlines()
+        right_lines = right_text.splitlines()
+        added = max(0, len(right_lines) - len(left_lines))
+        removed = max(0, len(left_lines) - len(right_lines))
+        changed = left_text != right_text
+        return DraftVersionCompareResult(
+            left_snapshot_id=left,
+            right_snapshot_id=right,
+            changed=changed,
+            added_lines=added,
+            removed_lines=removed,
+            safe_summary="Draft text changed." if changed else "No draft text changes.",
+        )
+
+    def restore_snapshot_confirmed(self, snapshot_id: str, *, explicit_confirm: bool = False, overwrite: bool = False) -> NovelChapter | NovelScene:
+        if not explicit_confirm:
+            raise ValueError("explicit_confirm is required")
+        snapshot = self.load_snapshot(snapshot_id)
+        if snapshot.target_type == "chapter":
+            chapter = self.repository.load_chapter(snapshot.target_id)
+            if chapter.draft_text and not overwrite:
+                raise ValueError("Refusing to overwrite existing chapter draft without overwrite confirmation")
+            return self.repository.save_chapter(chapter.model_copy(update={"draft_text": snapshot.draft_text}))
+        scene = self.repository.load_scene(snapshot.target_id)
+        if scene.draft_text and not overwrite:
+            raise ValueError("Refusing to overwrite existing scene draft without overwrite confirmation")
+        return self.repository.save_scene(scene.model_copy(update={"draft_text": snapshot.draft_text}))
+
+
+class WritingSessionState(NovelModel):
+    session_id: str
+    project_id: str
+    manuscript_id: str
+    started_at: str = Field(default_factory=now_iso)
+    ended_at: str | None = None
+    active_chapter_id: str | None = None
+    active_scene_id: str | None = None
+    word_count_start: int = 0
+    word_count_current: int = 0
+    local_goal_words: int | None = None
+    notes: str = ""
+
+    @field_validator("session_id", "project_id", "manuscript_id")
+    @classmethod
+    def validate_session_ids(cls, value: str) -> str:
+        return _ensure_safe_id(value)
+
+    @model_validator(mode="after")
+    def validate_session_safe(self) -> "WritingSessionState":
+        if contains_secret_text(self.notes) or "hidden fact" in self.notes.lower():
+            raise ValueError("WritingSessionState notes contain forbidden content")
+        return self
+
+
+class WritingSessionService:
+    def __init__(self, repository: NovelRepository) -> None:
+        self.repository = repository
+
+    def _path(self, session_id: str) -> Path:
+        return self.repository._path("writing_sessions", session_id)
+
+    def start_session(
+        self,
+        *,
+        session_id: str,
+        manuscript_id: str,
+        active_chapter_id: str | None = None,
+        active_scene_id: str | None = None,
+        local_goal_words: int | None = None,
+    ) -> WritingSessionState:
+        manuscript = self.repository.load_manuscript(manuscript_id)
+        start_count = _word_count_for_manuscript(self.repository, manuscript_id)
+        session = WritingSessionState(
+            session_id=session_id,
+            project_id=manuscript.project_id,
+            manuscript_id=manuscript_id,
+            active_chapter_id=active_chapter_id,
+            active_scene_id=active_scene_id,
+            word_count_start=start_count,
+            word_count_current=start_count,
+            local_goal_words=local_goal_words,
+        )
+        _write_yaml(self._path(session.session_id), session)
+        return session
+
+    def update_session_stats(self, session_id: str, **updates: Any) -> WritingSessionState:
+        session = self.get_session(session_id)
+        current = _word_count_for_manuscript(self.repository, session.manuscript_id)
+        updated = session.model_copy(update={"word_count_current": current} | updates)
+        _write_yaml(self._path(session_id), updated)
+        return updated
+
+    def end_session(self, session_id: str) -> WritingSessionState:
+        return self.update_session_stats(session_id, ended_at=now_iso())
+
+    def get_session(self, session_id: str) -> WritingSessionState:
+        return _read_yaml(self._path(session_id), WritingSessionState)
+
+    def get_current_session(self, manuscript_id: str | None = None) -> WritingSessionState | None:
+        sessions = [_read_yaml(path, WritingSessionState) for path in self.repository._dir("writing_sessions").glob("*.yaml")]
+        open_sessions = [session for session in sessions if session.ended_at is None and (manuscript_id is None or session.manuscript_id == manuscript_id)]
+        return sorted(open_sessions, key=lambda item: item.started_at, reverse=True)[0] if open_sessions else None
+
+
+class NovelSearchResult(NovelModel):
+    result_type: Literal["chapter", "scene", "plot_thread", "foreshadowing", "character_arc"]
+    result_id: str
+    title: str
+    status: str = ""
+    safe_summary: str = ""
+    tags: list[str] = Field(default_factory=list)
+
+
+class NovelSearchService:
+    def __init__(self, repository: NovelRepository) -> None:
+        self.repository = repository
+
+    def search(
+        self,
+        *,
+        keyword: str = "",
+        tag: str = "",
+        status: str = "",
+        character_id: str = "",
+        chapter_id: str = "",
+        include_authoring: bool = False,
+    ) -> list[NovelSearchResult]:
+        lowered = keyword.lower().strip()
+        results: list[NovelSearchResult] = []
+        for chapter in self.repository.list_chapters():
+            if chapter.visibility != "normal":
+                continue
+            if status and chapter.status.value != status:
+                continue
+            if character_id and character_id not in chapter.linked_character_ids:
+                continue
+            haystack = " ".join([chapter.title, chapter.summary, chapter.draft_text if chapter.visibility == "normal" else ""]).lower()
+            if lowered and lowered not in haystack:
+                continue
+            results.append(NovelSearchResult(result_type="chapter", result_id=chapter.chapter_id, title=chapter.title, status=chapter.status.value, safe_summary=redact_text(chapter.summary)))
+        for scene in self.repository.list_scenes():
+            if scene.visibility != "normal":
+                continue
+            if chapter_id and scene.chapter_id != chapter_id:
+                continue
+            if status and scene.status.value != status:
+                continue
+            if character_id and character_id not in scene.linked_character_ids and character_id != (scene.pov_character_id or ""):
+                continue
+            haystack = " ".join([scene.title, scene.summary, scene.draft_text if scene.visibility == "normal" else ""]).lower()
+            if lowered and lowered not in haystack:
+                continue
+            results.append(NovelSearchResult(result_type="scene", result_id=scene.scene_id, title=scene.title, status=scene.status.value, safe_summary=redact_text(scene.summary)))
+        for thread in self.repository.list_plot_threads():
+            if status and thread.status != status:
+                continue
+            if character_id and character_id not in thread.linked_character_ids:
+                continue
+            if chapter_id and chapter_id not in thread.linked_chapter_ids:
+                continue
+            haystack = " ".join([thread.title, thread.description, thread.authoring_notes if include_authoring else ""]).lower()
+            if lowered and lowered not in haystack:
+                continue
+            results.append(NovelSearchResult(result_type="plot_thread", result_id=thread.plot_thread_id, title=thread.title, status=thread.status, safe_summary=redact_text(thread.description)))
+        for item in self.repository.list_foreshadowing():
+            if status and item.status != status:
+                continue
+            if chapter_id and item.setup_scene_id != chapter_id and item.payoff_scene_id != chapter_id:
+                continue
+            haystack = item.hint_text.lower() if item.visibility == "normal" else ""
+            if lowered and lowered not in haystack:
+                continue
+            results.append(NovelSearchResult(result_type="foreshadowing", result_id=item.foreshadowing_id, title=item.foreshadowing_id, status=item.status, safe_summary=redact_text(item.safe_summary().get("hint_text", ""))))
+        for arc in self.repository.list_character_arcs():
+            if status and arc.status.value != status:
+                continue
+            if character_id and arc.character_id != character_id:
+                continue
+            haystack = " ".join([arc.title, arc.premise, arc.start_state, arc.end_state, arc.authoring_notes if include_authoring else ""]).lower()
+            if lowered and lowered not in haystack:
+                continue
+            results.append(NovelSearchResult(result_type="character_arc", result_id=arc.arc_id, title=arc.title, status=arc.status.value, safe_summary=redact_text(arc.premise)))
+        if tag:
+            results = [result for result in results if tag in result.tags]
+        return results
+
+
+class NovelPreferences(NovelModel):
+    project_id: str
+    default_manuscript_id: str | None = None
+    default_export_format: Literal["markdown", "txt"] = "markdown"
+    show_word_count: bool = True
+    show_world_bible_sidebar: bool = True
+    show_timeline_panel: bool = True
+    autosave_reminder_enabled: bool = True
+    default_prompt_profile_id: str | None = None
+    updated_at: str = Field(default_factory=now_iso)
+
+    @model_validator(mode="after")
+    def validate_preferences_safe(self) -> "NovelPreferences":
+        payload = self.model_dump_json()
+        if contains_secret_text(payload) or "hidden fact" in payload.lower():
+            raise ValueError("NovelPreferences contain forbidden content")
+        return self
+
+
+class NovelPreferencesService:
+    def __init__(self, repository: NovelRepository) -> None:
+        self.repository = repository
+
+    def load_preferences(self, project_id: str) -> NovelPreferences:
+        path = self.repository._dir("preferences") / "novel_preferences.yaml"
+        if not path.exists():
+            return NovelPreferences(project_id=project_id)
+        return _read_yaml(path, NovelPreferences)
+
+    def save_preferences(self, preferences: NovelPreferences) -> NovelPreferences:
+        updated = preferences.model_copy(update={"updated_at": now_iso()})
+        _write_yaml(self.repository._dir("preferences") / "novel_preferences.yaml", updated)
+        return updated
+
+
+def _word_count_for_manuscript(repository: NovelRepository, manuscript_id: str) -> int:
+    chapters = [chapter for chapter in repository.list_chapters() if chapter.manuscript_id == manuscript_id]
+    scenes = repository.list_scenes()
+    text = " ".join(chapter.draft_text for chapter in chapters)
+    chapter_ids = {chapter.chapter_id for chapter in chapters}
+    text += " " + " ".join(scene.draft_text for scene in scenes if scene.chapter_id in chapter_ids and scene.visibility == "normal")
+    return len([part for part in text.split() if part.strip()])
 
 
 class WorldContentDraft(NovelModel):

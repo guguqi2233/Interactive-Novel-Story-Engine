@@ -34,6 +34,27 @@ world-changing paths. Backups, diagnostics, logs, and packaging must exclude
 secrets, hidden/debug data, mature/private content, databases, caches, build
 outputs, and raw `state_deltas` by default.
 
+v3.1 focuses on Novel Studio UI Pro. Novel Workspace, Outline Tree Pro,
+Chapter Editor Pro, Scene Cards, Character Arc, Plot/Foreshadowing, Timeline
+Link, World Bible, Draft Snapshot, Writing Session, Search, Export, Import, and
+Quality panels are local writing/authoring surfaces. They can display safe
+World references and create Novel drafts, but they do not change World Engine
+fact authority.
+
+Novel UI rules:
+
+- Novel UI must not directly modify `GameState`.
+- Novel drafts, snapshots, writing sessions, preferences, search results,
+  quality reports, and export previews are not World facts.
+- Novel -> World remains draft/proposal/validation/apply and cannot write
+  content packs, active saves, `GameState`, or `EventLog` directly.
+- World -> Novel reads safe EventLog/timeline summaries and can create Novel
+  draft data only; it must not edit the source `EventLog` or `GameState`.
+- Hidden facts, NPC secrets, authoring-only private notes, debug events, raw
+  prompts, raw `state_deltas`, API keys, provider secrets, and raw env must not
+  enter normal Novel UI, prompt context, exports, diagnostics, or quality
+  reports.
+
 ## v2.8 Roleplay Immersion & Mature Module Integration
 
 v2.8 strengthens Tavern/RP immersion and adds default-off mature safety policy
