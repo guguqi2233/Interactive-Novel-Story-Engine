@@ -88,6 +88,34 @@ Tavern prompt context rules:
 - Tavern safety and quality checks remain deterministic local checks; they must
   not call an external LLM judge for pass/fail.
 
+v3.3 World Studio UI Pro keeps World LLM use behind Provider Gateway /
+`LLMProvider` abstractions. World Prompt / Provider UX may show safe provider
+and prompt-profile summaries for intent parser, narrator, memory summary, and
+quality eval use cases. It must not show API keys, provider secrets, raw env,
+raw prompts, hidden facts, NPC secrets, debug memory, raw `GameState`, or raw
+`state_deltas`.
+
+World prompt / provider rules:
+
+- `IntentParser` may parse player text into structured intent, but it does not
+  decide action success, combat results, economy prices, faction war outcomes,
+  deduction truth, survival risk, or advanced module results.
+- `Narrator` renders confirmed backend results and visible facts only. It does
+  not create authoritative facts.
+- World Prompt / Provider UI is a safe routing/status surface. It cannot grant
+  hidden fact access, provider-secret access, state mutation, visibility bypass,
+  or debug-data access.
+- LLM output must not directly create World facts, modify `GameState`, emit
+  `StateDelta`, append `EventLog`, complete quests, decide proposal apply, or
+  override deterministic rule code.
+- Tactical combat, economy, faction war, deduction, survival/travel, magic,
+  hacking, crafting, and cultivation outcomes remain deterministic backend
+  rule/module outcomes. The LLM may affect phrasing only after results are
+  confirmed.
+- Tests and quality/playtest flows must use mock/local_stub providers by
+  default and must not call real providers unless a local trusted run explicitly
+  opts in.
+
 ## v2.8 Roleplay / Mature LLM Boundary
 
 v2.8 does not grant LLMs new authority. Provider Gateway remains the only model

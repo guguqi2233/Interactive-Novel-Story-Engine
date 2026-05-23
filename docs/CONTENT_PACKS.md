@@ -78,6 +78,32 @@ Tavern -> content-pack relationship:
 - Tavern -> World proposals are not content-pack changes until a future
   explicit content validation/apply flow accepts them.
 
+v3.3 World Studio UI Pro is a local play UI over content packs, active saves,
+visible-state projections, and advanced module summaries. It does not introduce
+new content-pack authority, online package distribution, remote package
+download, or executable package runtime.
+
+World UI -> content-pack relationship:
+
+- World UI reads runtime `visible_state` and safe summaries derived from loaded
+  local content packs and saves.
+- World UI does not directly edit `worlds/`, content-pack YAML, active saves,
+  package manifests, or module package files.
+- World UI action input and suggested actions call backend APIs. Any runtime
+  change still comes from rule/action resolution, `StateDelta`, and `EventLog`.
+- Map, NPC, quest, inventory, combat, economy, faction war, deduction,
+  survival/travel, magic, hacking, crafting, and cultivation panels may display
+  safe summaries from content/module data only after visibility filtering.
+- Hidden locations, exits, NPC secrets, `npc_knowledge`, hidden quest truth,
+  hidden item properties, hidden market/war state, hidden evidence, hidden
+  spells/logs/recipes/techniques, raw prompts, raw `state_deltas`, API keys,
+  provider secrets, and raw env must not enter normal World UI or exports.
+- Debug/raw content inspection remains gated by `ENABLE_DEBUG_API` and is not a
+  content-pack write path.
+- Advanced module UI panels do not change module rules or package definitions.
+  Richer module dashboards should use backend safe-summary contracts rather
+  than reading raw module state in frontend.
+
 ## v2.8 RP / Mature Content and Package Policy
 
 v2.8 adds RP immersion and mature-policy metadata that can appear in local

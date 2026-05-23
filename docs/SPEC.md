@@ -174,6 +174,57 @@ Tavern boundary rules:
   enter normal Tavern UI, prompt context, export, backup, logs, or safety
   reports.
 
+### v3.3 Implemented World Studio UI Pro Scope
+
+v3.3 implements **World Studio UI Pro** as a local World play UI / UX polish
+layer. World Mode remains the runtime open-world play mode backed by the World
+Engine. The frontend is a display and command-submission surface: it can render
+safe state, select suggested actions, and call backend APIs, but it does not
+directly mutate `GameState`, apply `StateDelta`, append `EventLog`, or become a
+rules judge.
+
+Implemented v3.3 World UI scope includes:
+
+- World Workspace Shell with World navigation, story/action workspace, safe
+  context sidebar, and local/provider/debug status.
+- World Play Main View with narrative log, visible turn/time/location summary,
+  action input, suggested actions, recent actions, and safe loading/disabled
+  states.
+- Map / Location Panel, NPC / Relationship Panel, Quest / Journal Panel, and
+  Inventory / Trade UI based on `visible_state`.
+- Tactical Combat UI, Economy Dashboard, Faction War Dashboard, Deduction
+  Board, Survival / Travel UI, and Magic / Hacking / Crafting / Cultivation
+  module panels. These panels show safe visible summaries, action suggestions,
+  or degraded states; they do not calculate authoritative outcomes.
+- Timeline / EventLog UI with player-visible event summaries only.
+- Visible State Inspector for `visible_state` sections only.
+- World Save / Load UX with safe save slot summaries and migration status.
+- World Quality / Playtest UI for safe local quality and playtest summaries.
+- World Prompt / Provider UX showing safe provider/profile summaries for
+  intent parser, narrator, memory summary, and quality eval use cases.
+- World Action Input / Suggested Actions UX and Safe Debug UI through
+  `DebugGate`.
+- World UI regression checks through `npm.cmd run check:v33-world-ui` and
+  v3.3 integration regression tests.
+
+World UI boundary rules:
+
+- World UI is not an online play platform, account client, cloud sync feature,
+  online marketplace, remote package downloader, or multiplayer service.
+- World UI can call `/game/start`, `/game/input`, `/game/state/{session_id}`,
+  save/load, debug-gated, and quality/playtest APIs, but it cannot bypass those
+  APIs.
+- World-changing actions must still go through backend action resolution,
+  `StateDelta`, and `EventLog`.
+- `visible_state` is the safe normal UI source.
+- Hidden facts, NPC secrets, `npc_knowledge`, debug memory, raw prompts, raw
+  `state_deltas`, raw env, provider secrets, and API keys must not enter normal
+  World UI.
+- Debug/raw details require `ENABLE_DEBUG_API` and must stay out of player-facing
+  normal views.
+- Tactical combat, economy, faction war, deduction, survival/travel, magic,
+  hacking, crafting, and cultivation panels do not judge results in frontend.
+
 ## v2.8 Roleplay Immersion & Mature Module
 
 v2.8 adds Roleplay Immersion & Mature Module infrastructure on top of Tavern

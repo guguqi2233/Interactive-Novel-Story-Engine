@@ -201,6 +201,78 @@ npm.cmd run build
 npm.cmd run check:v32-tavern-ui
 ```
 
+## v3.3 World Studio UI Pro
+
+v3.3 polishes the local World Studio play workflow. World Mode remains a local
+open-world play mode powered by the backend World Engine. It is not an online
+play platform, account system, cloud sync feature, online marketplace, remote
+package downloader, or multiplayer service.
+
+Implemented v3.3 World surfaces:
+
+- World Workspace with left World navigation, central story/action workspace,
+  safe right-side context, and local/provider/debug status footer.
+- World Play Main View with narrative log, visible turn/time/location status,
+  action input, suggested actions, recent actions, loading/disabled states, and
+  backend-submitted action flow.
+- Map / Location Panel for current location, known location summary, and
+  visible exits. Hidden locations, hidden exits, and hidden objects are not
+  shown.
+- NPC / Relationship Panel for visible NPC summaries, relationship safe bands,
+  faction/status hints, and talk actions. NPC secrets and `npc_knowledge` stay
+  out of normal UI.
+- Quest / Journal Panel for known quests, visible descriptions, known
+  objectives, completed objectives, status, and safe hints.
+- Inventory / Trade UI for visible inventory items, backend-validated use/trade
+  actions, and safe trade status. The frontend does not calculate authoritative
+  prices.
+- Tactical Combat UI with encounter safe summary, visible combatants, player
+  stance/condition, and tactical action suggestions. The frontend does not
+  calculate hits, damage, AP, or combat outcomes.
+- Economy Dashboard, Faction War Dashboard, Deduction Board, Survival / Travel
+  UI, and Magic / Hacking / Crafting / Cultivation Module UI using safe visible
+  summaries or disabled/degraded states when no safe endpoint exists.
+- Timeline / EventLog UI for player-visible event summaries. Raw
+  `state_deltas` are only available in debug-gated views.
+- Visible State Inspector that displays `visible_state` sections only and is
+  not a raw `GameState` inspector.
+- Save / Load UX for safe save slot summaries, turn/time/location/schema
+  status, and migration warnings.
+- World Quality / Playtest UI for local safe report summaries and deterministic
+  quality/playtest entry points.
+- World Prompt / Provider panel showing safe provider/profile summaries for
+  intent parser, narrator, memory summary, and quality eval use cases.
+- Safe Debug UI through `DebugGate`; debug/raw details require
+  `ENABLE_DEBUG_API`.
+- v3.3 frontend regression check: `npm.cmd run check:v33-world-ui`.
+
+v3.3 boundaries:
+
+- World UI displays state and calls backend APIs; it does not directly modify
+  `GameState`.
+- All world-changing actions still go through `/game/input` or an equivalent
+  backend action API.
+- All authoritative changes still flow through `StateDelta` and are recorded in
+  `EventLog`.
+- `visible_state` is the normal World UI state source.
+- Normal World UI does not show hidden facts, NPC secrets, `npc_knowledge`,
+  debug memory, raw prompts, raw `state_deltas`, API keys, raw env, or provider
+  secrets.
+- Advanced module panels do not become rule judges. Tactical combat, economy,
+  faction war, deduction, survival/travel, magic, hacking, crafting, and
+  cultivation outcomes remain backend-authoritative.
+- Provider Gateway remains the model access boundary; the LLM is not the world
+  judge.
+
+Useful v3.3 checks:
+
+```powershell
+python -m pytest backend/tests/test_v33_integration_regression.py
+cd frontend
+npm.cmd run build
+npm.cmd run check:v33-world-ui
+```
+
 ## v2.9 Local UI / UX Foundation
 
 v2.9 is a local UI foundation release. It does not rewrite the whole app and

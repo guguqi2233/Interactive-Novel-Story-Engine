@@ -81,6 +81,35 @@ Tavern UI rules:
   and raw env must not enter normal Tavern UI, Tavern prompt context, export,
   backup, logs, or quality/safety reports.
 
+v3.3 focuses on World Studio UI Pro. World Workspace, World Play Main View,
+Map/Location, NPC/Relationship, Quest/Journal, Inventory/Trade, Tactical
+Combat, Economy, Faction War, Deduction, Survival/Travel, Magic/Hacking/
+Crafting/Cultivation, Timeline/EventLog, Visible State Inspector, Save/Load,
+World Quality/Playtest, Prompt/Provider, Action Input, and Safe Debug panels
+are local World play workflow surfaces. They do not change World Engine fact
+authority.
+
+World UI rules:
+
+- World UI must not directly modify `GameState`.
+- World UI must not directly apply `StateDelta`.
+- World UI action submit must go through `/game/input` or an equivalent backend
+  action API.
+- World state changes still go through backend rule/action resolution,
+  `StateDelta`, and `EventLog`.
+- `visible_state` is the normal World UI safe source.
+- Normal World UI must not display hidden facts, NPC secrets, `npc_knowledge`,
+  debug memory, raw prompts, raw `state_deltas`, API keys, provider secrets, or
+  raw env.
+- Debug/raw EventLog details, raw StateDelta, debug timeline, and module debug
+  summaries require `ENABLE_DEBUG_API` and a clearly marked debug-gated view.
+- Tactical combat, economy, faction war, deduction, survival/travel, magic,
+  hacking, crafting, and cultivation UI panels can show safe visible summaries
+  and suggest backend actions only. They do not decide hits, damage, prices,
+  war state, truth, route risk, spells, hacks, crafting, or breakthroughs.
+- Save / Load UI shows safe save-slot summaries and must not directly read or
+  write database files.
+
 ## v2.8 Roleplay Immersion & Mature Module Integration
 
 v2.8 strengthens Tavern/RP immersion and adds default-off mature safety policy

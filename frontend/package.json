@@ -10,6 +10,7 @@
     "check:v30-ux": "node scripts/check-v30-local-studio-ux.mjs",
     "check:v31-novel-ui": "node scripts/check-v31-novel-ui.mjs",
     "check:v32-tavern-ui": "node scripts/check-v32-tavern-ui.mjs",
+    "check:v33-world-ui": "node scripts/check-v33-world-ui.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

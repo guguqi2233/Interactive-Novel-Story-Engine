@@ -534,6 +534,28 @@ import {
   TavernToolbar,
   TavernWorkspaceShell
 } from "./tavernUi";
+import {
+  DebugGate,
+  DeductionBoardPanel,
+  EconomyDashboardPanel,
+  FactionWarDashboardPanel,
+  InventoryTradePanel,
+  LocationCard,
+  ModuleStatusBadge,
+  NPCRelationshipPanel,
+  QuestJournalPanel,
+  SurvivalTravelPanel,
+  TacticalCombatPanel,
+  VisibleStateInspector,
+  WorldActionCategory,
+  WorldActionInputPanel,
+  WorldAdvancedModulePanels,
+  WorldPromptProviderPanel,
+  WorldQualityPlaytestPanel,
+  WorldSaveLoadPanel,
+  WorldTimelineEventLogPanel,
+  WorldWorkspaceShell
+} from "./worldUi";
 
 type StoryEntry = {
   id: number;
@@ -741,6 +763,8 @@ export function App() {
   const [sceneMoodPresetId, setSceneMoodPresetId] = useState<string>("");
   const [selectedDialogueMode, setSelectedDialogueMode] = useState<string>("focused");
   const [input, setInput] = useState<string>("");
+  const [recentWorldActions, setRecentWorldActions] = useState<string[]>([]);
+  const [worldActionCategory, setWorldActionCategory] = useState<WorldActionCategory>("all");
   const [debugOpen, setDebugOpen] = useState<boolean>(true);
   const [lastResponse, setLastResponse] = useState<unknown>(null);
   const [timeline, setTimeline] = useState<DebugEvent[]>([]);
@@ -1487,6 +1511,7 @@ export function App() {
         const response = await submitPlayerInput(sessionId, trimmedInput);
         applyGameInputResponse(response);
       }
+      setRecentWorldActions((previous) => [trimmedInput, ...previous.filter((action) => action !== trimmedInput)].slice(0, 8));
       setInput("");
     } catch (err) {
       setError(toErrorMessage(err));
@@ -2380,47 +2405,97 @@ export function App() {
             }}
           />
         ) : (
-          <>
-        <WorldStudioLanding
-          visibleState={visibleState}
-          sessionId={sessionId}
-          selectedSaveId={selectedSaveId}
-          saves={saves}
-          debugEnabled={studioStatus?.debug_api_enabled ?? false}
-        />
-        <div className="story-scroll">
-          {story.map((entry) => (
-            <article className="story-entry" key={entry.id}>
-              {entry.text}
-            </article>
-          ))}
-          {story.length === 0 && <EmptyState title="Creating a local game session..." detail="The player view only uses visible state returned by the backend." />}
-        </div>
-
-        {suggestedActions.length > 0 && (
-          <div className="suggestions">
-            {suggestedActions.map((action) => (
-              <button type="button" key={action} onClick={() => setInput(action)}>
-                {action}
-              </button>
-            ))}
-          </div>
-        )}
-
-        <form className="input-row" onSubmit={handleSubmit}>
-          <input
-            value={input}
-            onChange={(event) => setInput(event.target.value)}
-            placeholder={dialogue?.dialogue_session.status === "active" ? "Say something in dialogue..." : "Enter your action..."}
-            disabled={isLoading || !sessionId}
+          <WorldWorkspaceShell
+            visibleState={visibleState}
+            sessionId={sessionId}
+            debugEnabled={studioStatus?.debug_api_enabled ?? false}
+            providerSummary={studioConfigSummary?.provider_status ?? studioConfigSummary?.llm_provider ?? "Provider Gateway"}
+            left={
+              <>
+                <WorldStudioLanding
+                  visibleState={visibleState}
+                  sessionId={sessionId}
+                  selectedSaveId={selectedSaveId}
+                  saves={saves}
+                  debugEnabled={studioStatus?.debug_api_enabled ?? false}
+                />
+                <LocationCard visibleState={visibleState} onAction={setInput} />
+                <NPCRelationshipPanel visibleState={visibleState} onAction={setInput} />
+                <QuestJournalPanel visibleState={visibleState} />
+                <InventoryTradePanel visibleState={visibleState} onAction={setInput} />
+              </>
+            }
+            main={
+              <>
+                <section className="world-play-main-view">
+                  <PageHeader
+                    eyebrow="World Play Main View Pro"
+                    title="Story / Narration"
+                    description="Narration renders confirmed backend results. Normal view excludes hidden facts, NPC secrets, raw state_deltas, raw prompts, and API keys."
+                  />
+                  <div className="story-scroll">
+                    {story.map((entry) => (
+                      <article className="story-entry" key={entry.id}>
+                        {entry.text}
+                      </article>
+                    ))}
+                    {story.length === 0 && <EmptyState title="No active story yet." detail="Start a local session. The player view only uses visible_state returned by the backend." />}
+                  </div>
+                  <WorldActionInputPanel
+                    input={input}
+                    suggestedActions={suggestedActions}
+                    recentActions={recentWorldActions}
+                    category={worldActionCategory}
+                    isLoading={isLoading}
+                    hasSession={Boolean(sessionId)}
+                    placeholder={dialogue?.dialogue_session.status === "active" ? "Say something in dialogue..." : "Enter your action..."}
+                    onInputChange={setInput}
+                    onCategoryChange={setWorldActionCategory}
+                    onSelectAction={setInput}
+                    onSubmit={handleSubmit}
+                  />
+                  <ErrorPanel message={error} />
+                </section>
+                <TacticalCombatPanel visibleState={visibleState} onAction={setInput} />
+                <EconomyDashboardPanel visibleState={visibleState} />
+                <FactionWarDashboardPanel visibleState={visibleState} />
+                <DeductionBoardPanel visibleState={visibleState} onAction={setInput} />
+                <SurvivalTravelPanel visibleState={visibleState} onAction={setInput} />
+                <WorldAdvancedModulePanels visibleState={visibleState} onAction={setInput} />
+                <WorldTimelineEventLogPanel events={timeline} debugEnabled={studioStatus?.debug_api_enabled ?? false} />
+                <WorldSaveLoadPanel
+                  saves={saves}
+                  selectedSaveId={selectedSaveId}
+                  migrationStatusBySaveId={migrationStatusBySaveId}
+                  onSelectSave={setSelectedSaveId}
+                />
+                <WorldQualityPlaytestPanel
+                  worldHealthStatus={worldHealth ? `${worldHealth.overall_score}` : "not run"}
+                  playtestCount={playtestReports.length}
+                  onRunWorldHealth={() => void handleRunWorldHealth()}
+                  onOpenQuality={() => setMode("studio")}
+                />
+              </>
+            }
+            right={
+              <>
+                <VisibleStateInspector visibleState={visibleState} />
+                <WorldPromptProviderPanel
+                  configSummary={studioConfigSummary}
+                  onOpenProviderSetup={() => setMode("prompt_lab")}
+                />
+                <section className="section-card player">
+                  <h3>Advanced World Modules</h3>
+                  <div className="chip-list">
+                    {["tactical_combat", "economy_sim", "faction_war", "deduction", "survival_travel", "magic", "hacking", "crafting", "cultivation"].map((moduleId) => (
+                      <ModuleStatusBadge key={moduleId} label={moduleId} enabled={Boolean(sessionId)} />
+                    ))}
+                  </div>
+                  <p className="muted">Module UI cannot change module rules, calculate outcomes, or bypass ActionRegistry.</p>
+                </section>
+              </>
+            }
           />
-          <button type="submit" disabled={isLoading || !input.trim()}>
-            Send
-          </button>
-        </form>
-
-        <ErrorPanel message={error} />
-          </>
         )}
       </section>
 
@@ -2431,6 +2506,7 @@ export function App() {
 
         {debugOpen && (
           <div className="debug-content">
+            <DebugGate debugEnabled={studioStatus?.debug_api_enabled ?? false}>
             <LocalOnlyNotice>
               Debug data is local-only and separate from player narrative. Raw event deltas stay in this panel.
             </LocalOnlyNotice>
@@ -2613,6 +2689,7 @@ export function App() {
               <h2>Debug Snapshot</h2>
               <pre>{JSON.stringify({ visibleState, saves, lastResponse }, null, 2)}</pre>
             </section>
+            </DebugGate>
           </div>
         )}
       </aside>
