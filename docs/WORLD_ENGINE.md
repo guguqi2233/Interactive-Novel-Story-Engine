@@ -173,6 +173,35 @@ QA / Debug / Replay rules:
   provider decide facts, action success, StateDelta application, EventLog
   writes, or visibility.
 
+v3.6 focuses on Local Performance & Accessibility Polish. Route-level lazy
+loading, large-list windowing, report pagination, safe API caches, provider
+status caches, keyboard shortcuts, focus helpers, accessibility labels,
+reduced motion, loading skeletons, and ErrorBoundary polish are presentation
+and local workflow optimizations. They do not change World Engine fact
+authority.
+
+Performance / accessibility optimization rules:
+
+- Optimization must not directly modify `GameState`, active saves, module
+  runtime state, `StateDelta`, or `EventLog`.
+- Large EventLog, Timeline, StateDelta, Quality, Hidden Leak, Provider model,
+  Module Browser, Novel, Tavern, World, and Authoring views may window,
+  paginate, memoize, debounce, cache safe summaries, or show stale indicators,
+  but they must not alter the underlying records or rule outcomes.
+- Normal UI remains based on `visible_state` and safe summaries. Hidden facts,
+  NPC secrets, debug memory, raw prompts, raw `state_deltas`, raw EventLog
+  JSON, raw provider responses, API keys, provider secrets, raw env, and
+  mature/private bodies must not be rendered or cached in normal views.
+- Debug-sensitive views remain gated by `ENABLE_DEBUG_API`; code splitting or
+  lazy loading must not expose StateDelta, debug compare, or raw debug export
+  routes as normal UI.
+- Provider connection status and safe API caches are local safe-metadata
+  caches only. They do not store credentials, do not change Provider Gateway
+  routing semantics, and do not let providers decide World facts.
+- Keyboard shortcuts and focus improvements must not trigger destructive
+  actions such as apply, import, delete, restore, migration apply, or debug
+  export without the existing confirmation gates.
+
 ## v2.8 Roleplay Immersion & Mature Module Integration
 
 v2.8 strengthens Tavern/RP immersion and adds default-off mature safety policy

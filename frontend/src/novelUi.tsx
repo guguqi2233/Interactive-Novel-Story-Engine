@@ -1,5 +1,7 @@
-import { ReactNode, useMemo, useState } from "react";
+import { ReactNode, useEffect, useMemo, useState } from "react";
 import { NovelChapter, NovelDraftSnapshot, NovelManuscript, NovelScene, WritingSessionState } from "./api";
+import { buildSafeSearchIndex, safeSearchMatches, useDebouncedValue } from "./filterUtils";
+import { countWordsFast } from "./textUtils";
 
 export type NovelIssue = {
   severity: string;
@@ -21,10 +23,6 @@ export type NovelSearchResult = {
   safe_summary?: string;
 };
 
-function wordCount(text?: string | null): number {
-  return (text ?? "").split(/\s+/).filter(Boolean).length;
-}
-
 function safeExcerpt(text?: string | null, max = 160): string {
   const value = (text ?? "").replace(/(api[_\s-]?key|authorization|hidden[_\s-]?fact|npc[_\s-]?secret|private[_\s-]?note|state[_\s-]?delta|raw[_\s-]?prompt)\s*[:=]\s*[^\n,;]+/gi, "$1=[redacted]");
   return value.length > max ? `${value.slice(0, max)}...` : value;
@@ -36,7 +34,8 @@ export function NovelStatusBadge({ status }: { status?: string | null }) {
 }
 
 export function WordCountBadge({ text, count }: { text?: string | null; count?: number }) {
-  return <span className="word-count-badge">{count ?? wordCount(text)} words</span>;
+  const resolvedCount = useMemo(() => count ?? countWordsFast(text), [count, text]);
+  return <span className="word-count-badge">{resolvedCount} words</span>;
 }
 
 export function LinkedRefList({ title, refs }: { title: string; refs?: string[] }) {
@@ -172,7 +171,10 @@ export function NovelWorkspaceShell({
 }
 
 export function ManuscriptDashboard({ manuscripts, chapters, scenes }: { manuscripts: NovelManuscript[]; chapters: NovelChapter[]; scenes: NovelScene[] }) {
-  const words = chapters.reduce((total, chapter) => total + wordCount(chapter.draft_text), 0) + scenes.reduce((total, scene) => total + wordCount(scene.draft_text), 0);
+  const words = useMemo(
+    () => chapters.reduce((total, chapter) => total + countWordsFast(chapter.draft_text), 0) + scenes.reduce((total, scene) => total + countWordsFast(scene.draft_text), 0),
+    [chapters, scenes]
+  );
   return (
     <div className="novel-dashboard-grid">
       <NovelMetric title="Manuscripts" value={manuscripts.length} />
@@ -199,7 +201,16 @@ export function OutlineTreePro({
   onSelectChapter?: (chapterId: string) => void;
 }) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const orderedChapters = [...chapters].sort((left, right) => left.order_index - right.order_index);
+  const orderedChapters = useMemo(() => [...chapters].sort((left, right) => left.order_index - right.order_index), [chapters]);
+  const scenesByChapterId = useMemo(() => {
+    const grouped = new Map<string, NovelScene[]>();
+    for (const scene of scenes) {
+      const list = grouped.get(scene.chapter_id) ?? [];
+      list.push(scene);
+      grouped.set(scene.chapter_id, list);
+    }
+    return grouped;
+  }, [scenes]);
 
   if (orderedChapters.length === 0) {
     return (
@@ -213,7 +224,7 @@ export function OutlineTreePro({
     <NovelSafeSummaryPanel title="Outline Tree Pro">
       <div className="outline-tree-pro">
         {orderedChapters.map((chapter, index) => {
-          const childScenes = scenes.filter((scene) => scene.chapter_id === chapter.chapter_id);
+          const childScenes = scenesByChapterId.get(chapter.chapter_id) ?? [];
           const isCollapsed = collapsed.has(chapter.chapter_id);
           const missing = [
             !chapter.summary ? "summary" : "",
@@ -272,14 +283,120 @@ export function ChapterEditorPro({ children }: { children: ReactNode }) {
   return <div className="chapter-editor-pro">{children}</div>;
 }
 
+export function ChapterListPro({
+  chapters,
+  selectedChapterId,
+  onSelectChapter
+}: {
+  chapters: NovelChapter[];
+  selectedChapterId?: string;
+  onSelectChapter: (chapter: NovelChapter) => void;
+}) {
+  const [pageSize, setPageSize] = useState(25);
+  const [pageIndex, setPageIndex] = useState(0);
+  const orderedChapters = useMemo(() => [...chapters].sort((left, right) => left.order_index - right.order_index), [chapters]);
+  const pageCount = Math.max(1, Math.ceil(orderedChapters.length / pageSize));
+  const clampedPageIndex = Math.min(pageIndex, pageCount - 1);
+  const windowStart = clampedPageIndex * pageSize;
+  const windowEnd = Math.min(windowStart + pageSize, orderedChapters.length);
+  const visibleChapters = orderedChapters.slice(windowStart, windowEnd);
+
+  useEffect(() => {
+    setPageIndex(0);
+  }, [chapters.length, pageSize]);
+
+  useEffect(() => {
+    if (pageIndex > pageCount - 1) {
+      setPageIndex(pageCount - 1);
+    }
+  }, [pageCount, pageIndex]);
+
+  if (chapters.length === 0) {
+    return <div className="novel-card-list"><p className="muted">No chapters</p></div>;
+  }
+
+  return (
+    <div className="novel-card-list" data-windowed-novel-chapters="true">
+      <div className="novel-card-meta">
+        <span>Rendering {windowStart + 1}-{windowEnd} of {orderedChapters.length} chapter(s)</span>
+        <label>
+          Rows
+          <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>
+            {[10, 25, 50].map((size) => <option key={size} value={size}>{size}</option>)}
+          </select>
+        </label>
+      </div>
+      {visibleChapters.map((chapter) => (
+        <ChapterCard
+          key={chapter.chapter_id}
+          chapter={chapter}
+          selected={chapter.chapter_id === selectedChapterId}
+          onSelect={() => onSelectChapter(chapter)}
+        />
+      ))}
+      {orderedChapters.length > pageSize ? (
+        <div className="pagination-controls" aria-label="Novel chapter pagination">
+          <button type="button" onClick={() => setPageIndex(0)} disabled={clampedPageIndex === 0}>First</button>
+          <button type="button" onClick={() => setPageIndex(Math.max(clampedPageIndex - 1, 0))} disabled={clampedPageIndex === 0}>Previous</button>
+          <span>Page {clampedPageIndex + 1} / {pageCount}</span>
+          <button type="button" onClick={() => setPageIndex(Math.min(clampedPageIndex + 1, pageCount - 1))} disabled={clampedPageIndex >= pageCount - 1}>Next</button>
+          <button type="button" onClick={() => setPageIndex(pageCount - 1)} disabled={clampedPageIndex >= pageCount - 1}>Last</button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function SceneCardsBoard({ scenes }: { scenes: NovelScene[] }) {
   const [filter, setFilter] = useState("");
+  const debouncedFilter = useDebouncedValue(filter, 180);
   const [status, setStatus] = useState("all");
-  const filtered = scenes.filter((scene) => {
-    const haystack = [scene.title, scene.summary, scene.status, scene.pov_character_id, scene.location_ref, ...(scene.linked_character_ids ?? [])].join(" ").toLowerCase();
-    return (!filter || haystack.includes(filter.toLowerCase())) && (status === "all" || (scene.status || "draft") === status);
-  });
+  const [pageSize, setPageSize] = useState(24);
+  const [pageIndex, setPageIndex] = useState(0);
+  const sceneSearchIndexById = useMemo(
+    () =>
+      new Map(
+        scenes.map((scene) => [
+          scene.scene_id,
+          buildSafeSearchIndex([
+            scene.title,
+            scene.summary,
+            scene.status,
+            scene.pov_character_id,
+            scene.location_ref,
+            ...(scene.linked_character_ids ?? []),
+            ...(scene.linked_world_event_ids ?? []),
+            ...sceneTags(scene)
+          ])
+        ])
+      ),
+    [scenes]
+  );
+  const filtered = useMemo(
+    () =>
+      scenes.filter((scene) => {
+        const matchesQuery = !debouncedFilter || safeSearchMatches(sceneSearchIndexById.get(scene.scene_id) ?? "", debouncedFilter);
+        return matchesQuery && (status === "all" || (scene.status || "draft") === status);
+      }),
+    [debouncedFilter, sceneSearchIndexById, scenes, status]
+  );
   const statuses = ["all", ...uniqueRefs(scenes.map((scene) => scene.status || "draft"))];
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const clampedPageIndex = Math.min(pageIndex, pageCount - 1);
+  const windowStart = clampedPageIndex * pageSize;
+  const windowEnd = Math.min(windowStart + pageSize, filtered.length);
+  const visibleScenes = filtered.slice(windowStart, windowEnd);
+
+  useEffect(() => {
+    setPageIndex(0);
+  }, [debouncedFilter, pageSize, scenes.length, status]);
+
+  useEffect(() => {
+    if (pageIndex > pageCount - 1) {
+      setPageIndex(pageCount - 1);
+    }
+  }, [pageCount, pageIndex]);
+
   return (
     <div className="stack">
       <NovelToolbar
@@ -291,12 +408,18 @@ export function SceneCardsBoard({ scenes }: { scenes: NovelScene[] }) {
             <select value={status} onChange={(event) => setStatus(event.target.value)}>
               {statuses.map((item) => <option key={item} value={item}>{item}</option>)}
             </select>
+            <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>
+              {[12, 24, 48].map((size) => <option key={size} value={size}>{size} cards</option>)}
+            </select>
+            {filter !== debouncedFilter ? <span className="novel-chip">filtering...</span> : null}
           </>
         )}
       />
       {filtered.length === 0 ? <p className="muted">No scenes match this filter.</p> : (
-        <div className="scene-cards-board">
-          {filtered.map((scene) => (
+        <>
+        <p className="muted">Rendering {windowStart + 1}-{windowEnd} of {filtered.length} filtered scene card(s).</p>
+        <div className="scene-cards-board" data-windowed-novel-scenes="true">
+          {visibleScenes.map((scene) => (
             <div key={scene.scene_id} className="scene-card-pro">
               <SceneCard scene={scene} />
               <div className="novel-card-meta">
@@ -310,42 +433,55 @@ export function SceneCardsBoard({ scenes }: { scenes: NovelScene[] }) {
             </div>
           ))}
         </div>
+        {filtered.length > pageSize ? (
+          <div className="pagination-controls" aria-label="Novel scene pagination">
+            <button type="button" onClick={() => setPageIndex(0)} disabled={clampedPageIndex === 0}>First</button>
+            <button type="button" onClick={() => setPageIndex(Math.max(clampedPageIndex - 1, 0))} disabled={clampedPageIndex === 0}>Previous</button>
+            <span>Page {clampedPageIndex + 1} / {pageCount}</span>
+            <button type="button" onClick={() => setPageIndex(Math.min(clampedPageIndex + 1, pageCount - 1))} disabled={clampedPageIndex >= pageCount - 1}>Next</button>
+            <button type="button" onClick={() => setPageIndex(pageCount - 1)} disabled={clampedPageIndex >= pageCount - 1}>Last</button>
+          </div>
+        ) : null}
+        </>
       )}
     </div>
   );
 }
 
 export function CharacterArcPanel({ chapters = [], scenes = [] }: { chapters?: NovelChapter[]; scenes?: NovelScene[] }) {
-  const characterIds = uniqueRefs([
-    ...chapters.flatMap((chapter) => chapter.linked_character_ids ?? []),
-    ...scenes.flatMap((scene) => scene.linked_character_ids ?? []),
-    ...scenes.map((scene) => scene.pov_character_id)
-  ]);
+  const characterSummaries = useMemo(() => {
+    const characterIds = uniqueRefs([
+      ...chapters.flatMap((chapter) => chapter.linked_character_ids ?? []),
+      ...scenes.flatMap((scene) => scene.linked_character_ids ?? []),
+      ...scenes.map((scene) => scene.pov_character_id)
+    ]);
+    return characterIds.map((characterId) => {
+      const linkedScenes = scenes.filter((scene) => scene.pov_character_id === characterId || scene.linked_character_ids?.includes(characterId));
+      const linkedChapters = chapters.filter((chapter) => chapter.linked_character_ids?.includes(characterId) || linkedScenes.some((scene) => scene.chapter_id === chapter.chapter_id));
+      const stage = linkedScenes.length >= 3 ? "turning point ready" : linkedScenes.length > 0 ? "setup" : "unlinked";
+      return { characterId, linkedChapters, linkedScenes, stage };
+    });
+  }, [chapters, scenes]);
   return (
     <NovelSafeSummaryPanel title="Character Arc Panel">
-      {characterIds.length === 0 ? <p>No linked characters yet. Add character refs to chapters or scenes to track arcs.</p> : characterIds.map((characterId) => {
-        const linkedScenes = scenes.filter((scene) => scene.pov_character_id === characterId || scene.linked_character_ids?.includes(characterId));
-        const linkedChapters = chapters.filter((chapter) => chapter.linked_character_ids?.includes(characterId) || linkedScenes.some((scene) => scene.chapter_id === chapter.chapter_id));
-        const stage = linkedScenes.length >= 3 ? "turning point ready" : linkedScenes.length > 0 ? "setup" : "unlinked";
-        return (
-          <div key={characterId} className="novel-card compact">
+      {characterSummaries.length === 0 ? <p>No linked characters yet. Add character refs to chapters or scenes to track arcs.</p> : characterSummaries.map((summary) => (
+          <div key={summary.characterId} className="novel-card compact">
             <div className="novel-card-title-row">
-              <strong>{safeExcerpt(characterId)}</strong>
-              <NovelStatusBadge status={stage} />
+              <strong>{safeExcerpt(summary.characterId)}</strong>
+              <NovelStatusBadge status={summary.stage} />
             </div>
             <p className="muted">Motivation/conflict notes remain authoring material. Turning points are inferred from linked safe scenes.</p>
-            <LinkedRefList title="linked chapters" refs={linkedChapters.map((chapter) => chapter.chapter_id)} />
-            <LinkedRefList title="turning points" refs={linkedScenes.slice(0, 4).map((scene) => scene.scene_id)} />
+            <LinkedRefList title="linked chapters" refs={summary.linkedChapters.map((chapter) => chapter.chapter_id)} />
+            <LinkedRefList title="turning points" refs={summary.linkedScenes.slice(0, 4).map((scene) => scene.scene_id)} />
           </div>
-        );
-      })}
+        ))}
     </NovelSafeSummaryPanel>
   );
 }
 
 export function PlotForeshadowingBoard({ chapters = [], scenes = [] }: { chapters?: NovelChapter[]; scenes?: NovelScene[] }) {
-  const linkedWorldEvents = uniqueRefs(scenes.flatMap((scene) => scene.linked_world_event_ids ?? []));
-  const unresolvedScenes = scenes.filter((scene) => !scene.summary || (scene.status || "draft") !== "complete");
+  const linkedWorldEvents = useMemo(() => uniqueRefs(scenes.flatMap((scene) => scene.linked_world_event_ids ?? [])), [scenes]);
+  const unresolvedScenes = useMemo(() => scenes.filter((scene) => !scene.summary || (scene.status || "draft") !== "complete"), [scenes]);
   return (
     <NovelSafeSummaryPanel title="Plot / Foreshadowing Board">
       <div className="novel-dashboard-grid">
@@ -362,11 +498,15 @@ export function PlotForeshadowingBoard({ chapters = [], scenes = [] }: { chapter
 }
 
 export function TimelineLinkPanel({ chapters = [], scenes = [] }: { chapters?: NovelChapter[]; scenes?: NovelScene[] }) {
-  const timelineRefs = uniqueRefs([
-    ...chapters.flatMap((chapter) => chapter.linked_timeline_event_ids ?? []),
-    ...scenes.flatMap((scene) => scene.timeline_event_refs ?? []),
-    ...scenes.flatMap((scene) => scene.linked_world_event_ids ?? [])
-  ]);
+  const timelineRefs = useMemo(
+    () =>
+      uniqueRefs([
+        ...chapters.flatMap((chapter) => chapter.linked_timeline_event_ids ?? []),
+        ...scenes.flatMap((scene) => scene.timeline_event_refs ?? []),
+        ...scenes.flatMap((scene) => scene.linked_world_event_ids ?? [])
+      ]),
+    [chapters, scenes]
+  );
   return (
     <NovelSafeSummaryPanel title="Timeline Link Panel">
       {timelineRefs.length === 0 ? <p>No safe timeline refs linked yet.</p> : <LinkedRefList title="safe timeline / world event refs" refs={timelineRefs} />}
@@ -376,10 +516,14 @@ export function TimelineLinkPanel({ chapters = [], scenes = [] }: { chapters?: N
 }
 
 export function WorldBibleSidebar({ chapters = [], scenes = [] }: { chapters?: NovelChapter[]; scenes?: NovelScene[] }) {
-  const factRefs = uniqueRefs([
-    ...chapters.flatMap((chapter) => chapter.linked_fact_ids ?? []),
-    ...scenes.flatMap((scene) => scene.linked_fact_ids ?? [])
-  ]);
+  const factRefs = useMemo(
+    () =>
+      uniqueRefs([
+        ...chapters.flatMap((chapter) => chapter.linked_fact_ids ?? []),
+        ...scenes.flatMap((scene) => scene.linked_fact_ids ?? [])
+      ]),
+    [chapters, scenes]
+  );
   return (
     <NovelSafeSummaryPanel title="World Bible Sidebar">
       {factRefs.length === 0 ? <p>No novel-safe World Bible refs linked yet.</p> : <LinkedRefList title="novel-safe fact refs" refs={factRefs} />}
@@ -447,11 +591,37 @@ export function NovelSearchFilterBar({
   onStatusChange?: (value: string) => void;
   onTagChange?: (value: string) => void;
 }) {
+  const [draftValue, setDraftValue] = useState(value);
+  const [draftTag, setDraftTag] = useState(tag || "");
+  const debouncedValue = useDebouncedValue(draftValue, 220);
+  const debouncedTag = useDebouncedValue(draftTag, 220);
+
+  useEffect(() => {
+    setDraftValue(value);
+  }, [value]);
+
+  useEffect(() => {
+    setDraftTag(tag || "");
+  }, [tag]);
+
+  useEffect(() => {
+    if (debouncedValue !== value) {
+      onChange(debouncedValue);
+    }
+  }, [debouncedValue, onChange, value]);
+
+  useEffect(() => {
+    const currentTag = tag || "";
+    if (onTagChange && debouncedTag !== currentTag) {
+      onTagChange(debouncedTag);
+    }
+  }, [debouncedTag, onTagChange, tag]);
+
   return (
     <div className="novel-search-bar">
       <label>
         Search Novel Studio
-        <input value={value} onChange={(event) => onChange(event.target.value)} placeholder="Search chapters, scenes, plot threads" />
+        <input value={draftValue} onChange={(event) => setDraftValue(event.target.value)} placeholder="Search chapters, scenes, plot threads" />
       </label>
       <label>
         Status
@@ -464,21 +634,69 @@ export function NovelSearchFilterBar({
       </label>
       <label>
         Tag
-        <input value={tag || ""} onChange={(event) => onTagChange?.(event.target.value)} placeholder="character, plot, location" />
+        <input value={draftTag} onChange={(event) => setDraftTag(event.target.value)} placeholder="character, plot, location" />
       </label>
+      {draftValue !== debouncedValue || draftTag !== debouncedTag ? <span className="novel-chip">filtering...</span> : null}
     </div>
   );
 }
 
 export function DraftVersionPanel({ snapshots, onCompare }: { snapshots: NovelDraftSnapshot[]; onCompare: (snapshotId: string) => void }) {
+  const [collapsed, setCollapsed] = useState(false);
+  const [pageSize, setPageSize] = useState(10);
+  const [pageIndex, setPageIndex] = useState(0);
+  const orderedSnapshots = useMemo(
+    () => [...snapshots].sort((left, right) => String(right.created_at ?? "").localeCompare(String(left.created_at ?? ""))),
+    [snapshots]
+  );
+  const pageCount = Math.max(1, Math.ceil(orderedSnapshots.length / pageSize));
+  const clampedPageIndex = Math.min(pageIndex, pageCount - 1);
+  const windowStart = clampedPageIndex * pageSize;
+  const windowEnd = Math.min(windowStart + pageSize, orderedSnapshots.length);
+  const visibleSnapshots = collapsed ? [] : orderedSnapshots.slice(windowStart, windowEnd);
+
+  useEffect(() => {
+    setPageIndex(0);
+  }, [pageSize, snapshots.length]);
+
+  useEffect(() => {
+    if (pageIndex > pageCount - 1) {
+      setPageIndex(pageCount - 1);
+    }
+  }, [pageCount, pageIndex]);
+
   return (
     <NovelSafeSummaryPanel title="Draft Version Compare">
-      {snapshots.length === 0 ? <p>No snapshots yet. Create one before a major rewrite.</p> : snapshots.map((snapshot) => (
-        <button key={snapshot.snapshot_id} type="button" className="novel-card" onClick={() => onCompare(snapshot.snapshot_id)}>
-          <strong>{safeExcerpt(snapshot.title || snapshot.snapshot_id)}</strong>
-          <span className="muted">{snapshot.created_at}</span>
-        </button>
-      ))}
+      <div className="novel-card-meta">
+        <button type="button" onClick={() => setCollapsed((value) => !value)}>{collapsed ? "Show snapshots" : "Collapse snapshots"}</button>
+        <span>{orderedSnapshots.length} local snapshot(s)</span>
+        <label>
+          Rows
+          <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>
+            {[5, 10, 25].map((size) => <option key={size} value={size}>{size}</option>)}
+          </select>
+        </label>
+      </div>
+      {snapshots.length === 0 ? <p>No snapshots yet. Create one before a major rewrite.</p> : collapsed ? <p className="muted">Snapshot list collapsed for large draft history performance.</p> : (
+        <div data-windowed-draft-snapshots="true">
+          <p className="muted">Rendering {windowStart + 1}-{windowEnd} of {orderedSnapshots.length} snapshot(s).</p>
+          {visibleSnapshots.map((snapshot) => (
+            <button key={snapshot.snapshot_id} type="button" className="novel-card" onClick={() => onCompare(snapshot.snapshot_id)}>
+              <strong>{safeExcerpt(snapshot.title || snapshot.snapshot_id)}</strong>
+              <span className="muted">{snapshot.created_at}</span>
+            </button>
+          ))}
+          {orderedSnapshots.length > pageSize ? (
+            <div className="pagination-controls" aria-label="Draft snapshot pagination">
+              <button type="button" onClick={() => setPageIndex(0)} disabled={clampedPageIndex === 0}>First</button>
+              <button type="button" onClick={() => setPageIndex(Math.max(clampedPageIndex - 1, 0))} disabled={clampedPageIndex === 0}>Previous</button>
+              <span>Page {clampedPageIndex + 1} / {pageCount}</span>
+              <button type="button" onClick={() => setPageIndex(Math.min(clampedPageIndex + 1, pageCount - 1))} disabled={clampedPageIndex >= pageCount - 1}>Next</button>
+              <button type="button" onClick={() => setPageIndex(pageCount - 1)} disabled={clampedPageIndex >= pageCount - 1}>Last</button>
+            </div>
+          ) : null}
+        </div>
+      )}
       <p>Compare results are safe summaries and never expose hidden World context.</p>
     </NovelSafeSummaryPanel>
   );

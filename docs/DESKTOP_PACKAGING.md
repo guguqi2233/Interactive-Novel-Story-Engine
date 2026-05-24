@@ -188,6 +188,34 @@ paths. A packaged local desktop build may let a user configure local provider
 profiles at runtime, but it must not ship real provider credentials or assume a
 real network connection during verification.
 
+## v3.6 Performance / Accessibility Packaging Boundary
+
+v3.6 adds local performance and accessibility polish for route-level lazy
+loading, large-list windowing, safe cache summaries, Provider status/model-list
+performance, keyboard shortcuts, focus management, reduced motion, loading
+skeletons, and ErrorBoundary handling. These changes do not relax desktop
+packaging exclusions and do not introduce online services.
+
+Desktop bundles, diagnostics, backups, exports, logs, crash reports, and
+frontend builds must continue to exclude:
+
+- `.env`, raw env, API keys, provider secrets, Authorization headers, and
+  `transient_api_key` values;
+- raw provider responses, raw provider errors, raw prompts, raw outputs, token-
+  like base URL secrets, and secret resolver output;
+- hidden facts, NPC secrets, debug memory, raw `GameState`, raw
+  `state_deltas`, mature/private content, database files, logs, caches,
+  `node_modules`, `frontend/dist` as a source-controlled artifact, desktop
+  build outputs, backups, crash reports, diagnostics bundles, and executable
+  package payloads.
+
+Provider connection status caches and frontend safe API caches are local safe
+metadata caches only. They may contain status, timestamps, latency, model
+counts, safe report summaries, and stale flags, but they must not contain
+secrets or raw provider/debug payloads. No v3.6 performance cache should be
+treated as a credential store, cloud sync mechanism, telemetry uploader, or
+provider availability monitor that runs real network checks during packaging.
+
 ## Tauri / Electron Review
 
 Tauri and Electron remain future options only. v3.0 does not add either runtime

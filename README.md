@@ -60,12 +60,12 @@ Provider connectivity boundaries:
   OpenAI, OpenAI-compatible, relay, local HTTP, or custom provider endpoints by
   default.
 
-v3.6 should polish provider model list performance, capability matrix
-performance, cache invalidation UX, and accessibility for provider setup,
-connection results, model discovery, and mode assignment screens. v3.7 Local
-Complete Product acceptance should include provider connection tests, model
-list discovery, local model-profile synchronization, and mode-based assignment
-for Novel, Tavern, World, Cross-Mode, and Quality while preserving Provider
+v3.6 polishes provider model list performance, capability matrix performance,
+safe cache/stale refresh UX, and accessibility for provider setup, connection
+results, model discovery, and mode assignment screens. v3.7 Local Complete
+Product acceptance should include provider connection tests, model list
+discovery, local model-profile synchronization, and mode-based assignment for
+Novel, Tavern, World, Cross-Mode, and Quality while preserving Provider
 Gateway as the only model entry point.
 
 ## v3.0 Local Desktop Studio Polish
@@ -466,6 +466,80 @@ python -m pytest backend/tests/test_v35_provider_connection_test_backend.py back
 cd frontend
 npm.cmd run build
 npm.cmd run check:v35-qa-debug-provider-ui
+```
+
+## v3.6 Local Performance & Accessibility Polish
+
+v3.6 is an optimization and usability polish phase for the local product. It
+does not add a new online platform, account system, cloud sync, marketplace,
+remote package downloader, arbitrary-code plugin runtime, or new World Engine
+rules. The goal is to make the already integrated Novel, Tavern, World,
+Authoring / Mod, QA / Debug / Replay, Provider, Backup, Diagnostics, and
+Settings surfaces more comfortable on large local projects.
+
+Implemented v3.6 optimization surfaces:
+
+- Bundle / chunk review and route-level lazy loading for large Studio areas.
+  Large pages load behind safe loading and error boundaries instead of growing
+  the initial route indefinitely. Remaining Vite chunk warnings are tracked as
+  performance follow-up rather than business-feature gaps.
+- Large list windowing, pagination, filtering, and collapsed groups for
+  EventLog, Timeline Replay, StateDelta, Quality reports, Hidden Leak reports,
+  Provider model lists, Module Browser, Compatibility Matrix, Novel scenes /
+  snapshots, Tavern messages / memory, World panels, and Authoring / Mod
+  package previews.
+- Provider model list performance polish with search, capability filters,
+  enabled/use-case filters, memoized capability badges, and safe summaries only.
+- Provider connection status cache and frontend safe API cache summaries with
+  stale indicators and manual refresh. These caches store only safe metadata
+  such as status, tested time, latency, model count, and report summaries. They
+  do not store API keys, transient keys, Authorization headers, raw provider
+  responses, raw prompts/outputs, hidden facts, NPC secrets, raw
+  `state_deltas`, mature/private content, or raw env.
+- Capability Matrix and model-assignment performance polish for large provider
+  / model / use-case sets while preserving warnings and routing semantics.
+- Backup / Restore / Diagnostics progress states for scanning, filtering,
+  validating, packaging, writing, done, cannot-cancel, and safe-error cases.
+- Slow Provider warnings for high latency, repeated timeout, slow model-list
+  reads, and high error rates without showing raw provider errors, prompts,
+  outputs, or secrets.
+- Performance Dashboard polish for local-only large-list, provider latency,
+  quality/playtest duration, save/load duration, diagnostics duration, event
+  count, and model count hints. No telemetry is uploaded.
+- Keyboard shortcut foundation and shortcut help. Shortcuts can navigate or
+  focus safe surfaces, but they cannot apply, import, delete, restore, export
+  debug data, or bypass confirmation.
+- Focus management for dialogs, confirm flows, wizard steps, retry/back
+  actions, and destructive-confirm safety.
+- Accessibility labels, semantic headings, readable status/risk/severity
+  badges, form labels, loading/empty/error/disabled states, reduced motion,
+  visual comfort, spacing/contrast polish, and safe AppErrorBoundary handling.
+
+v3.6 boundaries:
+
+- Optimization does not change World Engine authority, `StateDelta`,
+  `EventLog`, visibility, Provider Gateway routing, import/export hardening,
+  proposal/apply semantics, or package validation.
+- Debug / Replay remains observational. StateDelta raw views and debug compare
+  tools remain debug-gated and cannot modify `GameState`.
+- Normal UI still uses `visible_state` and safe summaries. Hidden facts, NPC
+  secrets, debug memory, raw prompts, raw `state_deltas`, API keys, raw env,
+  provider secrets, mature/private content, and raw provider responses must not
+  enter normal views, caches, labels, errors, diagnostics, backups, or exports.
+- Provider performance caches are local safe metadata caches, not credential
+  stores, online sync, API resale, or background provider probing.
+- Tests and CI continue to use fake/mock/local_stub provider paths and must not
+  call real provider networks by default.
+
+Useful v3.6 checks:
+
+```powershell
+python -m pytest backend/tests/test_v36_provider_status_cache.py
+python -m pytest backend/tests/test_v36_integration_regression.py
+cd frontend
+npm.cmd run build
+npm.cmd run check:v36-performance-a11y
+npm.cmd run check:v36-integration-regression
 ```
 
 ## v2.9 Local UI / UX Foundation

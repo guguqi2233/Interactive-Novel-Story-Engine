@@ -163,6 +163,32 @@ v3.4 import/export and safety rules:
   rather than hidden fact text, NPC secrets, debug memory, raw prompts, raw
   `state_deltas`, raw env, or provider secrets.
 
+v3.6 Local Performance & Accessibility Polish does not change content-pack or
+package semantics. It optimizes large local package, authoring, import/export,
+Module Browser, Permission Dashboard, Compatibility Matrix, Validation, and
+Quality views so large packages can be inspected without rendering every row at
+once.
+
+v3.6 package UI optimization rules:
+
+- Package, module, validation, import/export, compatibility, permission, and
+  quality views may use pagination, windowing, collapsed groups, debounced
+  filters, memoized safe summaries, stale indicators, and manual refresh.
+- These UI caches and windowed views are safe-summary performance helpers.
+  They must not execute packages, download remote packages, auto-enable mods,
+  bypass manifest validation, change compatibility or quality results, or
+  write active `GameState`.
+- Cache entries and search indexes must not include API keys, provider
+  secrets, raw env, raw provider responses, raw prompts/outputs, hidden facts,
+  NPC secrets, debug memory, raw `state_deltas`, mature/private content,
+  executable payloads, databases, logs, caches, or build outputs.
+- Accessibility labels and ErrorBoundary messages must use safe package/entity
+  summaries only. They must not copy hidden text, secrets, raw paths, or raw
+  provider errors into normal UI.
+- v3.6 does not add an online package registry, online marketplace, remote
+  package auto-download, account sync, cloud package sync, or arbitrary-code
+  plugin runtime.
+
 ## v2.8 RP / Mature Content and Package Policy
 
 v2.8 adds RP immersion and mature-policy metadata that can appear in local

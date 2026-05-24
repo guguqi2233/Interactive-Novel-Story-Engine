@@ -23,6 +23,12 @@ provide API resale, bypass Provider Gateway, or change World Engine,
 `StateDelta`, `EventLog`, visibility, validation, import/export, or quality
 gate authority.
 
+v3.6 Performance & Accessibility contracts are UI and safe-cache contracts.
+They may window large local lists, cache safe summaries, show stale state,
+improve keyboard/focus/a11y behavior, and make errors more resilient. They do
+not change World Engine rules, Provider Gateway routing, package validation,
+quality-gate logic, visibility, or secret boundaries.
+
 ## Stable Contracts
 - `GameState`: `1.8` (compatible)
 - `StateDelta`: `1.8` (compatible)
@@ -191,7 +197,14 @@ gate authority.
 - `ModelProfileSync`: `3.5` (project-local model profile synchronization contract; manual model ids and fetched model ids are stored as safe `ModelProfile` metadata only)
 - `ProviderModeModelAssignment`: `3.5` (local routing-assignment contract for Novel, Tavern, World, Cross-Mode, structured JSON, memory, and Quality use cases; Provider Gateway remains the only model entry point)
 - `ProviderRedactionService`: `3.5` (provider diagnostics/log/error redaction contract for transient keys, Authorization headers, OpenAI-style keys, relay tokens, secret refs, and token-like base URLs)
-- `ProviderCapabilityMatrixPerformance`: `3.6 planned` (provider model-list and capability-matrix performance/accessibility polish contract; preserves secret redaction and fake-provider CI defaults)
+- `ProviderConnectionStatusCache`: `3.6` (safe local provider status cache contract; stores provider id, status, tested time, latency, safe error type, model count, and redaction flag only; no API keys, transient keys, Authorization headers, raw env, raw provider responses, or raw error bodies)
+- `SafeApiCacheSummary`: `3.6` (frontend safe-summary cache contract for provider model lists, quality reports, EventLog/Timeline safe summaries, and module/package summaries; no secrets, raw prompts/outputs, hidden facts, NPC secrets, raw state_deltas, mature/private content, or debug memory)
+- `LargeListWindowingUI`: `3.6` (frontend windowing/pagination/filter contract for EventLog, Timeline, StateDelta, Quality, Hidden Leak, Provider models, Module Browser, Compatibility Matrix, Novel/Tavern/World, and Authoring/Mod large lists; does not alter source records or debug gates)
+- `ProviderCapabilityMatrixPerformance`: `3.6` (provider model-list and capability-matrix performance/accessibility polish contract; preserves warnings, routing semantics, secret redaction, and fake-provider CI defaults)
+- `KeyboardShortcutsProvider`: `3.6` (frontend shortcut/help contract; shortcuts may navigate or focus safe UI but cannot trigger apply/import/delete/restore/migration/debug-export without existing confirmation flows)
+- `AppErrorBoundary`: `3.6` (frontend local error-boundary contract; shows safe error summaries, retry/home/diagnostics hints, and redacts stack traces, API keys, raw env, hidden facts, raw paths, and provider errors from normal UI)
+- `V36PerformanceA11yCheck`: `3.6` (`npm.cmd run check:v36-performance-a11y` static frontend regression check for lazy pages, long-list safety, debug gating, provider secret filtering, accessibility surfaces, and no account/cloud/marketplace UI)
+- `V36IntegrationRegressionCheck`: `3.6` (`npm.cmd run check:v36-integration-regression` static integration check for route splitting, safe caches, large reports/lists, provider status/model caches, shortcut safety, ErrorBoundary redaction, and local-first constraints)
 - `LocalCompleteProductProviderAcceptance`: `3.7 planned` (acceptance contract requiring provider connection test, model discovery, local model-profile synchronization, and mode-based model assignment while keeping API keys out of project files, logs, diagnostics, backups, exports, and frontend state)
 - `WorldProjectSection`: `2.1` (project-aware World Mode adapter config)
 - `ProjectPackageManifest`: `2.1` (NarrativeProject import/export package manifest)

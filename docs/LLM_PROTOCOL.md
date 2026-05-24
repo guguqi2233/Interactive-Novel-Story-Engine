@@ -450,6 +450,32 @@ Mode assignment rules:
   `api_key_env` values, `secret_ref` values, Authorization headers, token-like
   base URL segments, raw provider errors, and raw provider responses.
 
+### v3.6 Provider Performance Cache Boundary
+
+v3.6 optimizes Provider Connectivity and related dashboards with local safe
+metadata caches, windowed model lists, memoized capability badges, stale
+indicators, manual refresh, slow-provider warnings, and accessibility polish.
+These optimizations do not change Provider Gateway semantics or LLM authority.
+
+Provider performance cache rules:
+
+- Provider connection status caches may store only safe metadata such as
+  provider profile id, connection status, tested time, latency, safe error
+  type, model count, and redaction flag.
+- Safe API caches may store safe summaries for Provider model lists, Quality
+  reports, EventLog summaries, Timeline summaries, Module Browser summaries,
+  and similar local dashboards.
+- Caches must not store API keys, `transient_api_key`, Authorization headers,
+  raw env, raw provider responses, raw provider error bodies, raw prompts,
+  raw outputs, hidden facts, NPC secrets, raw `GameState`, raw
+  `state_deltas`, mature/private content, or debug memory.
+- Slow Provider warnings and performance dashboards may show latency, timeout,
+  model-list duration, error count, and local optimization hints, but they must
+  not show raw provider errors, prompt/output bodies, or secrets.
+- Performance caches do not perform background real-provider checks by
+  default, do not upload telemetry, do not optimize cost dynamically, and do
+  not let provider choice change World Engine authority.
+
 ## v2.4 Cross-Mode Bridge LLM Boundary
 
 v2.4 Cross-Mode Bridge does not grant the LLM any new world authority. Cross

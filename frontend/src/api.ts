@@ -2906,6 +2906,30 @@ export type ProviderProfileDraft = {
   requires_api_key?: boolean | null;
 };
 
+export type ProviderConnectionStatus = {
+  status: string;
+  safe_message: string;
+  provider_type: string;
+  tested_at: string;
+  latency_ms?: number | null;
+  error_type?: string | null;
+  redaction_applied: boolean;
+};
+
+export type ProviderConnectionStatusCacheView = {
+  provider_profile_id: string;
+  status: string;
+  tested_at?: string | null;
+  latency_ms?: number | null;
+  safe_error_type?: string | null;
+  model_count?: number;
+  redaction_applied: boolean;
+  age_seconds?: number | null;
+  ttl_seconds?: number;
+  stale?: boolean;
+  cache_state?: string;
+};
+
 export type ModelCapabilityMatrixRow = {
   provider_profile_id: string;
   model_id: string;
@@ -3483,8 +3507,16 @@ export async function validateProjectProvider(projectId: string, providerProfile
   });
 }
 
-export async function fetchProjectProviderStatus(projectId: string, providerProfileId: string): Promise<{ local_only: boolean; status: Record<string, unknown> }> {
-  return requestJson<{ local_only: boolean; status: Record<string, unknown> }>(`/projects/${encodeURIComponent(projectId)}/providers/${encodeURIComponent(providerProfileId)}/status`);
+export async function fetchProjectProviderStatus(projectId: string, providerProfileId: string): Promise<{ local_only: boolean; status: string | Record<string, unknown>; connection_cache?: ProviderConnectionStatusCacheView }> {
+  return requestJson<{ local_only: boolean; status: string | Record<string, unknown>; connection_cache?: ProviderConnectionStatusCacheView }>(`/projects/${encodeURIComponent(projectId)}/providers/${encodeURIComponent(providerProfileId)}/status`);
+}
+
+export async function testProjectProviderConnection(projectId: string, providerProfileId: string): Promise<ProviderConnectionStatus> {
+  return requestJson<ProviderConnectionStatus>(`/projects/${encodeURIComponent(projectId)}/providers/test-connection`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ provider_profile_id: providerProfileId, timeout_seconds: 10 })
+  });
 }
 
 export async function fetchProjectProviderCapabilityMatrix(projectId: string): Promise<{ local_only: boolean; matrix: ProviderModelCapabilityMatrix }> {

@@ -36,7 +36,6 @@ const requiredUiTokens = [
   "UnifiedQualityGateDashboard",
   "Quality Gate Unified Dashboard Pro",
   "PerformanceDashboard",
-  "Performance Dashboard Pro",
   "ProviderConnectivityDashboard",
   "Provider Connectivity Dashboard",
   "Provider Model Assignment by Mode",
@@ -65,6 +64,10 @@ const requiredUiTokens = [
 
 for (const token of requiredUiTokens) {
   if (!source.includes(token)) failures.push(`Missing v3.5 QA/Debug/Provider UI token: ${token}`);
+}
+
+if (!source.includes("Performance Dashboard Pro") && !source.includes("Local Performance Dashboard Polish")) {
+  failures.push("Missing v3.5/v3.6 Performance Dashboard title token.");
 }
 
 const requiredSafetyCopy = [

@@ -552,6 +552,7 @@ from app.llm.provider_connection_test import (
     build_provider_profile_for_connection_test,
     test_provider_connection_safe,
 )
+from app.llm.provider_connection_cache import ProviderConnectionStatusCache
 from app.llm.provider_model_discovery import (
     ProviderModelFetchRequest,
     ProviderModelPatchRequest,
@@ -6245,6 +6246,11 @@ def get_provider_profile_repository(project_id: str) -> ProviderProfileRepositor
     return ProviderProfileRepository(project.project_root)
 
 
+def get_provider_connection_status_cache(project_id: str) -> ProviderConnectionStatusCache:
+    project = get_project_repository().load_project(project_id)
+    return ProviderConnectionStatusCache(project.project_root)
+
+
 def _project_root(project_id: str) -> Path:
     return Path(get_project_repository().load_project(project_id).project_root)
 
@@ -6403,7 +6409,14 @@ def test_project_provider_connection_from_payload(project_id: str, payload: Prov
     repo = get_provider_profile_repository(project_id)
     existing_profile = repo.load_provider_profile(payload.provider_profile_id) if payload.provider_profile_id else None
     profile = build_provider_profile_for_connection_test(payload, existing_profile=existing_profile)
-    return test_provider_connection_safe(profile, payload)
+    status = test_provider_connection_safe(profile, payload)
+    if payload.provider_profile_id:
+        get_provider_connection_status_cache(project_id).save_status(
+            profile.provider_profile_id,
+            status,
+            model_count=len(profile.model_profiles),
+        )
+    return status
 
 
 @app.post("/projects/{project_id}/providers/fetch-models", response_model=dict[str, Any])
@@ -6513,7 +6526,18 @@ def validate_project_provider_profile(project_id: str, provider_profile_id: str)
 def get_project_provider_profile_status(project_id: str, provider_profile_id: str) -> dict[str, Any]:
     require_authoring_api()
     profile = get_provider_profile_repository(project_id).load_provider_profile(provider_profile_id)
-    return {"local_only": True, "status": "configured" if profile.enabled else "disabled", "provider": profile.safe_summary()}
+    cache = get_provider_connection_status_cache(project_id)
+    connection_cache = cache.safe_status(provider_profile_id) or cache.missing_status(
+        provider_profile_id,
+        enabled=profile.enabled,
+        model_count=len(profile.model_profiles),
+    )
+    return {
+        "local_only": True,
+        "status": "configured" if profile.enabled else "disabled",
+        "connection_cache": connection_cache,
+        "provider": profile.safe_summary(),
+    }
 
 
 @app.post("/projects/{project_id}/providers/{provider_profile_id}/test-connection", response_model=dict[str, Any])
@@ -6522,7 +6546,21 @@ def test_project_provider_connection(project_id: str, provider_profile_id: str, 
     allow_real = bool((payload or {}).get("allow_real_connection", False))
     profile = get_provider_profile_repository(project_id).load_provider_profile(provider_profile_id)
     if not allow_real:
-        return {"ok": True, "dry_run": True, "provider": profile.safe_summary(), "notes": ["No real provider call was made."]}
+        request = ProviderConnectionTestRequest(
+            provider_profile_id=provider_profile_id,
+            timeout_seconds=float((payload or {}).get("timeout_seconds") or profile.default_timeout_seconds),
+        )
+        status = test_provider_connection_safe(profile, request)
+        cache = get_provider_connection_status_cache(project_id)
+        cached = cache.save_status(provider_profile_id, status, model_count=len(profile.model_profiles))
+        return {
+            "ok": status.status == "connected",
+            "dry_run": True,
+            "provider": profile.safe_summary(),
+            "status": status.model_dump(mode="json", exclude_none=True),
+            "cache": cached.safe_summary(ttl_seconds=cache.ttl_seconds),
+            "notes": ["Fake provider client used; no real provider call was made."],
+        }
     raise HTTPException(status_code=403, detail="Real provider connection tests are disabled by default")
 
 

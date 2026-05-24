@@ -1,4 +1,4 @@
-import { ReactNode, useMemo, useState } from "react";
+import { ReactNode, useEffect, useMemo, useState } from "react";
 import {
   MultiNPCSceneSummary,
   RPSafetyDashboardReport,
@@ -11,6 +11,7 @@ import {
   TavernSessionRecoveryRecord,
   WorldNpcSafeSummary
 } from "./api";
+import { buildSafeSearchIndex, safeSearchMatches, useDebouncedValue } from "./filterUtils";
 
 function safeExcerpt(text?: string | null, max = 180): string {
   const value = (text ?? "").replace(
@@ -76,6 +77,99 @@ export function TavernSessionCard({ session, selected, onSelect }: { session: Ta
   );
 }
 
+export function TavernSessionListPro({
+  sessions,
+  selectedSessionId,
+  onSelect
+}: {
+  sessions: TavernSession[];
+  selectedSessionId?: string;
+  onSelect?: (session: TavernSession) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const debouncedQuery = useDebouncedValue(query, 180);
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [pageSize, setPageSize] = useState(25);
+  const [pageIndex, setPageIndex] = useState(0);
+  const statusOptions = useMemo(() => ["all", ...Array.from(new Set(sessions.map((session) => session.status || "draft"))).sort()], [sessions]);
+  const sessionSearchIndexById = useMemo(
+    () =>
+      new Map(
+        sessions.map((session) => [
+          session.session_id,
+          buildSafeSearchIndex([
+            session.session_id,
+            session.title,
+            session.status,
+            session.character_ids.join(" "),
+            String(session.message_count ?? 0)
+          ])
+        ])
+      ),
+    [sessions]
+  );
+  const filteredSessions = useMemo(
+    () =>
+      sessions.filter((session) => {
+        if (statusFilter !== "all" && (session.status || "draft") !== statusFilter) return false;
+        return !debouncedQuery || safeSearchMatches(sessionSearchIndexById.get(session.session_id) ?? "", debouncedQuery);
+      }),
+    [debouncedQuery, sessionSearchIndexById, sessions, statusFilter]
+  );
+  const pageCount = Math.max(1, Math.ceil(filteredSessions.length / pageSize));
+  const clampedPageIndex = Math.min(pageIndex, pageCount - 1);
+  const windowStart = clampedPageIndex * pageSize;
+  const windowEnd = Math.min(windowStart + pageSize, filteredSessions.length);
+  const visibleSessions = filteredSessions.slice(windowStart, windowEnd);
+
+  useEffect(() => {
+    setPageIndex(0);
+  }, [debouncedQuery, pageSize, sessions.length, statusFilter]);
+
+  useEffect(() => {
+    if (pageIndex > pageCount - 1) {
+      setPageIndex(pageCount - 1);
+    }
+  }, [pageCount, pageIndex]);
+
+  return (
+    <div className="stack" data-windowed-tavern-sessions="true">
+      <div className="tavern-filter-row">
+        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search sessions, characters, safe metadata" />
+        <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+          {statusOptions.map((status) => <option key={status} value={status}>{status}</option>)}
+        </select>
+        <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>
+          {[10, 25, 50].map((size) => <option key={size} value={size}>{size} rows</option>)}
+        </select>
+        {query !== debouncedQuery ? <span className="tavern-chip">filtering...</span> : null}
+      </div>
+      {sessions.length === 0 ? <p className="muted">No Tavern sessions yet.</p> : filteredSessions.length === 0 ? <p className="muted">No sessions match this safe filter.</p> : (
+        <>
+          <p className="muted">Rendering {windowStart + 1}-{windowEnd} of {filteredSessions.length} session(s).</p>
+          {visibleSessions.map((session) => (
+            <TavernSessionCard
+              key={session.session_id}
+              session={session}
+              selected={session.session_id === selectedSessionId}
+              onSelect={() => onSelect?.(session)}
+            />
+          ))}
+          {filteredSessions.length > pageSize ? (
+            <div className="pagination-controls" aria-label="Tavern session pagination">
+              <button type="button" onClick={() => setPageIndex(0)} disabled={clampedPageIndex === 0}>First</button>
+              <button type="button" onClick={() => setPageIndex(Math.max(clampedPageIndex - 1, 0))} disabled={clampedPageIndex === 0}>Previous</button>
+              <span>Page {clampedPageIndex + 1} / {pageCount}</span>
+              <button type="button" onClick={() => setPageIndex(Math.min(clampedPageIndex + 1, pageCount - 1))} disabled={clampedPageIndex >= pageCount - 1}>Next</button>
+              <button type="button" onClick={() => setPageIndex(pageCount - 1)} disabled={clampedPageIndex >= pageCount - 1}>Last</button>
+            </div>
+          ) : null}
+        </>
+      )}
+    </div>
+  );
+}
+
 export function RPMessageBubble({ message }: { message: TavernMessage }) {
   return (
     <article className="rp-message-bubble">
@@ -91,6 +185,78 @@ export function RPMessageBubble({ message }: { message: TavernMessage }) {
         </details>
       ) : null}
     </article>
+  );
+}
+
+export function TavernMessageListPro({ messages }: { messages: TavernMessage[] }) {
+  const [messageSearch, setMessageSearch] = useState("");
+  const debouncedMessageSearch = useDebouncedValue(messageSearch, 180);
+  const [pageSize, setPageSize] = useState(50);
+  const [pageIndex, setPageIndex] = useState(0);
+  const messageSearchIndexById = useMemo(
+    () =>
+      new Map(
+        messages.map((message) => [
+          message.message_id,
+          buildSafeSearchIndex([
+            message.message_id,
+            message.speaker_type,
+            message.speaker_id,
+            message.created_at,
+            safeExcerpt(message.content, 520),
+            ...(message.safety_notes ?? []).map((note) => safeExcerpt(note, 180))
+          ])
+        ])
+      ),
+    [messages]
+  );
+  const filteredMessages = useMemo(
+    () =>
+      messages.filter((message) => !debouncedMessageSearch || safeSearchMatches(messageSearchIndexById.get(message.message_id) ?? "", debouncedMessageSearch)),
+    [debouncedMessageSearch, messageSearchIndexById, messages]
+  );
+  const pageCount = Math.max(1, Math.ceil(filteredMessages.length / pageSize));
+  const clampedPageIndex = Math.min(pageIndex, pageCount - 1);
+  const windowStart = clampedPageIndex * pageSize;
+  const windowEnd = Math.min(windowStart + pageSize, filteredMessages.length);
+  const visibleMessages = filteredMessages.slice(windowStart, windowEnd);
+
+  useEffect(() => {
+    setPageIndex(0);
+  }, [debouncedMessageSearch, messages.length, pageSize]);
+
+  useEffect(() => {
+    if (pageIndex > pageCount - 1) {
+      setPageIndex(pageCount - 1);
+    }
+  }, [pageCount, pageIndex]);
+
+  return (
+    <div className="stack" data-windowed-tavern-message-list="true">
+      <div className="tavern-filter-row">
+        <input value={messageSearch} onChange={(event) => setMessageSearch(event.target.value)} placeholder="Search safe message metadata" />
+        <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>
+          {[25, 50, 100].map((size) => <option key={size} value={size}>{size} rows</option>)}
+        </select>
+        <button type="button" onClick={() => setPageIndex(Math.max(0, pageCount - 1))} disabled={filteredMessages.length === 0}>Jump to latest</button>
+        {messageSearch !== debouncedMessageSearch ? <span className="tavern-chip">filtering...</span> : null}
+      </div>
+      {messages.length === 0 ? <p className="muted">No messages</p> : filteredMessages.length === 0 ? <p className="muted">No messages match this safe search.</p> : (
+        <>
+          <p className="muted">Rendering {windowStart + 1}-{windowEnd} of {filteredMessages.length} safe message(s).</p>
+          {visibleMessages.map((message) => <RPMessageBubble key={message.message_id} message={message} />)}
+          {filteredMessages.length > pageSize ? (
+            <div className="pagination-controls" aria-label="Tavern message list pagination">
+              <button type="button" onClick={() => setPageIndex(0)} disabled={clampedPageIndex === 0}>First</button>
+              <button type="button" onClick={() => setPageIndex(Math.max(clampedPageIndex - 1, 0))} disabled={clampedPageIndex === 0}>Previous</button>
+              <span>Page {clampedPageIndex + 1} / {pageCount}</span>
+              <button type="button" onClick={() => setPageIndex(Math.min(clampedPageIndex + 1, pageCount - 1))} disabled={clampedPageIndex >= pageCount - 1}>Next</button>
+              <button type="button" onClick={() => setPageIndex(pageCount - 1)} disabled={clampedPageIndex >= pageCount - 1}>Last</button>
+            </div>
+          ) : null}
+        </>
+      )}
+    </div>
   );
 }
 
@@ -142,25 +308,40 @@ export function TavernWorkspaceShell({ navigation, main, context, status }: { na
 
 export function CharacterCardLibrary({ characters, selectedCharacterId, onSelect }: { characters: TavernCharacter[]; selectedCharacterId?: string; onSelect?: (id: string) => void }) {
   const [query, setQuery] = useState("");
+  const debouncedQuery = useDebouncedValue(query, 180);
   const [filter, setFilter] = useState("all");
-  const filtered = characters.filter((character) => {
-    const haystack = [
-      character.display_name,
-      character.description,
-      character.linked_character_profile_id,
-      character.linked_world_npc_id,
-      character.rp_profile_id,
-      character.voice_profile_id,
-      ...(character.safety_flags ?? [])
-    ].join(" ").toLowerCase();
-    const matchesQuery = !query || haystack.includes(query.toLowerCase());
-    const matchesFilter =
-      filter === "all" ||
-      (filter === "linked_world" && Boolean(character.linked_world_npc_id)) ||
-      (filter === "needs_profile" && (!character.rp_profile_id || !character.voice_profile_id)) ||
-      (filter === "safety_review" && Boolean(character.safety_flags?.length));
-    return matchesQuery && matchesFilter;
-  });
+  const characterSearchIndexById = useMemo(
+    () =>
+      new Map(
+        characters.map((character) => [
+          character.tavern_character_id,
+          buildSafeSearchIndex([
+            character.tavern_character_id,
+            character.display_name,
+            character.description,
+            character.linked_character_profile_id,
+            character.linked_world_npc_id,
+            character.rp_profile_id,
+            character.voice_profile_id,
+            ...(character.safety_flags ?? [])
+          ])
+        ])
+      ),
+    [characters]
+  );
+  const filtered = useMemo(
+    () =>
+      characters.filter((character) => {
+        const matchesQuery = !debouncedQuery || safeSearchMatches(characterSearchIndexById.get(character.tavern_character_id) ?? "", debouncedQuery);
+        const matchesFilter =
+          filter === "all" ||
+          (filter === "linked_world" && Boolean(character.linked_world_npc_id)) ||
+          (filter === "needs_profile" && (!character.rp_profile_id || !character.voice_profile_id)) ||
+          (filter === "safety_review" && Boolean(character.safety_flags?.length));
+        return matchesQuery && matchesFilter;
+      }),
+    [characterSearchIndexById, characters, debouncedQuery, filter]
+  );
   return (
     <TavernSafeSummaryPanel title="Character Card Library">
       <div className="tavern-filter-row">
@@ -171,6 +352,7 @@ export function CharacterCardLibrary({ characters, selectedCharacterId, onSelect
           <option value="needs_profile">Needs RP/Voice profile</option>
           <option value="safety_review">Safety review</option>
         </select>
+        {query !== debouncedQuery ? <span className="tavern-chip">filtering...</span> : null}
       </div>
       {characters.length === 0 ? <p className="muted">No character cards yet. Import or create a local TavernCharacter draft.</p> : null}
       {filtered.length === 0 ? <p className="muted">No characters match this filter.</p> : (
@@ -234,6 +416,52 @@ export function SingleCharacterChatPro({
   onRecoveryDraft?: () => void;
 }) {
   const [showSafety, setShowSafety] = useState(false);
+  const [messageSearch, setMessageSearch] = useState("");
+  const debouncedMessageSearch = useDebouncedValue(messageSearch, 180);
+  const [messagePageSize, setMessagePageSize] = useState(50);
+  const [messagePageIndex, setMessagePageIndex] = useState(0);
+  const messageSearchIndexById = useMemo(
+    () =>
+      new Map(
+        messages.map((message) => [
+          message.message_id,
+          buildSafeSearchIndex([
+            message.message_id,
+            message.speaker_type,
+            message.speaker_id,
+            message.created_at,
+            safeExcerpt(message.content, 520),
+            ...(message.safety_notes ?? []).map((note) => safeExcerpt(note, 180))
+          ])
+        ])
+      ),
+    [messages]
+  );
+  const filteredMessages = useMemo(
+    () =>
+      messages.filter((message) => !debouncedMessageSearch || safeSearchMatches(messageSearchIndexById.get(message.message_id) ?? "", debouncedMessageSearch)),
+    [debouncedMessageSearch, messageSearchIndexById, messages]
+  );
+  const messagePageCount = Math.max(1, Math.ceil(filteredMessages.length / messagePageSize));
+  const clampedMessagePageIndex = Math.min(messagePageIndex, messagePageCount - 1);
+  const messageWindowStart = clampedMessagePageIndex * messagePageSize;
+  const messageWindowEnd = Math.min(messageWindowStart + messagePageSize, filteredMessages.length);
+  const visibleMessages = filteredMessages.slice(messageWindowStart, messageWindowEnd);
+
+  useEffect(() => {
+    setMessagePageIndex(0);
+  }, [debouncedMessageSearch, messagePageSize, messages.length]);
+
+  useEffect(() => {
+    if (messagePageIndex > messagePageCount - 1) {
+      setMessagePageIndex(messagePageCount - 1);
+    }
+  }, [messagePageCount, messagePageIndex]);
+
+  function jumpToLatestMessage() {
+    setMessagePageIndex(Math.max(0, messagePageCount - 1));
+  }
+
   return (
     <div className="single-character-chat-pro">
       <TavernToolbar
@@ -254,7 +482,31 @@ export function SingleCharacterChatPro({
       <div className="tavern-card-meta">
         {(memoryHints?.length ? memoryHints : ["No RP memory hints loaded."]).map((hint) => <span key={hint}>{safeExcerpt(hint, 80)}</span>)}
       </div>
-      {messages.length ? messages.map((message) => <RPMessageBubble key={message.message_id} message={message} />) : <p className="muted">No messages yet. Select a session and send a local RP line.</p>}
+      <div className="tavern-filter-row">
+        <input value={messageSearch} onChange={(event) => setMessageSearch(event.target.value)} placeholder="Search safe message metadata" />
+        <select value={messagePageSize} onChange={(event) => setMessagePageSize(Number(event.target.value))}>
+          {[25, 50, 100].map((size) => <option key={size} value={size}>{size} rows</option>)}
+        </select>
+        <button type="button" onClick={jumpToLatestMessage} disabled={filteredMessages.length === 0}>Jump to latest</button>
+        {messageSearch !== debouncedMessageSearch ? <span className="tavern-chip">filtering...</span> : null}
+      </div>
+      {messages.length ? (
+        <>
+          <p className="muted">Rendering {filteredMessages.length ? messageWindowStart + 1 : 0}-{messageWindowEnd} of {filteredMessages.length} safe message(s).</p>
+          <div data-windowed-tavern-messages="true">
+            {visibleMessages.length ? visibleMessages.map((message) => <RPMessageBubble key={message.message_id} message={message} />) : <p className="muted">No messages match this safe search.</p>}
+          </div>
+          {filteredMessages.length > messagePageSize ? (
+            <div className="pagination-controls" aria-label="Tavern message pagination">
+              <button type="button" onClick={() => setMessagePageIndex(0)} disabled={clampedMessagePageIndex === 0}>First</button>
+              <button type="button" onClick={() => setMessagePageIndex(Math.max(clampedMessagePageIndex - 1, 0))} disabled={clampedMessagePageIndex === 0}>Previous</button>
+              <span>Page {clampedMessagePageIndex + 1} / {messagePageCount}</span>
+              <button type="button" onClick={() => setMessagePageIndex(Math.min(clampedMessagePageIndex + 1, messagePageCount - 1))} disabled={clampedMessagePageIndex >= messagePageCount - 1}>Next</button>
+              <button type="button" onClick={() => setMessagePageIndex(messagePageCount - 1)} disabled={clampedMessagePageIndex >= messagePageCount - 1}>Last</button>
+            </div>
+          ) : null}
+        </>
+      ) : <p className="muted">No messages yet. Select a session and send a local RP line.</p>}
       <textarea value={input} onChange={(event) => onInputChange?.(event.target.value)} rows={3} placeholder="Write a local RP message..." />
       <button type="button" disabled={!session || !character || !input.trim()} onClick={onSend}>Send</button>
     </div>
@@ -262,13 +514,91 @@ export function SingleCharacterChatPro({
 }
 
 export function MultiNPCScenePro({ scenes, selectedSceneId, onSelect, onGenerateNext }: { scenes: MultiNPCSceneSummary[]; selectedSceneId?: string; onSelect?: (sceneId: string) => void; onGenerateNext?: () => void }) {
+  const [sceneSearch, setSceneSearch] = useState("");
+  const debouncedSceneSearch = useDebouncedValue(sceneSearch, 180);
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [scenePageSize, setScenePageSize] = useState(12);
+  const [scenePageIndex, setScenePageIndex] = useState(0);
+  const [messagePageSize, setMessagePageSize] = useState(25);
+  const [messagePageIndex, setMessagePageIndex] = useState(0);
   const selected = scenes.find((scene) => scene.scene_id === selectedSceneId) ?? scenes[0] ?? null;
+  const statusOptions = useMemo(() => ["all", ...Array.from(new Set(scenes.map((scene) => scene.status || "draft"))).sort()], [scenes]);
+  const sceneSearchIndexById = useMemo(
+    () =>
+      new Map(
+        scenes.map((scene) => [
+          scene.scene_id,
+          buildSafeSearchIndex([
+            scene.scene_id,
+            scene.title,
+            scene.status,
+            scene.participant_ids.join(" "),
+            scene.turn_order.join(" "),
+            ...(scene.safety_notes ?? []).map((note) => safeExcerpt(note, 120))
+          ])
+        ])
+      ),
+    [scenes]
+  );
+  const filteredScenes = useMemo(
+    () =>
+      scenes.filter((scene) => {
+        if (statusFilter !== "all" && (scene.status || "draft") !== statusFilter) return false;
+        return !debouncedSceneSearch || safeSearchMatches(sceneSearchIndexById.get(scene.scene_id) ?? "", debouncedSceneSearch);
+      }),
+    [debouncedSceneSearch, sceneSearchIndexById, scenes, statusFilter]
+  );
+  const scenePageCount = Math.max(1, Math.ceil(filteredScenes.length / scenePageSize));
+  const clampedScenePageIndex = Math.min(scenePageIndex, scenePageCount - 1);
+  const sceneWindowStart = clampedScenePageIndex * scenePageSize;
+  const sceneWindowEnd = Math.min(sceneWindowStart + scenePageSize, filteredScenes.length);
+  const visibleScenes = filteredScenes.slice(sceneWindowStart, sceneWindowEnd);
+  const selectedMessageIds = selected?.message_ids ?? [];
+  const messagePageCount = Math.max(1, Math.ceil(selectedMessageIds.length / messagePageSize));
+  const clampedMessagePageIndex = Math.min(messagePageIndex, messagePageCount - 1);
+  const messageWindowStart = clampedMessagePageIndex * messagePageSize;
+  const messageWindowEnd = Math.min(messageWindowStart + messagePageSize, selectedMessageIds.length);
+  const visibleMessageIds = selectedMessageIds.slice(messageWindowStart, messageWindowEnd);
+
+  useEffect(() => {
+    setScenePageIndex(0);
+  }, [debouncedSceneSearch, scenePageSize, scenes.length, statusFilter]);
+
+  useEffect(() => {
+    if (scenePageIndex > scenePageCount - 1) {
+      setScenePageIndex(scenePageCount - 1);
+    }
+  }, [scenePageCount, scenePageIndex]);
+
+  useEffect(() => {
+    setMessagePageIndex(0);
+  }, [messagePageSize, selected?.scene_id]);
+
+  useEffect(() => {
+    if (messagePageIndex > messagePageCount - 1) {
+      setMessagePageIndex(messagePageCount - 1);
+    }
+  }, [messagePageCount, messagePageIndex]);
+
   return (
     <TavernSafeSummaryPanel title="Multi-NPC Scene Pro">
       {scenes.length === 0 ? <p className="muted">No multi-NPC scenes yet. Create at least two Tavern characters first.</p> : (
         <div className="multi-npc-scene-pro">
-          <div className="tavern-card-grid">
-            {scenes.map((scene) => (
+          <div className="tavern-filter-row">
+            <input value={sceneSearch} onChange={(event) => setSceneSearch(event.target.value)} placeholder="Search scenes, participants, safe notes" />
+            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+              {statusOptions.map((status) => <option key={status} value={status}>{status}</option>)}
+            </select>
+            <select value={scenePageSize} onChange={(event) => setScenePageSize(Number(event.target.value))}>
+              {[6, 12, 24].map((size) => <option key={size} value={size}>{size} scenes</option>)}
+            </select>
+            {sceneSearch !== debouncedSceneSearch ? <span className="tavern-chip">filtering...</span> : null}
+          </div>
+          {filteredScenes.length === 0 ? <p className="muted">No multi-NPC scenes match this safe filter.</p> : (
+          <>
+          <p className="muted">Rendering {sceneWindowStart + 1}-{sceneWindowEnd} of {filteredScenes.length} scene(s).</p>
+          <div className="tavern-card-grid" data-windowed-multi-npc-scenes="true">
+            {visibleScenes.map((scene) => (
               <button key={scene.scene_id} type="button" className={`tavern-card ${scene.scene_id === selectedSceneId ? "selected-list-button" : ""}`} onClick={() => onSelect?.(scene.scene_id)}>
                 <strong>{safeExcerpt(scene.title)}</strong>
                 <span>{scene.status}</span>
@@ -277,11 +607,38 @@ export function MultiNPCScenePro({ scenes, selectedSceneId, onSelect, onGenerate
               </button>
             ))}
           </div>
+          {filteredScenes.length > scenePageSize ? (
+            <div className="pagination-controls" aria-label="Multi-NPC scene pagination">
+              <button type="button" onClick={() => setScenePageIndex(0)} disabled={clampedScenePageIndex === 0}>First</button>
+              <button type="button" onClick={() => setScenePageIndex(Math.max(clampedScenePageIndex - 1, 0))} disabled={clampedScenePageIndex === 0}>Previous</button>
+              <span>Page {clampedScenePageIndex + 1} / {scenePageCount}</span>
+              <button type="button" onClick={() => setScenePageIndex(Math.min(clampedScenePageIndex + 1, scenePageCount - 1))} disabled={clampedScenePageIndex >= scenePageCount - 1}>Next</button>
+              <button type="button" onClick={() => setScenePageIndex(scenePageCount - 1)} disabled={clampedScenePageIndex >= scenePageCount - 1}>Last</button>
+            </div>
+          ) : null}
+          </>
+          )}
           {selected && (
             <div className="tavern-scene-detail">
               <LinkedText title="Participants" values={selected.participant_ids} />
               <LinkedText title="Turn order" values={selected.turn_order} />
-              <LinkedText title="Messages" values={selected.message_ids} />
+              <div className="tavern-filter-row">
+                <span className="muted">Message refs {selectedMessageIds.length}</span>
+                <select value={messagePageSize} onChange={(event) => setMessagePageSize(Number(event.target.value))}>
+                  {[10, 25, 50].map((size) => <option key={size} value={size}>{size} refs</option>)}
+                </select>
+                <button type="button" onClick={() => setMessagePageIndex(Math.max(0, messagePageCount - 1))} disabled={selectedMessageIds.length === 0}>Jump to latest</button>
+              </div>
+              <LinkedText title={`Messages ${messageWindowStart + 1}-${messageWindowEnd}`} values={visibleMessageIds} />
+              {selectedMessageIds.length > messagePageSize ? (
+                <div className="pagination-controls" aria-label="Multi-NPC message ref pagination">
+                  <button type="button" onClick={() => setMessagePageIndex(0)} disabled={clampedMessagePageIndex === 0}>First</button>
+                  <button type="button" onClick={() => setMessagePageIndex(Math.max(clampedMessagePageIndex - 1, 0))} disabled={clampedMessagePageIndex === 0}>Previous</button>
+                  <span>Page {clampedMessagePageIndex + 1} / {messagePageCount}</span>
+                  <button type="button" onClick={() => setMessagePageIndex(Math.min(clampedMessagePageIndex + 1, messagePageCount - 1))} disabled={clampedMessagePageIndex >= messagePageCount - 1}>Next</button>
+                  <button type="button" onClick={() => setMessagePageIndex(messagePageCount - 1)} disabled={clampedMessagePageIndex >= messagePageCount - 1}>Last</button>
+                </div>
+              ) : null}
               <p>Active speaker: {safeExcerpt(selected.turn_order[selected.current_turn_index] ?? "not set")}</p>
               <p>Knowledge-safe status: each NPC receives only character-safe and session-safe context; NPC unknown facts are excluded.</p>
               <button type="button" disabled={!selectedSceneId} onClick={onGenerateNext}>Generate Next Reply</button>
@@ -298,16 +655,83 @@ function LinkedText({ title, values }: { title: string; values?: string[] }) {
 }
 
 export function RPMemoryPanel({ sessions = [], recoveryRecords = [], matureVisible = false }: { sessions?: TavernSession[]; recoveryRecords?: TavernSessionRecoveryRecord[]; matureVisible?: boolean }) {
-  const rows = [
-    ...sessions.map((session) => ({ type: "relationship", title: session.title, detail: `${session.character_ids.length} character(s), ${session.message_count ?? 0} message(s), visibility tavern_safe` })),
-    ...recoveryRecords.map((record) => ({ type: record.target_type, title: record.target_id, detail: safeExcerpt(record.safe_draft_text) }))
-  ];
+  const [memorySearch, setMemorySearch] = useState("");
+  const [typeFilter, setTypeFilter] = useState("all");
+  const debouncedMemorySearch = useDebouncedValue(memorySearch, 180);
+  const [pageSize, setPageSize] = useState(8);
+  const [pageIndex, setPageIndex] = useState(0);
+  const rows = useMemo(
+    () => [
+      ...sessions.map((session) => ({ type: "relationship", title: session.title, detail: `${session.character_ids.length} character(s), ${session.message_count ?? 0} message(s), visibility tavern_safe` })),
+      ...recoveryRecords.map((record) => ({ type: record.target_type, title: record.target_id, detail: safeExcerpt(record.safe_draft_text) }))
+    ],
+    [recoveryRecords, sessions]
+  );
+  const typeOptions = useMemo(() => ["all", ...Array.from(new Set(rows.map((row) => row.type))).sort()], [rows]);
+  const memorySearchIndexByKey = useMemo(
+    () =>
+      new Map(
+        rows.map((row) => [
+          `${row.type}:${row.title}`,
+          buildSafeSearchIndex([row.type, row.title, row.detail])
+        ])
+      ),
+    [rows]
+  );
+  const filteredRows = useMemo(
+    () =>
+      rows.filter((row) => {
+        if (typeFilter !== "all" && row.type !== typeFilter) return false;
+        return !debouncedMemorySearch || safeSearchMatches(memorySearchIndexByKey.get(`${row.type}:${row.title}`) ?? "", debouncedMemorySearch);
+      }),
+    [debouncedMemorySearch, memorySearchIndexByKey, rows, typeFilter]
+  );
+  const pageCount = Math.max(1, Math.ceil(filteredRows.length / pageSize));
+  const clampedPageIndex = Math.min(pageIndex, pageCount - 1);
+  const windowStart = clampedPageIndex * pageSize;
+  const windowEnd = Math.min(windowStart + pageSize, filteredRows.length);
+  const visibleRows = filteredRows.slice(windowStart, windowEnd);
+
+  useEffect(() => {
+    setPageIndex(0);
+  }, [debouncedMemorySearch, pageSize, rows.length, typeFilter]);
+
+  useEffect(() => {
+    if (pageIndex > pageCount - 1) {
+      setPageIndex(pageCount - 1);
+    }
+  }, [pageCount, pageIndex]);
+
   return (
     <TavernSafeSummaryPanel title="RP Memory Panel">
       <div className="tavern-card-meta">
         {["relationship", "promise", "preference", "mood", "boundary", matureVisible ? "mature_only opt-in" : "mature_only hidden"].map((item) => <span key={item}>{item}</span>)}
       </div>
-      {rows.length === 0 ? <p className="muted">No safe RP memory rows yet.</p> : rows.slice(0, 8).map((row) => <MemorySummaryCard key={`${row.type}-${row.title}`} title={`${row.type}: ${row.title}`} detail={row.detail} />)}
+      <div className="tavern-filter-row">
+        <input value={memorySearch} onChange={(event) => setMemorySearch(event.target.value)} placeholder="Search safe memory metadata" />
+        <select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}>
+          {typeOptions.map((type) => <option key={type} value={type}>{type}</option>)}
+        </select>
+        <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>
+          {[8, 16, 32].map((size) => <option key={size} value={size}>{size} rows</option>)}
+        </select>
+        {memorySearch !== debouncedMemorySearch ? <span className="tavern-chip">filtering...</span> : null}
+      </div>
+      {rows.length === 0 ? <p className="muted">No safe RP memory rows yet.</p> : filteredRows.length === 0 ? <p className="muted">No safe RP memory rows match this filter.</p> : (
+        <div data-windowed-rp-memory="true">
+          <p className="muted">Rendering {windowStart + 1}-{windowEnd} of {filteredRows.length} safe RP memory row(s).</p>
+          {visibleRows.map((row) => <MemorySummaryCard key={`${row.type}-${row.title}`} title={`${row.type}: ${row.title}`} detail={row.detail} />)}
+          {filteredRows.length > pageSize ? (
+            <div className="pagination-controls" aria-label="RP memory pagination">
+              <button type="button" onClick={() => setPageIndex(0)} disabled={clampedPageIndex === 0}>First</button>
+              <button type="button" onClick={() => setPageIndex(Math.max(clampedPageIndex - 1, 0))} disabled={clampedPageIndex === 0}>Previous</button>
+              <span>Page {clampedPageIndex + 1} / {pageCount}</span>
+              <button type="button" onClick={() => setPageIndex(Math.min(clampedPageIndex + 1, pageCount - 1))} disabled={clampedPageIndex >= pageCount - 1}>Next</button>
+              <button type="button" onClick={() => setPageIndex(pageCount - 1)} disabled={clampedPageIndex >= pageCount - 1}>Last</button>
+            </div>
+          ) : null}
+        </div>
+      )}
       <p className="muted">Archive/delete actions require confirmation; hidden/debug/mature-only memory is not shown in normal view.</p>
     </TavernSafeSummaryPanel>
   );

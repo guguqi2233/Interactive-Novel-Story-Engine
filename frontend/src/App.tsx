@@ -1,4 +1,5 @@
-﻿import { FormEvent, PointerEvent, ReactNode, useEffect, useMemo, useState } from "react";
+﻿import { FormEvent, PointerEvent, ReactNode, Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
+import type { ComponentType } from "react";
 import {
   AuthoringDiffSummary,
   AuthoringValidation,
@@ -188,6 +189,7 @@ import {
   fetchProjectProviders,
   createProjectProvider,
   saveProjectProviderModelAssignments,
+  testProjectProviderConnection,
   validateProjectProvider,
   validateProjectProviderModelAssignments,
   fetchProjectProviderStatus,
@@ -503,77 +505,96 @@ import {
   startGroupDialogue,
   startDialogue
 } from "./api";
+import { buildNovelQualityIssues } from "./novelQuality";
+import type { WorldActionCategory } from "./worldUi";
+import { buildSafeSearchIndex, safeSearchMatches, useDebouncedValue } from "./filterUtils";
+import { countWordsFast } from "./textUtils";
+import { AppErrorBoundary } from "./errorBoundary";
 import {
-  CharacterArcPanel,
-  ChapterCard,
-  ChapterEditorPro,
-  DraftSaveStatus,
-  DraftVersionPanel,
-  LinkedRefList,
-  ManuscriptCard,
-  ManuscriptDashboard,
-  NovelExportWizard,
-  NovelPromptProviderPanel,
-  NovelQualityDashboard,
-  NovelSafeSummaryPanel,
-  NovelSearchFilterBar,
-  NovelToolbar,
-  NovelWorkspaceShell,
-  OutlineNodeView,
-  OutlineTreePro,
-  PlotForeshadowingBoard,
-  SceneCardsBoard,
-  TimelineLinkPanel,
-  WorldToNovelImportPanel,
-  WordCountBadge,
-  WorldBibleSidebar,
-  WritingSessionDashboard,
-  buildNovelQualityIssues
-} from "./novelUi";
-import {
-  BoundaryMatureSettingsPanel,
-  CharacterCardLibrary,
-  CharacterVoiceLabPanel,
-  ChatSaveStatus,
-  EmotionArcPanel,
-  MultiNPCScenePro,
-  RelationshipTonePanel,
-  RPMemoryPanel,
-  RPSafetyDashboardPanel,
-  SceneMoodPresetPanel,
-  SingleCharacterChatPro,
-  TavernCharacterEditor,
-  TavernCrossModeSafetyPanel,
-  TavernPromptProviderPanel,
-  TavernSafeSummaryPanel,
-  TavernSessionCard,
-  TavernToolbar,
-  TavernWorkspaceShell
-} from "./tavernUi";
-import {
-  DebugGate,
-  DeductionBoardPanel,
-  EconomyDashboardPanel,
-  FactionWarDashboardPanel,
-  InventoryTradePanel,
-  LocationCard,
-  ModuleStatusBadge,
-  NPCRelationshipPanel,
-  QuestJournalPanel,
-  SurvivalTravelPanel,
-  TacticalCombatPanel,
-  VisibleStateInspector,
-  WorldActionCategory,
-  WorldActionInputPanel,
-  WorldAdvancedModulePanels,
-  WorldPromptProviderPanel,
-  WorldQualityPlaytestPanel,
-  WorldSaveLoadPanel,
-  WorldPlayMainView,
-  WorldTimelineEventLogPanel,
-  WorldWorkspaceNavigation,
-  WorldWorkspaceShell
-} from "./worldUi";
+  getSafeApiCacheStatuses,
+  markSafeApiCacheFailed,
+  readSafeApiCache,
+  type SafeApiCacheStatus,
+  writeSafeApiCache
+} from "./safeApiCache";
+
+function lazyNamed(loader: () => Promise<unknown>, exportName: string) {
+  return lazy(async () => {
+    const moduleExports = (await loader()) as Record<string, unknown>;
+    return { default: moduleExports[exportName] as ComponentType<any> };
+  });
+}
+
+const CharacterArcPanel = lazyNamed(() => import("./novelUi"), "CharacterArcPanel");
+const ChapterCard = lazyNamed(() => import("./novelUi"), "ChapterCard");
+const ChapterEditorPro = lazyNamed(() => import("./novelUi"), "ChapterEditorPro");
+const ChapterListPro = lazyNamed(() => import("./novelUi"), "ChapterListPro");
+const DraftSaveStatus = lazyNamed(() => import("./novelUi"), "DraftSaveStatus");
+const DraftVersionPanel = lazyNamed(() => import("./novelUi"), "DraftVersionPanel");
+const LinkedRefList = lazyNamed(() => import("./novelUi"), "LinkedRefList");
+const ManuscriptCard = lazyNamed(() => import("./novelUi"), "ManuscriptCard");
+const ManuscriptDashboard = lazyNamed(() => import("./novelUi"), "ManuscriptDashboard");
+const NovelExportWizard = lazyNamed(() => import("./novelUi"), "NovelExportWizard");
+const NovelPromptProviderPanel = lazyNamed(() => import("./novelUi"), "NovelPromptProviderPanel");
+const NovelQualityDashboard = lazyNamed(() => import("./novelUi"), "NovelQualityDashboard");
+const NovelSafeSummaryPanel = lazyNamed(() => import("./novelUi"), "NovelSafeSummaryPanel");
+const NovelSearchFilterBar = lazyNamed(() => import("./novelUi"), "NovelSearchFilterBar");
+const NovelToolbar = lazyNamed(() => import("./novelUi"), "NovelToolbar");
+const NovelWorkspaceShell = lazyNamed(() => import("./novelUi"), "NovelWorkspaceShell");
+const OutlineNodeView = lazyNamed(() => import("./novelUi"), "OutlineNodeView");
+const OutlineTreePro = lazyNamed(() => import("./novelUi"), "OutlineTreePro");
+const PlotForeshadowingBoard = lazyNamed(() => import("./novelUi"), "PlotForeshadowingBoard");
+const SceneCardsBoard = lazyNamed(() => import("./novelUi"), "SceneCardsBoard");
+const TimelineLinkPanel = lazyNamed(() => import("./novelUi"), "TimelineLinkPanel");
+const WorldToNovelImportPanel = lazyNamed(() => import("./novelUi"), "WorldToNovelImportPanel");
+const WordCountBadge = lazyNamed(() => import("./novelUi"), "WordCountBadge");
+const WorldBibleSidebar = lazyNamed(() => import("./novelUi"), "WorldBibleSidebar");
+const WritingSessionDashboard = lazyNamed(() => import("./novelUi"), "WritingSessionDashboard");
+
+const BoundaryMatureSettingsPanel = lazyNamed(() => import("./tavernUi"), "BoundaryMatureSettingsPanel");
+const CharacterCardLibrary = lazyNamed(() => import("./tavernUi"), "CharacterCardLibrary");
+const CharacterVoiceLabPanel = lazyNamed(() => import("./tavernUi"), "CharacterVoiceLabPanel");
+const ChatSaveStatus = lazyNamed(() => import("./tavernUi"), "ChatSaveStatus");
+const EmotionArcPanel = lazyNamed(() => import("./tavernUi"), "EmotionArcPanel");
+const MultiNPCScenePro = lazyNamed(() => import("./tavernUi"), "MultiNPCScenePro");
+const RelationshipTonePanel = lazyNamed(() => import("./tavernUi"), "RelationshipTonePanel");
+const RPMemoryPanel = lazyNamed(() => import("./tavernUi"), "RPMemoryPanel");
+const RPSafetyDashboardPanel = lazyNamed(() => import("./tavernUi"), "RPSafetyDashboardPanel");
+const SceneMoodPresetPanel = lazyNamed(() => import("./tavernUi"), "SceneMoodPresetPanel");
+const SingleCharacterChatPro = lazyNamed(() => import("./tavernUi"), "SingleCharacterChatPro");
+const TavernCharacterEditor = lazyNamed(() => import("./tavernUi"), "TavernCharacterEditor");
+const TavernCrossModeSafetyPanel = lazyNamed(() => import("./tavernUi"), "TavernCrossModeSafetyPanel");
+const TavernPromptProviderPanel = lazyNamed(() => import("./tavernUi"), "TavernPromptProviderPanel");
+const TavernSafeSummaryPanel = lazyNamed(() => import("./tavernUi"), "TavernSafeSummaryPanel");
+const TavernMessageListPro = lazyNamed(() => import("./tavernUi"), "TavernMessageListPro");
+const TavernSessionListPro = lazyNamed(() => import("./tavernUi"), "TavernSessionListPro");
+const TavernToolbar = lazyNamed(() => import("./tavernUi"), "TavernToolbar");
+const TavernWorkspaceShell = lazyNamed(() => import("./tavernUi"), "TavernWorkspaceShell");
+
+const DebugGate = lazyNamed(() => import("./worldUi"), "DebugGate");
+const DeductionBoardPanel = lazyNamed(() => import("./worldUi"), "DeductionBoardPanel");
+const EconomyDashboardPanel = lazyNamed(() => import("./worldUi"), "EconomyDashboardPanel");
+const FactionWarDashboardPanel = lazyNamed(() => import("./worldUi"), "FactionWarDashboardPanel");
+const InventoryTradePanel = lazyNamed(() => import("./worldUi"), "InventoryTradePanel");
+const LocationCard = lazyNamed(() => import("./worldUi"), "LocationCard");
+const ModuleStatusBadge = lazyNamed(() => import("./worldUi"), "ModuleStatusBadge");
+const NPCRelationshipPanel = lazyNamed(() => import("./worldUi"), "NPCRelationshipPanel");
+const QuestJournalPanel = lazyNamed(() => import("./worldUi"), "QuestJournalPanel");
+const SurvivalTravelPanel = lazyNamed(() => import("./worldUi"), "SurvivalTravelPanel");
+const TacticalCombatPanel = lazyNamed(() => import("./worldUi"), "TacticalCombatPanel");
+const VisibleStateInspector = lazyNamed(() => import("./worldUi"), "VisibleStateInspector");
+const WorldActionInputPanel = lazyNamed(() => import("./worldUi"), "WorldActionInputPanel");
+const WorldAdvancedModulePanels = lazyNamed(() => import("./worldUi"), "WorldAdvancedModulePanels");
+const WorldPromptProviderPanel = lazyNamed(() => import("./worldUi"), "WorldPromptProviderPanel");
+const WorldQualityPlaytestPanel = lazyNamed(() => import("./worldUi"), "WorldQualityPlaytestPanel");
+const WorldSaveLoadPanel = lazyNamed(() => import("./worldUi"), "WorldSaveLoadPanel");
+const WorldPlayMainView = lazyNamed(() => import("./worldUi"), "WorldPlayMainView");
+const WorldTimelineEventLogPanel = lazyNamed(() => import("./worldUi"), "WorldTimelineEventLogPanel");
+const WorldWorkspaceNavigation = lazyNamed(() => import("./worldUi"), "WorldWorkspaceNavigation");
+const WorldWorkspaceShell = lazyNamed(() => import("./worldUi"), "WorldWorkspaceShell");
+const ProviderPromptLabPage = lazyNamed(() => import("./providerUi"), "PromptLabPage");
+const ProviderSettingsPrivacyPanel = lazyNamed(() => import("./providerUi"), "SettingsPrivacyPanel");
+const DesktopStudioHome = lazyNamed(() => import("./desktopUi"), "StudioHome");
 
 type StoryEntry = {
   id: number;
@@ -698,6 +719,37 @@ const DANGEROUS_ACTION_COPY = {
   deleteSave: "Delete this local save? This cannot be undone from the Studio UI."
 };
 
+const LOCAL_OPERATION_PROGRESS_STEPS = ["scanning", "filtering", "validating", "packaging", "writing", "done"] as const;
+type LocalOperationProgressStep = (typeof LOCAL_OPERATION_PROGRESS_STEPS)[number];
+type LocalOperationProgressStatus = "idle" | "running" | "done" | "failed";
+type LocalOperationProgressState = {
+  label: string;
+  step: LocalOperationProgressStep;
+  status: LocalOperationProgressStatus;
+  safeError?: string;
+};
+
+const LOCAL_OPERATION_DEFAULT_EXCLUSIONS = [
+  ".env",
+  "API key",
+  "provider secrets",
+  "debug",
+  "mature/private",
+  "db/log/cache/build outputs"
+];
+
+const INITIAL_BACKUP_PROGRESS: LocalOperationProgressState = {
+  label: "Backup and restore operation has not started.",
+  step: "scanning",
+  status: "idle"
+};
+
+const INITIAL_DIAGNOSTICS_PROGRESS: LocalOperationProgressState = {
+  label: "Diagnostics operation has not started.",
+  step: "scanning",
+  status: "idle"
+};
+
 const FORM_FIELDS: Record<string, AuthoringFormField[]> = {
   "locations.yaml": [
     { name: "id", label: "Id", kind: "text" },
@@ -760,6 +812,358 @@ const SCENE_MOOD_PRESETS = [
 const DIALOGUE_MODES = ["focused", "casual", "interrogation", "negotiation", "intimate", "conflict"];
 type AppMode = "project" | "studio" | "play" | "authoring" | "prompt_lab";
 const FIRST_RUN_ONBOARDING_KEY = "ai-narrative-studio:first-run-onboarding:v3";
+const KEYBOARD_SHORTCUTS_PREF_KEY = "ai-narrative-studio:keyboard-shortcuts:v3.6";
+const REDUCED_MOTION_PREF_KEY = "ai-narrative-studio:reduced-motion:v3.6";
+const SAFE_API_CACHE_TTL_MS = 5 * 60 * 1000;
+const SAFE_API_CACHE_PROVIDER_TTL_MS = 3 * 60 * 1000;
+
+type KeyboardShortcutDefinition = {
+  keys: string;
+  label: string;
+  scope: string;
+  safe: string;
+};
+
+const KEYBOARD_SHORTCUTS: KeyboardShortcutDefinition[] = [
+  {
+    keys: "Ctrl/Cmd+K",
+    label: "Focus the first visible safe search/filter field, or open this help if none is available.",
+    scope: "Global",
+    safe: "Does not search hidden text, prompts, outputs, or secrets."
+  },
+  {
+    keys: "Ctrl/Cmd+S",
+    label: "Reserved for safe draft/editor save support.",
+    scope: "Current editor",
+    safe: "No dangerous operation is triggered; explicit save/apply buttons remain required."
+  },
+  {
+    keys: "Esc",
+    label: "Close shortcut help or the debug drawer.",
+    scope: "Global",
+    safe: "Does not delete, restore, import, apply, or export anything."
+  },
+  {
+    keys: "?",
+    label: "Open keyboard shortcut help.",
+    scope: "Global",
+    safe: "Read-only local help."
+  },
+  {
+    keys: "g then n",
+    label: "Go to Novel workspace inside the local Project area.",
+    scope: "Navigation",
+    safe: "Navigation only; no draft is saved or applied."
+  },
+  {
+    keys: "g then t",
+    label: "Go to Tavern workspace inside the local Project area.",
+    scope: "Navigation",
+    safe: "Navigation only; no RP proposal is applied."
+  },
+  {
+    keys: "g then w",
+    label: "Go to World Studio.",
+    scope: "Navigation",
+    safe: "Navigation only; world actions still go through backend input."
+  },
+  {
+    keys: "g then a",
+    label: "Go to Authoring / Mod Studio.",
+    scope: "Navigation",
+    safe: "Navigation only; Safe Apply still requires validation, dry-run, and confirm."
+  },
+  {
+    keys: "g then q",
+    label: "Go to QA / Debug and open the debug drawer.",
+    scope: "Navigation",
+    safe: "Debug views remain gated by ENABLE_DEBUG_API."
+  }
+];
+
+const SHORTCUT_DANGEROUS_ACTION_BLOCKLIST = [
+  "apply",
+  "import",
+  "delete",
+  "restore",
+  "debug export"
+];
+
+function routeSplitLabel(mode: AppMode): string {
+  if (mode === "project") {
+    return "Project / Novel / Tavern Studio";
+  }
+  if (mode === "play") {
+    return "World Studio";
+  }
+  if (mode === "authoring") {
+    return "Authoring / Mod Studio";
+  }
+  if (mode === "prompt_lab") {
+    return "Provider Connectivity";
+  }
+  return "Desktop / Quality / Diagnostics";
+}
+
+function LoadingState({ title, detail }: { title: string; detail?: string }) {
+  return (
+    <section
+      className="route-loading-state"
+      aria-busy="true"
+      aria-live="polite"
+      aria-label={safeAriaText(`${title} loading state`)}
+    >
+      <h2>{title}</h2>
+      <p className="muted">{detail ?? "Loading local UI chunk. No project data leaves this device."}</p>
+      <LoadingSkeletonPanel
+        title="Progressive local workspace loading"
+        detail="Summary surfaces load before large lists. Skeleton rows never contain project data, hidden facts, raw debug payloads, or secrets."
+        summaryItems={[
+          "Quality Dashboard",
+          "Provider Model List",
+          "EventLog / Timeline",
+          "Module Browser",
+          "Backup / Diagnostics",
+          "Novel / Tavern / World dashboards"
+        ]}
+        rows={4}
+      />
+    </section>
+  );
+}
+
+function LoadingSkeletonPanel({
+  title,
+  detail,
+  summaryItems = [],
+  rows = 3
+}: {
+  title: string;
+  detail: string;
+  summaryItems?: string[];
+  rows?: number;
+}) {
+  return (
+    <div
+      className="progressive-loading-skeleton"
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+      data-v36-loading-skeleton="safe"
+    >
+      <div>
+        <strong>{title}</strong>
+        <p className="muted">{detail}</p>
+      </div>
+      {summaryItems.length > 0 && (
+        <div className="progressive-summary-strip" data-v36-progressive-rendering="summary-first">
+          {summaryItems.map((item) => (
+            <span className="skeleton-summary-chip" key={item}>{item}</span>
+          ))}
+        </div>
+      )}
+      <div className="skeleton-row-list" aria-hidden="true">
+        {Array.from({ length: rows }, (_, index) => (
+          <div className="skeleton-row" key={index}>
+            <span className="skeleton-line short" />
+            <span className="skeleton-line" />
+            <span className="skeleton-line medium" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ProgressiveLoadNote({
+  title,
+  detail
+}: {
+  title: string;
+  detail: string;
+}) {
+  return (
+    <div className="progressive-load-note" role="status" aria-live="polite" data-v36-progressive-rendering="summary-before-list">
+      <strong>{title}</strong>
+      <p className="muted">{detail}</p>
+    </div>
+  );
+}
+
+function SafeApiCacheStatusPanel({
+  status,
+  onRefresh
+}: {
+  status: SafeApiCacheStatus | null;
+  onRefresh?: () => void;
+}) {
+  if (!status) {
+    return (
+      <div className="safe-api-cache-panel missing" data-v36-safe-api-cache="summary-only">
+        <span className="badge">Cache empty</span>
+        <p className="muted">No safe summary cache is available yet. Use manual refresh to load local data.</p>
+        {onRefresh && (
+          <button type="button" onClick={onRefresh}>
+            Manual refresh
+          </button>
+        )}
+      </div>
+    );
+  }
+  const statusClass = status.failed ? "failed" : status.stale ? "stale" : "fresh";
+  return (
+    <div className={`safe-api-cache-panel ${statusClass}`} data-v36-safe-api-cache="summary-only">
+      <div>
+        <strong>{status.label}</strong>
+        <p className="muted">{status.summary}</p>
+      </div>
+      <div className="safe-cache-status-grid">
+        <span className="badge">{status.scope}</span>
+        <span className="badge">{status.failed ? "refresh failed" : status.stale ? "stale" : "fresh"}</span>
+        {typeof status.itemCount === "number" && <span className="badge">{status.itemCount} item(s)</span>}
+        <span className="muted">Updated {formatDateTime(status.updatedAt)}</span>
+        <span className="muted">Stale after {formatDateTime(status.staleAt)}</span>
+      </div>
+      {status.safeError && <p className="error">{redactReportText(status.safeError)}</p>}
+      {status.stale && !status.failed && <p className="muted">Cached summary is stale. Manual refresh keeps the data local and does not broaden visibility.</p>}
+      {onRefresh && (
+        <button type="button" onClick={onRefresh}>
+          Manual refresh
+        </button>
+      )}
+    </div>
+  );
+}
+
+function SafeErrorState({ title, detail }: { title: string; detail?: string }) {
+  const titleRef = useRef<HTMLHeadingElement | null>(null);
+  useEffect(() => {
+    focusElementSafely(titleRef.current);
+  }, []);
+
+  return (
+    <section className="route-error-state" role="alert" aria-live="assertive" aria-label={safeAriaText(`${title} error state`)}>
+      <h2 ref={titleRef} tabIndex={-1}>{title}</h2>
+      <p>{detail ?? "This local page could not be loaded. No hidden facts, debug payloads, or secrets are shown in this error."}</p>
+      <div className="button-row">
+        <button type="button" onClick={() => window.location.reload()}>
+          Retry loading local UI
+        </button>
+        <button type="button" onClick={() => focusElementSafely(document.querySelector<HTMLElement>(".side-panel button, .side-panel select, .app-shell"))}>
+          Back to navigation
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function focusElementSafely(element: HTMLElement | null | undefined) {
+  if (!element || !element.isConnected) {
+    return;
+  }
+  window.setTimeout(() => {
+    try {
+      element.focus({ preventScroll: false });
+    } catch {
+      element.focus();
+    }
+  }, 0);
+}
+
+function focusElementImmediately(element: HTMLElement | null | undefined) {
+  if (!element || !element.isConnected) {
+    return;
+  }
+  try {
+    element.focus({ preventScroll: true });
+  } catch {
+    element.focus();
+  }
+}
+
+function focusableElementsIn(container: HTMLElement | null): HTMLElement[] {
+  if (!container) {
+    return [];
+  }
+  return Array.from(
+    container.querySelectorAll<HTMLElement>(
+      "button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])"
+    )
+  ).filter((element) => element.offsetParent !== null || element === document.activeElement);
+}
+
+function handleDialogFocusTrap(event: React.KeyboardEvent<HTMLElement>, container: HTMLElement | null) {
+  if (event.key !== "Tab") {
+    return;
+  }
+  const focusables = focusableElementsIn(container);
+  if (focusables.length === 0) {
+    event.preventDefault();
+    return;
+  }
+  const first = focusables[0];
+  const last = focusables[focusables.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    focusElementImmediately(last);
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    focusElementImmediately(first);
+  }
+}
+
+function useManagedDialogFocus(isOpen: boolean, titleRef: React.RefObject<HTMLElement | null>) {
+  const returnFocusRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (!isOpen) {
+      if (returnFocusRef.current) {
+        focusElementSafely(returnFocusRef.current);
+        returnFocusRef.current = null;
+      }
+      return;
+    }
+    const active = document.activeElement;
+    returnFocusRef.current = active instanceof HTMLElement ? active : null;
+    focusElementSafely(titleRef.current);
+    return () => {
+      if (returnFocusRef.current) {
+        focusElementSafely(returnFocusRef.current);
+        returnFocusRef.current = null;
+      }
+    };
+  }, [isOpen, titleRef]);
+}
+
+function useStepTitleFocus(stepKey: string, titleRef: React.RefObject<HTMLElement | null>) {
+  useEffect(() => {
+    focusElementSafely(titleRef.current);
+  }, [stepKey, titleRef]);
+}
+
+function RouteLoadingBoundary({
+  label,
+  onGoHome,
+  children
+}: {
+  label: string;
+  onGoHome?: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <AppErrorBoundary key={label} label={label} onGoHome={onGoHome} resetKey={label}>
+      <Suspense
+        fallback={(
+          <LoadingState
+            title={`Loading ${label}`}
+            detail="Loading a local route chunk. Secrets, hidden facts, and debug payloads are not rendered in fallback UI."
+          />
+        )}
+      >
+        {children}
+      </Suspense>
+    </AppErrorBoundary>
+  );
+}
 
 function firstRunOnboardingDismissed(): boolean {
   try {
@@ -767,6 +1171,109 @@ function firstRunOnboardingDismissed(): boolean {
   } catch {
     return false;
   }
+}
+
+function keyboardShortcutsInitialEnabled(): boolean {
+  try {
+    return window.localStorage.getItem(KEYBOARD_SHORTCUTS_PREF_KEY) !== "disabled";
+  } catch {
+    return true;
+  }
+}
+
+function systemPrefersReducedMotion(): boolean {
+  try {
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  } catch {
+    return false;
+  }
+}
+
+function reducedMotionInitialEnabled(): boolean {
+  try {
+    const stored = window.localStorage.getItem(REDUCED_MOTION_PREF_KEY);
+    if (stored === "enabled") {
+      return true;
+    }
+    if (stored === "disabled") {
+      return false;
+    }
+  } catch {
+    // Local visual-comfort preferences are best-effort and never store secrets.
+  }
+  return systemPrefersReducedMotion();
+}
+
+function reducedMotionActive(): boolean {
+  try {
+    return document.documentElement.dataset.reducedMotion === "true" || systemPrefersReducedMotion();
+  } catch {
+    return systemPrefersReducedMotion();
+  }
+}
+
+function motionSafeScrollBehavior(): ScrollBehavior {
+  return reducedMotionActive() ? "auto" : "smooth";
+}
+
+function isEditableShortcutTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+  const tagName = target.tagName.toLowerCase();
+  return target.isContentEditable || tagName === "input" || tagName === "textarea" || tagName === "select";
+}
+
+function focusFirstSafeSearchField(): boolean {
+  const candidates = Array.from(
+    document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
+      "[data-global-search='true'], input[type='search'], input[placeholder*='Search' i], input[aria-label*='Search' i], textarea[placeholder*='Search' i]"
+    )
+  );
+  const target = candidates.find((candidate) => !candidate.disabled && candidate.offsetParent !== null);
+  if (!target) {
+    return false;
+  }
+  target.focus();
+  if ("select" in target) {
+    target.select();
+  }
+  return true;
+}
+
+function shortcutSaveStatusForMode(mode: AppMode): string {
+  if (mode === "project") {
+    return "Ctrl/Cmd+S is reserved for safe Novel/Tavern draft saves; use visible save buttons in this workspace.";
+  }
+  if (mode === "authoring") {
+    return "Authoring save/apply is not triggered by shortcut. Safe Apply still requires validation, dry-run, and explicit confirm.";
+  }
+  if (mode === "play") {
+    return "World saves are not triggered by shortcut. Use the explicit Save control so active GameState boundaries remain clear.";
+  }
+  if (mode === "prompt_lab") {
+    return "Provider settings are not saved by shortcut. Profile/model changes still use visible validation and save buttons.";
+  }
+  return "No safe draft save action is registered for this local dashboard.";
+}
+
+function shortcutModeLabel(mode: AppMode, key: string): string {
+  if (key === "q") {
+    return "QA / Debug";
+  }
+  if (key === "n") {
+    return "Novel";
+  }
+  if (key === "t") {
+    return "Tavern";
+  }
+  if (mode === "play") {
+    return "World";
+  }
+  if (mode === "authoring") {
+    return "Authoring";
+  }
+  return routeSplitLabel(mode);
 }
 
 export function App() {
@@ -787,8 +1294,10 @@ export function App() {
   const [lastResponse, setLastResponse] = useState<unknown>(null);
   const [timeline, setTimeline] = useState<DebugEvent[]>([]);
   const [timelineError, setTimelineError] = useState<string>("");
+  const [timelineLoading, setTimelineLoading] = useState<boolean>(false);
   const [timelineReplay, setTimelineReplay] = useState<TimelineReplayResponse | null>(null);
   const [timelineReplayError, setTimelineReplayError] = useState<string>("");
+  const [timelineReplayLoading, setTimelineReplayLoading] = useState<boolean>(false);
   const [timelineReplaySource, setTimelineReplaySource] = useState<"session" | "save">("session");
   const [timelineReplayFilter, setTimelineReplayFilter] = useState<TimelineFilter>("all");
   const [timelineReplayDryRun, setTimelineReplayDryRun] = useState<TimelineReplayResponse | null>(null);
@@ -828,6 +1337,12 @@ export function App() {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>("");
   const [mode, setMode] = useState<AppMode>("studio");
+  const [keyboardShortcutsEnabled, setKeyboardShortcutsEnabled] = useState<boolean>(() => keyboardShortcutsInitialEnabled());
+  const [reducedMotionEnabled, setReducedMotionEnabled] = useState<boolean>(() => reducedMotionInitialEnabled());
+  const [shortcutHelpOpen, setShortcutHelpOpen] = useState<boolean>(false);
+  const [shortcutStatus, setShortcutStatus] = useState<string>("");
+  const shortcutChordRef = useRef<"g" | null>(null);
+  const shortcutChordTimerRef = useRef<number | null>(null);
   const [requestedAuthoringTool, setRequestedAuthoringTool] = useState<AuthoringToolId | null>(null);
   const [studioStatus, setStudioStatus] = useState<StudioStatus | null>(null);
   const [studioStatusError, setStudioStatusError] = useState<string>("");
@@ -847,6 +1362,7 @@ export function App() {
   const [backupResult, setBackupResult] = useState<BackupCreateResponse | null>(null);
   const [restorePlan, setRestorePlan] = useState<RestorePlan | null>(null);
   const [backupRestoreError, setBackupRestoreError] = useState<string>("");
+  const [backupProgress, setBackupProgress] = useState<LocalOperationProgressState>(INITIAL_BACKUP_PROGRESS);
   const [recoveryIssues, setRecoveryIssues] = useState<RecoveryIssue[]>([]);
   const [recoveryPlan, setRecoveryPlan] = useState<RecoveryPlan | null>(null);
   const [recoveryError, setRecoveryError] = useState<string>("");
@@ -855,6 +1371,7 @@ export function App() {
   const [diagnosticsBundlePreview, setDiagnosticsBundlePreview] = useState<DiagnosticsBundlePreview | null>(null);
   const [diagnosticsBundleCreateResult, setDiagnosticsBundleCreateResult] = useState<DiagnosticsBundleCreateResponse | null>(null);
   const [diagnosticsBundleError, setDiagnosticsBundleError] = useState<string>("");
+  const [diagnosticsProgress, setDiagnosticsProgress] = useState<LocalOperationProgressState>(INITIAL_DIAGNOSTICS_PROGRESS);
   const [firstRunDismissed, setFirstRunDismissed] = useState<boolean>(() => firstRunOnboardingDismissed());
   const [studioConfigError, setStudioConfigError] = useState<string>("");
   const [projectWorkspaces, setProjectWorkspaces] = useState<ProjectWorkspace[]>([]);
@@ -886,6 +1403,9 @@ export function App() {
   const [worldHealthError, setWorldHealthError] = useState<string>("");
   const [contentCoverage, setContentCoverage] = useState<ContentCoverageReport | null>(null);
   const [contentCoverageError, setContentCoverageError] = useState<string>("");
+  const [safeApiCacheStatuses, setSafeApiCacheStatuses] = useState<SafeApiCacheStatus[]>(() => getSafeApiCacheStatuses());
+  const [activeTimelineCacheKey, setActiveTimelineCacheKey] = useState<string>("");
+  const [activeTimelineReplayCacheKey, setActiveTimelineReplayCacheKey] = useState<string>("");
 
   useEffect(() => {
     void handleStart();
@@ -910,6 +1430,160 @@ export function App() {
     void refreshWorldHealth();
     void refreshContentCoverage();
   }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(KEYBOARD_SHORTCUTS_PREF_KEY, keyboardShortcutsEnabled ? "enabled" : "disabled");
+    } catch {
+      // Local preference persistence is best-effort and never stores secrets.
+    }
+  }, [keyboardShortcutsEnabled]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(REDUCED_MOTION_PREF_KEY, reducedMotionEnabled ? "enabled" : "disabled");
+    } catch {
+      // Local visual-comfort preference persistence is best-effort and never stores secrets.
+    }
+    document.documentElement.dataset.reducedMotion = reducedMotionEnabled ? "true" : "false";
+    document.documentElement.classList.toggle("reduced-motion-preference", reducedMotionEnabled);
+  }, [reducedMotionEnabled]);
+
+  useEffect(() => {
+    let mediaQuery: MediaQueryList;
+    try {
+      mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+    } catch {
+      return;
+    }
+    const handleReducedMotionChange = () => {
+      try {
+        if (window.localStorage.getItem(REDUCED_MOTION_PREF_KEY) === null) {
+          setReducedMotionEnabled(mediaQuery.matches);
+        }
+      } catch {
+        setReducedMotionEnabled(mediaQuery.matches);
+      }
+    };
+    mediaQuery.addEventListener("change", handleReducedMotionChange);
+    return () => mediaQuery.removeEventListener("change", handleReducedMotionChange);
+  }, []);
+
+  useEffect(() => {
+    function clearShortcutChord() {
+      shortcutChordRef.current = null;
+      if (shortcutChordTimerRef.current !== null) {
+        window.clearTimeout(shortcutChordTimerRef.current);
+        shortcutChordTimerRef.current = null;
+      }
+    }
+
+    function startGoChord() {
+      clearShortcutChord();
+      shortcutChordRef.current = "g";
+      setShortcutStatus("Navigation chord started. Press n, t, w, a, or q.");
+      shortcutChordTimerRef.current = window.setTimeout(() => {
+        shortcutChordRef.current = null;
+        shortcutChordTimerRef.current = null;
+      }, 1400);
+    }
+
+    function navigateByShortcut(nextMode: AppMode, key: string) {
+      clearShortcutChord();
+      setRequestedAuthoringTool(null);
+      setMode(nextMode);
+      if (key === "q") {
+        setDebugOpen(true);
+      }
+      setShortcutStatus(`Opened ${shortcutModeLabel(nextMode, key)} via keyboard shortcut.`);
+    }
+
+    function handleShortcutKeyDown(event: KeyboardEvent) {
+      if (!keyboardShortcutsEnabled) {
+        return;
+      }
+      const key = event.key.toLowerCase();
+      const meta = event.ctrlKey || event.metaKey;
+      const editableTarget = isEditableShortcutTarget(event.target);
+
+      if (key === "escape") {
+        if (shortcutHelpOpen) {
+          event.preventDefault();
+          setShortcutHelpOpen(false);
+          setShortcutStatus("Shortcut help closed.");
+          clearShortcutChord();
+          return;
+        }
+        if (!editableTarget && debugOpen) {
+          event.preventDefault();
+          setDebugOpen(false);
+          setShortcutStatus("Debug drawer closed. No debug data was modified.");
+          clearShortcutChord();
+        }
+        return;
+      }
+
+      if (editableTarget) {
+        return;
+      }
+
+      if (meta && key === "k") {
+        event.preventDefault();
+        clearShortcutChord();
+        if (focusFirstSafeSearchField()) {
+          setShortcutStatus("Focused the first visible safe search field.");
+        } else {
+          setShortcutHelpOpen(true);
+          setShortcutStatus("No safe search field is visible here, so shortcut help opened.");
+        }
+        return;
+      }
+
+      if (meta && key === "s") {
+        event.preventDefault();
+        clearShortcutChord();
+        setShortcutStatus(shortcutSaveStatusForMode(mode));
+        return;
+      }
+
+      if (!event.altKey && !meta && event.key === "?") {
+        event.preventDefault();
+        clearShortcutChord();
+        setShortcutHelpOpen(true);
+        setShortcutStatus("Shortcut help opened.");
+        return;
+      }
+
+      if (!event.altKey && !event.shiftKey && !meta && key === "g") {
+        event.preventDefault();
+        startGoChord();
+        return;
+      }
+
+      if (shortcutChordRef.current === "g" && !event.altKey && !event.shiftKey && !meta) {
+        const modeByKey: Record<string, AppMode> = {
+          n: "project",
+          t: "project",
+          w: "play",
+          a: "authoring",
+          q: "studio"
+        };
+        const nextMode = modeByKey[key];
+        if (nextMode) {
+          event.preventDefault();
+          navigateByShortcut(nextMode, key);
+        } else {
+          clearShortcutChord();
+        }
+      }
+    }
+
+    window.addEventListener("keydown", handleShortcutKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleShortcutKeyDown);
+      clearShortcutChord();
+    };
+  }, [debugOpen, keyboardShortcutsEnabled, mode, shortcutHelpOpen]);
 
   const knownFacts = useMemo(
     () => visibleState?.known_facts ?? [],
@@ -937,6 +1611,35 @@ export function App() {
       ),
     [timeline]
   );
+  const safeApiCacheStatusByKey = useMemo(
+    () => new Map(safeApiCacheStatuses.map((status) => [status.key, status])),
+    [safeApiCacheStatuses]
+  );
+
+  function syncSafeApiCacheStatuses() {
+    setSafeApiCacheStatuses(getSafeApiCacheStatuses());
+  }
+
+  function rememberSafeApiCache<T>(
+    key: string,
+    label: string,
+    scope: SafeApiCacheStatus["scope"],
+    value: T,
+    options?: { staleAfterMs?: number; summary?: string; itemCount?: number }
+  ) {
+    writeSafeApiCache(key, label, scope, value, options);
+    syncSafeApiCacheStatuses();
+  }
+
+  function rememberSafeApiCacheFailure(
+    key: string,
+    label: string,
+    scope: SafeApiCacheStatus["scope"],
+    error: unknown
+  ) {
+    markSafeApiCacheFailed(key, label, scope, error);
+    syncSafeApiCacheStatuses();
+  }
 
   async function handleStart() {
     setIsLoading(true);
@@ -951,8 +1654,8 @@ export function App() {
       setSuggestedActions(["observe", "smithy", "wait"]);
       setStory([{ id: Date.now(), text: "A new local story session has started." }]);
       setLastResponse(response);
-      void refreshTimeline(response.session_id);
-      void refreshTimelineReplay("session", { sessionId: response.session_id });
+      void refreshTimeline(response.session_id, { force: true });
+      void refreshTimelineReplay("session", { sessionId: response.session_id, force: true });
       void refreshPlayerGraphs(response.session_id);
       void refreshDebugGraphs(response.session_id);
       void refreshNPCSimulationDebugger(response.session_id);
@@ -1065,11 +1768,29 @@ export function App() {
 
   async function handleBackupDryRun() {
     setBackupRestoreError("");
+    setBackupProgress({
+      label: "Backup dry-run is scanning local project files and exclusions.",
+      step: "scanning",
+      status: "running"
+    });
     try {
-      setBackupPlan(await createBackupDryRun(currentNarrativeProjectId || currentWorkspaceId || "local_project"));
+      const plan = await createBackupDryRun(currentNarrativeProjectId || currentWorkspaceId || "local_project");
+      setBackupPlan(plan);
+      setBackupProgress({
+        label: "Backup dry-run preview is ready.",
+        step: "done",
+        status: "done"
+      });
     } catch (err) {
+      const message = toErrorMessage(err);
       setBackupPlan(null);
-      setBackupRestoreError(toErrorMessage(err));
+      setBackupRestoreError(message);
+      setBackupProgress({
+        label: "Backup dry-run failed during safe validation.",
+        step: "validating",
+        status: "failed",
+        safeError: message
+      });
     }
   }
 
@@ -1078,21 +1799,57 @@ export function App() {
       return;
     }
     setBackupRestoreError("");
+    setBackupProgress({
+      label: "Creating local backup after confirmed dry-run.",
+      step: "packaging",
+      status: "running"
+    });
     try {
-      setBackupResult(await createLocalBackup(currentNarrativeProjectId || currentWorkspaceId || "local_project"));
+      const result = await createLocalBackup(currentNarrativeProjectId || currentWorkspaceId || "local_project");
+      setBackupResult(result);
+      setBackupProgress({
+        label: "Local backup was written with default exclusions.",
+        step: "done",
+        status: "done"
+      });
     } catch (err) {
+      const message = toErrorMessage(err);
       setBackupResult(null);
-      setBackupRestoreError(toErrorMessage(err));
+      setBackupRestoreError(message);
+      setBackupProgress({
+        label: "Backup creation failed before completion.",
+        step: "writing",
+        status: "failed",
+        safeError: message
+      });
     }
   }
 
   async function handleRestoreDryRun(backupPath: string, targetProjectId: string) {
     setBackupRestoreError("");
+    setBackupProgress({
+      label: "Restore dry-run is validating local backup metadata and conflicts.",
+      step: "validating",
+      status: "running"
+    });
     try {
-      setRestorePlan(await restoreBackupDryRun(backupPath, targetProjectId));
+      const plan = await restoreBackupDryRun(backupPath, targetProjectId);
+      setRestorePlan(plan);
+      setBackupProgress({
+        label: "Restore dry-run preview is ready. No project files were overwritten.",
+        step: "done",
+        status: "done"
+      });
     } catch (err) {
+      const message = toErrorMessage(err);
       setRestorePlan(null);
-      setBackupRestoreError(toErrorMessage(err));
+      setBackupRestoreError(message);
+      setBackupProgress({
+        label: "Restore dry-run failed during safe validation.",
+        step: "validating",
+        status: "failed",
+        safeError: message
+      });
     }
   }
 
@@ -1131,27 +1888,68 @@ export function App() {
 
   async function refreshDiagnosticsBundlePreview() {
     setDiagnosticsBundleError("");
+    setDiagnosticsProgress({
+      label: "Diagnostics preview is scanning local safe summaries.",
+      step: "scanning",
+      status: "running"
+    });
     try {
-      setDiagnosticsBundlePreview(await previewDiagnosticsBundle(currentNarrativeProjectId || currentWorkspaceId || "local_project", false));
+      const preview = await previewDiagnosticsBundle(currentNarrativeProjectId || currentWorkspaceId || "local_project", false);
+      setDiagnosticsBundlePreview(preview);
+      setDiagnosticsProgress({
+        label: "Diagnostics preview is ready. Nothing was written or uploaded.",
+        step: "done",
+        status: "done"
+      });
     } catch (err) {
+      const message = toErrorMessage(err);
       setDiagnosticsBundlePreview(null);
-      setDiagnosticsBundleError(toErrorMessage(err));
+      setDiagnosticsBundleError(message);
+      setDiagnosticsProgress({
+        label: "Diagnostics preview failed before writing files.",
+        step: "validating",
+        status: "failed",
+        safeError: message
+      });
     }
   }
 
   async function handlePreviewDiagnosticsBundle(includeDebug = false, explicitConfirmDebug = false) {
     setDiagnosticsBundleError("");
     setDiagnosticsBundleCreateResult(null);
+    setDiagnosticsProgress({
+      label: includeDebug ? "Debug export preview is validating gated local scopes." : "Diagnostics bundle preview is filtering local safe summaries.",
+      step: includeDebug ? "validating" : "filtering",
+      status: "running"
+    });
     try {
-      setDiagnosticsBundlePreview(await previewDiagnosticsBundle(currentNarrativeProjectId || currentWorkspaceId || "local_project", includeDebug, explicitConfirmDebug));
+      const preview = await previewDiagnosticsBundle(currentNarrativeProjectId || currentWorkspaceId || "local_project", includeDebug, explicitConfirmDebug);
+      setDiagnosticsBundlePreview(preview);
+      setDiagnosticsProgress({
+        label: includeDebug ? "Debug export preview is ready after explicit gate checks." : "Diagnostics bundle preview is ready.",
+        step: "done",
+        status: "done"
+      });
     } catch (err) {
+      const message = toErrorMessage(err);
       setDiagnosticsBundlePreview(null);
-      setDiagnosticsBundleError(toErrorMessage(err));
+      setDiagnosticsBundleError(message);
+      setDiagnosticsProgress({
+        label: includeDebug ? "Debug export preview failed during gated validation." : "Diagnostics preview failed during filtering.",
+        step: "validating",
+        status: "failed",
+        safeError: message
+      });
     }
   }
 
   async function handleCreateDiagnosticsBundle(includeDebug = false, explicitConfirmDebug = false) {
     setDiagnosticsBundleError("");
+    setDiagnosticsProgress({
+      label: includeDebug ? "Creating confirmed local debug export." : "Creating local diagnostics bundle.",
+      step: "writing",
+      status: "running"
+    });
     try {
       const response = await createDiagnosticsBundle(currentNarrativeProjectId || currentWorkspaceId || "local_project", includeDebug, explicitConfirmDebug);
       setDiagnosticsBundleCreateResult(response);
@@ -1162,9 +1960,21 @@ export function App() {
         safe_payload: {},
         warnings: response.warnings
       });
+      setDiagnosticsProgress({
+        label: includeDebug ? "Local debug export was written after explicit confirmation." : "Local diagnostics bundle was written.",
+        step: "done",
+        status: "done"
+      });
     } catch (err) {
+      const message = toErrorMessage(err);
       setDiagnosticsBundleCreateResult(null);
-      setDiagnosticsBundleError(toErrorMessage(err));
+      setDiagnosticsBundleError(message);
+      setDiagnosticsProgress({
+        label: includeDebug ? "Debug export failed before completion." : "Diagnostics bundle creation failed before completion.",
+        step: "writing",
+        status: "failed",
+        safeError: message
+      });
     }
   }
 
@@ -1502,43 +2312,85 @@ export function App() {
 
   async function refreshWorldHealth() {
     setWorldHealthError("");
+    const cacheKey = qualityWorldHealthCacheKey(selectedWorldId);
     try {
       const response = await fetchWorldHealth(selectedWorldId);
       setWorldHealth(response);
+      rememberSafeApiCache(
+        cacheKey,
+        "World quality safe summary",
+        "quality",
+        buildWorldHealthSafeCacheSummary(response, selectedWorldId),
+        {
+          staleAfterMs: SAFE_API_CACHE_TTL_MS,
+          summary: `World quality score ${response.overall_score}; ${response.blockers.length} blocker(s), ${response.warnings.length} warning(s).`,
+          itemCount: response.blockers.length + response.warnings.length
+        }
+      );
     } catch (err) {
       setWorldHealth(null);
       setWorldHealthError(toErrorMessage(err));
+      rememberSafeApiCacheFailure(cacheKey, "World quality safe summary", "quality", err);
     }
   }
 
   async function handleRunWorldHealth() {
     setWorldHealthError("");
+    const cacheKey = qualityWorldHealthCacheKey(selectedWorldId);
     try {
       const response = await runWorldHealth(selectedWorldId);
       setWorldHealth(response);
+      rememberSafeApiCache(
+        cacheKey,
+        "World quality safe summary",
+        "quality",
+        buildWorldHealthSafeCacheSummary(response, selectedWorldId),
+        {
+          staleAfterMs: SAFE_API_CACHE_TTL_MS,
+          summary: `World quality gate ran locally: ${response.overall_score}; ${response.blockers.length} blocker(s), ${response.warnings.length} warning(s).`,
+          itemCount: response.blockers.length + response.warnings.length
+        }
+      );
     } catch (err) {
       setWorldHealthError(toErrorMessage(err));
+      rememberSafeApiCacheFailure(cacheKey, "World quality safe summary", "quality", err);
     }
   }
 
   async function refreshContentCoverage() {
     setContentCoverageError("");
+    const cacheKey = qualityContentCoverageCacheKey(selectedWorldId);
     try {
       const response = await fetchContentCoverage(selectedWorldId);
       setContentCoverage(response);
+      const summary = buildContentCoverageSafeCacheSummary(response, selectedWorldId);
+      rememberSafeApiCache(cacheKey, "Content coverage safe summary", "quality", summary, {
+        staleAfterMs: SAFE_API_CACHE_TTL_MS,
+        summary: `Content coverage ${summary.average_coverage_percent}% average; ${summary.uncovered_entities} uncovered entity/entities.`,
+        itemCount: summary.total_entities
+      });
     } catch (err) {
       setContentCoverage(null);
       setContentCoverageError(toErrorMessage(err));
+      rememberSafeApiCacheFailure(cacheKey, "Content coverage safe summary", "quality", err);
     }
   }
 
   async function handleRunContentCoverage() {
     setContentCoverageError("");
+    const cacheKey = qualityContentCoverageCacheKey(selectedWorldId);
     try {
       const response = await runContentCoverage(selectedWorldId);
       setContentCoverage(response);
+      const summary = buildContentCoverageSafeCacheSummary(response, selectedWorldId);
+      rememberSafeApiCache(cacheKey, "Content coverage safe summary", "quality", summary, {
+        staleAfterMs: SAFE_API_CACHE_TTL_MS,
+        summary: `Content coverage plan refreshed locally: ${summary.average_coverage_percent}% average; ${summary.uncovered_entities} uncovered entity/entities.`,
+        itemCount: summary.total_entities
+      });
     } catch (err) {
       setContentCoverageError(toErrorMessage(err));
+      rememberSafeApiCacheFailure(cacheKey, "Content coverage safe summary", "quality", err);
     }
   }
 
@@ -1660,8 +2512,8 @@ export function App() {
       setVisibleState(response.visible_state);
       setTurn(response.turn);
       setLastResponse(response);
-      void refreshTimeline(sessionId);
-      void refreshTimelineReplay("session", { sessionId });
+      void refreshTimeline(sessionId, { force: true });
+      void refreshTimelineReplay("session", { sessionId, force: true });
       void refreshPlayerGraphs(sessionId);
       void refreshDebugGraphs(sessionId);
     } catch (err) {
@@ -1682,8 +2534,8 @@ export function App() {
       const response = await saveGame(sessionId);
       setLastResponse(response);
       await refreshSaves(response.save_id);
-      void refreshSaveTimeline(response.save_id);
-      void refreshTimelineReplay("save", { saveId: response.save_id });
+      void refreshSaveTimeline(response.save_id, { force: true });
+      void refreshTimelineReplay("save", { saveId: response.save_id, force: true });
     } catch (err) {
       setError(toErrorMessage(err));
     } finally {
@@ -1708,8 +2560,8 @@ export function App() {
       setSuggestedActions(["observe", "smithy", "wait"]);
       setStory([{ id: Date.now(), text: `Loaded save ${response.save_id}.` }]);
       setLastResponse(response);
-      void refreshTimeline(response.session_id);
-      void refreshTimelineReplay("session", { sessionId: response.session_id });
+      void refreshTimeline(response.session_id, { force: true });
+      void refreshTimelineReplay("session", { sessionId: response.session_id, force: true });
       void refreshPlayerGraphs(response.session_id);
       void refreshDebugGraphs(response.session_id);
     } catch (err) {
@@ -1822,8 +2674,8 @@ export function App() {
     setVisibleState(response.visible_state);
     setTurn(response.turn);
     setLastResponse(response);
-    void refreshTimeline(sessionId);
-    void refreshTimelineReplay("session", { sessionId });
+    void refreshTimeline(sessionId, { force: true });
+    void refreshTimelineReplay("session", { sessionId, force: true });
     void refreshPlayerGraphs(sessionId);
     void refreshDebugGraphs(sessionId);
     void refreshNPCSimulationDebugger(sessionId);
@@ -1842,8 +2694,8 @@ export function App() {
     setTurn(response.turn);
     setSuggestedActions(response.dialogue_session.status === "active" ? ["ask about rumors", "thank you", "goodbye"] : []);
     setLastResponse(response);
-    void refreshTimeline(sessionId);
-    void refreshTimelineReplay("session", { sessionId });
+    void refreshTimeline(sessionId, { force: true });
+    void refreshTimelineReplay("session", { sessionId, force: true });
     void refreshPlayerGraphs(sessionId);
     void refreshDebugGraphs(sessionId);
     void refreshNPCSimulationDebugger(sessionId);
@@ -1861,43 +2713,89 @@ export function App() {
     setVisibleState(response.visible_state);
     setTurn(response.turn);
     setLastResponse(response);
-    void refreshTimeline(sessionId);
-    void refreshTimelineReplay("session", { sessionId });
+    void refreshTimeline(sessionId, { force: true });
+    void refreshTimelineReplay("session", { sessionId, force: true });
     void refreshPlayerGraphs(sessionId);
     void refreshDebugGraphs(sessionId);
   }
 
-  async function refreshTimeline(nextSessionId = sessionId) {
+  async function refreshTimeline(nextSessionId = sessionId, options: { force?: boolean } = {}) {
     if (!nextSessionId) {
       return;
     }
-    setTimelineError("");
-    try {
-      const response = await fetchSessionDebugEvents(nextSessionId);
-      setTimeline(response.events);
-    } catch (err) {
-      setTimeline([]);
-      setTimelineError(toErrorMessage(err));
-    }
-  }
-
-  async function refreshSaveTimeline(saveId = selectedSaveId) {
-    if (!saveId) {
+    const cacheKey = eventLogCacheKey("session", nextSessionId);
+    const cached = readSafeApiCache<ReturnType<typeof buildEventLogSafeCacheSummary>>(cacheKey);
+    if (!options.force && cached && !cached.stale && activeTimelineCacheKey === cacheKey && timeline.length > 0) {
+      setTimelineError("");
+      syncSafeApiCacheStatuses();
       return;
     }
     setTimelineError("");
+    setTimelineLoading(true);
     try {
-      const response = await fetchSaveDebugEvents(saveId);
+      const response = await fetchSessionDebugEvents(nextSessionId);
       setTimeline(response.events);
+      setActiveTimelineCacheKey(cacheKey);
+      rememberSafeApiCache(
+        cacheKey,
+        "Session EventLog safe summary",
+        "eventlog",
+        buildEventLogSafeCacheSummary(response.events, "session", nextSessionId),
+        {
+          staleAfterMs: SAFE_API_CACHE_TTL_MS,
+          summary: `${response.events.length} session EventLog safe event(s) cached.`,
+          itemCount: response.events.length
+        }
+      );
     } catch (err) {
       setTimeline([]);
       setTimelineError(toErrorMessage(err));
+      rememberSafeApiCacheFailure(cacheKey, "Session EventLog safe summary", "eventlog", err);
+    } finally {
+      setTimelineLoading(false);
+    }
+  }
+
+  async function refreshSaveTimeline(saveId = selectedSaveId, options: { force?: boolean } = {}) {
+    if (!saveId) {
+      return;
+    }
+    const cacheKey = eventLogCacheKey("save", saveId);
+    const cached = readSafeApiCache<ReturnType<typeof buildEventLogSafeCacheSummary>>(cacheKey);
+    if (!options.force && cached && !cached.stale && activeTimelineCacheKey === cacheKey && timeline.length > 0) {
+      setTimelineError("");
+      syncSafeApiCacheStatuses();
+      return;
+    }
+    setTimelineError("");
+    setTimelineLoading(true);
+    try {
+      const response = await fetchSaveDebugEvents(saveId);
+      setTimeline(response.events);
+      setActiveTimelineCacheKey(cacheKey);
+      rememberSafeApiCache(
+        cacheKey,
+        "Save EventLog safe summary",
+        "eventlog",
+        buildEventLogSafeCacheSummary(response.events, "save", saveId),
+        {
+          staleAfterMs: SAFE_API_CACHE_TTL_MS,
+          summary: `${response.events.length} save EventLog safe event(s) cached.`,
+          itemCount: response.events.length
+        }
+      );
+    } catch (err) {
+      setTimeline([]);
+      setTimelineError(toErrorMessage(err));
+      rememberSafeApiCacheFailure(cacheKey, "Save EventLog safe summary", "eventlog", err);
+    } finally {
+      setTimelineLoading(false);
     }
   }
 
   async function refreshTimelineReplay(
     source: "session" | "save" = timelineReplaySource,
-    options?: { sessionId?: string; saveId?: string }
+    options?: { sessionId?: string; saveId?: string; force?: boolean }
   ) {
     const nextSessionId = options?.sessionId ?? sessionId;
     const nextSaveId = options?.saveId ?? selectedSaveId;
@@ -1907,8 +2805,17 @@ export function App() {
     if (source === "save" && !nextSaveId) {
       return;
     }
+    const sourceId = source === "session" ? nextSessionId : nextSaveId;
+    const cacheKey = timelineReplayCacheKey(source, sourceId);
+    const cached = readSafeApiCache<ReturnType<typeof buildTimelineReplaySafeCacheSummary>>(cacheKey);
+    if (!options?.force && cached && !cached.stale && activeTimelineReplayCacheKey === cacheKey && timelineReplay) {
+      setTimelineReplayError("");
+      syncSafeApiCacheStatuses();
+      return;
+    }
     setTimelineReplayError("");
     setTimelineReplayDryRunError("");
+    setTimelineReplayLoading(true);
     try {
       const response =
         source === "session"
@@ -1916,12 +2823,27 @@ export function App() {
           : await fetchSaveTimelineReplay(nextSaveId);
       setTimelineReplay(response);
       setTimelineReplaySource(source);
+      setActiveTimelineReplayCacheKey(cacheKey);
+      rememberSafeApiCache(
+        cacheKey,
+        "Timeline replay safe summary",
+        "timeline",
+        buildTimelineReplaySafeCacheSummary(response, source, sourceId),
+        {
+          staleAfterMs: SAFE_API_CACHE_TTL_MS,
+          summary: `${response.event_count} replay event(s), ${response.delta_count} linked delta summary count.`,
+          itemCount: response.event_count
+        }
+      );
       if (source === "session") {
         setTimelineReplayDryRun(null);
       }
     } catch (err) {
       setTimelineReplay(null);
       setTimelineReplayError(toErrorMessage(err));
+      rememberSafeApiCacheFailure(cacheKey, "Timeline replay safe summary", "timeline", err);
+    } finally {
+      setTimelineReplayLoading(false);
     }
   }
 
@@ -1931,6 +2853,7 @@ export function App() {
       return;
     }
     setTimelineReplayDryRunError("");
+    setTimelineReplayLoading(true);
     try {
       const response = await dryRunSaveTimelineReplay(selectedSaveId);
       setTimelineReplayDryRun(response);
@@ -1939,6 +2862,8 @@ export function App() {
     } catch (err) {
       setTimelineReplayDryRun(null);
       setTimelineReplayDryRunError(toErrorMessage(err));
+    } finally {
+      setTimelineReplayLoading(false);
     }
   }
 
@@ -2151,7 +3076,19 @@ export function App() {
   }
 
   return (
-    <main className="app-shell">
+    <KeyboardShortcutsProvider
+      enabled={keyboardShortcutsEnabled}
+      reducedMotionEnabled={reducedMotionEnabled}
+      helpOpen={shortcutHelpOpen}
+      status={shortcutStatus}
+      onToggleEnabled={setKeyboardShortcutsEnabled}
+      onOpenHelp={() => setShortcutHelpOpen(true)}
+      onCloseHelp={() => {
+        setShortcutHelpOpen(false);
+        setShortcutStatus("Shortcut help closed.");
+      }}
+    >
+    <main className="app-shell" aria-label="AI Narrative Studio local workspace">
       <aside className="side-panel">
         <div>
           <h1>Mist Valley</h1>
@@ -2311,8 +3248,9 @@ export function App() {
             onComplete={dismissFirstRunOnboarding}
           />
         )}
-        {mode === "project" ? (
-          <ProjectShell
+        <RouteLoadingBoundary label={routeSplitLabel(mode)} onGoHome={() => setMode("studio")}>
+          {mode === "project" ? (
+            <ProjectShell
             projects={narrativeProjects}
             selectedProjectId={currentNarrativeProjectId}
             modeStatuses={projectModeStatuses}
@@ -2325,24 +3263,25 @@ export function App() {
             }}
             onCreate={(projectId, name, root) => void handleCreateNarrativeProject(projectId, name, root)}
             onValidate={(projectId) => void handleValidateNarrativeProject(projectId)}
-          />
-        ) : mode === "authoring" ? (
-          <AuthoringPanel
+            />
+          ) : mode === "authoring" ? (
+            <AuthoringPanel
             projectId={currentNarrativeProjectId || "local_project"}
             requestedTool={requestedAuthoringTool}
             onRequestedToolHandled={() => setRequestedAuthoringTool(null)}
-          />
-        ) : mode === "prompt_lab" ? (
-          <PromptLabPage
+            />
+          ) : mode === "prompt_lab" ? (
+            <ProviderPromptLabPage
             summary={studioConfigSummary}
             configError={studioConfigError}
             projectId={currentNarrativeProjectId || "local_project"}
-            onSelectPromptProfile={(profileId) => void handleSelectPromptProfile(profileId)}
-          />
-        ) : mode === "studio" ? (
-          <StudioHome
+            onSelectPromptProfile={(profileId: string) => void handleSelectPromptProfile(profileId)}
+            />
+          ) : mode === "studio" ? (
+            <DesktopStudioHome
             status={studioStatus}
             selectedProjectId={currentNarrativeProjectId}
+            selectedWorldId={selectedWorldId}
             configSummary={studioConfigSummary}
             localConfigSummary={localConfigSummary}
             localConfigIssues={localConfigIssues}
@@ -2357,6 +3296,7 @@ export function App() {
             backupResult={backupResult}
             restorePlan={restorePlan}
             backupRestoreError={backupRestoreError}
+            backupProgress={backupProgress}
             recoveryIssues={recoveryIssues}
             recoveryPlan={recoveryPlan}
             recoveryError={recoveryError}
@@ -2365,6 +3305,7 @@ export function App() {
             diagnosticsBundlePreview={diagnosticsBundlePreview}
             diagnosticsBundleCreateResult={diagnosticsBundleCreateResult}
             diagnosticsBundleError={diagnosticsBundleError}
+            diagnosticsProgress={diagnosticsProgress}
             workspaces={projectWorkspaces}
             workspaceTemplates={workspaceTemplates}
             recentProjects={recentProjects}
@@ -2374,6 +3315,7 @@ export function App() {
             selectedNarrativeEval={selectedNarrativeEval}
             performanceRecent={performanceRecent}
             performanceSummary={performanceSummary}
+            eventCount={timeline.length}
             playtestReports={playtestReports}
             selectedPlaytest={selectedPlaytest}
             playtestBatchReport={playtestBatchReport}
@@ -2382,6 +3324,9 @@ export function App() {
             selectedScenarioRegressionRun={selectedScenarioRegressionRun}
             worldHealth={worldHealth}
             contentCoverage={contentCoverage}
+            safeApiCacheStatuses={safeApiCacheStatuses}
+            keyboardShortcutsEnabled={keyboardShortcutsEnabled}
+            reducedMotionEnabled={reducedMotionEnabled}
             error={studioStatusError}
             workspaceError={workspaceError}
             workspaceMessage={workspaceMessage}
@@ -2414,10 +3359,10 @@ export function App() {
               void refreshWorldHealth();
               void refreshContentCoverage();
             }}
-            onAddWorkspace={(path, name) => void handleAddWorkspace(path, name)}
-            onCreateWorkspaceFromTemplate={(templateId, path, name) => void handleCreateWorkspaceFromTemplate(templateId, path, name)}
-            onSelectWorkspace={(workspaceId) => void handleSelectWorkspace(workspaceId)}
-            onRemoveRecentProject={(workspaceId) => void handleRemoveRecentProject(workspaceId)}
+            onAddWorkspace={(path: string, name?: string) => void handleAddWorkspace(path, name)}
+            onCreateWorkspaceFromTemplate={(templateId: WorkspaceTemplateType, path: string, name?: string) => void handleCreateWorkspaceFromTemplate(templateId, path, name)}
+            onSelectWorkspace={(workspaceId: string) => void handleSelectWorkspace(workspaceId)}
+            onRemoveRecentProject={(workspaceId: string) => void handleRemoveRecentProject(workspaceId)}
             onClearRecentProjects={() => void handleClearRecentProjects()}
             onRefreshLocalConfig={() => void refreshLocalConfig()}
             onGenerateLocalEnvTemplate={() => void handleGenerateLocalEnvTemplate()}
@@ -2426,37 +3371,40 @@ export function App() {
             onRefreshLocalStudio={() => void refreshLocalStudioUX()}
             onBackupDryRun={() => void handleBackupDryRun()}
             onCreateBackup={() => void handleCreateBackup()}
-            onRestoreDryRun={(backupPath, targetProjectId) => void handleRestoreDryRun(backupPath, targetProjectId)}
+            onRestoreDryRun={(backupPath: string, targetProjectId: string) => void handleRestoreDryRun(backupPath, targetProjectId)}
             onRefreshRecovery={() => void refreshRecovery()}
             onDryRunRecovery={() => void handleDryRunRecovery()}
             onRefreshLocalLogs={() => void refreshLocalLogs()}
             onPreviewDiagnosticsBundle={() => void refreshDiagnosticsBundlePreview()}
-            onPreviewDiagnosticsBundleWithOptions={(includeDebug, explicitConfirmDebug) => void handlePreviewDiagnosticsBundle(includeDebug, explicitConfirmDebug)}
-            onCreateDiagnosticsBundle={(includeDebug, explicitConfirmDebug) => void handleCreateDiagnosticsBundle(includeDebug, explicitConfirmDebug)}
-            onSelectPromptProfile={(profileId) => void handleSelectPromptProfile(profileId)}
+            onPreviewDiagnosticsBundleWithOptions={(includeDebug: boolean, explicitConfirmDebug: boolean) => void handlePreviewDiagnosticsBundle(includeDebug, explicitConfirmDebug)}
+            onCreateDiagnosticsBundle={(includeDebug: boolean, explicitConfirmDebug: boolean) => void handleCreateDiagnosticsBundle(includeDebug, explicitConfirmDebug)}
+            onSelectPromptProfile={(profileId: string) => void handleSelectPromptProfile(profileId)}
             onRunNarrativeEval={() => void handleRunNarrativeEval()}
-            onSelectNarrativeEval={(runId) => void handleSelectNarrativeEval(runId)}
+            onSelectNarrativeEval={(runId: string) => void handleSelectNarrativeEval(runId)}
             onRefreshPerformance={() => void refreshPerformance()}
-            onRunPlaytest={(options) => void handleRunPlaytest(options)}
-            onRunPlaytestBatch={(options) => void handleRunPlaytestBatch(options)}
-            onSelectPlaytest={(runId) => void handleSelectPlaytest(runId)}
+            onRunPlaytest={(options: { worldId: string; agentType: string; steps: number; seed: number; saveLoadCheck: boolean }) => void handleRunPlaytest(options)}
+            onRunPlaytestBatch={(options: { worldId: string; agentTypes: string[]; seeds: number[]; steps: number; stopOnBlocker: boolean; saveLoadCheck: boolean }) => void handleRunPlaytestBatch(options)}
+            onSelectPlaytest={(runId: string) => void handleSelectPlaytest(runId)}
             onRefreshPlaytests={() => void refreshPlaytests()}
-            onRunScenarioRegression={(options) => void handleRunScenarioRegression(options)}
-            onSelectScenarioRegression={(runId) => void handleSelectScenarioRegression(runId)}
+            onRunScenarioRegression={(options: { worldId: string; scenarioIds: string[] }) => void handleRunScenarioRegression(options)}
+            onSelectScenarioRegression={(runId: string) => void handleSelectScenarioRegression(runId)}
             onRefreshScenarioRegressions={() => void refreshScenarioRegressions()}
             onRunWorldHealth={() => void handleRunWorldHealth()}
             onRefreshWorldHealth={() => void refreshWorldHealth()}
             onRunContentCoverage={() => void handleRunContentCoverage()}
             onRefreshContentCoverage={() => void refreshContentCoverage()}
-            onNavigate={(nextMode, toolId) => {
+            onToggleKeyboardShortcuts={setKeyboardShortcutsEnabled}
+            onToggleReducedMotion={setReducedMotionEnabled}
+            onOpenShortcutHelp={() => setShortcutHelpOpen(true)}
+            onNavigate={(nextMode: AppMode, toolId?: AuthoringToolId) => {
               if (toolId) {
                 setRequestedAuthoringTool(toolId);
               }
               setMode(nextMode);
             }}
-          />
-        ) : (
-          <WorldWorkspaceShell
+            />
+          ) : (
+            <WorldWorkspaceShell
             visibleState={visibleState}
             sessionId={sessionId}
             debugEnabled={studioStatus?.debug_api_enabled ?? false}
@@ -2466,9 +3414,9 @@ export function App() {
                 <WorldWorkspaceNavigation
                   visibleState={visibleState}
                   debugEnabled={studioStatus?.debug_api_enabled ?? false}
-                  onJump={(targetId) => {
+                  onJump={(targetId: string) => {
                     const target = document.getElementById(targetId);
-                    target?.scrollIntoView({ behavior: "smooth", block: "start" });
+                    target?.scrollIntoView({ behavior: motionSafeScrollBehavior(), block: "start" });
                   }}
                 />
                 <WorldStudioLanding
@@ -2492,6 +3440,14 @@ export function App() {
                     title="Story / Narration"
                     description="Narration renders confirmed backend results. Normal view excludes hidden facts, NPC secrets, raw state_deltas, raw prompts, and API keys."
                   />
+                  {isLoading && (
+                    <LoadingSkeletonPanel
+                      title="World dashboard loading"
+                      detail="Visible_state summary and action status render before large NPC, quest, inventory, module, EventLog, and save lists. No hidden/debug data is shown."
+                      summaryItems={["visible_state", "NPCs", "quests", "inventory", "modules", "timeline"]}
+                      rows={4}
+                    />
+                  )}
                   <div className="story-scroll">
                     {story.map((entry) => (
                       <article className="story-entry" key={entry.id}>
@@ -2567,29 +3523,46 @@ export function App() {
                 </section>
               </>
             }
-          />
-        )}
+            />
+          )}
+        </RouteLoadingBoundary>
       </section>
 
-      <aside className={`debug-panel ${debugOpen ? "open" : "closed"}`}>
-        <button className="debug-toggle" type="button" onClick={() => setDebugOpen(!debugOpen)}>
+      <aside id="debug-panel" className={`debug-panel ${debugOpen ? "open" : "closed"}`}>
+        <button
+          className="debug-toggle"
+          type="button"
+          onClick={() => setDebugOpen(!debugOpen)}
+          aria-label={debugOpen ? "Hide debug drawer" : "Show debug drawer"}
+          aria-expanded={debugOpen}
+          aria-controls="debug-panel"
+        >
           {debugOpen ? "Hide Debug" : "Debug"}
         </button>
 
         {debugOpen && (
-          <div className="debug-content">
+          <RouteLoadingBoundary
+            label="QA / Debug / Replay"
+            onGoHome={() => {
+              setDebugOpen(false);
+              setMode("studio");
+            }}
+          >
+            <div className="debug-content">
             <TimelineReplayPanel
               timeline={timelineReplay}
               source={timelineReplaySource}
               selectedSaveId={selectedSaveId}
               selectedFilter={timelineReplayFilter}
               onFilterChange={setTimelineReplayFilter}
-              onLoadSession={() => void refreshTimelineReplay("session")}
-              onLoadSave={() => void refreshTimelineReplay("save")}
+              onLoadSession={() => void refreshTimelineReplay("session", { force: true })}
+              onLoadSave={() => void refreshTimelineReplay("save", { force: true })}
               onDryRun={() => void handleReplayDryRun()}
               error={timelineReplayError}
               dryRun={timelineReplayDryRun}
               dryRunError={timelineReplayDryRunError}
+              isLoading={timelineReplayLoading}
+              cacheStatus={safeApiCacheStatusByKey.get(activeTimelineReplayCacheKey) ?? null}
               debugEnabled={studioStatus?.debug_api_enabled ?? false}
             />
             <EventLogViewerPanel
@@ -2597,8 +3570,10 @@ export function App() {
               error={timelineError}
               selectedSaveId={selectedSaveId}
               hasSession={Boolean(sessionId)}
-              onLoadSession={() => void refreshTimeline()}
-              onLoadSave={() => void refreshSaveTimeline()}
+              onLoadSession={() => void refreshTimeline(sessionId, { force: true })}
+              onLoadSave={() => void refreshSaveTimeline(selectedSaveId, { force: true })}
+              isLoading={timelineLoading}
+              cacheStatus={safeApiCacheStatusByKey.get(activeTimelineCacheKey) ?? null}
               debugEnabled={studioStatus?.debug_api_enabled ?? false}
             />
             <HiddenLeakReportPanel
@@ -2621,12 +3596,12 @@ export function App() {
             <button type="button" onClick={() => void refreshSaves()} disabled={isLoading}>
               Refresh Saves
             </button>
-            <button type="button" onClick={() => void refreshTimeline()} disabled={!sessionId || isLoading}>
+            <button type="button" onClick={() => void refreshTimeline(sessionId, { force: true })} disabled={!sessionId || isLoading}>
               Refresh Timeline
             </button>
             <button
               type="button"
-              onClick={() => void refreshTimelineReplay("session")}
+              onClick={() => void refreshTimelineReplay("session", { force: true })}
               disabled={!sessionId || isLoading}
             >
               Load Session Replay
@@ -2645,14 +3620,14 @@ export function App() {
             </button>
             <button
               type="button"
-              onClick={() => void refreshSaveTimeline()}
+              onClick={() => void refreshSaveTimeline(selectedSaveId, { force: true })}
               disabled={!selectedSaveId || isLoading}
             >
               Load Save Timeline
             </button>
             <button
               type="button"
-              onClick={() => void refreshTimelineReplay("save")}
+              onClick={() => void refreshTimelineReplay("save", { force: true })}
               disabled={!selectedSaveId || isLoading}
             >
               Load Save Replay
@@ -2771,16 +3746,146 @@ export function App() {
               <pre>{JSON.stringify({ visibleState, saves, lastResponse }, null, 2)}</pre>
             </section>
             </DebugGate>
-          </div>
+            </div>
+          </RouteLoadingBoundary>
         )}
       </aside>
     </main>
+    </KeyboardShortcutsProvider>
+  );
+}
+
+function KeyboardShortcutsProvider({
+  enabled,
+  reducedMotionEnabled,
+  helpOpen,
+  status,
+  onToggleEnabled,
+  onOpenHelp,
+  onCloseHelp,
+  children
+}: {
+  enabled: boolean;
+  reducedMotionEnabled: boolean;
+  helpOpen: boolean;
+  status: string;
+  onToggleEnabled: (enabled: boolean) => void;
+  onOpenHelp: () => void;
+  onCloseHelp: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      className={`keyboard-shortcuts-provider ${reducedMotionEnabled ? "reduced-motion-root" : ""}`}
+      data-v36-keyboard-shortcuts="safe-foundation"
+      data-reduced-motion={reducedMotionEnabled ? "enabled" : "disabled"}
+    >
+      {children}
+      <div className="shortcut-status-region" role="status" aria-live="polite">
+        {status || (enabled ? "Keyboard shortcuts enabled." : "Keyboard shortcuts disabled.")}
+      </div>
+      <button
+        className="shortcut-help-launcher"
+        type="button"
+        onClick={onOpenHelp}
+        aria-haspopup="dialog"
+        aria-expanded={helpOpen}
+        aria-label="Open keyboard shortcuts help"
+      >
+        ?
+      </button>
+      {helpOpen && (
+        <ShortcutHelpDialog
+          enabled={enabled}
+          onToggleEnabled={onToggleEnabled}
+          onClose={onCloseHelp}
+        />
+      )}
+    </div>
+  );
+}
+
+function ShortcutHelpDialog({
+  enabled,
+  onToggleEnabled,
+  onClose
+}: {
+  enabled: boolean;
+  onToggleEnabled: (enabled: boolean) => void;
+  onClose: () => void;
+}) {
+  const titleRef = useRef<HTMLHeadingElement | null>(null);
+  const dialogRef = useRef<HTMLElement | null>(null);
+  useManagedDialogFocus(true, titleRef);
+
+  return (
+    <div className="shortcut-help-backdrop" role="presentation" onMouseDown={(event) => {
+      if (event.target === event.currentTarget) {
+        onClose();
+      }
+    }}>
+      <section
+        className="shortcut-help-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="shortcut-help-title"
+        ref={dialogRef}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            onClose();
+            return;
+          }
+          handleDialogFocusTrap(event, dialogRef.current);
+        }}
+      >
+        <div className="section-heading-row">
+          <div>
+            <h2 id="shortcut-help-title" ref={titleRef} tabIndex={-1}>Keyboard Shortcuts Foundation</h2>
+            <p className="muted">Local UI shortcuts only. Dangerous actions still require visible buttons, validation, dry-run, and confirm.</p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close keyboard shortcut help">
+            Close
+          </button>
+        </div>
+        <label className="checkbox-row shortcut-enable-toggle">
+          <input
+            type="checkbox"
+            checked={enabled}
+            onChange={(event) => onToggleEnabled(event.target.checked)}
+          />
+          Enable keyboard shortcuts on this device
+        </label>
+        <div className="shortcut-help-grid">
+          {KEYBOARD_SHORTCUTS.map((shortcut) => (
+            <article className="shortcut-help-row" key={shortcut.keys}>
+              <kbd>{shortcut.keys}</kbd>
+              <div>
+                <strong>{shortcut.label}</strong>
+                <p className="muted">{shortcut.scope} · {shortcut.safe}</p>
+              </div>
+            </article>
+          ))}
+        </div>
+        <section className="shortcut-safety-note">
+          <h3>Safety constraints</h3>
+          <p className="muted">Keyboard shortcuts do not directly trigger dangerous operations:</p>
+          <div className="chip-list">
+            {SHORTCUT_DANGEROUS_ACTION_BLOCKLIST.map((item) => (
+              <span className="chip" key={item}>{item}</span>
+            ))}
+          </div>
+          <p className="muted">Input fields ignore navigation chords, so typing text or using an IME will not jump between Studios.</p>
+        </section>
+      </section>
+    </div>
   );
 }
 
 function StudioHome({
   status,
   selectedProjectId,
+  selectedWorldId,
   configSummary,
   localConfigSummary,
   localConfigIssues,
@@ -2795,6 +3900,7 @@ function StudioHome({
   backupResult,
   restorePlan,
   backupRestoreError,
+  backupProgress,
   recoveryIssues,
   recoveryPlan,
   recoveryError,
@@ -2803,6 +3909,7 @@ function StudioHome({
   diagnosticsBundlePreview,
   diagnosticsBundleCreateResult,
   diagnosticsBundleError,
+  diagnosticsProgress,
   workspaces,
   workspaceTemplates,
   recentProjects,
@@ -2812,6 +3919,7 @@ function StudioHome({
   selectedNarrativeEval,
   performanceRecent,
   performanceSummary,
+  eventCount,
   playtestReports,
   selectedPlaytest,
   playtestBatchReport,
@@ -2820,6 +3928,9 @@ function StudioHome({
   selectedScenarioRegressionRun,
   worldHealth,
   contentCoverage,
+  safeApiCacheStatuses,
+  keyboardShortcutsEnabled,
+  reducedMotionEnabled,
   error,
   workspaceError,
   workspaceMessage,
@@ -2847,6 +3958,9 @@ function StudioHome({
   onRefreshWorldHealth,
   onRunContentCoverage,
   onRefreshContentCoverage,
+  onToggleKeyboardShortcuts,
+  onToggleReducedMotion,
+  onOpenShortcutHelp,
   onAddWorkspace,
   onCreateWorkspaceFromTemplate,
   onSelectWorkspace,
@@ -2871,6 +3985,7 @@ function StudioHome({
 }: {
   status: StudioStatus | null;
   selectedProjectId: string;
+  selectedWorldId: string;
   configSummary: StudioConfigSummary | null;
   localConfigSummary: LocalConfigSummary | null;
   localConfigIssues: LocalConfigIssue[];
@@ -2885,6 +4000,7 @@ function StudioHome({
   backupResult: BackupCreateResponse | null;
   restorePlan: RestorePlan | null;
   backupRestoreError: string;
+  backupProgress: LocalOperationProgressState;
   recoveryIssues: RecoveryIssue[];
   recoveryPlan: RecoveryPlan | null;
   recoveryError: string;
@@ -2893,6 +4009,7 @@ function StudioHome({
   diagnosticsBundlePreview: DiagnosticsBundlePreview | null;
   diagnosticsBundleCreateResult: DiagnosticsBundleCreateResponse | null;
   diagnosticsBundleError: string;
+  diagnosticsProgress: LocalOperationProgressState;
   workspaces: ProjectWorkspace[];
   workspaceTemplates: WorkspaceTemplate[];
   recentProjects: RecentProjectEntry[];
@@ -2902,6 +4019,7 @@ function StudioHome({
   selectedNarrativeEval: NarrativeEvalReport | null;
   performanceRecent: DebugPerformanceRecentResponse | null;
   performanceSummary: DebugPerformanceSummaryResponse | null;
+  eventCount: number;
   playtestReports: PlaytestReport[];
   selectedPlaytest: PlaytestReport | null;
   playtestBatchReport: PlaytestBatchRun | null;
@@ -2910,6 +4028,9 @@ function StudioHome({
   selectedScenarioRegressionRun: ScenarioRegressionRun | null;
   worldHealth: WorldHealthScore | null;
   contentCoverage: ContentCoverageReport | null;
+  safeApiCacheStatuses: SafeApiCacheStatus[];
+  keyboardShortcutsEnabled: boolean;
+  reducedMotionEnabled: boolean;
   error: string;
   workspaceError: string;
   workspaceMessage: string;
@@ -2950,6 +4071,9 @@ function StudioHome({
   onRefreshWorldHealth: () => void;
   onRunContentCoverage: () => void;
   onRefreshContentCoverage: () => void;
+  onToggleKeyboardShortcuts: (enabled: boolean) => void;
+  onToggleReducedMotion: (enabled: boolean) => void;
+  onOpenShortcutHelp: () => void;
   onAddWorkspace: (path: string, name?: string) => void;
   onCreateWorkspaceFromTemplate: (templateId: WorkspaceTemplateType, path: string, name?: string) => void;
   onSelectWorkspace: (workspaceId: string) => void;
@@ -3031,6 +4155,10 @@ function StudioHome({
         backupPlan={backupPlan}
         configSummary={configSummary}
         localConfigIssues={localConfigIssues}
+        cacheStatuses={[
+          safeApiCacheStatuses.find((status) => status.key === qualityWorldHealthCacheKey(selectedWorldId)) ?? null,
+          safeApiCacheStatuses.find((status) => status.key === qualityContentCoverageCacheKey(selectedWorldId)) ?? null
+        ].filter((status): status is SafeApiCacheStatus => Boolean(status))}
         onRunWorld={onRunWorldHealth}
         onRunNovel={onRunNarrativeEval}
         onRunPlaytest={() =>
@@ -3057,6 +4185,7 @@ function StudioHome({
         preview={diagnosticsBundlePreview}
         createResult={diagnosticsBundleCreateResult}
         error={diagnosticsBundleError}
+        progress={diagnosticsProgress}
         debugEnabled={status?.debug_api_enabled ?? false}
         onPreview={onPreviewDiagnosticsBundleWithOptions}
         onCreate={onCreateDiagnosticsBundle}
@@ -3075,6 +4204,7 @@ function StudioHome({
         diagnosticsPreview={diagnosticsBundlePreview}
         diagnosticsCreateResult={diagnosticsBundleCreateResult}
         error={diagnosticsBundleError}
+        progress={diagnosticsProgress}
         onPreview={onPreviewDiagnosticsBundleWithOptions}
         onCreate={onCreateDiagnosticsBundle}
       />
@@ -3118,6 +4248,7 @@ function StudioHome({
         result={backupResult}
         restorePlan={restorePlan}
         error={backupRestoreError}
+        progress={backupProgress}
         onDryRun={onBackupDryRun}
         onCreate={onCreateBackup}
         onRestoreDryRun={onRestoreDryRun}
@@ -3262,6 +4393,9 @@ function StudioHome({
       <PerformanceDashboard
         recent={performanceRecent}
         summary={performanceSummary}
+        eventCount={eventCount}
+        modelCount={localStudioConfig?.provider_profiles_count ?? 0}
+        playtestBatchReport={playtestBatchReport}
         error={performanceError}
         onRefresh={onRefreshPerformance}
       />
@@ -3287,7 +4421,7 @@ function StudioHome({
         onRefresh={onRefreshScenarioRegressions}
       />
 
-      <SettingsPrivacyPanel
+      <ProviderSettingsPrivacyPanel
         selectedProjectId={selectedProjectId}
         summary={configSummary}
         localConfigSummary={localConfigSummary}
@@ -3295,11 +4429,16 @@ function StudioHome({
         localEnvTemplate={localEnvTemplate}
         currentWorkspace={workspaces.find((workspace) => workspace.workspace_id === currentWorkspaceId) ?? null}
         recentProjectCount={recentProjects.length}
+        keyboardShortcutsEnabled={keyboardShortcutsEnabled}
+        reducedMotionEnabled={reducedMotionEnabled}
         error={configError}
         onSelectPromptProfile={onSelectPromptProfile}
         onRefreshLocalConfig={onRefreshLocalConfig}
         onGenerateLocalEnvTemplate={onGenerateLocalEnvTemplate}
         onClearRecentProjects={onClearRecentProjects}
+        onToggleKeyboardShortcuts={onToggleKeyboardShortcuts}
+        onToggleReducedMotion={onToggleReducedMotion}
+        onOpenShortcutHelp={onOpenShortcutHelp}
       />
 
       <DesktopHealthCheckPanel
@@ -3734,6 +4873,13 @@ function redactReportText(value: string): string {
     .replace(/(hidden[_\s-]?truth|hidden[_\s-]?witness|npc[_\s-]?knowledge|private[_\s-]?notes?)\s*[:=]\s*[^,;\n]+/gi, "$1=[redacted]");
 }
 
+function safeAriaText(value: string): string {
+  const safe = sanitizeDisplayError(redactReportText(value || "local UI status"))
+    .replace(/\s+/g, " ")
+    .trim();
+  return safe || "local UI status";
+}
+
 function parseCsvList(value: string): string[] {
   return value.split(",").map((item) => item.trim()).filter(Boolean);
 }
@@ -3748,18 +4894,36 @@ function parseSeedList(value: string): number[] {
 function PerformanceDashboard({
   recent,
   summary,
+  eventCount,
+  modelCount,
+  playtestBatchReport,
   error,
   onRefresh
 }: {
   recent: DebugPerformanceRecentResponse | null;
   summary: DebugPerformanceSummaryResponse | null;
+  eventCount: number;
+  modelCount: number;
+  playtestBatchReport: PlaytestBatchRun | null;
   error: string;
   onRefresh: () => void;
 }) {
   const [range, setRange] = useState<"all" | "hour" | "day">("all");
+  const [categoryFilter, setCategoryFilter] = useState<PerformanceMetricCategoryFilter>("all");
   const entries = summary?.entries ?? [];
   const samples = useMemo(() => filterPerformanceSamplesByRange(recent?.samples ?? [], range), [range, recent]);
-  const proRows = useMemo(() => buildPerformanceProRows(entries, samples), [entries, samples]);
+  const proRows = useMemo(
+    () => buildPerformanceProRows(entries, samples, { eventCount, modelCount, playtestBatchReport }),
+    [entries, samples, eventCount, modelCount, playtestBatchReport]
+  );
+  const visibleRows = useMemo(
+    () => proRows.filter((row) => categoryFilter === "all" || row.kind === categoryFilter),
+    [categoryFilter, proRows]
+  );
+  const optimizationHints = useMemo(
+    () => sortedUnique(visibleRows.map((row) => row.optimizationHint).filter(Boolean)),
+    [visibleRows]
+  );
   const maxDuration = Math.max(1, ...entries.map((entry) => entry.max_duration_ms));
   const trackedStages = [
     "intent_parse",
@@ -3772,11 +4936,11 @@ function PerformanceDashboard({
   ];
 
   return (
-    <section className="studio-section performance-dashboard">
+    <section className="studio-section performance-dashboard" data-v36-performance-dashboard-polish="local-only">
       <div className="mod-detail-header">
         <div>
-          <h3>Performance Dashboard Pro</h3>
-          <p className="muted">Local samples only. Prompt text, output text, hidden facts, and API keys are not recorded or displayed.</p>
+          <h3>Local Performance Dashboard Polish</h3>
+          <p className="muted">Local samples only. No telemetry upload. No prompt/output full text, hidden facts, or API key values are recorded or displayed.</p>
         </div>
         <button type="button" onClick={onRefresh}>
           Refresh Performance
@@ -3790,6 +4954,14 @@ function PerformanceDashboard({
             <option value="all">All loaded</option>
             <option value="hour">Last hour</option>
             <option value="day">Last day</option>
+          </select>
+        </label>
+        <label>
+          Category
+          <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value as PerformanceMetricCategoryFilter)}>
+            {PERFORMANCE_METRIC_CATEGORY_FILTERS.map((item) => (
+              <option key={item.value} value={item.value}>{item.label}</option>
+            ))}
           </select>
         </label>
       </FilterToolbar>
@@ -3806,18 +4978,28 @@ function PerformanceDashboard({
         <DashboardCard title="Slowest" value={formatDuration(entries[0] ? Math.max(...entries.map((entry) => entry.max_duration_ms)) : undefined)}>
           <p>max observed sample</p>
         </DashboardCard>
+        <DashboardCard title="Event count" value={String(eventCount || eventCountFromSamples(samples))}>
+          <p>safe count only; no raw EventLog payload</p>
+        </DashboardCard>
+        <DashboardCard title="Model count" value={String(modelCount || modelCountFromSamples(samples))}>
+          <p>safe local model metadata count</p>
+        </DashboardCard>
       </div>
 
       <section>
         <h3>Performance Overview</h3>
         <div className="mode-landing-grid">
-          {proRows.map((row) => (
+          {visibleRows.map((row) => (
             <section className="feature-card" key={row.category}>
               <div>
                 <h4>{row.category}</h4>
                 <p className="muted">{row.detail}</p>
               </div>
               <dl className="event-details">
+                <dt>Status</dt>
+                <dd><ValidationStatusBadge status={row.status} /></dd>
+                <dt>Value</dt>
+                <dd>{row.value}</dd>
                 <dt>Average</dt>
                 <dd>{formatDuration(row.averageMs)}</dd>
                 <dt>Max</dt>
@@ -3825,9 +5007,24 @@ function PerformanceDashboard({
                 <dt>Samples</dt>
                 <dd>{row.sampleCount}</dd>
               </dl>
+              <p className="muted">Optimization hint: {row.optimizationHint}</p>
             </section>
           ))}
         </div>
+        {visibleRows.length === 0 && <EmptyState title="No metrics in this category." detail="Try another category or refresh local metrics. No data is uploaded." />}
+      </section>
+
+      <section>
+        <h3>Optimization Hints</h3>
+        {optimizationHints.length ? (
+          <ul className="compact-list">
+            {optimizationHints.map((hint) => (
+              <li key={hint}>{hint}</li>
+            ))}
+          </ul>
+        ) : (
+          <EmptyState title="No optimization hints yet." detail="Load local metrics to see safe performance guidance." />
+        )}
       </section>
 
       <section>
@@ -3880,12 +5077,43 @@ function PerformanceDashboard({
 }
 
 type PerformanceProRow = {
+  kind: Exclude<PerformanceMetricCategoryFilter, "all">;
   category: string;
+  value: string;
+  status: "passed" | "warning" | "failed" | "not_run";
   averageMs?: number;
   maxMs?: number;
   sampleCount: number;
   detail: string;
+  optimizationHint: string;
 };
+
+type PerformanceMetricCategoryFilter =
+  | "all"
+  | "frontend"
+  | "provider"
+  | "quality"
+  | "playtest"
+  | "save_load"
+  | "diagnostics"
+  | "eventlog"
+  | "models"
+  | "backend"
+  | "timeline";
+
+const PERFORMANCE_METRIC_CATEGORY_FILTERS: Array<{ value: PerformanceMetricCategoryFilter; label: string }> = [
+  { value: "all", label: "All categories" },
+  { value: "frontend", label: "Frontend large list warnings" },
+  { value: "provider", label: "Provider latency" },
+  { value: "quality", label: "Quality gate duration" },
+  { value: "playtest", label: "Playtest duration" },
+  { value: "save_load", label: "Save/load duration" },
+  { value: "diagnostics", label: "Diagnostics duration" },
+  { value: "eventlog", label: "Event count" },
+  { value: "models", label: "Model count" },
+  { value: "backend", label: "Backend API duration" },
+  { value: "timeline", label: "Timeline replay duration" }
+];
 
 function filterPerformanceSamplesByRange(samples: DebugPerformanceSample[], range: "all" | "hour" | "day"): DebugPerformanceSample[] {
   if (range === "all") {
@@ -3900,38 +5128,75 @@ function filterPerformanceSamplesByRange(samples: DebugPerformanceSample[], rang
 
 function buildPerformanceProRows(
   entries: DebugPerformanceSummaryResponse["entries"],
-  samples: DebugPerformanceSample[]
+  samples: DebugPerformanceSample[],
+  options: {
+    eventCount: number;
+    modelCount: number;
+    playtestBatchReport: PlaytestBatchRun | null;
+  }
 ): PerformanceProRow[] {
+  const playtestRow = performanceRow("playtest duration", "playtest", entries, samples, ["playtest", "scenario"], "Local automated playtest and scenario regression timing.", "Use shorter seed sets while iterating, then run the full regression pack before release.");
+  if (options.playtestBatchReport) {
+    playtestRow.averageMs = options.playtestBatchReport.performance_summary.average_duration_ms;
+    playtestRow.maxMs = options.playtestBatchReport.performance_summary.max_duration_ms;
+    playtestRow.sampleCount = options.playtestBatchReport.total_runs;
+    playtestRow.value = formatDuration(options.playtestBatchReport.performance_summary.average_duration_ms);
+    playtestRow.status = performanceStatus(options.playtestBatchReport.performance_summary.average_duration_ms, 2500, 8000);
+  }
+  const eventTotal = options.eventCount || eventCountFromSamples(samples);
+  const modelTotal = options.modelCount || modelCountFromSamples(samples);
   return [
-    performanceRow("backend API duration", entries, samples, ["api", "request", "game_loop.step"], "Local backend request and game-loop timing."),
-    performanceRow("save/load duration", entries, samples, ["save", "load", "migration"], "Save/load and migration timing summaries."),
     {
-      category: "event log size",
+      kind: "frontend",
+      category: "frontend large list warnings",
+      value: "9 monitored areas",
+      status: "warning",
       averageMs: undefined,
       maxMs: undefined,
-      sampleCount: samples.reduce((total, sample) => total + Number(sample.tags.event_count ?? 0), 0),
-      detail: "EventLog size is shown as loaded sample event-count metadata when available.",
+      sampleCount: 9,
+      detail: "Tracks EventLog, Timeline, StateDelta, Quality, Hidden Leak, Provider models, Module Browser, Tavern messages, and Novel scene lists.",
+      optimizationHint: "Keep long lists paged or windowed and preserve safe summaries while reviewing bundle/chunk warnings."
     },
-    performanceRow("timeline replay duration", entries, samples, ["timeline", "replay"], "Timeline replay and debug replay timing."),
-    performanceRow("provider call duration", entries, samples, ["provider", "llm", "narrator", "intent_parse"], "Provider Gateway timing only; prompts and outputs are not shown."),
-    performanceRow("quality gate duration", entries, samples, ["quality", "eval", "validation"], "Quality, eval, and validation timing."),
-    performanceRow("playtest duration", entries, samples, ["playtest", "scenario"], "Local automated playtest and scenario regression timing."),
+    performanceRow("backend API duration", "backend", entries, samples, ["api", "request", "game_loop.step"], "Local backend request and game-loop timing.", "Investigate repeated slow backend samples before adding new UI refresh loops."),
+    performanceRow("save/load duration", "save_load", entries, samples, ["save", "load", "migration"], "Save/load and migration timing summaries.", "Use dry-run summaries and avoid rendering raw save JSON when save/load metrics grow."),
     {
-      category: "frontend build/chunk warning summary",
+      kind: "eventlog",
+      category: "event count",
+      value: `${eventTotal} event(s)`,
+      status: eventTotal > 1000 ? "warning" : eventTotal > 0 ? "passed" : "not_run",
       averageMs: undefined,
       maxMs: undefined,
-      sampleCount: 1,
-      detail: "Latest build reports a Vite chunk-size warning; no source maps, prompts, secrets, or hidden data are displayed.",
+      sampleCount: eventTotal,
+      detail: "Event count is shown as a safe aggregate only; raw EventLog payloads and raw state_deltas stay out of normal performance UI.",
+      optimizationHint: "Use EventLog and Timeline windowing when counts climb above local review thresholds."
+    },
+    performanceRow("timeline replay duration", "timeline", entries, samples, ["timeline", "replay"], "Timeline replay and debug replay timing.", "Prefer jump-to-turn and range filters for long replays."),
+    performanceRow("provider latency", "provider", entries, samples, ["provider", "llm", "narrator", "intent_parse", "model"], "Provider Gateway latency only; prompts and outputs are not shown.", "Check base URL, local model service status, fallback chain, and timeout settings when latency spikes."),
+    performanceRow("quality gate duration", "quality", entries, samples, ["quality", "eval", "validation"], "Quality, eval, validation, and gate timing.", "Group large reports by category and keep blockers visible without rendering every issue at once."),
+    playtestRow,
+    performanceRow("diagnostics duration", "diagnostics", entries, samples, ["diagnostic", "diagnostics", "bundle", "debug_export"], "Diagnostics, backup preview, and safe debug export timing.", "Keep diagnostics preview-first and show progress steps for large local bundles."),
+    {
+      kind: "models",
+      category: "model count",
+      value: `${modelTotal} model/profile item(s)`,
+      status: modelTotal > 500 ? "warning" : modelTotal > 0 ? "passed" : "not_run",
+      averageMs: undefined,
+      maxMs: undefined,
+      sampleCount: modelTotal,
+      detail: "Model count uses safe local metadata only. API keys, Authorization headers, and raw provider responses are excluded.",
+      optimizationHint: "Use provider model list filtering and pagination for large OpenAI-compatible or local model catalogs."
     },
   ];
 }
 
 function performanceRow(
   category: string,
+  kind: Exclude<PerformanceMetricCategoryFilter, "all">,
   entries: DebugPerformanceSummaryResponse["entries"],
   samples: DebugPerformanceSample[],
   tokens: string[],
-  detail: string
+  detail: string,
+  optimizationHint: string
 ): PerformanceProRow {
   const matchingEntries = entries.filter((entry) => tokens.some((token) => entry.name.toLowerCase().includes(token)));
   const matchingSamples = samples.filter((sample) => tokens.some((token) => sample.name.toLowerCase().includes(token) || Object.keys(sample.tags).some((tag) => tag.toLowerCase().includes(token))));
@@ -3946,11 +5211,40 @@ function performanceRow(
     : matchingSamples.length
       ? Math.max(...matchingSamples.map((sample) => sample.duration_ms))
       : undefined;
-  return { category, averageMs, maxMs, sampleCount: count, detail };
+  return {
+    kind,
+    category,
+    value: typeof averageMs === "number" ? formatDuration(averageMs) : "no local metric",
+    status: typeof averageMs === "number" ? performanceStatus(averageMs) : "not_run",
+    averageMs,
+    maxMs,
+    sampleCount: count,
+    detail,
+    optimizationHint
+  };
 }
 
 function findPerfEntry(entries: DebugPerformanceSummaryResponse["entries"], name: string) {
   return entries.find((entry) => entry.name === name);
+}
+
+function performanceStatus(durationMs: number, warningMs = 1000, failedMs = 5000): "passed" | "warning" | "failed" {
+  if (durationMs >= failedMs) return "failed";
+  if (durationMs >= warningMs) return "warning";
+  return "passed";
+}
+
+function eventCountFromSamples(samples: DebugPerformanceSample[]): number {
+  return samples.reduce((total, sample) => total + safeNumberFromRecord(sample.tags, "event_count"), 0);
+}
+
+function modelCountFromSamples(samples: DebugPerformanceSample[]): number {
+  return samples.reduce((total, sample) => Math.max(total, safeNumberFromRecord(sample.tags, "model_count")), 0);
+}
+
+function safeNumberFromRecord(record: Record<string, string>, key: string): number {
+  const value = Number(record[key]);
+  return Number.isFinite(value) && value > 0 ? value : 0;
 }
 
 function PlaytestingDashboard({
@@ -4492,6 +5786,8 @@ function PromptLabPage({
   const [providerStatus, setProviderStatus] = useState<Record<string, unknown> | null>(null);
   const [providerStatusById, setProviderStatusById] = useState<Record<string, Record<string, unknown>>>({});
   const [providerLastTestedById, setProviderLastTestedById] = useState<Record<string, string>>({});
+  const [providerMetadataLoading, setProviderMetadataLoading] = useState(false);
+  const [providerSafeCacheStatuses, setProviderSafeCacheStatuses] = useState<SafeApiCacheStatus[]>(() => getSafeApiCacheStatuses().filter((status) => status.scope === "provider"));
   const [modelAssignmentOpen, setModelAssignmentOpen] = useState(false);
   const [providerValidation, setProviderValidation] = useState<string>("");
   const [providerDraft, setProviderDraft] = useState<ProviderProfileDraft>({
@@ -4522,6 +5818,10 @@ function PromptLabPage({
   const leftProfile = profiles[0] ? { id: profiles[0].id, hidden_fact_policy: "deny", state_modification_policy: "deny" } : {};
   const rightProfile = profiles[1] ? { id: profiles[1].id, hidden_fact_policy: "deny", state_modification_policy: "deny" } : leftProfile;
 
+  function syncProviderSafeCacheStatuses() {
+    setProviderSafeCacheStatuses(getSafeApiCacheStatuses().filter((status) => status.scope === "provider"));
+  }
+
   async function loadProjectUsage() {
     const [summaryResult, recentResult, byModeResult, byProviderResult] = await Promise.all([
       fetchProjectProviderUsageSummary(projectId, usageRange),
@@ -4535,13 +5835,35 @@ function PromptLabPage({
     setUsageByProvider(byProviderResult.by_provider);
   }
 
-  async function loadProviderProfiles() {
-    const [profilesResult, matrixResult] = await Promise.all([
-      fetchProjectProviders(projectId),
-      fetchProjectProviderCapabilityMatrix(projectId)
-    ]);
-    setProviderProfiles(profilesResult.providers);
-    setProviderCapabilityMatrix(matrixResult.matrix);
+  async function loadProviderProfiles(force = false) {
+    const cacheKey = providerModelListCacheKey(projectId);
+    const cached = readSafeApiCache<ReturnType<typeof buildProviderModelListSafeCacheSummary>>(cacheKey);
+    if (!force && cached && !cached.stale && providerProfiles.length > 0 && providerCapabilityMatrix) {
+      syncProviderSafeCacheStatuses();
+      return;
+    }
+    setProviderMetadataLoading(true);
+    try {
+      const [profilesResult, matrixResult] = await Promise.all([
+        fetchProjectProviders(projectId),
+        fetchProjectProviderCapabilityMatrix(projectId)
+      ]);
+      setProviderProfiles(profilesResult.providers);
+      setProviderCapabilityMatrix(matrixResult.matrix);
+      const summary = buildProviderModelListSafeCacheSummary(projectId, profilesResult.providers, matrixResult.matrix);
+      writeSafeApiCache(cacheKey, "Provider model list safe summary", "provider", summary, {
+        staleAfterMs: SAFE_API_CACHE_PROVIDER_TTL_MS,
+        summary: `${summary.provider_count} provider(s), ${summary.model_count} safe ModelProfile row(s).`,
+        itemCount: summary.model_count
+      });
+      syncProviderSafeCacheStatuses();
+    } catch (err) {
+      markSafeApiCacheFailed(cacheKey, "Provider model list safe summary", "provider", err);
+      syncProviderSafeCacheStatuses();
+      throw err;
+    } finally {
+      setProviderMetadataLoading(false);
+    }
   }
 
   async function saveProviderProfile(event: FormEvent) {
@@ -4571,11 +5893,59 @@ function PromptLabPage({
     setProviderLastTestedById((current) => ({ ...current, [profileId]: new Date().toISOString() }));
   }
 
-  async function loadProviderStatus(profileId: string) {
-    const result = await fetchProjectProviderStatus(projectId, profileId);
-    setProviderStatus(result.status);
-    setProviderStatusById((current) => ({ ...current, [profileId]: result.status }));
-    setProviderLastTestedById((current) => ({ ...current, [profileId]: new Date().toISOString() }));
+  async function loadProviderStatus(profileId: string, force = false) {
+    const cacheKey = providerStatusCacheKey(projectId, profileId);
+    const cached = readSafeApiCache<ReturnType<typeof buildProviderStatusSafeCacheValue>>(cacheKey);
+    if (!force && cached && !cached.stale) {
+      setProviderStatus(cached.value);
+      setProviderStatusById((current) => ({ ...current, [profileId]: cached.value }));
+      if (typeof cached.value.tested_at === "string") {
+        setProviderLastTestedById((current) => ({ ...current, [profileId]: cached.value.tested_at as string }));
+      }
+      syncProviderSafeCacheStatuses();
+      return;
+    }
+    try {
+      const result = await fetchProjectProviderStatus(projectId, profileId);
+      const statusPayload = (result.connection_cache ?? (typeof result.status === "string" ? { status: result.status } : result.status)) as Record<string, unknown>;
+      const safeCacheValue = buildProviderStatusSafeCacheValue(profileId, statusPayload);
+      setProviderStatus(safeCacheValue);
+      setProviderStatusById((current) => ({ ...current, [profileId]: safeCacheValue }));
+      if (typeof safeCacheValue.tested_at === "string") {
+        setProviderLastTestedById((current) => ({ ...current, [profileId]: safeCacheValue.tested_at as string }));
+      }
+      writeSafeApiCache(cacheKey, `Provider status safe summary: ${profileId}`, "provider", safeCacheValue, {
+        staleAfterMs: SAFE_API_CACHE_PROVIDER_TTL_MS,
+        summary: `${profileId} status ${safeCacheValue.status}; manual refresh available.`,
+        itemCount: typeof safeCacheValue.model_count === "number" ? safeCacheValue.model_count : undefined
+      });
+      syncProviderSafeCacheStatuses();
+    } catch (err) {
+      markSafeApiCacheFailed(cacheKey, `Provider status safe summary: ${profileId}`, "provider", err);
+      syncProviderSafeCacheStatuses();
+      throw err;
+    }
+  }
+
+  async function refreshProviderConnection(profileId: string) {
+    const cacheKey = providerStatusCacheKey(projectId, profileId);
+    try {
+      const status = await testProjectProviderConnection(projectId, profileId);
+      const cacheView = buildProviderStatusSafeCacheValue(profileId, status as unknown as Record<string, unknown>);
+      setProviderStatus(cacheView);
+      setProviderStatusById((current) => ({ ...current, [profileId]: cacheView }));
+      setProviderLastTestedById((current) => ({ ...current, [profileId]: status.tested_at }));
+      writeSafeApiCache(cacheKey, `Provider status safe summary: ${profileId}`, "provider", cacheView, {
+        staleAfterMs: SAFE_API_CACHE_PROVIDER_TTL_MS,
+        summary: `${profileId} connection ${status.status}; redaction applied ${status.redaction_applied ? "yes" : "no"}.`,
+        itemCount: undefined
+      });
+      syncProviderSafeCacheStatuses();
+    } catch (err) {
+      markSafeApiCacheFailed(cacheKey, `Provider status safe summary: ${profileId}`, "provider", err);
+      syncProviderSafeCacheStatuses();
+      throw err;
+    }
   }
 
   return (
@@ -4605,16 +5975,21 @@ function PromptLabPage({
         matrix={providerCapabilityMatrix}
         statusById={providerStatusById}
         lastTestedById={providerLastTestedById}
+        usageSummary={projectUsageSummary}
+        recentUsage={projectRecentUsage}
+        usageByProvider={usageByProvider}
         modelAssignmentOpen={modelAssignmentOpen}
+        isLoading={providerMetadataLoading}
+        cacheStatuses={providerSafeCacheStatuses}
         onTestConnection={(profileId) => void runLabAction(async () => {
           await validateProvider(profileId);
-          await loadProviderStatus(profileId);
+          await refreshProviderConnection(profileId);
         })}
-        onFetchModels={() => void runLabAction(loadProviderProfiles)}
-        onRefreshModels={() => void runLabAction(loadProviderProfiles)}
+        onFetchModels={() => void runLabAction(() => loadProviderProfiles(false))}
+        onRefreshModels={() => void runLabAction(() => loadProviderProfiles(true))}
         onOpenModelAssignment={() => setModelAssignmentOpen((open) => !open)}
         onOpenProviderSetup={() => {
-          document.querySelector(".provider-profile-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
+          document.querySelector(".provider-profile-form")?.scrollIntoView({ behavior: motionSafeScrollBehavior(), block: "start" });
         }}
       />
 
@@ -4648,7 +6023,7 @@ function PromptLabPage({
             <h4>Provider Profiles</h4>
             <p className="muted">Provider Setup for project-local provider profiles. API keys are never entered here; use env vars or local secret refs only.</p>
           </div>
-          <button type="button" onClick={() => void runLabAction(loadProviderProfiles)}>
+          <button type="button" onClick={() => void runLabAction(() => loadProviderProfiles(true))}>
             Load Profiles
           </button>
         </div>
@@ -4757,22 +6132,14 @@ function PromptLabPage({
                 <button type="button" onClick={() => void runLabAction(async () => validateProvider(profile.provider_profile_id))}>
                   Validate
                 </button>
-                <button type="button" onClick={() => void runLabAction(async () => loadProviderStatus(profile.provider_profile_id))}>
+                <button type="button" onClick={() => void runLabAction(async () => loadProviderStatus(profile.provider_profile_id, true))}>
                   Status
                 </button>
               </span>
             ))}
           />
-          <ItemList
-            emptyText="No capability matrix loaded."
-            items={(providerCapabilityMatrix?.rows ?? []).map((row) => (
-              <span key={`${row.provider_profile_id}-${row.model_id}`}>
-                {row.provider_profile_id}/{row.model_id}: {row.recommended_use_cases.join(", ") || "no use cases"}
-                {row.warnings.length ? ` - warnings ${row.warnings.length}` : ""}
-              </span>
-            ))}
-          />
         </div>
+        <ProviderCapabilityMatrixPanel matrix={providerCapabilityMatrix} profiles={providerProfiles} />
         {providerStatus ? <SafeJSON value={providerStatus} /> : null}
       </section>
 
@@ -5036,11 +6403,16 @@ function SettingsPrivacyPanel({
   localEnvTemplate,
   currentWorkspace,
   recentProjectCount = 0,
+  keyboardShortcutsEnabled = true,
+  reducedMotionEnabled = systemPrefersReducedMotion(),
   error,
   onSelectPromptProfile,
   onRefreshLocalConfig = () => undefined,
   onGenerateLocalEnvTemplate = () => undefined,
   onClearRecentProjects = () => undefined,
+  onToggleKeyboardShortcuts = () => undefined,
+  onToggleReducedMotion = () => undefined,
+  onOpenShortcutHelp = () => undefined,
   promptLabOnly = false
 }: {
   selectedProjectId?: string;
@@ -5050,11 +6422,16 @@ function SettingsPrivacyPanel({
   localEnvTemplate?: LocalEnvTemplateResponse | null;
   currentWorkspace?: ProjectWorkspace | null;
   recentProjectCount?: number;
+  keyboardShortcutsEnabled?: boolean;
+  reducedMotionEnabled?: boolean;
   error: string;
   onSelectPromptProfile: (profileId: string) => void;
   onRefreshLocalConfig?: () => void;
   onGenerateLocalEnvTemplate?: () => void;
   onClearRecentProjects?: () => void;
+  onToggleKeyboardShortcuts?: (enabled: boolean) => void;
+  onToggleReducedMotion?: (enabled: boolean) => void;
+  onOpenShortcutHelp?: () => void;
   promptLabOnly?: boolean;
 }) {
   const [profileAId, setProfileAId] = useState<string>("");
@@ -5387,7 +6764,7 @@ function SettingsPrivacyPanel({
             <section className="studio-section">
               <h4>Settings / Preferences Sections</h4>
               <div className="mode-landing-grid">
-                {["General", "Local Privacy", "Providers", "Export", "Debug", "Backup / Restore", "Diagnostics", "Mature Module", "UI Preferences", "Quality Gate"].map((section) => (
+                {["General", "Local Privacy", "Providers", "Export", "Debug", "Backup / Restore", "Diagnostics", "Mature Module", "UI Preferences", "Keyboard Shortcuts", "Quality Gate"].map((section) => (
                   <FeatureCard key={section} title={section} detail="Local desktop preference summary; no account, cloud sync, online marketplace, raw env, or API key values." />
                 ))}
               </div>
@@ -5512,6 +6889,25 @@ function SettingsPrivacyPanel({
                   />
                   Show redaction badges
                 </label>
+                <label className="checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={keyboardShortcutsEnabled}
+                    onChange={(event) => onToggleKeyboardShortcuts(event.target.checked)}
+                  />
+                  Enable safe keyboard shortcuts
+                </label>
+                <label className="checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={reducedMotionEnabled}
+                    onChange={(event) => onToggleReducedMotion(event.target.checked)}
+                  />
+                  Reduce non-essential motion
+                </label>
+                <button type="button" onClick={onOpenShortcutHelp}>
+                  View Keyboard Shortcuts
+                </button>
               </div>
               <div className="studio-columns">
                 <section>
@@ -5533,6 +6929,7 @@ function SettingsPrivacyPanel({
               <div className="privacy-note-grid">
                 <p>{showRedactionBadges ? "Redaction active: API keys, raw env, raw prompts, hidden facts, and full sensitive paths are not displayed." : "Redaction is always active even when badges are hidden."}</p>
                 <p>{compactDisplay ? "Compact display preference is local UI state only." : "Standard display preference is local UI state only."}</p>
+                <p>{reducedMotionEnabled ? "Reduced motion is enabled for this local browser. Replay, overlays, and non-essential transitions are simplified." : "Reduced motion follows this local browser preference unless you enable it here."}</p>
               </div>
               {!promptLabOnly && (
                 <section className="studio-section">
@@ -6256,13 +7653,274 @@ function modelIdsForRouting(capabilities: ProviderCapabilityCatalog | null, prov
   return Array.from(options);
 }
 type ProviderConnectivityStatus = (typeof PROVIDER_CONNECTIVITY_STATUSES)[number];
+type ProviderModelCapabilityFilter = "all" | "supports_text" | "supports_json" | "supports_streaming" | "supports_tools";
+type ProviderModelEnabledFilter = "all" | "enabled" | "disabled";
+const PROVIDER_HIGH_LATENCY_MS = 8000;
+const PROVIDER_AVERAGE_LATENCY_WARNING_MS = 4000;
+const PROVIDER_HIGH_ERROR_RATE = 0.2;
+const PROVIDER_TIMEOUT_REPEAT_COUNT = 2;
+const SLOW_PROVIDER_SAFE_ACTIONS = [
+  "check base URL",
+  "check local model service",
+  "check provider status",
+  "use another model/fallback",
+  "increase timeout cautiously"
+];
+type ProviderModelListRow = {
+  id: string;
+  providerId: string;
+  providerName: string;
+  providerType: string;
+  modelId: string;
+  displayName: string;
+  enabled: boolean;
+  supportsText: boolean;
+  supportsJson: boolean;
+  supportsStreaming: boolean;
+  supportsTools: boolean;
+  recommendedUseCases: string[];
+  warnings: string[];
+};
+type ProviderConnectivityRow = {
+  providerId: string;
+  displayName: string;
+  providerType: string;
+  connectionStatus: ProviderConnectivityStatus;
+  modelCount: number;
+  lastTestedTime: string;
+  cacheState: string;
+  stale: boolean;
+  latencyMs?: number;
+  latencyLabel: string;
+  safeErrorType: string;
+  allowedModes: string[];
+  defaultModel: string;
+  warnings: string[];
+};
+type SlowProviderWarning = {
+  id: string;
+  kind: "high_latency" | "repeated_timeout" | "model_list_slow" | "high_error_rate";
+  severity: "warning" | "failed";
+  source: string;
+  safeSummary: string;
+  suggestedActions: string[];
+};
+type ProviderCapabilityMatrixFilter = "all" | "supports_text" | "supports_json" | "supports_streaming" | "supports_tools";
+type ProviderCapabilityMatrixSafeRow = {
+  id: string;
+  providerId: string;
+  providerName: string;
+  modelId: string;
+  supportsText: boolean;
+  supportsJson: boolean;
+  supportsStreaming: boolean;
+  supportsTools: boolean;
+  recommendedUseCases: string[];
+  warnings: string[];
+  disabledReasons: string[];
+};
+type ProviderCapabilityMatrixSafeSummary = {
+  generatedAt: string;
+  rowCount: number;
+  providerCount: number;
+  warningCount: number;
+  blockerCount: number;
+  providers: Array<{ providerId: string; providerName: string; rowCount: number; warningCount: number; blockerCount: number }>;
+  useCases: string[];
+  rows: ProviderCapabilityMatrixSafeRow[];
+};
+
+function ProviderCapabilityMatrixPanel({
+  matrix,
+  profiles
+}: {
+  matrix: ProviderModelCapabilityMatrix | null;
+  profiles: ProviderProfileSummary[];
+}) {
+  const matrixSafeSummary = useMemo(() => buildProviderCapabilityMatrixSafeSummary(matrix, profiles), [matrix, profiles]);
+  const [providerFilter, setProviderFilter] = useState("all");
+  const [capabilityFilter, setCapabilityFilter] = useState<ProviderCapabilityMatrixFilter>("all");
+  const [useCaseFilter, setUseCaseFilter] = useState("all");
+  const [matrixPageSize, setMatrixPageSize] = useState(25);
+  const [matrixPageIndex, setMatrixPageIndex] = useState(0);
+  const [collapsedMatrixProviders, setCollapsedMatrixProviders] = useState<Set<string>>(() => new Set());
+
+  const filteredMatrixRows = useMemo(
+    () =>
+      matrixSafeSummary.rows.filter((row) => {
+        if (providerFilter !== "all" && row.providerId !== providerFilter) {
+          return false;
+        }
+        if (capabilityFilter !== "all" && !capabilityMatrixRowSupports(row, capabilityFilter)) {
+          return false;
+        }
+        if (useCaseFilter !== "all" && !row.recommendedUseCases.includes(useCaseFilter)) {
+          return false;
+        }
+        return true;
+      }),
+    [capabilityFilter, matrixSafeSummary.rows, providerFilter, useCaseFilter]
+  );
+  const matrixPageCount = Math.max(1, Math.ceil(filteredMatrixRows.length / matrixPageSize));
+  const clampedMatrixPageIndex = Math.min(matrixPageIndex, matrixPageCount - 1);
+  const matrixWindowStart = clampedMatrixPageIndex * matrixPageSize;
+  const matrixWindowEnd = Math.min(matrixWindowStart + matrixPageSize, filteredMatrixRows.length);
+  const visibleMatrixRows = filteredMatrixRows.slice(matrixWindowStart, matrixWindowEnd);
+  const matrixRowsByProvider = useMemo(() => groupCapabilityMatrixRowsByProvider(visibleMatrixRows), [visibleMatrixRows]);
+  const warningSummaryByRowId = useMemo(
+    () => new Map(matrixSafeSummary.rows.map((row) => [row.id, [...row.warnings, ...row.disabledReasons].join("; ")])),
+    [matrixSafeSummary.rows]
+  );
+
+  useEffect(() => {
+    setMatrixPageIndex(0);
+  }, [capabilityFilter, matrixPageSize, providerFilter, useCaseFilter]);
+
+  useEffect(() => {
+    if (matrixPageIndex > matrixPageCount - 1) {
+      setMatrixPageIndex(matrixPageCount - 1);
+    }
+  }, [matrixPageCount, matrixPageIndex]);
+
+  function toggleCollapsedCapabilityProvider(providerId: string, open: boolean) {
+    setCollapsedMatrixProviders((current) => {
+      const next = new Set(current);
+      if (open) {
+        next.delete(providerId);
+      } else {
+        next.add(providerId);
+      }
+      return next;
+    });
+  }
+
+  return (
+    <section className="section-card capability-matrix-panel" data-windowed-capability-matrix="true">
+      <div className="authoring-pane-header">
+        <div>
+          <h4>Capability Matrix</h4>
+          <p className="muted">Cached safe summary of provider/model capability metadata. Raw provider metadata and API keys are not rendered.</p>
+        </div>
+        <span className="badge">{matrixSafeSummary.rowCount} matrix rows</span>
+      </div>
+      <div className="timeline-summary">
+        <span>{matrixSafeSummary.providerCount} providers</span>
+        <span>{matrixSafeSummary.warningCount} warnings</span>
+        <span>{matrixSafeSummary.blockerCount} blockers</span>
+        <span>Generated {matrixSafeSummary.generatedAt || "not loaded"}</span>
+      </div>
+      <FilterToolbar>
+        <label>
+          Provider
+          <select value={providerFilter} onChange={(event) => setProviderFilter(event.target.value)}>
+            <option value="all">All providers</option>
+            {matrixSafeSummary.providers.map((provider) => (
+              <option key={provider.providerId} value={provider.providerId}>
+                {provider.providerName} ({provider.rowCount})
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Capability
+          <select value={capabilityFilter} onChange={(event) => setCapabilityFilter(event.target.value as ProviderCapabilityMatrixFilter)}>
+            <option value="all">All capabilities</option>
+            <option value="supports_text">supports_text</option>
+            <option value="supports_json">supports_json</option>
+            <option value="supports_streaming">supports_streaming</option>
+            <option value="supports_tools">supports_tools</option>
+          </select>
+        </label>
+        <label>
+          Use case
+          <select value={useCaseFilter} onChange={(event) => setUseCaseFilter(event.target.value)}>
+            <option value="all">All use cases</option>
+            {matrixSafeSummary.useCases.map((useCase) => (
+              <option key={useCase} value={useCase}>
+                {useCase}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Rows
+          <select value={matrixPageSize} onChange={(event) => setMatrixPageSize(Number(event.target.value))}>
+            {[10, 25, 50, 100].map((size) => (
+              <option key={size} value={size}>
+                {size}
+              </option>
+            ))}
+          </select>
+        </label>
+      </FilterToolbar>
+      {!matrix ? (
+        <EmptyState title="No capability matrix loaded." detail="Load provider profiles to build a local safe capability matrix summary." />
+      ) : filteredMatrixRows.length === 0 ? (
+        <EmptyState title="No matrix rows match these filters." detail="Try a different provider, capability, or use case. Warnings are preserved when rows match." />
+      ) : (
+        <>
+          <div className="section-heading-row">
+            <p className="muted">
+              Rendering {matrixWindowStart + 1}-{matrixWindowEnd} of {filteredMatrixRows.length} filtered matrix row(s). {filteredMatrixRows.length - visibleMatrixRows.length} filtered row(s) remain outside the current DOM window.
+            </p>
+            <div className="pagination-controls" aria-label="Capability matrix pagination">
+              <button type="button" onClick={() => setMatrixPageIndex(0)} disabled={clampedMatrixPageIndex === 0}>First</button>
+              <button type="button" onClick={() => setMatrixPageIndex(Math.max(clampedMatrixPageIndex - 1, 0))} disabled={clampedMatrixPageIndex === 0}>Previous</button>
+              <span>Page {clampedMatrixPageIndex + 1} / {matrixPageCount}</span>
+              <button type="button" onClick={() => setMatrixPageIndex(Math.min(clampedMatrixPageIndex + 1, matrixPageCount - 1))} disabled={clampedMatrixPageIndex >= matrixPageCount - 1}>Next</button>
+              <button type="button" onClick={() => setMatrixPageIndex(matrixPageCount - 1)} disabled={clampedMatrixPageIndex >= matrixPageCount - 1}>Last</button>
+            </div>
+          </div>
+          <div className="capability-matrix-window" data-rendered-count={visibleMatrixRows.length}>
+            {matrixRowsByProvider.map((group) => (
+              <details
+                className="capability-matrix-provider-group"
+                key={group.providerId}
+                open={!collapsedMatrixProviders.has(group.providerId)}
+                onToggle={(event) => toggleCollapsedCapabilityProvider(group.providerId, event.currentTarget.open)}
+              >
+                <summary>
+                  <span>{group.providerName}</span>
+                  <span>{group.rows.length} visible rows</span>
+                  <span>{group.warningCount} warnings</span>
+                  <span>{group.blockerCount} blockers</span>
+                </summary>
+                {group.rows.map((row) => (
+                  <article className="capability-matrix-row" key={row.id}>
+                    <div>
+                      <strong>{row.modelId}</strong>
+                      <p className="muted">{row.providerId}</p>
+                    </div>
+                    <div className="provider-model-capability-badges">
+                      <ModelCapabilityBadge label="text" supported={row.supportsText} />
+                      <ModelCapabilityBadge label="json" supported={row.supportsJson} />
+                      <ModelCapabilityBadge label="streaming" supported={row.supportsStreaming} />
+                      <ModelCapabilityBadge label="tools" supported={row.supportsTools} />
+                    </div>
+                    <p className="muted">{row.recommendedUseCases.join(", ") || "No recommended use cases."}</p>
+                    <p className="muted">{warningSummaryByRowId.get(row.id) || "No warnings."}</p>
+                  </article>
+                ))}
+              </details>
+            ))}
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
 
 function ProviderConnectivityDashboard({
   profiles,
   matrix,
   statusById,
   lastTestedById,
+  usageSummary,
+  recentUsage,
+  usageByProvider,
   modelAssignmentOpen,
+  isLoading,
+  cacheStatuses,
   onTestConnection,
   onFetchModels,
   onRefreshModels,
@@ -6273,7 +7931,12 @@ function ProviderConnectivityDashboard({
   matrix: ProviderModelCapabilityMatrix | null;
   statusById: Record<string, Record<string, unknown>>;
   lastTestedById: Record<string, string>;
+  usageSummary: ModelUsageSummary | null;
+  recentUsage: ModelUsageRecord[];
+  usageByProvider: CostLatencyGroupSummary[];
   modelAssignmentOpen: boolean;
+  isLoading: boolean;
+  cacheStatuses: SafeApiCacheStatus[];
   onTestConnection: (profileId: string) => void;
   onFetchModels: () => void;
   onRefreshModels: () => void;
@@ -6281,6 +7944,94 @@ function ProviderConnectivityDashboard({
   onOpenProviderSetup: () => void;
 }) {
   const rows = useMemo(() => profiles.map((profile) => buildProviderConnectivityRow(profile, matrix, statusById[profile.provider_profile_id], lastTestedById[profile.provider_profile_id])), [lastTestedById, matrix, profiles, statusById]);
+  const slowWarnings = useMemo(
+    () => buildSlowProviderWarnings(rows, usageSummary, recentUsage, usageByProvider),
+    [recentUsage, rows, usageByProvider, usageSummary]
+  );
+  const [modelSearch, setModelSearch] = useState("");
+  const debouncedModelSearch = useDebouncedValue(modelSearch, 220);
+  const [modelCapabilityFilter, setModelCapabilityFilter] = useState<ProviderModelCapabilityFilter>("all");
+  const [modelEnabledFilter, setModelEnabledFilter] = useState<ProviderModelEnabledFilter>("all");
+  const [modelUseCaseFilter, setModelUseCaseFilter] = useState("all");
+  const [modelPageSize, setModelPageSize] = useState(25);
+  const [modelPageIndex, setModelPageIndex] = useState(0);
+  const modelRows = useMemo(() => buildProviderModelListRows(profiles, matrix), [matrix, profiles]);
+  const modelUseCaseOptions = useMemo(
+    () => Array.from(new Set(modelRows.flatMap((row) => row.recommendedUseCases))).sort((a, b) => a.localeCompare(b)),
+    [modelRows]
+  );
+  const capabilityBadgesByModelId = useMemo(
+    () =>
+      new Map(
+        modelRows.map((row) => [
+          row.id,
+          (
+            <>
+              <ModelCapabilityBadge label="text" supported={row.supportsText} />
+              <ModelCapabilityBadge label="json" supported={row.supportsJson} />
+              <ModelCapabilityBadge label="streaming" supported={row.supportsStreaming} />
+              <ModelCapabilityBadge label="tools" supported={row.supportsTools} />
+            </>
+          )
+        ])
+      ),
+    [modelRows]
+  );
+  const modelSearchIndexByRowId = useMemo(
+    () =>
+      new Map(
+        modelRows.map((row) => [
+          row.id,
+          buildSafeSearchIndex([
+            row.providerId,
+            row.providerName,
+            row.providerType,
+            row.modelId,
+            row.displayName,
+            row.recommendedUseCases.join(" "),
+            row.warnings.join(" ")
+          ])
+        ])
+      ),
+    [modelRows]
+  );
+  const filteredModelRows = useMemo(() => {
+    const query = debouncedModelSearch.trim();
+    return modelRows.filter((row) => {
+      if (modelCapabilityFilter !== "all" && !providerModelSupportsCapability(row, modelCapabilityFilter)) {
+        return false;
+      }
+      if (modelEnabledFilter === "enabled" && !row.enabled) {
+        return false;
+      }
+      if (modelEnabledFilter === "disabled" && row.enabled) {
+        return false;
+      }
+      if (modelUseCaseFilter !== "all" && !row.recommendedUseCases.includes(modelUseCaseFilter)) {
+        return false;
+      }
+      if (!query) {
+        return true;
+      }
+      return safeSearchMatches(modelSearchIndexByRowId.get(row.id) ?? "", query);
+    });
+  }, [debouncedModelSearch, modelCapabilityFilter, modelEnabledFilter, modelRows, modelSearchIndexByRowId, modelUseCaseFilter]);
+  const modelPageCount = Math.max(1, Math.ceil(filteredModelRows.length / modelPageSize));
+  const clampedModelPageIndex = Math.min(modelPageIndex, modelPageCount - 1);
+  const modelWindowStart = clampedModelPageIndex * modelPageSize;
+  const modelWindowEnd = Math.min(modelWindowStart + modelPageSize, filteredModelRows.length);
+  const visibleModelRows = filteredModelRows.slice(modelWindowStart, modelWindowEnd);
+
+  useEffect(() => {
+    setModelPageIndex(0);
+  }, [debouncedModelSearch, modelCapabilityFilter, modelEnabledFilter, modelPageSize, modelUseCaseFilter]);
+
+  useEffect(() => {
+    if (modelPageIndex > modelPageCount - 1) {
+      setModelPageIndex(modelPageCount - 1);
+    }
+  }, [modelPageCount, modelPageIndex]);
+
   return (
     <section className="studio-section provider-connectivity-dashboard">
       <div className="authoring-pane-header">
@@ -6295,9 +8046,24 @@ function ProviderConnectivityDashboard({
           <button type="button" onClick={onOpenProviderSetup}>Open Provider Setup</button>
         </div>
       </div>
-      {rows.length === 0 ? (
+      {isLoading && (
+        <LoadingSkeletonPanel
+          title="Provider model metadata loading"
+          detail="Provider summaries render first. ModelProfile rows appear after local metadata fetch/sync finishes; raw provider responses and secrets are never shown."
+          summaryItems={["connection status", "model count", "capability summary", "assignment warnings"]}
+          rows={4}
+        />
+      )}
+      <div className="safe-cache-status-list">
+        {cacheStatuses.length ? (
+          cacheStatuses.map((status) => <SafeApiCacheStatusPanel key={status.key} status={status} onRefresh={onRefreshModels} />)
+        ) : (
+          <SafeApiCacheStatusPanel status={null} onRefresh={onRefreshModels} />
+        )}
+      </div>
+      {!isLoading && rows.length === 0 ? (
         <EmptyState title="No providers loaded." detail="Load or create local provider profiles. ProviderProfile stores api_key_env or secret_ref only, never plaintext keys." />
-      ) : (
+      ) : rows.length > 0 ? (
         <div className="debug-event-list">
           {rows.map((row) => (
             <details className="timeline-event provider-connectivity-row" key={row.providerId}>
@@ -6313,10 +8079,16 @@ function ProviderConnectivityDashboard({
                 <dt>Connection status</dt><dd><ProviderConnectionStatusBadge status={row.connectionStatus} /></dd>
                 <dt>Model count</dt><dd>{row.modelCount}</dd>
                 <dt>Last tested</dt><dd>{row.lastTestedTime}</dd>
+                <dt>Cache state</dt><dd>{row.cacheState}{row.stale ? " (stale)" : ""}</dd>
+                <dt>Latency</dt><dd>{row.latencyLabel}</dd>
+                <dt>Safe error type</dt><dd>{row.safeErrorType}</dd>
                 <dt>Allowed modes</dt><dd>{row.allowedModes.join(", ") || "none"}</dd>
                 <dt>Default model</dt><dd>{row.defaultModel}</dd>
                 <dt>Warnings</dt><dd>{row.warnings.length ? row.warnings.map(redactReportText).join("; ") : "None"}</dd>
               </dl>
+              {row.stale && (
+                <p className="muted">Stale provider status cache; use Test Connection for manual refresh. No background provider call is made.</p>
+              )}
               <div className="button-row">
                 <button type="button" onClick={() => onTestConnection(row.providerId)}>Test Connection</button>
                 <button type="button" onClick={onFetchModels}>Fetch Models</button>
@@ -6326,7 +8098,114 @@ function ProviderConnectivityDashboard({
             </details>
           ))}
         </div>
-      )}
+      ) : null}
+      <SlowProviderWarningPanel warnings={slowWarnings} />
+      <section className="section-card provider-model-list" data-windowed-provider-model-list="true">
+        <div className="authoring-pane-header">
+          <div>
+            <h4>Provider Model List</h4>
+            <p className="muted">Windowed ModelProfile metadata from local provider profiles and capability matrix. Raw provider responses and secrets are not rendered.</p>
+          </div>
+          <span className="badge">{modelRows.length} model metadata rows</span>
+        </div>
+        <FilterToolbar>
+          <label>
+            Search
+            <input value={modelSearch} onChange={(event) => setModelSearch(event.target.value)} placeholder="Search model/provider safe metadata" />
+          </label>
+          <label>
+            Capability
+            <select value={modelCapabilityFilter} onChange={(event) => setModelCapabilityFilter(event.target.value as ProviderModelCapabilityFilter)}>
+              <option value="all">All capabilities</option>
+              <option value="supports_text">supports_text</option>
+              <option value="supports_json">supports_json</option>
+              <option value="supports_streaming">supports_streaming</option>
+              <option value="supports_tools">supports_tools</option>
+            </select>
+          </label>
+          <label>
+            Enabled
+            <select value={modelEnabledFilter} onChange={(event) => setModelEnabledFilter(event.target.value as ProviderModelEnabledFilter)}>
+              <option value="all">All states</option>
+              <option value="enabled">Enabled</option>
+              <option value="disabled">Disabled</option>
+            </select>
+          </label>
+          <label>
+            Use case
+            <select value={modelUseCaseFilter} onChange={(event) => setModelUseCaseFilter(event.target.value)}>
+              <option value="all">All use cases</option>
+              {modelUseCaseOptions.map((useCase) => (
+                <option key={useCase} value={useCase}>
+                  {useCase}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Rows
+            <select value={modelPageSize} onChange={(event) => setModelPageSize(Number(event.target.value))}>
+              {[10, 25, 50, 100].map((size) => (
+                <option key={size} value={size}>
+                  {size}
+                </option>
+              ))}
+            </select>
+          </label>
+        </FilterToolbar>
+        <div className="timeline-summary">
+          <span>{filteredModelRows.length} filtered models</span>
+          {modelSearch !== debouncedModelSearch ? <span>filtering...</span> : null}
+          <span>{filteredModelRows.filter((row) => row.enabled).length} enabled</span>
+          <span>{filteredModelRows.filter((row) => !row.enabled).length} disabled</span>
+          <span>{filteredModelRows.filter((row) => row.supportsJson).length} json-capable</span>
+        </div>
+        {isLoading && modelRows.length === 0 ? (
+          <LoadingSkeletonPanel
+            title="Provider Model List"
+            detail="Loading safe ModelProfile metadata in stages: provider summary first, then paged model rows. API keys and raw provider responses are excluded."
+            summaryItems={["supports_text", "supports_json", "supports_streaming", "supports_tools"]}
+            rows={5}
+          />
+        ) : modelRows.length === 0 ? (
+          <EmptyState title="No model metadata loaded." detail="Fetch or sync models from a configured local provider profile. Tests use fake providers only." />
+        ) : filteredModelRows.length === 0 ? (
+          <EmptyState title="No models match these filters." detail="Try a different capability, use case, enabled state, or safe metadata search." />
+        ) : (
+          <>
+            <div className="section-heading-row">
+              <p className="muted">
+                Rendering {modelWindowStart + 1}-{modelWindowEnd} of {filteredModelRows.length} filtered model(s). {filteredModelRows.length - visibleModelRows.length} filtered model(s) remain outside the current DOM window.
+              </p>
+              <div className="pagination-controls" aria-label="Provider model pagination">
+                <button type="button" onClick={() => setModelPageIndex(0)} disabled={clampedModelPageIndex === 0}>First</button>
+                <button type="button" onClick={() => setModelPageIndex(Math.max(clampedModelPageIndex - 1, 0))} disabled={clampedModelPageIndex === 0}>Previous</button>
+                <span>Page {clampedModelPageIndex + 1} / {modelPageCount}</span>
+                <button type="button" onClick={() => setModelPageIndex(Math.min(clampedModelPageIndex + 1, modelPageCount - 1))} disabled={clampedModelPageIndex >= modelPageCount - 1}>Next</button>
+                <button type="button" onClick={() => setModelPageIndex(modelPageCount - 1)} disabled={clampedModelPageIndex >= modelPageCount - 1}>Last</button>
+              </div>
+            </div>
+            <div className="provider-model-window" data-rendered-count={visibleModelRows.length}>
+              {visibleModelRows.map((model) => (
+                <article className={`provider-model-row ${model.enabled ? "enabled" : "disabled"}`} key={model.id}>
+                  <div>
+                    <strong>{model.displayName}</strong>
+                    <p className="muted">{model.providerName} / {model.modelId}</p>
+                  </div>
+                  <div className="provider-model-capability-badges">
+                    {capabilityBadgesByModelId.get(model.id)}
+                  </div>
+                  <div>
+                    <span className={`badge ${model.enabled ? "enabled" : "disabled"}`}>{model.enabled ? "enabled" : "disabled"}</span>
+                    <p className="muted">{model.recommendedUseCases.join(", ") || "No recommended use case metadata."}</p>
+                  </div>
+                  <p className="muted">{model.warnings.length ? model.warnings.map(redactReportText).join("; ") : "No warnings."}</p>
+                </article>
+              ))}
+            </div>
+          </>
+        )}
+      </section>
       {modelAssignmentOpen && (
         <section className="section-card">
           <h4>Provider Model Assignment by Mode</h4>
@@ -6345,31 +8224,273 @@ function ProviderConnectivityDashboard({
   );
 }
 
+function SlowProviderWarningPanel({ warnings }: { warnings: SlowProviderWarning[] }) {
+  const warningCountByKind = warnings.reduce<Record<SlowProviderWarning["kind"], number>>(
+    (counts, warning) => ({ ...counts, [warning.kind]: counts[warning.kind] + 1 }),
+    { high_latency: 0, repeated_timeout: 0, model_list_slow: 0, high_error_rate: 0 }
+  );
+
+  return (
+    <section className="section-card slow-provider-warning-panel" data-v36-slow-provider-warning="true">
+      <div className="authoring-pane-header">
+        <div>
+          <h4>Slow Provider Warning UI</h4>
+          <p className="muted">
+            Safe local warning surface for slow provider responses, repeated timeout, model list slow/failure, and high error rate. No prompt/output text, raw provider error, API key, raw env, or Authorization header is rendered.
+          </p>
+        </div>
+        <ValidationStatusBadge status={warnings.length ? "warning" : "passed"} />
+      </div>
+      <div className="safe-summary-grid">
+        <SafeSummaryCard title="High latency" value={String(warningCountByKind.high_latency)} detail={`Threshold: p95 or connection latency >= ${PROVIDER_HIGH_LATENCY_MS} ms; average >= ${PROVIDER_AVERAGE_LATENCY_WARNING_MS} ms.`} />
+        <SafeSummaryCard title="Repeated timeout" value={String(warningCountByKind.repeated_timeout)} detail={`Threshold: ${PROVIDER_TIMEOUT_REPEAT_COUNT}+ safe timeout records or connection timeout status.`} />
+        <SafeSummaryCard title="Model list slow" value={String(warningCountByKind.model_list_slow)} detail="Model list failed, unsupported, slow, or empty while provider metadata is enabled." />
+        <SafeSummaryCard title="High error rate" value={String(warningCountByKind.high_error_rate)} detail={`Threshold: ${Math.round(PROVIDER_HIGH_ERROR_RATE * 100)}%+ failures in safe usage metadata.`} />
+      </div>
+      {warnings.length === 0 ? (
+        <EmptyState title="No slow provider warnings." detail="Load provider status or usage summaries to evaluate latency, timeout, model-list, and error-rate hints. No automatic provider check is performed." />
+      ) : (
+        <ItemList
+          emptyText="No slow provider warning rows."
+          items={warnings.map((warning) => (
+            <span key={warning.id}>
+              <QualitySeverityBadge severity={warning.severity} /> <strong>{warning.source}</strong>: {sanitizeDisplayError(warning.safeSummary)}
+              <small> Suggested actions: {warning.suggestedActions.map(redactReportText).join("; ")}.</small>
+            </span>
+          ))}
+        />
+      )}
+      <p className="muted">
+        Suggestions are local-only and advisory: check base URL, check local model service, check provider status, use another model/fallback, or increase timeout cautiously. Tests must use fake/local providers.
+      </p>
+    </section>
+  );
+}
+
+function buildSlowProviderWarnings(
+  rows: ProviderConnectivityRow[],
+  usageSummary: ModelUsageSummary | null,
+  recentUsage: ModelUsageRecord[],
+  usageByProvider: CostLatencyGroupSummary[]
+): SlowProviderWarning[] {
+  const warnings: SlowProviderWarning[] = [];
+  rows.forEach((row) => {
+    const safeProvider = redactReportText(row.displayName || row.providerId);
+    const safeErrorType = row.safeErrorType.toLowerCase();
+    if (typeof row.latencyMs === "number" && row.latencyMs >= PROVIDER_HIGH_LATENCY_MS) {
+      warnings.push(slowProviderWarning(
+        `latency-${row.providerId}`,
+        "high_latency",
+        "warning",
+        safeProvider,
+        `${safeProvider} connection latency is ${Math.round(row.latencyMs)} ms, above the local high latency threshold.`
+      ));
+    }
+    if (row.connectionStatus === "timeout" || safeErrorType.includes("timeout")) {
+      warnings.push(slowProviderWarning(
+        `timeout-${row.providerId}`,
+        "repeated_timeout",
+        "failed",
+        safeProvider,
+        `${safeProvider} reported a safe timeout status. Raw provider errors are redacted.`
+      ));
+    }
+    if (
+      row.connectionStatus === "model_list_failed" ||
+      row.connectionStatus === "unsupported_model_list" ||
+      safeErrorType.includes("model_list") ||
+      row.warnings.some((warning) => /model\s*list|fetch\s*models|sync\s*models|slow/i.test(warning))
+    ) {
+      warnings.push(slowProviderWarning(
+        `model-list-${row.providerId}`,
+        "model_list_slow",
+        "warning",
+        safeProvider,
+        `${safeProvider} model list metadata is slow, unavailable, or failed safely. Raw provider responses are not shown.`
+      ));
+    }
+  });
+
+  if (usageSummary) {
+    if (usageSummary.total_calls >= 3 && usageSummary.error_rate >= PROVIDER_HIGH_ERROR_RATE) {
+      warnings.push(slowProviderWarning(
+        "usage-high-error-rate",
+        "high_error_rate",
+        "warning",
+        "Project provider usage",
+        `Safe usage metadata shows ${Math.round(usageSummary.error_rate * 100)}% error rate across ${usageSummary.total_calls} local call record(s).`
+      ));
+    }
+    if (usageSummary.latency_p95_ms >= PROVIDER_HIGH_LATENCY_MS || usageSummary.average_latency_ms >= PROVIDER_AVERAGE_LATENCY_WARNING_MS) {
+      warnings.push(slowProviderWarning(
+        "usage-high-latency",
+        "high_latency",
+        "warning",
+        "Project provider usage",
+        `Safe usage metadata shows p95 ${Math.round(usageSummary.latency_p95_ms)} ms and average ${Math.round(usageSummary.average_latency_ms)} ms.`
+      ));
+    }
+  }
+
+  const timeoutCount = recentUsage.filter((record) => !record.success && /timeout/i.test(record.error_type ?? "")).length;
+  if (timeoutCount >= PROVIDER_TIMEOUT_REPEAT_COUNT) {
+    warnings.push(slowProviderWarning(
+      "recent-repeated-timeout",
+      "repeated_timeout",
+      "failed",
+      "Recent provider usage",
+      `${timeoutCount} recent safe usage record(s) report timeout. Prompt and output text are not stored here.`
+    ));
+  }
+
+  usageByProvider.forEach((row) => {
+    const total = Math.max(row.count, 1);
+    const errorRate = row.failures / total;
+    if (row.latency_p95_ms >= PROVIDER_HIGH_LATENCY_MS) {
+      warnings.push(slowProviderWarning(
+        `provider-latency-${row.key}`,
+        "high_latency",
+        "warning",
+        redactReportText(row.key),
+        `${redactReportText(row.key)} p95 latency is ${Math.round(row.latency_p95_ms)} ms in safe usage metadata.`
+      ));
+    }
+    if (row.count >= 3 && errorRate >= PROVIDER_HIGH_ERROR_RATE) {
+      warnings.push(slowProviderWarning(
+        `provider-error-rate-${row.key}`,
+        "high_error_rate",
+        "warning",
+        redactReportText(row.key),
+        `${redactReportText(row.key)} has ${row.failures}/${row.count} failed local usage record(s).`
+      ));
+    }
+  });
+
+  const byId = new Map<string, SlowProviderWarning>();
+  warnings.forEach((warning) => byId.set(warning.id, warning));
+  return Array.from(byId.values());
+}
+
+function slowProviderWarning(
+  id: string,
+  kind: SlowProviderWarning["kind"],
+  severity: SlowProviderWarning["severity"],
+  source: string,
+  safeSummary: string
+): SlowProviderWarning {
+  return {
+    id,
+    kind,
+    severity,
+    source: redactReportText(source),
+    safeSummary: redactReportText(safeSummary),
+    suggestedActions: SLOW_PROVIDER_SAFE_ACTIONS
+  };
+}
+
+function buildProviderCapabilityMatrixSafeSummary(
+  matrix: ProviderModelCapabilityMatrix | null,
+  profiles: ProviderProfileSummary[]
+): ProviderCapabilityMatrixSafeSummary {
+  const profilesById = new Map(profiles.map((profile) => [profile.provider_profile_id, profile]));
+  const rows = (matrix?.rows ?? []).map((row) => {
+    const profile = profilesById.get(row.provider_profile_id);
+    const warningList = sortedUnique(row.warnings.map(redactReportText));
+    const disabledReasons = sortedUnique(row.disabled_reasons.map(redactReportText));
+    return {
+      id: providerModelRowId(row.provider_profile_id, row.model_id),
+      providerId: redactReportText(row.provider_profile_id),
+      providerName: redactReportText(profile?.display_name ?? row.provider_profile_id),
+      modelId: redactReportText(row.model_id),
+      supportsText: providerCapabilityFlag(row.capabilities, "supports_text"),
+      supportsJson: providerCapabilityFlag(row.capabilities, "supports_json"),
+      supportsStreaming: providerCapabilityFlag(row.capabilities, "supports_streaming"),
+      supportsTools: providerCapabilityFlag(row.capabilities, "supports_tools"),
+      recommendedUseCases: sortedUnique(row.recommended_use_cases.map(redactReportText)),
+      warnings: warningList,
+      disabledReasons
+    };
+  });
+  const providerGroups = groupCapabilityMatrixRowsByProvider(rows);
+  return {
+    generatedAt: matrix?.generated_at ? redactReportText(matrix.generated_at) : "",
+    rowCount: rows.length,
+    providerCount: providerGroups.length,
+    warningCount: rows.reduce((total, row) => total + row.warnings.length, 0),
+    blockerCount: rows.reduce((total, row) => total + row.disabledReasons.length, 0),
+    providers: providerGroups.map((group) => ({
+      providerId: group.providerId,
+      providerName: group.providerName,
+      rowCount: group.rows.length,
+      warningCount: group.warningCount,
+      blockerCount: group.blockerCount
+    })),
+    useCases: sortedUnique(rows.flatMap((row) => row.recommendedUseCases)),
+    rows
+  };
+}
+
+function groupCapabilityMatrixRowsByProvider(rows: ProviderCapabilityMatrixSafeRow[]): Array<{
+  providerId: string;
+  providerName: string;
+  warningCount: number;
+  blockerCount: number;
+  rows: ProviderCapabilityMatrixSafeRow[];
+}> {
+  const groups = new Map<string, ProviderCapabilityMatrixSafeRow[]>();
+  rows.forEach((row) => {
+    const current = groups.get(row.providerId) ?? [];
+    current.push(row);
+    groups.set(row.providerId, current);
+  });
+  return Array.from(groups.entries())
+    .map(([providerId, groupRows]) => ({
+      providerId,
+      providerName: groupRows[0]?.providerName ?? providerId,
+      warningCount: groupRows.reduce((total, row) => total + row.warnings.length, 0),
+      blockerCount: groupRows.reduce((total, row) => total + row.disabledReasons.length, 0),
+      rows: groupRows
+    }))
+    .sort((a, b) => a.providerName.localeCompare(b.providerName));
+}
+
+function capabilityMatrixRowSupports(row: ProviderCapabilityMatrixSafeRow, capability: ProviderCapabilityMatrixFilter): boolean {
+  if (capability === "supports_text") return row.supportsText;
+  if (capability === "supports_json") return row.supportsJson;
+  if (capability === "supports_streaming") return row.supportsStreaming;
+  if (capability === "supports_tools") return row.supportsTools;
+  return true;
+}
+
 function buildProviderConnectivityRow(
   profile: ProviderProfileSummary,
   matrix: ProviderModelCapabilityMatrix | null,
   status: Record<string, unknown> | undefined,
   lastTested: string | undefined
-): {
-  providerId: string;
-  displayName: string;
-  providerType: string;
-  connectionStatus: ProviderConnectivityStatus;
-  modelCount: number;
-  lastTestedTime: string;
-  allowedModes: string[];
-  defaultModel: string;
-  warnings: string[];
-} {
+): ProviderConnectivityRow {
   const matrixRows = matrix?.rows.filter((row) => row.provider_profile_id === profile.provider_profile_id) ?? [];
-  const warnings = [...matrixRows.flatMap((row) => row.warnings), ...providerConnectivityWarnings(profile, matrixRows)];
+  const cacheState = providerStatusString(status, "cache_state") || "unknown";
+  const stale = Boolean(status?.stale) || cacheState === "missing" || cacheState === "stale";
+  const warnings = [
+    ...matrixRows.flatMap((row) => row.warnings),
+    ...providerConnectivityWarnings(profile, matrixRows),
+    ...(stale ? ["Stale provider status cache; manual refresh recommended."] : [])
+  ];
+  const testedAt = providerStatusString(status, "tested_at");
+  const latencyMs = providerStatusNumber(status, "latency_ms");
+  const cachedModelCount = providerStatusNumber(status, "model_count");
   return {
     providerId: profile.provider_profile_id,
     displayName: redactReportText(profile.display_name),
     providerType: redactReportText(profile.provider_type),
     connectionStatus: providerConnectivityStatus(profile, status, matrixRows),
-    modelCount: profile.model_profiles.length || matrixRows.length,
-    lastTestedTime: lastTested ?? "not tested",
+    modelCount: cachedModelCount ?? (profile.model_profiles.length || matrixRows.length),
+    lastTestedTime: lastTested ?? testedAt ?? "not tested",
+    cacheState: redactReportText(cacheState),
+    stale,
+    latencyMs,
+    latencyLabel: typeof latencyMs === "number" ? `${Math.round(latencyMs)} ms` : "not recorded",
+    safeErrorType: providerStatusString(status, "safe_error_type") || "none",
     allowedModes: profile.allowed_modes ?? sortedUnique(matrixRows.flatMap((row) => row.allowed_modes)),
     defaultModel: redactReportText(profile.model_profiles[0]?.model_id ?? matrixRows[0]?.model_id ?? "not assigned"),
     warnings
@@ -6380,6 +8501,10 @@ function providerConnectivityStatus(profile: ProviderProfileSummary, status: Rec
   if (!profile.enabled) return "unconfigured";
   if (profile.provider_type !== "mock" && profile.provider_type !== "local_stub" && !profile.api_key_env && !profile.secret_ref) return "missing_secret";
   if (profile.provider_type !== "mock" && profile.provider_type !== "local_stub" && profile.base_url_configured === false && profile.provider_type !== "openai") return "invalid_base_url";
+  const safeStatus = providerStatusString(status, "status");
+  if (safeStatus && PROVIDER_CONNECTIVITY_STATUSES.includes(safeStatus as ProviderConnectivityStatus)) {
+    return safeStatus as ProviderConnectivityStatus;
+  }
   const serializedStatus = JSON.stringify(redactDebugText(status ?? {})).toLowerCase();
   if (!status) return "configured_not_tested";
   if (serializedStatus.includes("auth")) return "auth_failed";
@@ -6390,6 +8515,16 @@ function providerConnectivityStatus(profile: ProviderProfileSummary, status: Rec
   return "connected";
 }
 
+function providerStatusString(status: Record<string, unknown> | undefined, key: string): string | undefined {
+  const value = status?.[key];
+  return typeof value === "string" && value.trim() ? redactReportText(value) : undefined;
+}
+
+function providerStatusNumber(status: Record<string, unknown> | undefined, key: string): number | undefined {
+  const value = status?.[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
 function providerConnectivityWarnings(profile: ProviderProfileSummary, matrixRows: ModelCapabilityMatrixRow[]): string[] {
   const warnings: string[] = [];
   if (!profile.enabled) warnings.push("Provider profile is disabled.");
@@ -6397,6 +8532,77 @@ function providerConnectivityWarnings(profile: ProviderProfileSummary, matrixRow
   if (profile.model_profiles.length === 0 && matrixRows.length === 0) warnings.push("No local model metadata loaded.");
   if (profile.provider_notes) warnings.push(redactReportText(profile.provider_notes));
   return warnings;
+}
+
+function buildProviderModelListRows(
+  profiles: ProviderProfileSummary[],
+  matrix: ProviderModelCapabilityMatrix | null
+): ProviderModelListRow[] {
+  const rows = new Map<string, ProviderModelListRow>();
+  const profilesById = new Map(profiles.map((profile) => [profile.provider_profile_id, profile]));
+
+  profiles.forEach((profile) => {
+    profile.model_profiles.forEach((model) => {
+      const id = providerModelRowId(profile.provider_profile_id, model.model_id);
+      rows.set(id, {
+        id,
+        providerId: redactReportText(profile.provider_profile_id),
+        providerName: redactReportText(profile.display_name),
+        providerType: redactReportText(profile.provider_type),
+        modelId: redactReportText(model.model_id),
+        displayName: redactReportText(model.display_name || model.model_id),
+        enabled: Boolean(profile.enabled && model.enabled !== false),
+        supportsText: model.supports_text !== false,
+        supportsJson: Boolean(model.supports_json),
+        supportsStreaming: Boolean(model.supports_streaming),
+        supportsTools: Boolean(model.supports_tools),
+        recommendedUseCases: sortedUnique((model.recommended_use_cases ?? []).map(redactReportText)),
+        warnings: providerConnectivityWarnings(profile, [])
+      });
+    });
+  });
+
+  (matrix?.rows ?? []).forEach((matrixRow) => {
+    const profile = profilesById.get(matrixRow.provider_profile_id);
+    const id = providerModelRowId(matrixRow.provider_profile_id, matrixRow.model_id);
+    const existing = rows.get(id);
+    const disabledReasons = matrixRow.disabled_reasons.map(redactReportText);
+    const warnings = [...(existing?.warnings ?? []), ...matrixRow.warnings.map(redactReportText), ...disabledReasons];
+    rows.set(id, {
+      id,
+      providerId: redactReportText(matrixRow.provider_profile_id),
+      providerName: redactReportText(profile?.display_name ?? matrixRow.provider_profile_id),
+      providerType: redactReportText(profile?.provider_type ?? "provider"),
+      modelId: redactReportText(matrixRow.model_id),
+      displayName: existing?.displayName ?? redactReportText(matrixRow.model_id),
+      enabled: Boolean((profile?.enabled ?? existing?.enabled ?? true) && disabledReasons.length === 0),
+      supportsText: existing?.supportsText ?? providerCapabilityFlag(matrixRow.capabilities, "supports_text"),
+      supportsJson: existing?.supportsJson ?? providerCapabilityFlag(matrixRow.capabilities, "supports_json"),
+      supportsStreaming: existing?.supportsStreaming ?? providerCapabilityFlag(matrixRow.capabilities, "supports_streaming"),
+      supportsTools: existing?.supportsTools ?? providerCapabilityFlag(matrixRow.capabilities, "supports_tools"),
+      recommendedUseCases: sortedUnique([...(existing?.recommendedUseCases ?? []), ...matrixRow.recommended_use_cases.map(redactReportText)]),
+      warnings: sortedUnique(warnings)
+    });
+  });
+
+  return Array.from(rows.values()).sort((a, b) => `${a.providerName}/${a.modelId}`.localeCompare(`${b.providerName}/${b.modelId}`));
+}
+
+function providerModelRowId(providerId: string, modelId: string): string {
+  return `${providerId || "provider"}::${modelId || "model"}`;
+}
+
+function providerCapabilityFlag(capabilities: Record<string, unknown>, key: string): boolean {
+  const value = capabilities[key];
+  return value === true || value === "true" || value === "supported" || value === "yes";
+}
+
+function providerModelSupportsCapability(row: ProviderModelListRow, capability: ProviderModelCapabilityFilter): boolean {
+  if (capability === "supports_text") return row.supportsText;
+  if (capability === "supports_json") return row.supportsJson;
+  if (capability === "supports_streaming") return row.supportsStreaming;
+  if (capability === "supports_tools") return row.supportsTools;
+  return true;
 }
 
 function formatDuration(value: number | undefined): string {
@@ -6420,7 +8626,7 @@ function DashboardCard({
   children: ReactNode;
 }) {
   return (
-    <section className="dashboard-card">
+    <section className="dashboard-card" aria-label={safeAriaText(`${title}: ${value}`)}>
       <p className="muted">{title}</p>
       <strong>{value}</strong>
       <div>{children}</div>
@@ -6440,7 +8646,7 @@ function PageHeader({
   actions?: ReactNode;
 }) {
   return (
-    <header className="page-header">
+    <header className="page-header" aria-label={safeAriaText(`${title} page header`)}>
       <div>
         {eyebrow && <p className="eyebrow">{eyebrow}</p>}
         <h2>{title}</h2>
@@ -6463,7 +8669,7 @@ function SectionCard({
   tone?: "default" | "authoring" | "debug" | "player";
 }) {
   return (
-    <section className={`section-card ${tone}`}>
+    <section className={`section-card ${tone}`} aria-label={safeAriaText(title)}>
       <div className="section-card-header">
         <div>
           <h3>{title}</h3>
@@ -6480,7 +8686,12 @@ function ErrorPanel({ message, compact = false }: { message: string; compact?: b
     return null;
   }
   return (
-    <div className={`error-panel ${compact ? "compact" : ""}`} role="alert">
+    <div
+      className={`error-panel ${compact ? "compact" : ""}`}
+      role="alert"
+      aria-live="assertive"
+      aria-label="Request failed"
+    >
       <strong>Request failed</strong>
       <p>{sanitizeDisplayError(message)}</p>
     </div>
@@ -6489,7 +8700,7 @@ function ErrorPanel({ message, compact = false }: { message: string; compact?: b
 
 function EmptyState({ title, detail }: { title: string; detail?: string }) {
   return (
-    <div className="empty-state">
+    <div className="empty-state" role="status" aria-live="polite" aria-label={safeAriaText(title)}>
       <strong>{title}</strong>
       {detail && <p>{detail}</p>}
     </div>
@@ -6498,7 +8709,7 @@ function EmptyState({ title, detail }: { title: string; detail?: string }) {
 
 function DisabledState({ title, detail }: { title: string; detail: string }) {
   return (
-    <div className="disabled-state">
+    <div className="disabled-state" role="status" aria-disabled="true" aria-label={safeAriaText(title)}>
       <strong>{title}</strong>
       <p>{detail}</p>
     </div>
@@ -6517,7 +8728,7 @@ function SafeSummaryCard({
   children?: ReactNode;
 }) {
   return (
-    <section className="safe-summary-card">
+    <section className="safe-summary-card" aria-label={safeAriaText(`${title}: ${value}`)}>
       <p className="muted">{title}</p>
       <strong>{value}</strong>
       {detail && <p>{detail}</p>}
@@ -6538,7 +8749,7 @@ function FeatureCard({
   status?: ReactNode;
 }) {
   return (
-    <section className="feature-card">
+    <section className="feature-card" aria-label={safeAriaText(title)}>
       <div>
         <h4>{title}</h4>
         <p className="muted">{detail}</p>
@@ -6563,7 +8774,7 @@ function ModeCard({
   disabled?: boolean;
 }) {
   return (
-    <section className={`mode-card ${disabled ? "disabled" : ""}`}>
+    <section className={`mode-card ${disabled ? "disabled" : ""}`} aria-label={safeAriaText(title)}>
       <div>
         <h4>{title}</h4>
         <p>{detail}</p>
@@ -6579,15 +8790,30 @@ function ModeCard({
 }
 
 function LocalOnlyBadge() {
-  return <span className="local-only-badge">Local-only</span>;
+  return <span className="local-only-badge" role="status" aria-label="Local-only mode">Local-only</span>;
 }
 
 function RiskBadge({ level }: { level: "safe" | "warning" | "blocked" | "unknown" }) {
-  return <span className={`risk-badge ${level}`}>{level}</span>;
+  return <span className={`risk-badge ${level}`} role="status" aria-label={`Risk level: ${safeAriaText(level)}`}>{level}</span>;
 }
 
-function ValidationStatusBadge({ status }: { status: "passed" | "warning" | "failed" | "not_run" }) {
-  return <span className={`validation-status-badge ${status}`}>{status.replace("_", " ")}</span>;
+function ValidationStatusBadge({
+  status,
+  label
+}: {
+  status: "passed" | "warning" | "failed" | "not_run";
+  label?: string;
+}) {
+  const statusText = status.replace("_", " ");
+  return (
+    <span
+      className={`validation-status-badge ${status}`}
+      role="status"
+      aria-label={label ? safeAriaText(label) : `Validation status: ${safeAriaText(statusText)}`}
+    >
+      {statusText}
+    </span>
+  );
 }
 
 function SafeDebugNotice({ children }: { children?: ReactNode }) {
@@ -6599,11 +8825,13 @@ function SafeDebugNotice({ children }: { children?: ReactNode }) {
 }
 
 function EventTypeBadge({ type }: { type: string }) {
-  return <span className="badge">{redactReportText(type || "event")}</span>;
+  const safeType = redactReportText(type || "event");
+  return <span className="badge" role="status" aria-label={`Event type: ${safeAriaText(safeType)}`}>{safeType}</span>;
 }
 
 function StateDeltaOpBadge({ op }: { op: string }) {
-  return <span className="badge">{redactReportText(op || "op")}</span>;
+  const safeOp = redactReportText(op || "op");
+  return <span className="badge" role="status" aria-label={`StateDelta operation: ${safeAriaText(safeOp)}`}>{safeOp}</span>;
 }
 
 function QualitySeverityBadge({ severity }: { severity: string }) {
@@ -6615,11 +8843,12 @@ function QualitySeverityBadge({ severity }: { severity: string }) {
       : normalized.includes("pass") || normalized.includes("clear")
         ? "passed"
         : "not_run";
-  return <ValidationStatusBadge status={tone} />;
+  return <ValidationStatusBadge status={tone} label={`Quality severity: ${redactReportText(severity || tone)}`} />;
 }
 
 function LeakRiskBadge({ severity }: { severity: string }) {
-  return <span className={`severity ${severity}`}>{redactReportText(severity)}</span>;
+  const safeSeverity = redactReportText(severity || "unknown");
+  return <span className={`severity ${severity}`} role="status" aria-label={`Leak risk severity: ${safeAriaText(safeSeverity)}`}>{safeSeverity}</span>;
 }
 
 function ProviderConnectionStatusBadge({ status }: { status: string }) {
@@ -6629,7 +8858,17 @@ function ProviderConnectionStatusBadge({ status }: { status: string }) {
 }
 
 function ModelCapabilityBadge({ label, supported }: { label: string; supported: boolean }) {
-  return <span className={`badge ${supported ? "enabled" : "disabled"}`}>{label}: {supported ? "supported" : "unavailable"}</span>;
+  const safeLabel = safeAriaText(label);
+  const status = supported ? "supported" : "unavailable";
+  return (
+    <span
+      className={`badge ${supported ? "enabled" : "disabled"}`}
+      role="status"
+      aria-label={`Model capability ${safeLabel}: ${status}`}
+    >
+      {safeLabel}: {status}
+    </span>
+  );
 }
 
 function TestRunStatusBadge({ status }: { status: string }) {
@@ -6642,7 +8881,7 @@ function RedactedValue({ value = "[redacted]" }: { value?: string }) {
 
 function SafeReportCard({ title, status, summary }: { title: string; status: string; summary: string }) {
   return (
-    <section className="safe-summary-card safe-report-card">
+    <section className="safe-summary-card safe-report-card" aria-label={safeAriaText(`${title}: ${status}`)}>
       <p className="muted">{title}</p>
       <TestRunStatusBadge status={status} />
       <p>{redactReportText(summary)}</p>
@@ -6651,7 +8890,7 @@ function SafeReportCard({ title, status, summary }: { title: string; status: str
 }
 
 function FilterToolbar({ children }: { children: ReactNode }) {
-  return <div className="timeline-controls filter-toolbar">{children}</div>;
+  return <div className="timeline-controls filter-toolbar" role="group" aria-label="Filter controls">{children}</div>;
 }
 
 function moduleRiskBadgeLevel(level: string): "safe" | "warning" | "blocked" | "unknown" {
@@ -6712,6 +8951,65 @@ const CERTIFICATION_LEVELS = [
   "experimental_rule_module",
   "unsafe_blocked"
 ];
+
+const AUTHORING_LARGE_PACKAGE_PAGE_SIZES = [10, 25, 50];
+const AUTHORING_DEFAULT_PAGE_SIZE = 25;
+const AUTHORING_SAFE_PREVIEW_LIMIT = 10;
+
+function pagedSlice<T>(items: T[], pageIndex: number, pageSize: number) {
+  const pageCount = Math.max(1, Math.ceil(items.length / pageSize));
+  const clampedPageIndex = Math.min(pageIndex, pageCount - 1);
+  const windowStart = clampedPageIndex * pageSize;
+  const windowEnd = Math.min(windowStart + pageSize, items.length);
+  return {
+    pageCount,
+    clampedPageIndex,
+    windowStart,
+    windowEnd,
+    visibleItems: items.slice(windowStart, windowEnd)
+  };
+}
+
+function AuthoringPaginationControls({
+  pageIndex,
+  pageCount,
+  totalCount,
+  windowStart,
+  windowEnd,
+  label,
+  onPageChange
+}: {
+  pageIndex: number;
+  pageCount: number;
+  totalCount: number;
+  windowStart: number;
+  windowEnd: number;
+  label: string;
+  onPageChange: (pageIndex: number) => void;
+}) {
+  if (totalCount <= AUTHORING_DEFAULT_PAGE_SIZE) {
+    return <p className="muted">{totalCount} {label} in the current safe view.</p>;
+  }
+  return (
+    <div className="pagination-controls" aria-label={`${label} pagination`}>
+      <button type="button" onClick={() => onPageChange(0)} disabled={pageIndex === 0}>First</button>
+      <button type="button" onClick={() => onPageChange(Math.max(pageIndex - 1, 0))} disabled={pageIndex === 0}>Previous</button>
+      <span>Showing {totalCount ? windowStart + 1 : 0}-{windowEnd} of {totalCount}; page {pageIndex + 1} / {pageCount}</span>
+      <button type="button" onClick={() => onPageChange(Math.min(pageIndex + 1, pageCount - 1))} disabled={pageIndex >= pageCount - 1}>Next</button>
+      <button type="button" onClick={() => onPageChange(pageCount - 1)} disabled={pageIndex >= pageCount - 1}>Last</button>
+    </div>
+  );
+}
+
+function safePreviewItems(items: string[], emptyText: string, limit = AUTHORING_SAFE_PREVIEW_LIMIT): string {
+  if (items.length === 0) {
+    return emptyText;
+  }
+  const safeItems = items.map(redactReportText);
+  const preview = safeItems.slice(0, limit).join(", ");
+  const remaining = safeItems.length - limit;
+  return remaining > 0 ? `${preview}, and ${remaining} more` : preview;
+}
 
 function stringListFromUnknown(value: unknown): string[] {
   return Array.isArray(value) ? value.map((item) => String(item)).filter(Boolean) : [];
@@ -6815,6 +9113,8 @@ function UnifiedNavigation({
             onClick={() => onNavigate(item.targetMode, item.toolId)}
             disabled={item.disabled}
             title={item.reason}
+            aria-label={safeAriaText(`Open ${item.label}${item.badge ? ` (${item.badge})` : ""}`)}
+            aria-current={item.active ? "page" : undefined}
           >
             <span>{item.label}</span>
             {item.badge && <span className="nav-badge">{item.badge}</span>}
@@ -6825,6 +9125,10 @@ function UnifiedNavigation({
           className={`nav-item debug-gated ${debugOpen ? "active" : ""}`}
           onClick={onToggleDebug}
           title={debugEnabled ? "Debug API enabled" : "Debug API disabled by ENABLE_DEBUG_API"}
+          aria-label={debugOpen ? "Hide Debug / Replay panel" : "Open Debug / Replay panel"}
+          aria-expanded={debugOpen}
+          aria-controls="debug-panel"
+          aria-current={debugOpen ? "page" : undefined}
         >
           <span>Debug / Replay</span>
           <span className="nav-badge">{debugEnabled ? "Enabled" : "Gated"}</span>
@@ -7217,10 +9521,84 @@ function DiagnosticsExportPanel({
   );
 }
 
+function LocalLongOperationProgress({
+  title,
+  progress,
+  excludedItems
+}: {
+  title: string;
+  progress: LocalOperationProgressState;
+  excludedItems?: string[];
+}) {
+  const activeStepIndex = LOCAL_OPERATION_PROGRESS_STEPS.indexOf(progress.step);
+  const normalizedExclusions = Array.from(new Set([...(excludedItems ?? []), ...LOCAL_OPERATION_DEFAULT_EXCLUSIONS]));
+  const longRunningDetail = progress.status === "running"
+    ? "Long-running status: operation is in progress. Keep this local page open for the latest safe status."
+    : progress.status === "failed"
+      ? "Long-running status: failed safely before completion. Review the redacted error and retry after fixing blockers."
+      : progress.status === "done"
+        ? "Long-running status: completed locally. Review the safe summary before any confirm-gated follow-up."
+        : "Long-running status: idle. Start a preview or dry-run before writing local files.";
+
+  return (
+    <section className="feature-card" data-v36-progress-steps="backup-restore-diagnostics">
+      <div className="section-heading-row">
+        <div>
+          <h4>{title}</h4>
+          <p className="muted">{sanitizeDisplayError(progress.label)}</p>
+        </div>
+        <ValidationStatusBadge status={progress.status === "failed" ? "failed" : progress.status === "done" ? "passed" : progress.status === "running" ? "warning" : "not_run"} />
+      </div>
+      <div className="mode-landing-grid">
+        {LOCAL_OPERATION_PROGRESS_STEPS.map((step, index) => {
+          const stepStatus = progress.status === "failed" && index === activeStepIndex
+            ? "failed"
+            : progress.status === "done" || index < activeStepIndex
+              ? "passed"
+              : progress.status === "running" && index === activeStepIndex
+                ? "warning"
+                : "not_run";
+          return (
+            <FeatureCard
+              key={step}
+              title={step}
+              detail={step === "writing" ? "Writes only after explicit confirm where required." : "Safe local operation step."}
+              status={<ValidationStatusBadge status={stepStatus} />}
+            />
+          );
+        })}
+      </div>
+      <div className="safe-summary-grid">
+        <SafeSummaryCard title="Cancel" value="cannot cancel safely" detail="The current backend APIs do not expose a cancellable operation handle; retry only after the current request finishes or fails." />
+        <SafeSummaryCard title="Upload" value="never" detail="Backup, restore preview, diagnostics, and debug export flows stay local-only." />
+        <SafeSummaryCard title="Confirm" value="required for writes" detail="Backup create, restore apply, and raw debug export remain explicit-confirm flows." />
+      </div>
+      <p className="muted">{longRunningDetail}</p>
+      {progress.status === "running" && (
+        <LoadingSkeletonPanel
+          title={`${title} progressive operation`}
+          detail="Safe summary and exclusions remain visible while the long-running local operation advances. No secrets, raw env, hidden/debug, or mature/private content is rendered."
+          summaryItems={LOCAL_OPERATION_PROGRESS_STEPS.map((step) => step)}
+          rows={3}
+        />
+      )}
+      <div data-v36-progress-excluded-summary="default">
+        <h4>Excluded summary</h4>
+        <ItemList
+          emptyText="No exclusions listed."
+          items={normalizedExclusions.map((item) => <span key={item}>{item}</span>)}
+        />
+      </div>
+      {progress.status === "failed" && progress.safeError && <ErrorPanel message={sanitizeDisplayError(progress.safeError)} compact />}
+    </section>
+  );
+}
+
 function DiagnosticsBundlePanel({
   preview,
   createResult,
   error,
+  progress,
   debugEnabled,
   onPreview,
   onCreate
@@ -7228,6 +9606,7 @@ function DiagnosticsBundlePanel({
   preview: DiagnosticsBundlePreview | null;
   createResult: DiagnosticsBundleCreateResponse | null;
   error: string;
+  progress: LocalOperationProgressState;
   debugEnabled: boolean;
   onPreview: (includeDebug: boolean, explicitConfirmDebug: boolean) => void;
   onCreate: (includeDebug: boolean, explicitConfirmDebug: boolean) => void;
@@ -7252,6 +9631,11 @@ function DiagnosticsBundlePanel({
           <button type="button" onClick={() => onCreate(includeDebug, confirmedDebug)} disabled={!canCreate}>Create Diagnostics Bundle</button>
         </div>
       </div>
+      <LocalLongOperationProgress
+        title="Diagnostics progress"
+        progress={progress}
+        excludedItems={DIAGNOSTICS_EXCLUDED_SECTIONS}
+      />
       <FilterToolbar>
         <label>
           <input
@@ -7313,7 +9697,15 @@ function DiagnosticsBundlePanel({
           )}
         </>
       ) : (
-        <EmptyState title="No diagnostics bundle preview." detail="Preview creates a safe manifest without writing files." />
+        <>
+          <LoadingSkeletonPanel
+            title="Diagnostics preview staged loading"
+            detail="Included/excluded summary appears before any safe payload preview. Secrets, raw logs, hidden/debug, and mature/private content stay excluded."
+            summaryItems={["included sections", "excluded sections", "redaction", "warnings"]}
+            rows={3}
+          />
+          <EmptyState title="No diagnostics bundle preview." detail="Preview creates a safe manifest without writing files." />
+        </>
       )}
     </SectionCard>
   );
@@ -7518,6 +9910,7 @@ function SafeDebugExportWizard({
   diagnosticsPreview,
   diagnosticsCreateResult,
   error,
+  progress,
   onPreview,
   onCreate
 }: {
@@ -7525,6 +9918,7 @@ function SafeDebugExportWizard({
   diagnosticsPreview: DiagnosticsBundlePreview | null;
   diagnosticsCreateResult: DiagnosticsBundleCreateResponse | null;
   error: string;
+  progress: LocalOperationProgressState;
   onPreview: (includeDebug: boolean, explicitConfirmDebug: boolean) => void;
   onCreate: (includeDebug: boolean, explicitConfirmDebug: boolean) => void;
 }) {
@@ -7551,6 +9945,11 @@ function SafeDebugExportWizard({
       </div>
       {!debugEnabled && <DisabledState title="Debug export disabled" detail="ENABLE_DEBUG_API is false. Safe debug export preview/create is unavailable." />}
       <SafeDebugNotice>Risk warning: raw debug materials can include internal state summaries. They must not include API keys, raw env, provider secrets, or hidden/mature/private content by default.</SafeDebugNotice>
+      <LocalLongOperationProgress
+        title="Debug export progress"
+        progress={progress}
+        excludedItems={DIAGNOSTICS_EXCLUDED_SECTIONS}
+      />
       <div className="mode-landing-grid">
         {SAFE_DEBUG_EXPORT_SCOPES.map((scope) => (
           <label key={scope.id} className="feature-card checkbox-row">
@@ -7695,6 +10094,7 @@ function BackupRestoreWizardPanel({
   result,
   restorePlan,
   error,
+  progress,
   onDryRun,
   onCreate,
   onRestoreDryRun
@@ -7703,6 +10103,7 @@ function BackupRestoreWizardPanel({
   result: BackupCreateResponse | null;
   restorePlan: RestorePlan | null;
   error: string;
+  progress: LocalOperationProgressState;
   onDryRun: () => void;
   onCreate: () => void;
   onRestoreDryRun: (backupPath: string, targetProjectId: string) => void;
@@ -7716,6 +10117,11 @@ function BackupRestoreWizardPanel({
         <button type="button" onClick={onDryRun}>Backup Dry-Run Preview</button>
         <button type="button" onClick={onCreate} disabled={!plan || plan.blockers.length > 0}>Explicit Confirm Create Backup</button>
       </div>
+      <LocalLongOperationProgress
+        title="Backup / restore progress"
+        progress={progress}
+        excludedItems={LOCAL_OPERATION_DEFAULT_EXCLUSIONS}
+      />
       <div className="safe-summary-grid">
         <SafeSummaryCard title="Backup policy" value="dry-run first" detail="Create is disabled until a backup dry-run preview exists and has no blockers." />
         <SafeSummaryCard title="Default exclusions" value="safe" detail=".env, API keys, provider secrets, databases, logs/cache, build outputs, debug-only data, and mature/private content." />
@@ -7729,7 +10135,15 @@ function BackupRestoreWizardPanel({
           <SafeSummaryCard title="Blockers" value={String(plan.blockers.length)} detail={plan.blockers.join(", ") || "none"} />
         </div>
       ) : (
-        <EmptyState title="No backup dry-run yet." detail="Run dry-run before creating a local backup." />
+        <>
+          <LoadingSkeletonPanel
+            title="Backup preview staged loading"
+            detail="Filtering and exclusion summary appears before write plans. Secrets, databases, logs/cache, build outputs, debug, and mature/private content remain excluded."
+            summaryItems={["scanning", "filtering", "validating", "manifest preview"]}
+            rows={3}
+          />
+          <EmptyState title="No backup dry-run yet." detail="Run dry-run before creating a local backup." />
+        </>
       )}
       {result && <SuccessPanel message={`Backup created: ${result.backup_path_summary ?? result.manifest.manifest_id}`} compact />}
       <div className="template-grid">
@@ -7928,12 +10342,23 @@ const QUALITY_GATE_CATEGORIES = [
 ] as const;
 
 type UnifiedQualityGateCategory = (typeof QUALITY_GATE_CATEGORIES)[number];
+type UnifiedQualityIssueSeverity = "blocker" | "error" | "warning" | "notice";
+type UnifiedQualityIssueRow = {
+  id: string;
+  category: UnifiedQualityGateCategory;
+  severity: UnifiedQualityIssueSeverity;
+  mode: string;
+  source: string;
+  safeSummary: string;
+  suggestedAction: string;
+};
 type UnifiedQualityGateRow = {
   category: UnifiedQualityGateCategory;
   blockers: number;
   errors: number;
   warnings: number;
   lastRunTime: string;
+  issues: UnifiedQualityIssueRow[];
   suggestedNextActions: string[];
   run?: () => void;
 };
@@ -7948,6 +10373,7 @@ function UnifiedQualityGateDashboard({
   backupPlan,
   configSummary,
   localConfigIssues,
+  cacheStatuses,
   onRunWorld,
   onRunNovel,
   onRunPlaytest,
@@ -7962,12 +10388,21 @@ function UnifiedQualityGateDashboard({
   backupPlan: BackupPlan | null;
   configSummary: StudioConfigSummary | null;
   localConfigIssues: LocalConfigIssue[];
+  cacheStatuses: SafeApiCacheStatus[];
   onRunWorld: () => void;
   onRunNovel: () => void;
   onRunPlaytest: () => void;
   onRunDiagnostics: () => void;
 }) {
   const [selectedCategory, setSelectedCategory] = useState<UnifiedQualityGateCategory>("Project");
+  const [categoryFilter, setCategoryFilter] = useState<UnifiedQualityGateCategory | "all">("all");
+  const [severityFilter, setSeverityFilter] = useState<UnifiedQualityIssueSeverity | "all">("all");
+  const [modeSourceFilter, setModeSourceFilter] = useState("all");
+  const [issueSearch, setIssueSearch] = useState("");
+  const debouncedIssueSearch = useDebouncedValue(issueSearch, 220);
+  const [pageSize, setPageSize] = useState(AUTHORING_DEFAULT_PAGE_SIZE);
+  const [pageIndex, setPageIndex] = useState(0);
+  const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>({});
   const rows = useMemo(
     () =>
       buildUnifiedQualityGateRows({
@@ -7992,9 +10427,69 @@ function UnifiedQualityGateDashboard({
   const warningCount = rows.reduce((total, row) => total + row.warnings, 0);
   const overall = blockerCount || errorCount ? "fail" : warningCount ? "review" : rows.some((row) => row.lastRunTime !== "not run") ? "pass" : "not run";
   const selectedRow = rows.find((row) => row.category === selectedCategory) ?? rows[0];
+  const allIssues = useMemo(() => rows.flatMap((row) => row.issues), [rows]);
+  const sourceOptions = useMemo(
+    () => Array.from(new Set(allIssues.map((issue) => `${issue.mode} / ${issue.source}`))).sort((a, b) => a.localeCompare(b)),
+    [allIssues]
+  );
+  const qualityIssueSearchIndexById = useMemo(
+    () =>
+      new Map(
+        allIssues.map((issue) => [
+          issue.id,
+          buildSafeSearchIndex([
+            issue.category,
+            issue.severity,
+            issue.mode,
+            issue.source,
+            issue.safeSummary,
+            issue.suggestedAction
+          ])
+        ])
+      ),
+    [allIssues]
+  );
+  const filteredIssues = useMemo(() => {
+    const query = debouncedIssueSearch.trim();
+    return allIssues.filter((issue) => {
+      const sourceKey = `${issue.mode} / ${issue.source}`;
+      if (categoryFilter !== "all" && issue.category !== categoryFilter) {
+        return false;
+      }
+      if (severityFilter !== "all" && issue.severity !== severityFilter) {
+        return false;
+      }
+      if (modeSourceFilter !== "all" && sourceKey !== modeSourceFilter) {
+        return false;
+      }
+      if (!query) {
+        return true;
+      }
+      return safeSearchMatches(qualityIssueSearchIndexById.get(issue.id) ?? "", query);
+    });
+  }, [allIssues, categoryFilter, debouncedIssueSearch, modeSourceFilter, qualityIssueSearchIndexById, severityFilter]);
+  const pageCount = Math.max(1, Math.ceil(filteredIssues.length / pageSize));
+  const clampedPageIndex = Math.min(pageIndex, pageCount - 1);
+  const windowStart = clampedPageIndex * pageSize;
+  const windowEnd = Math.min(windowStart + pageSize, filteredIssues.length);
+  const visibleIssues = filteredIssues.slice(windowStart, windowEnd);
+
+  useEffect(() => {
+    setPageIndex(0);
+  }, [categoryFilter, debouncedIssueSearch, modeSourceFilter, pageSize, severityFilter]);
+
+  useEffect(() => {
+    if (pageIndex > pageCount - 1) {
+      setPageIndex(pageCount - 1);
+    }
+  }, [pageCount, pageIndex]);
 
   function runAllAvailable() {
     rows.forEach((row) => row.run?.());
+  }
+
+  function toggleQualityCategory(category: UnifiedQualityGateCategory) {
+    setCollapsedCategories((current) => ({ ...current, [category]: !current[category] }));
   }
 
   return (
@@ -8022,12 +10517,71 @@ function UnifiedQualityGateDashboard({
           Run Selected Gate
         </button>
       </FilterToolbar>
+      <div className="safe-cache-status-list">
+        {cacheStatuses.length ? (
+          cacheStatuses.map((status) => <SafeApiCacheStatusPanel key={status.key} status={status} />)
+        ) : (
+          <SafeApiCacheStatusPanel status={null} />
+        )}
+      </div>
+      <FilterToolbar>
+        <label>
+          Category
+          <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value as UnifiedQualityGateCategory | "all")}>
+            <option value="all">All categories</option>
+            {rows.map((row) => (
+              <option key={row.category} value={row.category}>{row.category}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Severity
+          <select value={severityFilter} onChange={(event) => setSeverityFilter(event.target.value as UnifiedQualityIssueSeverity | "all")}>
+            <option value="all">All severities</option>
+            <option value="blocker">Blocker</option>
+            <option value="error">Error</option>
+            <option value="warning">Warning</option>
+            <option value="notice">Notice</option>
+          </select>
+        </label>
+        <label>
+          Mode / source
+          <select value={modeSourceFilter} onChange={(event) => setModeSourceFilter(event.target.value)}>
+            <option value="all">All sources</option>
+            {sourceOptions.map((source) => (
+              <option key={source} value={source}>{source}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Issue search
+          <input value={issueSearch} onChange={(event) => setIssueSearch(event.target.value)} placeholder="Search safe summaries" />
+        </label>
+        <label>
+          Rows
+          <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>
+            {[10, 25, 50, 100].map((size) => (
+              <option key={size} value={size}>{size}</option>
+            ))}
+          </select>
+        </label>
+      </FilterToolbar>
       <div className="timeline-summary">
         <span>overall: {overall}</span>
         <span>{blockerCount} blockers</span>
         <span>{errorCount} errors</span>
         <span>{warningCount} warnings</span>
+        <span>{filteredIssues.length} filtered issues</span>
+        {issueSearch !== debouncedIssueSearch ? <span>filtering...</span> : null}
       </div>
+      {overall === "not run" && (
+        <LoadingSkeletonPanel
+          title="Quality Dashboard staged loading"
+          detail="Summary cards remain available first. Large blocker/error/warning lists render only after local quality reports load."
+          summaryItems={["Project", "World", "Novel", "Tavern", "Cross-Mode", "Provider", "Mods", "Modules"]}
+          rows={4}
+        />
+      )}
       <div className="mode-landing-grid">
         {rows.map((row) => (
           <section className="feature-card" key={row.category}>
@@ -8044,6 +10598,62 @@ function UnifiedQualityGateDashboard({
           </section>
         ))}
       </div>
+      <section className="quality-issue-browser" data-windowed-quality-report="true">
+        <div className="section-heading-row">
+          <div>
+            <h4>Issue Browser</h4>
+            <p className="muted">
+              Rendering {filteredIssues.length ? windowStart + 1 : 0}-{windowEnd} of {filteredIssues.length} filtered issue(s). {filteredIssues.length - visibleIssues.length} filtered issue(s) remain outside the current DOM window.
+            </p>
+          </div>
+          <div className="pagination-controls" aria-label="Quality issue pagination">
+            <button type="button" onClick={() => setPageIndex(0)} disabled={clampedPageIndex === 0}>First</button>
+            <button type="button" onClick={() => setPageIndex(Math.max(clampedPageIndex - 1, 0))} disabled={clampedPageIndex === 0}>Previous</button>
+            <span>Page {clampedPageIndex + 1} / {pageCount}</span>
+            <button type="button" onClick={() => setPageIndex(Math.min(clampedPageIndex + 1, pageCount - 1))} disabled={clampedPageIndex >= pageCount - 1}>Next</button>
+            <button type="button" onClick={() => setPageIndex(pageCount - 1)} disabled={clampedPageIndex >= pageCount - 1}>Last</button>
+          </div>
+        </div>
+        {visibleIssues.length ? (
+          <div className="quality-category-groups">
+            {QUALITY_GATE_CATEGORIES.map((category) => {
+              const issues = visibleIssues.filter((issue) => issue.category === category);
+              if (!issues.length) {
+                return null;
+              }
+              const collapsed = Boolean(collapsedCategories[category]);
+              return (
+                <section className="quality-category-group" key={category}>
+                  <button type="button" className="quality-category-toggle" onClick={() => toggleQualityCategory(category)} aria-expanded={!collapsed}>
+                    <span>{collapsed ? "Show" : "Hide"} {category}</span>
+                    <span>{issues.length} visible issue(s)</span>
+                  </button>
+                  {!collapsed && (
+                    <div className="quality-issue-list">
+                      {issues.map((issue) => (
+                        <article className={`quality-issue-row ${issue.severity}`} key={issue.id}>
+                          <div>
+                            <QualitySeverityBadge severity={issue.severity} />
+                            <span className="badge">{issue.mode}</span>
+                            <span className="badge">{issue.source}</span>
+                          </div>
+                          <div>
+                            <strong>{issue.category}</strong>
+                            <p>{redactLeakSummary(issue.safeSummary)}</p>
+                          </div>
+                          <p className="muted">{redactLeakSummary(issue.suggestedAction)}</p>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              );
+            })}
+          </div>
+        ) : (
+          <EmptyState title="No matching quality issues." detail="Adjust filters or run the relevant local quality gate to load safe summaries." />
+        )}
+      </section>
     </section>
   );
 }
@@ -8080,36 +10690,286 @@ function buildUnifiedQualityGateRows({
   const latestNarrative = narrativeEvalReports.at(-1) ?? null;
   const latestPlaytest = playtestReports.at(-1) ?? null;
   const latestScenario = scenarioRegressionRuns.at(-1) ?? null;
-  const playtestIssues = latestPlaytest ? latestPlaytest.errors.length + latestPlaytest.invariant_violations.length + latestPlaytest.visibility_leaks.length + latestPlaytest.save_load_failures.length : 0;
-  const scenarioFailures = latestScenario?.case_results.filter((result) => !result.passed).length ?? 0;
-  const providerWarnings = configSummary?.api_key_configured ? 0 : 1;
-  const diagnosticsWarnings = (diagnosticsBundlePreview?.warnings.length ?? 0) + (backupPlan?.warnings.length ?? 0);
-  const diagnosticsBlockers = Number(Boolean(diagnosticsBundlePreview?.manifest.contains_secrets || diagnosticsBundlePreview?.manifest.contains_hidden_debug_mature_private));
-  const coverageWarnings = contentCoverage ? Object.values(contentCoverage.hidden_entities_redacted).reduce((total, value) => total + value, 0) : 0;
+  const projectIssues = localConfigIssues.length
+    ? localConfigIssues.map((issue, index) =>
+        qualityIssue(
+          `project-${issue.code}-${index}`,
+          "Project",
+          issue.severity === "error" ? "error" : issue.severity === "warning" ? "warning" : "notice",
+          "Project",
+          issue.safe_field || "Local Config",
+          issue.message,
+          issue.severity === "error" ? "Review local config before release." : "Review local config warning when convenient."
+        )
+      )
+    : [
+        qualityIssue(
+          "project-config-loaded",
+          "Project",
+          "notice",
+          "Project",
+          "Local Config",
+          "Project config has no loaded blockers.",
+          "Continue with local quality checks."
+        )
+      ];
+  const worldIssues = [
+    ...(worldHealth?.blockers ?? []).map((summary, index) =>
+      qualityIssue(`world-blocker-${index}`, "World", "blocker", "World", "World Health", summary, "Fix the World Health blocker before release.")
+    ),
+    ...(worldHealth?.warnings ?? []).map((summary, index) =>
+      qualityIssue(`world-warning-${index}`, "World", "warning", "World", "World Health", summary, "Review the World Health warning.")
+    ),
+    ...Object.entries(contentCoverage?.hidden_entities_redacted ?? {}).flatMap(([source, count]) =>
+      count > 0
+        ? [
+            qualityIssue(
+              `world-coverage-${source}`,
+              "World",
+              "warning",
+              "World",
+              "Content Coverage",
+              `${count} ${source} hidden entity summary item(s) were redacted from normal reports.`,
+              "Review content coverage in authoring/debug-safe tools."
+            )
+          ]
+        : []
+    )
+  ];
+  const novelIssues = latestNarrative
+    ? latestNarrative.case_results.flatMap((result) =>
+        result.passed
+          ? []
+          : result.failure_reasons.map((reason, index) =>
+              qualityIssue(
+                `novel-${result.case_id}-${index}`,
+                "Novel",
+                "error",
+                "Novel",
+                result.category || "Narrative Eval",
+                `${result.case_id}: ${reason}`,
+                "Review the affected Novel quality case."
+              )
+            )
+      )
+    : [
+        qualityIssue(
+          "novel-not-run",
+          "Novel",
+          "notice",
+          "Novel",
+          "Narrative Eval",
+          "Novel quality eval has not been run in this session.",
+          "Run Novel quality eval when validating writing changes."
+        )
+      ];
+  const tavernIssues = [
+    qualityIssue(
+      "tavern-rp-safety",
+      "Tavern",
+      "notice",
+      "Tavern",
+      "RP Safety",
+      "Run RP Safety Dashboard from Tavern Studio for detailed checks.",
+      "Open Tavern Studio when RP safety review is required."
+    )
+  ];
+  const crossModeIssues = latestScenario
+    ? latestScenario.case_results.flatMap((result) =>
+        result.passed
+          ? []
+          : [
+              ...result.failure_reasons.map((reason, index) =>
+                qualityIssue(
+                  `cross-mode-${result.case_id}-reason-${index}`,
+                  "Cross-Mode",
+                  "blocker",
+                  "Cross-Mode",
+                  result.name || "Scenario Regression",
+                  `${result.case_id}: ${reason}`,
+                  "Review the failed scenario regression before applying cross-mode changes."
+                )
+              ),
+              ...result.hidden_leak_summary.map((summary, index) =>
+                qualityIssue(
+                  `cross-mode-${result.case_id}-leak-${index}`,
+                  "Cross-Mode",
+                  "blocker",
+                  "Cross-Mode",
+                  "Hidden Leak",
+                  `${result.case_id}: ${summary}`,
+                  "Keep hidden target details out of normal cross-mode views."
+                )
+              )
+            ]
+      )
+    : [
+        qualityIssue(
+          "cross-mode-not-run",
+          "Cross-Mode",
+          "warning",
+          "Cross-Mode",
+          "Scenario Regression",
+          "Scenario regression has not been run in this session.",
+          "Run scenario regression for cross-mode paths before release."
+        )
+      ];
+  const providerIssues = configSummary?.api_key_configured
+    ? [
+        qualityIssue(
+          "provider-configured",
+          "Provider",
+          "notice",
+          "Provider",
+          "Provider Config",
+          "Provider configuration summary loaded. API key values remain outside frontend reports.",
+          "Confirm provider routing only uses api_key_env or secret_ref."
+        )
+      ]
+    : [
+        qualityIssue(
+          "provider-missing-secret",
+          "Provider",
+          "warning",
+          "Provider",
+          "Provider Config",
+          "Provider secret is not configured in the local environment summary.",
+          "Configure Provider profile by api_key_env or secret_ref."
+        )
+      ];
+  const modIssues = [
+    qualityIssue(
+      "mods-quality-gate",
+      "Mods",
+      "warning",
+      "Mods",
+      "Mod Quality Gate",
+      "Run Mod Quality Gate from Authoring / Mod Studio.",
+      "Validate local module packages before enabling them."
+    )
+  ];
+  const moduleIssues = latestPlaytest
+    ? [
+        ...latestPlaytest.errors.map((summary, index) =>
+          qualityIssue(`module-error-${index}`, "Modules", "error", "Modules", "Playtest", summary, "Review module playtest error.")
+        ),
+        ...latestPlaytest.invariant_violations.map((summary, index) =>
+          qualityIssue(`module-invariant-${index}`, "Modules", "error", "Modules", "Invariant", summary, "Review module invariant violation.")
+        ),
+        ...latestPlaytest.visibility_leaks.map((summary, index) =>
+          qualityIssue(`module-visibility-${index}`, "Modules", "blocker", "Modules", "Hidden Leak", summary, "Review hidden leak warning before release.")
+        ),
+        ...latestPlaytest.save_load_failures.map((summary, index) =>
+          qualityIssue(`module-save-load-${index}`, "Modules", "error", "Modules", "Save/Load", summary, "Review save/load failure in module playtest.")
+        )
+      ]
+    : [
+        qualityIssue(
+          "modules-not-run",
+          "Modules",
+          "notice",
+          "Modules",
+          "Playtest",
+          "Module playtests have not been run in this session.",
+          "Run module playtests for advanced module changes."
+        )
+      ];
+  const rpMatureIssues = [
+    qualityIssue(
+      "rp-mature-default-off",
+      "RP/Mature",
+      "warning",
+      "RP/Mature",
+      "Boundary Review",
+      "Confirm Mature module remains default-off and run RP/Mature quality gates when configured.",
+      "Keep mature/private content opt-in and excluded from normal export paths."
+    )
+  ];
+  const diagnosticsIssues = [
+    ...(diagnosticsBundlePreview?.manifest.contains_secrets
+      ? [
+          qualityIssue(
+            "diagnostics-secrets",
+            "Backup/Diagnostics",
+            "blocker",
+            "Backup/Diagnostics",
+            "Diagnostics",
+            "Diagnostics preview reports secret-like content in the bundle manifest.",
+            "Block export until diagnostics redaction is reviewed."
+          )
+        ]
+      : []),
+    ...(diagnosticsBundlePreview?.manifest.contains_hidden_debug_mature_private
+      ? [
+          qualityIssue(
+            "diagnostics-hidden-debug",
+            "Backup/Diagnostics",
+            "blocker",
+            "Backup/Diagnostics",
+            "Diagnostics",
+            "Diagnostics preview reports hidden/debug/mature/private content in the bundle manifest.",
+            "Use safe summaries or explicit debug export flow only."
+          )
+        ]
+      : []),
+    ...(diagnosticsBundlePreview?.warnings ?? []).map((summary, index) =>
+      qualityIssue(`diagnostics-warning-${index}`, "Backup/Diagnostics", "warning", "Backup/Diagnostics", "Diagnostics", summary, "Review diagnostics exclusion and redaction policy.")
+    ),
+    ...(backupPlan?.warnings ?? []).map((summary, index) =>
+      qualityIssue(`backup-warning-${index}`, "Backup/Diagnostics", "warning", "Backup/Diagnostics", "Backup", summary, "Review backup plan before confirm.")
+    )
+  ];
   return [
-    qualityRow("Project", localConfigIssues.filter((issue) => issue.severity === "error").length, 0, localConfigIssues.filter((issue) => issue.severity !== "error").length, "current", localConfigIssues.length ? localConfigIssues.map((issue) => issue.message) : ["Project config has no loaded blockers."], undefined),
-    qualityRow("World", worldHealth?.blockers.length ?? 0, 0, (worldHealth?.warnings.length ?? 0) + coverageWarnings, worldHealth?.created_at ?? "not run", worldHealth?.recommended_actions ?? ["Run World Health Gate."], onRunWorld),
-    qualityRow("Novel", 0, latestNarrative?.failed ?? 0, 0, latestNarrative?.created_at ?? "not run", latestNarrative ? ["Review failed Novel quality cases."] : ["Run Novel quality eval."], onRunNovel),
-    qualityRow("Tavern", 0, 0, 0, "safe summary only", ["Run RP Safety Dashboard from Tavern Studio for detailed checks."], undefined),
-    qualityRow("Cross-Mode", scenarioFailures, 0, latestScenario ? 0 : 1, latestScenario?.created_at ?? "not run", latestScenario ? ["Review failed scenario regression cases."] : ["Run scenario regression for cross-mode paths."], undefined),
-    qualityRow("Provider", 0, 0, providerWarnings, "current", providerWarnings ? ["Configure Provider profile by api_key_env or secret_ref."] : ["Provider configuration summary loaded."], undefined),
-    qualityRow("Mods", 0, 0, 1, "safe summary only", ["Run Mod Quality Gate from Authoring / Mod Studio."], undefined),
-    qualityRow("Modules", 0, playtestIssues, 0, latestPlaytest?.created_at ?? "not run", latestPlaytest ? ["Review module playtest failures and hidden leak warnings."] : ["Run module playtests."], onRunPlaytest),
-    qualityRow("RP/Mature", 0, 0, 1, "safe summary only", ["Confirm Mature module remains default-off and run RP/Mature quality gates when configured."], undefined),
-    qualityRow("Backup/Diagnostics", diagnosticsBlockers, 0, diagnosticsWarnings, diagnosticsBundlePreview?.manifest.created_at ?? "not run", diagnosticsWarnings || diagnosticsBlockers ? ["Review backup/diagnostics exclusions and redaction warnings."] : ["Preview diagnostics bundle and backup plan before release."], onRunDiagnostics),
+    qualityRow("Project", "current", projectIssues, projectIssues.map((issue) => issue.suggestedAction), undefined),
+    qualityRow("World", worldHealth?.created_at ?? "not run", worldIssues.length ? worldIssues : [qualityIssue("world-not-run", "World", "notice", "World", "World Health", "World Health Gate has not returned issues in this session.", "Run World Health Gate.")], worldHealth?.recommended_actions ?? ["Run World Health Gate."], onRunWorld),
+    qualityRow("Novel", latestNarrative?.created_at ?? "not run", novelIssues, latestNarrative ? ["Review failed Novel quality cases."] : ["Run Novel quality eval."], onRunNovel),
+    qualityRow("Tavern", "safe summary only", tavernIssues, ["Run RP Safety Dashboard from Tavern Studio for detailed checks."], undefined),
+    qualityRow("Cross-Mode", latestScenario?.created_at ?? "not run", crossModeIssues, latestScenario ? ["Review failed scenario regression cases."] : ["Run scenario regression for cross-mode paths."], undefined),
+    qualityRow("Provider", "current", providerIssues, providerIssues.map((issue) => issue.suggestedAction), undefined),
+    qualityRow("Mods", "safe summary only", modIssues, ["Run Mod Quality Gate from Authoring / Mod Studio."], undefined),
+    qualityRow("Modules", latestPlaytest?.created_at ?? "not run", moduleIssues, latestPlaytest ? ["Review module playtest failures and hidden leak warnings."] : ["Run module playtests."], onRunPlaytest),
+    qualityRow("RP/Mature", "safe summary only", rpMatureIssues, ["Confirm Mature module remains default-off and run RP/Mature quality gates when configured."], undefined),
+    qualityRow("Backup/Diagnostics", diagnosticsBundlePreview?.manifest.created_at ?? "not run", diagnosticsIssues.length ? diagnosticsIssues : [qualityIssue("diagnostics-no-warning", "Backup/Diagnostics", "notice", "Backup/Diagnostics", "Diagnostics", "No backup or diagnostics warning is loaded.", "Preview diagnostics bundle and backup plan before release.")], diagnosticsIssues.length ? ["Review backup/diagnostics exclusions and redaction warnings."] : ["Preview diagnostics bundle and backup plan before release."], onRunDiagnostics),
   ];
 }
 
 function qualityRow(
   category: UnifiedQualityGateCategory,
-  blockers: number,
-  errors: number,
-  warnings: number,
   lastRunTime: string,
+  issues: UnifiedQualityIssueRow[],
   suggestedNextActions: string[],
   run: (() => void) | undefined
 ): UnifiedQualityGateRow {
-  return { category, blockers, errors, warnings, lastRunTime, suggestedNextActions: suggestedNextActions.map(redactReportText), run };
+  return {
+    category,
+    blockers: issues.filter((issue) => issue.severity === "blocker").length,
+    errors: issues.filter((issue) => issue.severity === "error").length,
+    warnings: issues.filter((issue) => issue.severity === "warning").length,
+    lastRunTime,
+    issues,
+    suggestedNextActions: suggestedNextActions.map(redactLeakSummary),
+    run
+  };
+}
+
+function qualityIssue(
+  id: string,
+  category: UnifiedQualityGateCategory,
+  severity: UnifiedQualityIssueSeverity,
+  mode: string,
+  source: string,
+  safeSummary: string,
+  suggestedAction: string
+): UnifiedQualityIssueRow {
+  return {
+    id,
+    category,
+    severity,
+    mode: redactReportText(mode),
+    source: redactReportText(source),
+    safeSummary: redactLeakSummary(safeSummary),
+    suggestedAction: redactLeakSummary(suggestedAction)
+  };
 }
 
 function WorldStudioLanding({
@@ -8310,6 +11170,8 @@ function AuthoringStudioProDashboard({
 function ModuleBrowserProPanel({
   modules,
   selectedModuleId,
+  isLoading,
+  cacheStatus,
   moduleSearchQuery,
   moduleTypeFilter,
   moduleRiskFilter,
@@ -8326,6 +11188,8 @@ function ModuleBrowserProPanel({
 }: {
   modules: ModuleBrowserSummary[];
   selectedModuleId: string;
+  isLoading: boolean;
+  cacheStatus: SafeApiCacheStatus | null;
   moduleSearchQuery: string;
   moduleTypeFilter: string;
   moduleRiskFilter: string;
@@ -8340,19 +11204,58 @@ function ModuleBrowserProPanel({
   onCertificationFilterChange: (value: string) => void;
   onSelectModule: (packageId: string) => void;
 }) {
-  const packageTypes = Array.from(new Set(modules.map((module) => module.package_type))).sort();
-  const validationStatuses = Array.from(new Set(modules.map((module) => module.validation_status))).sort();
-  const query = moduleSearchQuery.trim().toLowerCase();
-  const filtered = modules.filter((module) => {
-    const selectedCertification = module.package_id === selectedModuleId ? moduleCertificationLevel || moduleQualityGate?.certification_level || "not_run" : "not_run";
-    return (
-      (!query || `${module.package_id} ${module.name}`.toLowerCase().includes(query)) &&
-      (moduleTypeFilter === "all" || module.package_type === moduleTypeFilter) &&
-      (moduleRiskFilter === "all" || module.permission_risk_level === moduleRiskFilter) &&
-      (moduleValidationFilter === "all" || module.validation_status === moduleValidationFilter) &&
-      (moduleCertificationFilter === "all" || selectedCertification === moduleCertificationFilter)
-    );
-  });
+  const debouncedModuleSearchQuery = useDebouncedValue(moduleSearchQuery, 220);
+  const [pageSize, setPageSize] = useState(25);
+  const [pageIndex, setPageIndex] = useState(0);
+  const packageTypes = useMemo(() => Array.from(new Set(modules.map((module) => module.package_type))).sort(), [modules]);
+  const validationStatuses = useMemo(() => Array.from(new Set(modules.map((module) => module.validation_status))).sort(), [modules]);
+  const moduleSearchIndexById = useMemo(
+    () =>
+      new Map(
+        modules.map((module) => [
+          module.package_id,
+          buildSafeSearchIndex([
+            module.package_id,
+            module.name,
+            module.package_type,
+            module.version,
+            module.validation_status,
+            module.permission_risk_level,
+            module.compatibility_status
+          ])
+        ])
+      ),
+    [modules]
+  );
+  const filtered = useMemo(() => {
+    const query = debouncedModuleSearchQuery.trim();
+    return modules.filter((module) => {
+      const selectedCertification = module.package_id === selectedModuleId ? moduleCertificationLevel || moduleQualityGate?.certification_level || "not_run" : "not_run";
+      return (
+        (!query || safeSearchMatches(moduleSearchIndexById.get(module.package_id) ?? "", query)) &&
+        (moduleTypeFilter === "all" || module.package_type === moduleTypeFilter) &&
+        (moduleRiskFilter === "all" || module.permission_risk_level === moduleRiskFilter) &&
+        (moduleValidationFilter === "all" || module.validation_status === moduleValidationFilter) &&
+        (moduleCertificationFilter === "all" || selectedCertification === moduleCertificationFilter)
+      );
+    });
+  }, [debouncedModuleSearchQuery, moduleCertificationFilter, moduleCertificationLevel, moduleQualityGate?.certification_level, moduleRiskFilter, moduleSearchIndexById, moduleTypeFilter, moduleValidationFilter, modules, selectedModuleId]);
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const clampedPageIndex = Math.min(pageIndex, pageCount - 1);
+  const windowStart = clampedPageIndex * pageSize;
+  const windowEnd = Math.min(windowStart + pageSize, filtered.length);
+  const visibleModules = filtered.slice(windowStart, windowEnd);
+
+  useEffect(() => {
+    setPageIndex(0);
+  }, [debouncedModuleSearchQuery, moduleCertificationFilter, moduleRiskFilter, moduleTypeFilter, moduleValidationFilter, pageSize]);
+
+  useEffect(() => {
+    if (pageIndex > pageCount - 1) {
+      setPageIndex(pageCount - 1);
+    }
+  }, [pageCount, pageIndex]);
+
   return (
     <section className="module-pro-panel">
       <div className="section-heading-row">
@@ -8399,11 +11302,37 @@ function ModuleBrowserProPanel({
             {CERTIFICATION_LEVELS.map((level) => <option key={level} value={level}>{level}</option>)}
           </select>
         </label>
+        <label>
+          Rows
+          <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>
+            {AUTHORING_LARGE_PACKAGE_PAGE_SIZES.map((size) => <option key={size} value={size}>{size}</option>)}
+          </select>
+        </label>
       </div>
-      <div className="module-browser-table">
-        {filtered.length === 0 ? (
+      <div className="timeline-summary">
+        <span>{filtered.length} filtered package(s)</span>
+        {moduleSearchQuery !== debouncedModuleSearchQuery ? <span>filtering...</span> : null}
+        <span>Rendering {filtered.length ? windowStart + 1 : 0}-{windowEnd}</span>
+      </div>
+      <SafeApiCacheStatusPanel status={cacheStatus} />
+      {isLoading && modules.length === 0 && (
+        <LoadingSkeletonPanel
+          title="Module Browser package list loading"
+          detail="Scanning local package metadata in stages: package summary first, then paged rows. Packages are not executed."
+          summaryItems={["package type", "validation", "permission risk", "compatibility", "certification"]}
+          rows={5}
+        />
+      )}
+      {isLoading && modules.length > 0 && (
+        <ProgressiveLoadNote
+          title="Refreshing Module Browser"
+          detail="Existing safe package rows remain visible while local metadata is refreshed. No package code is loaded."
+        />
+      )}
+      <div className="module-browser-table" data-windowed-module-browser="true" data-windowed-authoring-package-list="true">
+        {!isLoading && filtered.length === 0 ? (
           <EmptyState title="No local modules match the filters." detail="Scan local modules or adjust filters. This UI never downloads remote packages." />
-        ) : filtered.map((module) => {
+        ) : visibleModules.map((module) => {
           const selectedCertification = module.package_id === selectedModuleId ? moduleCertificationLevel || moduleQualityGate?.certification_level || "not_run" : "not_run";
           return (
             <button
@@ -8423,6 +11352,15 @@ function ModuleBrowserProPanel({
           );
         })}
       </div>
+      {filtered.length > pageSize ? (
+        <div className="pagination-controls" aria-label="Module Browser pagination">
+          <button type="button" onClick={() => setPageIndex(0)} disabled={clampedPageIndex === 0}>First</button>
+          <button type="button" onClick={() => setPageIndex(Math.max(clampedPageIndex - 1, 0))} disabled={clampedPageIndex === 0}>Previous</button>
+          <span>Page {clampedPageIndex + 1} / {pageCount}</span>
+          <button type="button" onClick={() => setPageIndex(Math.min(clampedPageIndex + 1, pageCount - 1))} disabled={clampedPageIndex >= pageCount - 1}>Next</button>
+          <button type="button" onClick={() => setPageIndex(pageCount - 1)} disabled={clampedPageIndex >= pageCount - 1}>Last</button>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -8438,10 +11376,34 @@ function ModPermissionDashboardProPanel({
   riskFilter: string;
   onRiskFilterChange: (value: string) => void;
 }) {
-  const requested = new Set(moduleRequestedPermissions(modulePermissions));
-  const dangerousRequested = new Set(modulePermissions?.dangerous_permissions ?? []);
-  const safePermissions = moduleSafePermissions(modulePermissions);
-  const affectedPackages = permissionSummaries.filter((summary) => riskFilter === "all" || summary.risk_level === riskFilter);
+  const requested = useMemo(() => new Set(moduleRequestedPermissions(modulePermissions)), [modulePermissions]);
+  const dangerousRequested = useMemo(() => new Set(modulePermissions?.dangerous_permissions ?? []), [modulePermissions]);
+  const safePermissions = useMemo(() => moduleSafePermissions(modulePermissions), [modulePermissions]);
+  const [permissionPageSize, setPermissionPageSize] = useState(AUTHORING_DEFAULT_PAGE_SIZE);
+  const [permissionPageIndex, setPermissionPageIndex] = useState(0);
+  const affectedPackages = useMemo(
+    () => permissionSummaries.filter((summary) => riskFilter === "all" || summary.risk_level === riskFilter),
+    [permissionSummaries, riskFilter]
+  );
+  const affectedByRisk = useMemo(
+    () => ["blocked", "warning", "safe", "unknown"].map((risk) => ({
+      risk,
+      count: permissionSummaries.filter((summary) => moduleRiskBadgeLevel(summary.risk_level) === risk).length
+    })),
+    [permissionSummaries]
+  );
+  const affectedPage = pagedSlice(affectedPackages, permissionPageIndex, permissionPageSize);
+
+  useEffect(() => {
+    setPermissionPageIndex(0);
+  }, [permissionPageSize, riskFilter]);
+
+  useEffect(() => {
+    if (permissionPageIndex > affectedPage.pageCount - 1) {
+      setPermissionPageIndex(affectedPage.pageCount - 1);
+    }
+  }, [affectedPage.pageCount, permissionPageIndex]);
+
   return (
     <section className="module-pro-panel">
       <div className="section-heading-row">
@@ -8461,6 +11423,11 @@ function ModPermissionDashboardProPanel({
           <option value="blocked">Blocked</option>
         </select>
       </label>
+      <div className="safe-summary-grid" data-grouped-permission-risk="true">
+        {affectedByRisk.map((item) => (
+          <SafeSummaryCard key={item.risk} title={`${item.risk} risk`} value={String(item.count)} detail="Safe local package permission summaries only." />
+        ))}
+      </div>
       {modulePermissions ? (
         <div className="permission-matrix">
           {DANGEROUS_MODULE_PERMISSIONS.map((permission) => {
@@ -8488,11 +11455,26 @@ function ModPermissionDashboardProPanel({
       )}
       <details>
         <summary>Package affected list</summary>
+        <label>
+          Rows
+          <select value={permissionPageSize} onChange={(event) => setPermissionPageSize(Number(event.target.value))}>
+            {AUTHORING_LARGE_PACKAGE_PAGE_SIZES.map((size) => <option key={size} value={size}>{size}</option>)}
+          </select>
+        </label>
         <ItemList
           emptyText="No packages match this risk filter."
-          items={affectedPackages.map((summary) => (
+          items={affectedPage.visibleItems.map((summary) => (
             <span key={summary.package_id}>{summary.package_id}: {summary.risk_level} · {summary.dangerous_permissions.join(", ") || "safe declarative permissions"}</span>
           ))}
+        />
+        <AuthoringPaginationControls
+          pageIndex={affectedPage.clampedPageIndex}
+          pageCount={affectedPage.pageCount}
+          totalCount={affectedPackages.length}
+          windowStart={affectedPage.windowStart}
+          windowEnd={affectedPage.windowEnd}
+          label="affected packages"
+          onPageChange={setPermissionPageIndex}
         />
       </details>
     </section>
@@ -8500,6 +11482,46 @@ function ModPermissionDashboardProPanel({
 }
 
 function CompatibilityMatrixProPanel({ matrix, selectedCompatibility }: { matrix: ModCompatibilityMatrix | null; selectedCompatibility: Record<string, unknown> | null }) {
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [matrixPageSize, setMatrixPageSize] = useState(AUTHORING_DEFAULT_PAGE_SIZE);
+  const [matrixPageIndex, setMatrixPageIndex] = useState(0);
+  const entries = matrix?.entries ?? [];
+  const filteredEntries = useMemo(() => {
+    return entries.filter((entry) => {
+      if (statusFilter === "all") return true;
+      if (statusFilter === "blocked") return !entry.compatible || entry.errors.length > 0;
+      if (statusFilter === "warning") return entry.compatible && entry.warnings.length > 0;
+      if (statusFilter === "compatible") return entry.compatible && entry.errors.length === 0;
+      return entry.status === statusFilter;
+    });
+  }, [entries, statusFilter]);
+  const matrixPage = pagedSlice(filteredEntries, matrixPageIndex, matrixPageSize);
+  const matrixStatusGroups = useMemo(() => {
+    return [
+      { label: "compatible", count: entries.filter((entry) => entry.compatible && entry.errors.length === 0).length },
+      { label: "warning", count: entries.filter((entry) => entry.compatible && entry.warnings.length > 0).length },
+      { label: "blocked", count: entries.filter((entry) => !entry.compatible || entry.errors.length > 0).length }
+    ];
+  }, [entries]);
+  const visibleMatrixWarnings = useMemo(
+    () => matrixPage.visibleItems.flatMap((entry) => entry.warnings.map((warning) => <span key={`${entry.package_id}-${warning}`}>{entry.package_id}: {redactReportText(warning)}</span>)),
+    [matrixPage.visibleItems]
+  );
+  const visibleMatrixBlockers = useMemo(
+    () => matrixPage.visibleItems.flatMap((entry) => entry.errors.map((error) => <span key={`${entry.package_id}-${error}`} className="danger-text">{entry.package_id}: {redactReportText(error)}</span>)),
+    [matrixPage.visibleItems]
+  );
+
+  useEffect(() => {
+    setMatrixPageIndex(0);
+  }, [matrixPageSize, statusFilter]);
+
+  useEffect(() => {
+    if (matrixPageIndex > matrixPage.pageCount - 1) {
+      setMatrixPageIndex(matrixPage.pageCount - 1);
+    }
+  }, [matrixPage.pageCount, matrixPageIndex]);
+
   return (
     <section className="module-pro-panel">
       <div className="section-heading-row">
@@ -8513,24 +11535,56 @@ function CompatibilityMatrixProPanel({ matrix, selectedCompatibility }: { matrix
         <div className="stack">
           <div className="safe-summary-grid">
             <SafeSummaryCard title="Selected package set" value={String(matrix.entries.length)} detail="Current matrix selection is local." />
-            <SafeSummaryCard title="Load order draft" value={String(matrix.load_order.length)} detail={matrix.load_order.join(" -> ") || "none"} />
-            <SafeSummaryCard title="Conflicts" value={String(matrix.conflicts_summary.length)} detail={matrix.conflicts_summary.join(", ") || "none"} />
+            <SafeSummaryCard title="Load order draft" value={String(matrix.load_order.length)} detail={safePreviewItems(matrix.load_order, "none")} />
+            <SafeSummaryCard title="Conflicts" value={String(matrix.conflicts_summary.length)} detail={safePreviewItems(matrix.conflicts_summary, "none")} />
           </div>
-          <div className="module-browser-table">
-            {matrix.entries.map((entry) => (
-              <div key={entry.package_id} className="module-browser-row static">
-                <span><strong>{entry.package_id}</strong><small>order {entry.load_order_index ?? "n/a"}</small></span>
-                <ValidationStatusBadge status={entry.compatible ? "passed" : "failed"} />
-                <span>{entry.status}</span>
-                <span>engine/schema safe summary</span>
-                <span>permissions checked</span>
-                <span>action/state namespace not executed</span>
-                <span>{entry.errors.length ? `${entry.errors.length} blocker(s)` : "no blockers"}</span>
-              </div>
-            ))}
+          <div className="safe-summary-grid" data-collapsed-compatibility-matrix="true">
+            {matrixStatusGroups.map((group) => <SafeSummaryCard key={group.label} title={group.label} value={String(group.count)} detail="Safe compatibility summary rows." />)}
           </div>
-          <ItemList emptyText="No matrix warnings." items={matrix.entries.flatMap((entry) => entry.warnings.map((warning) => <span key={`${entry.package_id}-${warning}`}>{entry.package_id}: {warning}</span>))} />
-          <ItemList emptyText="No matrix blockers." items={matrix.entries.flatMap((entry) => entry.errors.map((error) => <span key={`${entry.package_id}-${error}`} className="danger-text">{entry.package_id}: {error}</span>))} />
+          <div className="module-filter-grid">
+            <label>
+              Matrix status
+              <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+                <option value="all">All</option>
+                <option value="compatible">Compatible</option>
+                <option value="warning">Warnings</option>
+                <option value="blocked">Blockers</option>
+              </select>
+            </label>
+            <label>
+              Rows
+              <select value={matrixPageSize} onChange={(event) => setMatrixPageSize(Number(event.target.value))}>
+                {AUTHORING_LARGE_PACKAGE_PAGE_SIZES.map((size) => <option key={size} value={size}>{size}</option>)}
+              </select>
+            </label>
+          </div>
+          <details open>
+            <summary>Matrix entries ({filteredEntries.length})</summary>
+            <div className="module-browser-table" data-windowed-compatibility-matrix="true">
+              {matrixPage.visibleItems.map((entry) => (
+                <div key={entry.package_id} className="module-browser-row static">
+                  <span><strong>{entry.package_id}</strong><small>order {entry.load_order_index ?? "n/a"}</small></span>
+                  <ValidationStatusBadge status={entry.compatible ? "passed" : "failed"} />
+                  <span>{entry.status}</span>
+                  <span>engine/schema safe summary</span>
+                  <span>permissions checked</span>
+                  <span>action/state namespace not executed</span>
+                  <span>{entry.errors.length ? `${entry.errors.length} blocker(s)` : "no blockers"}</span>
+                </div>
+              ))}
+            </div>
+          </details>
+          <AuthoringPaginationControls
+            pageIndex={matrixPage.clampedPageIndex}
+            pageCount={matrixPage.pageCount}
+            totalCount={filteredEntries.length}
+            windowStart={matrixPage.windowStart}
+            windowEnd={matrixPage.windowEnd}
+            label="compatibility entries"
+            onPageChange={setMatrixPageIndex}
+          />
+          <ItemList emptyText="No matrix warnings in this page." items={visibleMatrixWarnings} />
+          <ItemList emptyText="No matrix blockers in this page." items={visibleMatrixBlockers} />
         </div>
       ) : (
         <EmptyState title="No compatibility matrix." detail="Build the local module matrix after scanning packages." />
@@ -8709,24 +11763,90 @@ function RuleModuleContractPanel() {
 }
 
 function ImportExportWizardProPanel() {
-  const filtered = [".env", "API keys", "provider secrets", "database files", "logs/cache", "node_modules/dist", "debug reports", "mature/private content"];
+  const filtered = useMemo(() => [".env", "API keys", "provider secrets", "database files", "logs/cache", "node_modules/dist", "debug reports", "mature/private content"], []);
+  const importSteps = useMemo(() => ["select local package", "validate manifest", "show permissions", "show compatibility", "quality gate status", "dry-run preview", "confirm import"], []);
+  const previewSegments = useMemo(() => [
+    { title: "Manifest preview", items: ["package id", "package type", "version", "declared dependencies", "declared permissions"] },
+    { title: "Import blockers", items: ["zip slip", "executable files", "secret-like content", "missing dependency", "dangerous permission"] },
+    { title: "Export filtering policy", items: filtered },
+    { title: "Provider Profile Pack policy", items: ["api_key_env only", "secret_ref only", "no raw API key", "no Authorization header"] }
+  ], [filtered]);
   return (
     <section className="module-pro-panel">
       <h4>Import / Export Wizard Pro</h4>
       <p className="muted">Import is dry-run first; export previews safe manifests. No upload, no remote download, no online marketplace, no package execution.</p>
       <div className="mode-landing-grid">
-        {["select local package", "validate manifest", "show permissions", "show compatibility", "quality gate status", "dry-run preview", "confirm import"].map((step) => (
+        {importSteps.map((step) => (
           <FeatureCard key={step} title={step} detail="Required before local import apply." status={<ValidationStatusBadge status="not_run" />} />
         ))}
       </div>
-      <ItemList emptyText="No filtering policy." items={filtered.map((item) => <span key={item}>{item} excluded by default</span>)} />
+      <div className="stack" data-segmented-import-export-preview="true">
+        {previewSegments.map((segment) => (
+          <details key={segment.title}>
+            <summary>{segment.title} ({segment.items.length})</summary>
+            <ItemList emptyText="No safe preview rows." items={segment.items.map((item) => <span key={item}>{redactReportText(item)}{segment.title === "Export filtering policy" ? " excluded by default" : ""}</span>)} />
+          </details>
+        ))}
+      </div>
       <p className="muted">Provider Profile Pack export may contain api_key_env or secret_ref only, never a raw key.</p>
     </section>
   );
 }
 
 function AuthoringValidationDashboardPanel({ modules }: { modules: ModuleBrowserSummary[] }) {
-  const blockers = modules.filter((module) => module.validation_status === "invalid" || module.errors.length > 0);
+  const [severityFilter, setSeverityFilter] = useState("all");
+  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [issuePageSize, setIssuePageSize] = useState(AUTHORING_DEFAULT_PAGE_SIZE);
+  const [issuePageIndex, setIssuePageIndex] = useState(0);
+  const validationIssues = useMemo(() => {
+    return modules.flatMap((module) => [
+      ...module.errors.map((message) => ({
+        id: `${module.package_id}-error-${message}`,
+        severity: "blocker",
+        category: module.package_type,
+        packageId: module.package_id,
+        summary: redactReportText(message),
+        suggestedAction: "Open the affected editor or package detail before safe apply."
+      })),
+      ...module.warnings.map((message) => ({
+        id: `${module.package_id}-warning-${message}`,
+        severity: "warning",
+        category: module.package_type,
+        packageId: module.package_id,
+        summary: redactReportText(message),
+        suggestedAction: "Review the warning before dry-run/apply."
+      }))
+    ]);
+  }, [modules]);
+  const blockers = useMemo(() => validationIssues.filter((issue) => issue.severity === "blocker"), [validationIssues]);
+  const categories = useMemo(() => ["all", ...Array.from(new Set(validationIssues.map((issue) => issue.category))).sort()], [validationIssues]);
+  const issuesByCategory = useMemo(
+    () => categories.filter((category) => category !== "all").map((category) => ({
+      category,
+      blockerCount: validationIssues.filter((issue) => issue.category === category && issue.severity === "blocker").length,
+      warningCount: validationIssues.filter((issue) => issue.category === category && issue.severity === "warning").length
+    })),
+    [categories, validationIssues]
+  );
+  const filteredIssues = useMemo(
+    () => validationIssues.filter((issue) =>
+      (severityFilter === "all" || issue.severity === severityFilter) &&
+      (categoryFilter === "all" || issue.category === categoryFilter)
+    ),
+    [categoryFilter, severityFilter, validationIssues]
+  );
+  const issuePage = pagedSlice(filteredIssues, issuePageIndex, issuePageSize);
+
+  useEffect(() => {
+    setIssuePageIndex(0);
+  }, [categoryFilter, issuePageSize, severityFilter]);
+
+  useEffect(() => {
+    if (issuePageIndex > issuePage.pageCount - 1) {
+      setIssuePageIndex(issuePage.pageCount - 1);
+    }
+  }, [issuePage.pageCount, issuePageIndex]);
+
   return (
     <section className="module-pro-panel">
       <h4>Authoring Validation Dashboard</h4>
@@ -8736,12 +11856,62 @@ function AuthoringValidationDashboardPanel({ modules }: { modules: ModuleBrowser
         <SafeSummaryCard title="Module blockers" value={String(blockers.length)} detail="Local manifest blockers only." />
         <SafeSummaryCard title="Categories" value={String(AUTHORING_VALIDATION_CATEGORIES.length)} detail="World/script/character/mod/import-export coverage." />
       </div>
-      <div className="mode-landing-grid">
+      <div className="mode-landing-grid" data-grouped-authoring-validation="true">
         {AUTHORING_VALIDATION_CATEGORIES.map((category) => (
           <FeatureCard key={category} title={category} detail="Open the affected editor for safe issue details." status={<ValidationStatusBadge status={blockers.length ? "warning" : "not_run"} />} />
         ))}
       </div>
-      <ItemList emptyText="No module validation blockers." items={blockers.map((module) => <span key={module.package_id} className="danger-text">{module.package_id}: {redactReportText(module.errors.join(", "))}</span>)} />
+      <div className="safe-summary-grid">
+        {issuesByCategory.map((group) => (
+          <SafeSummaryCard
+            key={group.category}
+            title={group.category}
+            value={`${group.blockerCount} blocker(s)`}
+            detail={`${group.warningCount} warning(s); safe summaries only.`}
+          />
+        ))}
+      </div>
+      <div className="module-filter-grid">
+        <label>
+          Severity
+          <select value={severityFilter} onChange={(event) => setSeverityFilter(event.target.value)}>
+            <option value="all">All</option>
+            <option value="blocker">Blockers</option>
+            <option value="warning">Warnings</option>
+          </select>
+        </label>
+        <label>
+          Category
+          <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}>
+            {categories.map((category) => <option key={category} value={category}>{category === "all" ? "All categories" : category}</option>)}
+          </select>
+        </label>
+        <label>
+          Rows
+          <select value={issuePageSize} onChange={(event) => setIssuePageSize(Number(event.target.value))}>
+            {AUTHORING_LARGE_PACKAGE_PAGE_SIZES.map((size) => <option key={size} value={size}>{size}</option>)}
+          </select>
+        </label>
+      </div>
+      <div data-windowed-authoring-validation-issues="true">
+        <ItemList
+          emptyText="No validation issues match the filters."
+          items={issuePage.visibleItems.map((issue) => (
+            <span key={issue.id} className={issue.severity === "blocker" ? "danger-text" : undefined}>
+              {issue.packageId} · {issue.category} · {issue.severity}: {issue.summary} · {issue.suggestedAction}
+            </span>
+          ))}
+        />
+      </div>
+      <AuthoringPaginationControls
+        pageIndex={issuePage.clampedPageIndex}
+        pageCount={issuePage.pageCount}
+        totalCount={filteredIssues.length}
+        windowStart={issuePage.windowStart}
+        windowEnd={issuePage.windowEnd}
+        label="validation issues"
+        onPageChange={setIssuePageIndex}
+      />
     </section>
   );
 }
@@ -8915,7 +12085,7 @@ function CrossModeDashboardPanel({
         }))}
         onJumpToRef={(ref) => {
           const target = document.querySelector(`[data-cross-mode-ref="${CSS.escape(ref)}"]`);
-          target?.scrollIntoView({ behavior: "smooth", block: "center" });
+          target?.scrollIntoView({ behavior: motionSafeScrollBehavior(), block: "center" });
         }}
       />
     </section>
@@ -9092,6 +12262,7 @@ function ProjectShell({
   const [novelScenes, setNovelScenes] = useState<NovelScene[]>([]);
   const [novelError, setNovelError] = useState("");
   const [novelMessage, setNovelMessage] = useState("");
+  const [novelLoading, setNovelLoading] = useState(false);
   const [newManuscriptId, setNewManuscriptId] = useState("manuscript");
   const [newManuscriptTitle, setNewManuscriptTitle] = useState("Untitled Manuscript");
   const [newChapterTitle, setNewChapterTitle] = useState("Chapter One");
@@ -9122,6 +12293,7 @@ function ProjectShell({
   const [worldNpcAdapterPreview, setWorldNpcAdapterPreview] = useState<Record<string, unknown> | null>(null);
   const [tavernError, setTavernError] = useState("");
   const [tavernMessage, setTavernMessage] = useState("");
+  const [tavernLoading, setTavernLoading] = useState(false);
   const [newTavernCharacterId, setNewTavernCharacterId] = useState("tavern_character");
   const [newTavernCharacterName, setNewTavernCharacterName] = useState("Tavern Character");
   const [newTavernSessionId, setNewTavernSessionId] = useState("tavern_session");
@@ -9158,6 +12330,8 @@ function ProjectShell({
   const [moduleAudit, setModuleAudit] = useState<ModAuditRecord[]>([]);
   const [moduleError, setModuleError] = useState("");
   const [moduleMessage, setModuleMessage] = useState("");
+  const [moduleLoading, setModuleLoading] = useState(false);
+  const [moduleSafeCacheStatus, setModuleSafeCacheStatus] = useState<SafeApiCacheStatus | null>(null);
   const [moduleRiskFilter, setModuleRiskFilter] = useState("all");
   const [moduleTypeFilter, setModuleTypeFilter] = useState("all");
   const [moduleValidationFilter, setModuleValidationFilter] = useState("all");
@@ -9169,15 +12343,19 @@ function ProjectShell({
   const selected = projects.find((project) => project.project_id === selectedProjectId) ?? null;
   const novel = modeStatuses.find((status) => status.mode === "novel");
   const tavern = modeStatuses.find((status) => status.mode === "tavern");
-  const selectedChapter = novelChapters.find((chapter) => chapter.chapter_id === selectedChapterId) ?? null;
+  const selectedChapter = useMemo(() => novelChapters.find((chapter) => chapter.chapter_id === selectedChapterId) ?? null, [novelChapters, selectedChapterId]);
+  const selectedChapterScenes = useMemo(() => novelScenes.filter((scene) => !selectedChapterId || scene.chapter_id === selectedChapterId), [novelScenes, selectedChapterId]);
   const novelQualityIssues = useMemo(() => buildNovelQualityIssues(novelChapters, novelScenes), [novelChapters, novelScenes]);
-  const chapterCurrentWordCount = chapterDraftText.split(/\s+/).filter(Boolean).length;
+  const debouncedChapterDraftText = useDebouncedValue(chapterDraftText, 260);
+  const chapterCurrentWordCount = useMemo(() => countWordsFast(debouncedChapterDraftText), [debouncedChapterDraftText]);
+  const chapterWordCountPending = chapterDraftText !== debouncedChapterDraftText;
 
   async function loadNovelData() {
     if (!selectedProjectId) {
       return;
     }
     setNovelError("");
+    setNovelLoading(true);
     try {
       const [manuscripts, chapters, scenes] = await Promise.all([
         fetchNovelManuscripts(selectedProjectId),
@@ -9209,6 +12387,8 @@ function ProjectShell({
       setNovelPreferences(preferences);
     } catch (err) {
       setNovelError(toErrorMessage(err));
+    } finally {
+      setNovelLoading(false);
     }
   }
 
@@ -9221,6 +12401,7 @@ function ProjectShell({
       return;
     }
     setTavernError("");
+    setTavernLoading(true);
     try {
       const [characters, sessions, presets, multiScenes] = await Promise.all([
         fetchTavernCharacters(selectedProjectId),
@@ -9258,6 +12439,8 @@ function ProjectShell({
       }
     } catch (err) {
       setTavernError(toErrorMessage(err));
+    } finally {
+      setTavernLoading(false);
     }
   }
 
@@ -9296,7 +12479,9 @@ function ProjectShell({
     if (!selectedProjectId) {
       return;
     }
+    const cacheKey = moduleBrowserCacheKey(selectedProjectId);
     setModuleError("");
+    setModuleLoading(true);
     try {
       const [moduleList, permissions, matrix, audit] = await Promise.all([
         fetchProjectModules(selectedProjectId),
@@ -9308,6 +12493,13 @@ function ProjectShell({
       setModulePermissionSummaries(permissions.permissions);
       setModuleMatrix(matrix.matrix);
       setModuleAudit(audit.records);
+      const cacheSummary = buildModuleBrowserSafeCacheSummary(selectedProjectId, moduleList.modules, permissions.permissions, matrix.matrix);
+      const cacheStatus = writeSafeApiCache(cacheKey, "Module Browser safe summary", "module-browser", cacheSummary, {
+        staleAfterMs: SAFE_API_CACHE_TTL_MS,
+        summary: `${cacheSummary.package_count} local package(s), ${cacheSummary.conflict_count} compatibility conflict summary item(s).`,
+        itemCount: cacheSummary.package_count
+      });
+      setModuleSafeCacheStatus(cacheStatus);
       const next = nextModuleId || moduleList.modules[0]?.package_id || "";
       setSelectedModuleId(next);
       if (next) {
@@ -9327,6 +12519,9 @@ function ProjectShell({
     } catch (err) {
       setModules([]);
       setModuleError(toErrorMessage(err));
+      setModuleSafeCacheStatus(markSafeApiCacheFailed(cacheKey, "Module Browser safe summary", "module-browser", err));
+    } finally {
+      setModuleLoading(false);
     }
   }
 
@@ -9897,6 +13092,20 @@ function ProjectShell({
     }
   }
 
+  function selectNovelChapter(chapter: NovelChapter) {
+    setSelectedChapterId(chapter.chapter_id);
+    setChapterDraftText(chapter.draft_text ?? "");
+    setChapterDraftSavedText(chapter.draft_text ?? "");
+    void fetchNovelDraftSnapshots(selectedProjectId, chapter.chapter_id).then((snapshots) => setNovelSnapshots(snapshots.snapshots));
+  }
+
+  function selectTavernSession(session: TavernSession) {
+    setSelectedTavernSessionId(session.session_id);
+    void fetchTavernMessages(selectedProjectId, session.session_id)
+      .then((messages) => setTavernMessages(messages.messages))
+      .catch((err) => setTavernError(toErrorMessage(err)));
+  }
+
   return (
     <div className="studio-page">
       <PageHeader
@@ -9979,6 +13188,14 @@ function ProjectShell({
         <ErrorPanel message={novelError} compact />
         <SuccessPanel message={novelMessage} compact />
         <SuccessPanel message={novelSnapshotMessage} compact />
+        {novelLoading && (
+          <LoadingSkeletonPanel
+            title="Novel dashboard loading"
+            detail="Manuscript summary renders before chapter, scene, snapshot, and quality lists. Hidden world facts and private notes are not included."
+            summaryItems={["manuscripts", "chapters", "scenes", "snapshots", "quality"]}
+            rows={4}
+          />
+        )}
         <div className="form-grid">
           <label>
             Manuscript id
@@ -10023,9 +13240,9 @@ function ProjectShell({
                 value={novelSearchQuery}
                 status={novelSearchStatus}
                 tag={novelSearchTag}
-                onChange={(value) => void handleNovelSearch(value, novelSearchStatus, novelSearchTag)}
-                onStatusChange={(value) => void handleNovelSearch(novelSearchQuery, value, novelSearchTag)}
-                onTagChange={(value) => void handleNovelSearch(novelSearchQuery, novelSearchStatus, value)}
+                onChange={(value: string) => void handleNovelSearch(value, novelSearchStatus, novelSearchTag)}
+                onStatusChange={(value: string) => void handleNovelSearch(novelSearchQuery, value, novelSearchTag)}
+                onTagChange={(value: string) => void handleNovelSearch(novelSearchQuery, novelSearchStatus, value)}
               />
               {novelSearchResults.length > 0 && (
                 <ItemList
@@ -10041,26 +13258,18 @@ function ProjectShell({
                     title="Chapters"
                     actions={<><input value={newChapterTitle} onChange={(event) => setNewChapterTitle(event.target.value)} /><button type="button" disabled={!selectedManuscriptId} onClick={handleCreateChapter}>Add Chapter</button></>}
                   />
-                  <div className="novel-card-list">
-                    {novelChapters.length === 0 ? <EmptyState title="No chapters" /> : novelChapters.map((chapter) => (
-                      <ChapterCard
-                        key={chapter.chapter_id}
-                        chapter={chapter}
-                        selected={chapter.chapter_id === selectedChapterId}
-                        onSelect={() => {
-                          setSelectedChapterId(chapter.chapter_id);
-                          setChapterDraftText(chapter.draft_text ?? "");
-                          setChapterDraftSavedText(chapter.draft_text ?? "");
-                          void fetchNovelDraftSnapshots(selectedProjectId, chapter.chapter_id).then((snapshots) => setNovelSnapshots(snapshots.snapshots));
-                        }}
-                      />
-                    ))}
-                  </div>
+                  {novelChapters.length === 0 ? <EmptyState title="No chapters" /> : (
+                    <ChapterListPro
+                      chapters={novelChapters}
+                      selectedChapterId={selectedChapterId}
+                      onSelectChapter={(chapter: NovelChapter) => selectNovelChapter(chapter)}
+                    />
+                  )}
                 </div>
                 <ChapterEditorPro>
                   <NovelToolbar
                     title="Chapter Editor Pro"
-                    meta={selectedChapter ? <><span className="muted">{selectedChapter.title}</span> <WordCountBadge text={chapterDraftText} /> <DraftSaveStatus dirty={chapterDraftText !== chapterDraftSavedText} /></> : <span className="muted">Select a chapter</span>}
+                    meta={selectedChapter ? <><span className="muted">{selectedChapter.title}</span> <WordCountBadge count={chapterCurrentWordCount} /> {chapterWordCountPending ? <span className="muted">counting...</span> : null} <DraftSaveStatus dirty={chapterDraftText !== chapterDraftSavedText} /></> : <span className="muted">Select a chapter</span>}
                     actions={<><button type="button" disabled={!selectedChapter} onClick={handleSaveChapterDraft}>Save Draft</button><button type="button" disabled={!selectedChapter} onClick={handleCreateScene}>Add Scene</button><button type="button" disabled={!selectedChapter} onClick={handleCreateSnapshot}>Create Snapshot</button></>}
                   />
                   {selectedChapter ? (
@@ -10069,14 +13278,14 @@ function ProjectShell({
                 <LinkedRefList title="Linked scenes" refs={selectedChapter.scene_refs ?? []} />
                 <LinkedRefList title="Linked characters" refs={selectedChapter.linked_character_ids ?? []} />
                 <LinkedRefList title="Linked timeline events" refs={selectedChapter.linked_timeline_event_ids ?? []} />
-                <DraftVersionPanel snapshots={novelSnapshots} onCompare={(snapshotId) => void handleCompareSnapshot(snapshotId)} />
+                <DraftVersionPanel snapshots={novelSnapshots} onCompare={(snapshotId: string) => void handleCompareSnapshot(snapshotId)} />
               </div>
             ) : (
               <EmptyState title="Select a chapter." />
             )}
                 </ChapterEditorPro>
               </div>
-              <SceneCardsBoard scenes={novelScenes.filter((scene) => !selectedChapterId || scene.chapter_id === selectedChapterId)} />
+              <SceneCardsBoard scenes={selectedChapterScenes} />
               <div className="mode-landing-grid">
                 <NovelSafeSummaryPanel title="Structure Tools">
                   <p>Outline editor, character arcs, plot threads, foreshadowing, timeline links, and quality checks remain local Novel drafts.</p>
@@ -10085,12 +13294,11 @@ function ProjectShell({
                   chapters={novelChapters}
                   scenes={novelScenes}
                   selectedChapterId={selectedChapterId}
-                  onSelectChapter={(chapterId) => {
+                  onSelectChapter={(chapterId: string) => {
                     const chapter = novelChapters.find((item) => item.chapter_id === chapterId);
-                    setSelectedChapterId(chapterId);
-                    setChapterDraftText(chapter?.draft_text ?? "");
-                    setChapterDraftSavedText(chapter?.draft_text ?? "");
-                    void fetchNovelDraftSnapshots(selectedProjectId, chapterId).then((snapshots) => setNovelSnapshots(snapshots.snapshots));
+                    if (chapter) {
+                      selectNovelChapter(chapter);
+                    }
                   }}
                 />
                 <CharacterArcPanel chapters={novelChapters} scenes={novelScenes} />
@@ -10140,29 +13348,24 @@ function ProjectShell({
         <p className="muted">Tavern data is local RP material: sessions, messages, memory, and proposals. It never writes World GameState, EventLog, raw env, API keys, hidden facts, or raw state_deltas.</p>
         <ErrorPanel message={tavernError} compact />
         <SuccessPanel message={tavernMessage} compact />
+        {tavernLoading && (
+          <LoadingSkeletonPanel
+            title="Tavern dashboard loading"
+            detail="Session and character summaries render before long message and memory lists. Mature/private and hidden context remain excluded."
+            summaryItems={["characters", "sessions", "messages", "RP memory", "safety"]}
+            rows={4}
+          />
+        )}
         <TavernWorkspaceShell
           navigation={(
             <div className="stack">
               <TavernToolbar title="Characters / Sessions" meta={<p className="muted">Local RP workspace navigation: Characters, Sessions, Multi-NPC Scenes, Memory, Voice, Boundaries, Safety, Export, Cross-Mode.</p>} />
               <CharacterCardLibrary characters={tavernCharacters} selectedCharacterId={selectedTavernCharacterId} onSelect={setSelectedTavernCharacterId} />
-              <div className="stack">
-                {tavernSessions.map((session) => (
-                  <TavernSessionCard
-                    key={session.session_id}
-                    session={session}
-                    selected={session.session_id === selectedTavernSessionId}
-                    onSelect={async () => {
-                      setSelectedTavernSessionId(session.session_id);
-                      try {
-                        const messages = await fetchTavernMessages(selectedProjectId, session.session_id);
-                        setTavernMessages(messages.messages);
-                      } catch (err) {
-                        setTavernError(toErrorMessage(err));
-                      }
-                    }}
-                  />
-                ))}
-              </div>
+              <TavernSessionListPro
+                sessions={tavernSessions}
+                selectedSessionId={selectedTavernSessionId}
+                onSelect={(session: TavernSession) => selectTavernSession(session)}
+              />
             </div>
           )}
           main={(
@@ -10280,26 +13483,10 @@ function ProjectShell({
               <input value={newTavernSessionTitle} onChange={(event) => setNewTavernSessionTitle(event.target.value)} />
               <button type="button" disabled={!selectedProjectId} onClick={handleCreateTavernSession}>Create Session</button>
             </div>
-            <ItemList
-              emptyText="No Tavern sessions"
-              items={tavernSessions.map((session) => (
-                <button
-                  key={session.session_id}
-                  type="button"
-                  className={session.session_id === selectedTavernSessionId ? "selected-list-button" : ""}
-                  onClick={async () => {
-                    setSelectedTavernSessionId(session.session_id);
-                    try {
-                      const messages = await fetchTavernMessages(selectedProjectId, session.session_id);
-                      setTavernMessages(messages.messages);
-                    } catch (err) {
-                      setTavernError(toErrorMessage(err));
-                    }
-                  }}
-                >
-                  {session.title} · {session.status}
-                </button>
-              ))}
+            <TavernSessionListPro
+              sessions={tavernSessions}
+              selectedSessionId={selectedTavernSessionId}
+              onSelect={(session: TavernSession) => selectTavernSession(session)}
             />
           </div>
         </div>
@@ -10329,12 +13516,7 @@ function ProjectShell({
           </div>
           <div>
             <h4>Messages</h4>
-            <ItemList
-              emptyText="No messages"
-              items={tavernMessages.map((message) => (
-                <span key={message.message_id}><strong>{message.speaker_type}</strong>: {message.content}</span>
-              ))}
-            />
+            <TavernMessageListPro messages={tavernMessages} />
           </div>
           <div>
             <h4>Scene Mood Presets</h4>
@@ -10368,14 +13550,7 @@ function ProjectShell({
               </select>
             </label>
             <button type="button" disabled={!selectedProjectId || !selectedMultiNPCSceneId} onClick={handleGenerateMultiNPCReply}>Generate Next Reply</button>
-            <ItemList
-              emptyText={tavernCharacters.length < 2 ? "Create at least two Tavern characters first." : "No multi-NPC scenes"}
-              items={multiNPCScenes.map((scene) => (
-                <span key={scene.scene_id}>
-                  {scene.title} · participants {scene.participant_ids.length} · turn {scene.current_turn_index + 1}
-                </span>
-              ))}
-            />
+            <MultiNPCScenePro scenes={multiNPCScenes} selectedSceneId={selectedMultiNPCSceneId} onSelect={setSelectedMultiNPCSceneId} onGenerateNext={handleGenerateMultiNPCReply} />
           </div>
         </div>
         <div className="card-grid">
@@ -10538,6 +13713,8 @@ function ProjectShell({
           <ModuleBrowserProPanel
             modules={modules}
             selectedModuleId={selectedModuleId}
+            isLoading={moduleLoading}
+            cacheStatus={moduleSafeCacheStatus}
             moduleSearchQuery={moduleSearchQuery}
             moduleTypeFilter={moduleTypeFilter}
             moduleRiskFilter={moduleRiskFilter}
@@ -10561,11 +13738,13 @@ function ProjectShell({
                   <p className="muted">{moduleDetail.summary.package_id} · {moduleDetail.summary.safe_path_hint}</p>
                   <p>Validation: {moduleDetail.summary.validation_status}</p>
                   <p>Compatibility: {moduleDetail.summary.compatibility_status}</p>
-                  <p>Targets: {moduleDetail.target_project_modes.join(", ") || "not specified"}</p>
-                  <p>Dependencies: {moduleDetail.dependencies.join(", ") || "none"}</p>
-                  <p>Conflicts: {moduleDetail.conflicts.join(", ") || "none"}</p>
-                  <ItemList emptyText="No errors." items={moduleDetail.summary.errors.map((item) => <span key={item} className="danger-text">{redactReportText(item)}</span>)} />
-                  <ItemList emptyText="No warnings." items={moduleDetail.summary.warnings.map((item) => <span key={item}>{redactReportText(item)}</span>)} />
+                  <p>Targets: {safePreviewItems(moduleDetail.target_project_modes, "not specified")}</p>
+                  <p>Dependencies: {safePreviewItems(moduleDetail.dependencies, "none")}</p>
+                  <p>Conflicts: {safePreviewItems(moduleDetail.conflicts, "none")}</p>
+                  <ItemList emptyText="No errors." items={moduleDetail.summary.errors.slice(0, AUTHORING_SAFE_PREVIEW_LIMIT).map((item) => <span key={item} className="danger-text">{redactReportText(item)}</span>)} />
+                  {moduleDetail.summary.errors.length > AUTHORING_SAFE_PREVIEW_LIMIT && <p className="muted">{moduleDetail.summary.errors.length - AUTHORING_SAFE_PREVIEW_LIMIT} additional errors are summarized in validation dashboard pages.</p>}
+                  <ItemList emptyText="No warnings." items={moduleDetail.summary.warnings.slice(0, AUTHORING_SAFE_PREVIEW_LIMIT).map((item) => <span key={item}>{redactReportText(item)}</span>)} />
+                  {moduleDetail.summary.warnings.length > AUTHORING_SAFE_PREVIEW_LIMIT && <p className="muted">{moduleDetail.summary.warnings.length - AUTHORING_SAFE_PREVIEW_LIMIT} additional warnings are summarized in validation dashboard pages.</p>}
                 </div>
               ) : (
                 <EmptyState title="Select a local module." detail="Scan the project modules directory to populate this panel." />
@@ -10613,10 +13792,13 @@ function ProjectShell({
           <summary>All permissions</summary>
           <ItemList
             emptyText="No permission summaries."
-            items={modulePermissionSummaries.map((item) => (
+            items={modulePermissionSummaries.slice(0, AUTHORING_DEFAULT_PAGE_SIZE).map((item) => (
               <span key={item.package_id}>{item.package_id}: {item.risk_level} · {item.dangerous_permissions.join(", ") || "no dangerous permissions"}</span>
             ))}
           />
+          {modulePermissionSummaries.length > AUTHORING_DEFAULT_PAGE_SIZE && (
+            <p className="muted">{modulePermissionSummaries.length - AUTHORING_DEFAULT_PAGE_SIZE} additional permission summaries are available through the Permission Dashboard risk groups and pagination.</p>
+          )}
         </details>
         {moduleCompatibility && <p className="muted">Selected compatibility: {String(moduleCompatibility.status ?? "unknown")}</p>}
       </section>
@@ -10662,7 +13844,16 @@ function SuccessPanel({ message, compact = false }: { message: string; compact?:
 
 function StatusBadge({ label, enabled }: { label: string; enabled: boolean | undefined }) {
   const state = enabled ? "enabled" : "disabled";
-  return <span className={`status-badge ${state}`}>{label}: {state}</span>;
+  const safeLabel = safeAriaText(label);
+  return (
+    <span
+      className={`status-badge ${state}`}
+      role="status"
+      aria-label={`Status: ${safeLabel} is ${state}`}
+    >
+      {safeLabel}: {state}
+    </span>
+  );
 }
 
 function StatusDot({ label, enabled }: { label: string; enabled: boolean | undefined }) {
@@ -11746,7 +14937,11 @@ function AuthoringPreviewCode({ content }: { content: string }) {
 }
 
 function confirmDangerousAction(message: string): boolean {
-  return window.confirm(message);
+  const returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  // Native confirm provides keyboard navigation without introducing a custom destructive default button.
+  const confirmed = window.confirm(message);
+  focusElementSafely(returnFocus);
+  return confirmed;
 }
 
 function ProjectSelectorPanel({
@@ -15620,6 +18815,8 @@ function TemplateWizardPanel({ worldId }: { worldId: string }) {
   const [message, setMessage] = useState<string>("");
   const [error, setError] = useState<string>("");
   const [isBusy, setIsBusy] = useState<boolean>(false);
+  const stepTitleRef = useRef<HTMLHeadingElement | null>(null);
+  useStepTitleFocus(draft.current_step, stepTitleRef);
 
   useEffect(() => {
     setDraft((current) => ({ ...current, target_world_id: current.template_type === "world" ? null : worldId }));
@@ -15687,7 +18884,7 @@ function TemplateWizardPanel({ worldId }: { worldId: string }) {
     <section className="mod-manager-panel authoring-zone">
       <div className="authoring-pane-header">
         <div>
-          <h2>Template Wizard</h2>
+          <h2 ref={stepTitleRef} tabIndex={-1}>Template Wizard</h2>
           <p className="muted">Step through type, variables, preview, validation, and explicit save/apply.</p>
         </div>
         <span className="badge">{draft.current_step}</span>
@@ -15989,10 +19186,23 @@ function ScriptPackageBuilderPanel({ worldId }: { worldId: string }) {
           </dl>
           <ValidationPanel validation={report.validation} onSelectIssue={() => undefined} />
           <h4>Dependencies / conflicts</h4>
-          <p className="muted">Dependencies: {report.dependencies.join(", ") || "none"}</p>
-          <p className="muted">Conflicts: {report.conflicts.join(", ") || "none"}</p>
-          <h4>Normal manifest</h4>
-          <AuthoringPreviewCode content={JSON.stringify(report.normal_manifest, null, 2)} />
+          <p className="muted">Dependencies: {safePreviewItems(report.dependencies, "none")}</p>
+          <p className="muted">Conflicts: {safePreviewItems(report.conflicts, "none")}</p>
+          <h4>Normal manifest safe summary</h4>
+          <dl className="summary-list compact">
+            <dt>Package id</dt>
+            <dd>{String(report.normal_manifest.package_id ?? report.manifest.package_id)}</dd>
+            <dt>Name</dt>
+            <dd>{String(report.normal_manifest.name ?? report.manifest.name)}</dd>
+            <dt>Version</dt>
+            <dd>{String(report.normal_manifest.version ?? report.manifest.version)}</dd>
+            <dt>Included worlds</dt>
+            <dd>{safePreviewItems(stringListFromUnknown(report.normal_manifest.included_worlds), "none")}</dd>
+            <dt>Included quests</dt>
+            <dd>{safePreviewItems(stringListFromUnknown(report.normal_manifest.included_quests), "none")}</dd>
+            <dt>Included characters</dt>
+            <dd>{safePreviewItems(stringListFromUnknown(report.normal_manifest.included_characters), "none")}</dd>
+          </dl>
         </div>
       )}
       {message && <p className="muted">{message}</p>}
@@ -16178,6 +19388,9 @@ function WorldPackWizardPanel() {
   const [message, setMessage] = useState<string>("");
   const [error, setError] = useState<string>("");
   const [isBusy, setIsBusy] = useState<boolean>(false);
+  const currentStep = preview?.draft.current_step ?? draft.current_step ?? "basic_info";
+  const stepTitleRef = useRef<HTMLHeadingElement | null>(null);
+  useStepTitleFocus(currentStep, stepTitleRef);
 
   function updateDraft(patch: Partial<WorldPackWizardDraft>) {
     setDraft((current) => ({ ...current, ...patch }));
@@ -16243,10 +19456,10 @@ function WorldPackWizardPanel() {
     <section className="mod-manager-panel authoring-zone">
       <div className="authoring-pane-header">
         <div>
-          <h2>World Pack Wizard</h2>
+          <h2 ref={stepTitleRef} tabIndex={-1}>World Pack Wizard</h2>
           <p className="muted">Basic info, genre, starting region, systems, preview, validation, and explicit apply.</p>
         </div>
-        <span className="badge">{preview?.draft.current_step ?? draft.current_step ?? "basic_info"}</span>
+        <span className="badge">{currentStep}</span>
       </div>
       <div className="template-grid">
         <TextInput label="World id" value={draft.world_id} onChange={(value) => updateDraft({ world_id: value })} />
@@ -21454,6 +24667,8 @@ function EventLogViewerPanel({
   hasSession,
   onLoadSession,
   onLoadSave,
+  isLoading,
+  cacheStatus,
   debugEnabled
 }: {
   events: DebugEvent[];
@@ -21462,29 +24677,53 @@ function EventLogViewerPanel({
   hasSession: boolean;
   onLoadSession: () => void;
   onLoadSave: () => void;
+  isLoading: boolean;
+  cacheStatus: SafeApiCacheStatus | null;
   debugEnabled: boolean;
 }) {
-  const [turnFilter, setTurnFilter] = useState("");
+  const [turnFromFilter, setTurnFromFilter] = useState("");
+  const [turnToFilter, setTurnToFilter] = useState("");
   const [eventTypeFilter, setEventTypeFilter] = useState("");
   const [actorFilter, setActorFilter] = useState("");
   const [moduleFilter, setModuleFilter] = useState("");
   const [tagFilter, setTagFilter] = useState("");
+  const [pageSize, setPageSize] = useState(50);
+  const [pageIndex, setPageIndex] = useState(0);
   const eventTypes = useMemo(() => sortedUnique(events.map((event) => eventLogSafeType(event))), [events]);
   const actors = useMemo(() => sortedUnique(events.map((event) => eventLogSafeActor(event))), [events]);
   const sourceModules = useMemo(() => sortedUnique(events.map((event) => eventLogSafeSourceModule(event))), [events]);
   const tags = useMemo(() => sortedUnique(events.flatMap((event) => eventLogSafeTags(event))), [events]);
   const filteredEvents = useMemo(
-    () =>
-      events.filter((event) => {
-        if (turnFilter && event.turn !== Number(turnFilter)) return false;
+    () => {
+      const from = turnFromFilter ? Number(turnFromFilter) : null;
+      const to = turnToFilter ? Number(turnToFilter) : null;
+      return events.filter((event) => {
+        if (from !== null && event.turn < from) return false;
+        if (to !== null && event.turn > to) return false;
         if (eventTypeFilter && eventLogSafeType(event) !== eventTypeFilter) return false;
         if (actorFilter && eventLogSafeActor(event) !== actorFilter) return false;
         if (moduleFilter && eventLogSafeSourceModule(event) !== moduleFilter) return false;
         if (tagFilter && !eventLogSafeTags(event).includes(tagFilter)) return false;
         return true;
-      }),
-    [actorFilter, eventTypeFilter, events, moduleFilter, tagFilter, turnFilter]
+      });
+    },
+    [actorFilter, eventTypeFilter, events, moduleFilter, tagFilter, turnFromFilter, turnToFilter]
   );
+  const pageCount = Math.max(1, Math.ceil(filteredEvents.length / pageSize));
+  const clampedPageIndex = Math.min(pageIndex, pageCount - 1);
+  const windowStart = clampedPageIndex * pageSize;
+  const windowEnd = Math.min(windowStart + pageSize, filteredEvents.length);
+  const visibleEvents = filteredEvents.slice(windowStart, windowEnd);
+
+  useEffect(() => {
+    setPageIndex(0);
+  }, [actorFilter, eventTypeFilter, events, moduleFilter, pageSize, tagFilter, turnFromFilter, turnToFilter]);
+
+  useEffect(() => {
+    if (pageIndex > pageCount - 1) {
+      setPageIndex(pageCount - 1);
+    }
+  }, [pageCount, pageIndex]);
 
   return (
     <section className="debug-group timeline eventlog-viewer">
@@ -21505,13 +24744,23 @@ function EventLogViewerPanel({
           Load Save EventLog
         </button>
         <label>
-          Turn
+          Turn from
           <input
             inputMode="numeric"
             pattern="[0-9]*"
             placeholder="any"
-            value={turnFilter}
-            onChange={(event) => setTurnFilter(event.target.value.replace(/\D/g, ""))}
+            value={turnFromFilter}
+            onChange={(event) => setTurnFromFilter(event.target.value.replace(/\D/g, ""))}
+          />
+        </label>
+        <label>
+          Turn to
+          <input
+            inputMode="numeric"
+            pattern="[0-9]*"
+            placeholder="any"
+            value={turnToFilter}
+            onChange={(event) => setTurnToFilter(event.target.value.replace(/\D/g, ""))}
           />
         </label>
         <label>
@@ -21559,20 +24808,65 @@ function EventLogViewerPanel({
           </select>
         </label>
       </div>
+      <SafeApiCacheStatusPanel status={cacheStatus} onRefresh={cacheStatus?.key.includes(":save:") ? onLoadSave : onLoadSession} />
       {error && <p className="error">{redactReportText(error)}</p>}
       {error && error.toLowerCase().includes("debug") && <p className="muted">ENABLE_DEBUG_API required for loading raw debug-backed EventLog data.</p>}
-      {!error && events.length === 0 && (
+      {isLoading && events.length === 0 && (
+        <LoadingSkeletonPanel
+          title="EventLog loading"
+          detail="Loading safe EventLog summaries first. Raw event JSON and raw StateDelta payloads stay out of normal view."
+          summaryItems={["event id", "turn/time", "type", "actor safe summary", "linked StateDelta count"]}
+          rows={5}
+        />
+      )}
+      {isLoading && events.length > 0 && (
+        <ProgressiveLoadNote
+          title="Refreshing EventLog rows"
+          detail="Existing safe summaries remain visible while the local EventLog refresh completes."
+        />
+      )}
+      {!isLoading && !error && events.length === 0 && (
         <EmptyState title="No EventLog events loaded." detail="Load a session or save EventLog. This viewer is read-only and cannot modify EventLog or GameState." />
       )}
       {events.length > 0 && filteredEvents.length === 0 && (
         <EmptyState title="No events match these filters." detail="Try another turn, event type, actor, source module, or tag." />
       )}
       {filteredEvents.length > 0 && (
-        <div className="debug-event-list">
-          {filteredEvents.map((event) => (
-            <EventLogSafeCard event={event} debugEnabled={debugEnabled} key={event.event_id} />
-          ))}
-        </div>
+        <>
+          <div className="eventlog-window-toolbar" aria-label="EventLog window controls">
+            <p className="muted">
+              Rendering {windowStart + 1}-{windowEnd} of {filteredEvents.length} filtered event(s). {filteredEvents.length - visibleEvents.length} filtered event(s) remain outside the current DOM window.
+            </p>
+            <label>
+              Rows
+              <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>
+                {[25, 50, 100, 200].map((size) => (
+                  <option key={size} value={size}>
+                    {size}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button type="button" onClick={() => setPageIndex(0)} disabled={clampedPageIndex === 0}>
+              First
+            </button>
+            <button type="button" onClick={() => setPageIndex((current) => Math.max(0, current - 1))} disabled={clampedPageIndex === 0}>
+              Previous
+            </button>
+            <span className="muted">Page {clampedPageIndex + 1} / {pageCount}</span>
+            <button type="button" onClick={() => setPageIndex((current) => Math.min(pageCount - 1, current + 1))} disabled={clampedPageIndex >= pageCount - 1}>
+              Next
+            </button>
+            <button type="button" onClick={() => setPageIndex(pageCount - 1)} disabled={clampedPageIndex >= pageCount - 1}>
+              Last
+            </button>
+          </div>
+          <div className="debug-event-list" data-windowed-eventlog="true" data-rendered-count={visibleEvents.length}>
+            {visibleEvents.map((event) => (
+              <EventLogSafeCard event={event} debugEnabled={debugEnabled} key={event.event_id} />
+            ))}
+          </div>
+        </>
       )}
     </section>
   );
@@ -21591,10 +24885,13 @@ const HIDDEN_LEAK_CATEGORIES = [
 ] as const;
 
 type HiddenLeakCategory = (typeof HIDDEN_LEAK_CATEGORIES)[number];
+const HIDDEN_LEAK_TARGETS = ["UI", "prompt", "export", "diagnostics", "backup", "logs"] as const;
+type HiddenLeakTarget = (typeof HIDDEN_LEAK_TARGETS)[number];
 type HiddenLeakIssue = {
   id: string;
   category: HiddenLeakCategory;
   severity: "blocker" | "warning" | "info";
+  leakTarget: HiddenLeakTarget;
   source: string;
   target: string;
   safeSummary: string;
@@ -21620,15 +24917,81 @@ function HiddenLeakReportPanel({
   selectedWorldId: string;
   onRunLeakCheck: () => void;
 }) {
-  const [category, setCategory] = useState<HiddenLeakCategory | "all">("all");
+  const [targetGroup, setTargetGroup] = useState<HiddenLeakTarget | "all">("all");
+  const [severityFilter, setSeverityFilter] = useState<HiddenLeakIssue["severity"] | "all">("all");
+  const [sourceTargetFilter, setSourceTargetFilter] = useState("all");
+  const [issueSearch, setIssueSearch] = useState("");
+  const debouncedIssueSearch = useDebouncedValue(issueSearch, 220);
+  const [pageSize, setPageSize] = useState(25);
+  const [pageIndex, setPageIndex] = useState(0);
+  const [collapsedTargets, setCollapsedTargets] = useState<Record<string, boolean>>({});
   const issues = useMemo(
     () => buildHiddenLeakIssues(visibleState, events, worldHealth, narrativeEvalReports, diagnosticsBundlePreview, backupPlan),
     [backupPlan, diagnosticsBundlePreview, events, narrativeEvalReports, visibleState, worldHealth]
   );
-  const filteredIssues = category === "all" ? issues : issues.filter((issue) => issue.category === category);
+  const sourceTargetOptions = useMemo(
+    () => Array.from(new Set(issues.map((issue) => `${issue.source} -> ${issue.target}`))).sort((a, b) => a.localeCompare(b)),
+    [issues]
+  );
+  const hiddenLeakSearchIndexById = useMemo(
+    () =>
+      new Map(
+        issues.map((issue) => [
+          issue.id,
+          buildSafeSearchIndex([
+            issue.id,
+            issue.category,
+            issue.severity,
+            issue.leakTarget,
+            issue.source,
+            issue.target,
+            issue.safeSummary
+          ])
+        ])
+      ),
+    [issues]
+  );
+  const filteredIssues = useMemo(() => {
+    const query = debouncedIssueSearch.trim();
+    return issues.filter((issue) => {
+      const sourceTarget = `${issue.source} -> ${issue.target}`;
+      if (targetGroup !== "all" && issue.leakTarget !== targetGroup) {
+        return false;
+      }
+      if (severityFilter !== "all" && issue.severity !== severityFilter) {
+        return false;
+      }
+      if (sourceTargetFilter !== "all" && sourceTarget !== sourceTargetFilter) {
+        return false;
+      }
+      if (!query) {
+        return true;
+      }
+      return safeSearchMatches(hiddenLeakSearchIndexById.get(issue.id) ?? "", query);
+    });
+  }, [debouncedIssueSearch, hiddenLeakSearchIndexById, issues, severityFilter, sourceTargetFilter, targetGroup]);
   const blockerCount = issues.filter((issue) => issue.severity === "blocker").length;
   const warningCount = issues.filter((issue) => issue.severity === "warning").length;
   const status = blockerCount ? "blocked" : warningCount ? "review" : issues.length ? "clear with notes" : "no report";
+  const pageCount = Math.max(1, Math.ceil(filteredIssues.length / pageSize));
+  const clampedPageIndex = Math.min(pageIndex, pageCount - 1);
+  const windowStart = clampedPageIndex * pageSize;
+  const windowEnd = Math.min(windowStart + pageSize, filteredIssues.length);
+  const visibleIssues = filteredIssues.slice(windowStart, windowEnd);
+
+  useEffect(() => {
+    setPageIndex(0);
+  }, [debouncedIssueSearch, pageSize, severityFilter, sourceTargetFilter, targetGroup]);
+
+  useEffect(() => {
+    if (pageIndex > pageCount - 1) {
+      setPageIndex(pageCount - 1);
+    }
+  }, [pageCount, pageIndex]);
+
+  function toggleLeakTarget(target: HiddenLeakTarget) {
+    setCollapsedTargets((current) => ({ ...current, [target]: !current[target] }));
+  }
 
   return (
     <section className="debug-group hidden-leak-report">
@@ -21646,12 +25009,46 @@ function HiddenLeakReportPanel({
           Run Leak Check
         </button>
         <label>
-          Category
-          <select value={category} onChange={(event) => setCategory(event.target.value as HiddenLeakCategory | "all")}>
-            <option value="all">All categories</option>
-            {HIDDEN_LEAK_CATEGORIES.map((item) => (
+          Leak target
+          <select value={targetGroup} onChange={(event) => setTargetGroup(event.target.value as HiddenLeakTarget | "all")}>
+            <option value="all">All targets</option>
+            {HIDDEN_LEAK_TARGETS.map((item) => (
               <option key={item} value={item}>
                 {item}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Severity
+          <select value={severityFilter} onChange={(event) => setSeverityFilter(event.target.value as HiddenLeakIssue["severity"] | "all")}>
+            <option value="all">All severities</option>
+            <option value="blocker">Blocker</option>
+            <option value="warning">Warning</option>
+            <option value="info">Info</option>
+          </select>
+        </label>
+        <label>
+          Source / target
+          <select value={sourceTargetFilter} onChange={(event) => setSourceTargetFilter(event.target.value)}>
+            <option value="all">All source / target pairs</option>
+            {sourceTargetOptions.map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Safe metadata search
+          <input value={issueSearch} onChange={(event) => setIssueSearch(event.target.value)} placeholder="Search redacted metadata" />
+        </label>
+        <label>
+          Rows
+          <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>
+            {[10, 25, 50, 100].map((size) => (
+              <option key={size} value={size}>
+                {size}
               </option>
             ))}
           </select>
@@ -21662,31 +25059,76 @@ function HiddenLeakReportPanel({
         <span>{blockerCount} blockers</span>
         <span>{warningCount} warnings</span>
         <span>{issues.length} safe issue rows</span>
+        <span>{filteredIssues.length} filtered</span>
+        {issueSearch !== debouncedIssueSearch ? <span>filtering...</span> : null}
       </div>
       {issues.length === 0 ? (
-        <EmptyState title="No hidden leak report loaded." detail="Run the local leak check or load quality reports. This panel never uploads data or calls an external LLM judge." />
+        <>
+          <LoadingSkeletonPanel
+            title="Hidden Leak Report staged loading"
+            detail="Overall status and category counters stay visible first. Leak findings render only as redacted safe metadata after local checks load."
+            summaryItems={["UI", "prompt", "export", "diagnostics", "backup", "logs"]}
+            rows={3}
+          />
+          <EmptyState title="No hidden leak report loaded." detail="Run the local leak check or load quality reports. This panel never uploads data or calls an external LLM judge." />
+        </>
       ) : filteredIssues.length === 0 ? (
-        <EmptyState title="No issues in this category." detail="Try another category or run the local leak check again." />
+        <EmptyState title="No matching leak issues." detail="Try another target, severity, source/target pair, or safe metadata search." />
       ) : (
-        <div className="debug-event-list">
-          {filteredIssues.map((issue) => (
-            <div className="section-card" key={issue.id}>
-              <div className="card-header">
-                <h3>{issue.category}</h3>
-                <LeakRiskBadge severity={issue.severity} />
-              </div>
-              <dl className="event-details">
-                <dt>Source</dt>
-                <dd>{issue.source}</dd>
-                <dt>Target</dt>
-                <dd>{issue.target}</dd>
-                <dt>Safe summary</dt>
-                <dd>{issue.safeSummary}</dd>
-                <dt>Suggested action</dt>
-                <dd>{issue.suggestedAction}</dd>
-              </dl>
+        <div className="hidden-leak-issue-browser" data-windowed-hidden-leak-report="true">
+          <div className="section-heading-row">
+            <p className="muted">
+              Rendering {windowStart + 1}-{windowEnd} of {filteredIssues.length} filtered leak issue(s). {filteredIssues.length - visibleIssues.length} filtered issue(s) remain outside the current DOM window.
+            </p>
+            <div className="pagination-controls" aria-label="Hidden leak pagination">
+              <button type="button" onClick={() => setPageIndex(0)} disabled={clampedPageIndex === 0}>First</button>
+              <button type="button" onClick={() => setPageIndex(Math.max(clampedPageIndex - 1, 0))} disabled={clampedPageIndex === 0}>Previous</button>
+              <span>Page {clampedPageIndex + 1} / {pageCount}</span>
+              <button type="button" onClick={() => setPageIndex(Math.min(clampedPageIndex + 1, pageCount - 1))} disabled={clampedPageIndex >= pageCount - 1}>Next</button>
+              <button type="button" onClick={() => setPageIndex(pageCount - 1)} disabled={clampedPageIndex >= pageCount - 1}>Last</button>
             </div>
-          ))}
+          </div>
+          <div className="hidden-leak-target-groups">
+            {HIDDEN_LEAK_TARGETS.map((target) => {
+              const targetIssues = visibleIssues.filter((issue) => issue.leakTarget === target);
+              if (!targetIssues.length) {
+                return null;
+              }
+              const collapsed = Boolean(collapsedTargets[target]);
+              return (
+                <section className="hidden-leak-target-group" key={target}>
+                  <button type="button" className="hidden-leak-target-toggle" onClick={() => toggleLeakTarget(target)} aria-expanded={!collapsed}>
+                    <span>{collapsed ? "Show" : "Hide"} {target}</span>
+                    <span>{targetIssues.length} visible issue(s)</span>
+                  </button>
+                  {!collapsed && (
+                    <div className="debug-event-list">
+                      {targetIssues.map((issue) => (
+                        <article className={`section-card hidden-leak-issue-row ${issue.severity}`} key={issue.id}>
+                          <div className="card-header">
+                            <h3>{issue.category}</h3>
+                            <LeakRiskBadge severity={issue.severity} />
+                          </div>
+                          <dl className="event-details">
+                            <dt>Leak target</dt>
+                            <dd>{issue.leakTarget}</dd>
+                            <dt>Source</dt>
+                            <dd>{issue.source}</dd>
+                            <dt>Target</dt>
+                            <dd>{issue.target}</dd>
+                            <dt>Safe summary</dt>
+                            <dd>{issue.safeSummary}</dd>
+                            <dt>Suggested action</dt>
+                            <dd>{issue.suggestedAction}</dd>
+                          </dl>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              );
+            })}
+          </div>
         </div>
       )}
     </section>
@@ -21749,15 +25191,44 @@ function hiddenLeakIssue(
   summary: string,
   suggestedAction: string
 ): HiddenLeakIssue {
+  const safeSource = redactReportText(source);
+  const safeTarget = redactReportText(target);
+  const safeSummary = redactLeakSummary(summary);
   return {
     id,
     category,
     severity,
-    source: redactReportText(source),
-    target: redactReportText(target),
-    safeSummary: redactLeakSummary(summary),
-    suggestedAction: redactReportText(suggestedAction),
+    leakTarget: inferHiddenLeakTarget(category, safeSource, safeTarget, safeSummary),
+    source: safeSource,
+    target: safeTarget,
+    safeSummary,
+    suggestedAction: redactLeakSummary(suggestedAction),
   };
+}
+
+function inferHiddenLeakTarget(
+  category: HiddenLeakCategory,
+  source: string,
+  target: string,
+  summary: string
+): HiddenLeakTarget {
+  const text = `${category} ${source} ${target} ${summary}`.toLowerCase();
+  if (text.includes("diagnostic")) {
+    return "diagnostics";
+  }
+  if (text.includes("backup")) {
+    return "backup";
+  }
+  if (text.includes("log")) {
+    return "logs";
+  }
+  if (text.includes("export")) {
+    return "export";
+  }
+  if (text.includes("prompt")) {
+    return "prompt";
+  }
+  return "UI";
 }
 
 function collectLeakStrings(values: string[], fallback: string): string[] {
@@ -21913,6 +25384,7 @@ type StateDeltaViewerRow = {
   op: string;
   path: string;
   valueSummary: string;
+  redactedValue: unknown;
   applyStatus: string;
 };
 
@@ -21920,27 +25392,61 @@ function StateDeltaViewerPanel({ events }: { events: DebugEvent[] }) {
   const [opFilter, setOpFilter] = useState("");
   const [pathPrefix, setPathPrefix] = useState("");
   const [eventTypeFilter, setEventTypeFilter] = useState("");
+  const [eventIdFilter, setEventIdFilter] = useState("");
   const [turnFrom, setTurnFrom] = useState("");
   const [turnTo, setTurnTo] = useState("");
   const [pathSearch, setPathSearch] = useState("");
+  const debouncedPathSearch = useDebouncedValue(pathSearch, 180);
+  const [pageSize, setPageSize] = useState(100);
+  const [pageIndex, setPageIndex] = useState(0);
   const rows = useMemo(() => flattenStateDeltaRows(events), [events]);
   const ops = useMemo(() => sortedUnique(rows.map((row) => row.op)), [rows]);
   const eventTypes = useMemo(() => sortedUnique(rows.map((row) => row.eventType)), [rows]);
+  const stateDeltaSearchIndexByRow = useMemo(
+    () =>
+      rows.map((row) =>
+        buildSafeSearchIndex([
+          row.path,
+          row.eventId,
+          row.op,
+          row.eventType,
+          row.sourceModule,
+          row.applyStatus
+        ])
+      ),
+    [rows]
+  );
   const filteredRows = useMemo(
     () =>
-      rows.filter((row) => {
+      rows.filter((row, rowIndex) => {
         const from = turnFrom ? Number(turnFrom) : null;
         const to = turnTo ? Number(turnTo) : null;
         if (opFilter && row.op !== opFilter) return false;
         if (eventTypeFilter && row.eventType !== eventTypeFilter) return false;
+        if (eventIdFilter && !row.eventId.toLowerCase().includes(eventIdFilter.toLowerCase())) return false;
         if (from !== null && row.turn < from) return false;
         if (to !== null && row.turn > to) return false;
         if (pathPrefix && !row.path.startsWith(pathPrefix)) return false;
-        if (pathSearch && !row.path.toLowerCase().includes(pathSearch.toLowerCase())) return false;
+        if (debouncedPathSearch && !safeSearchMatches(stateDeltaSearchIndexByRow[rowIndex] ?? "", debouncedPathSearch)) return false;
         return true;
       }),
-    [eventTypeFilter, opFilter, pathPrefix, pathSearch, rows, turnFrom, turnTo]
+    [debouncedPathSearch, eventIdFilter, eventTypeFilter, opFilter, pathPrefix, rows, stateDeltaSearchIndexByRow, turnFrom, turnTo]
   );
+  const pageCount = Math.max(1, Math.ceil(filteredRows.length / pageSize));
+  const clampedPageIndex = Math.min(pageIndex, pageCount - 1);
+  const windowStart = clampedPageIndex * pageSize;
+  const windowEnd = Math.min(windowStart + pageSize, filteredRows.length);
+  const visibleRows = filteredRows.slice(windowStart, windowEnd);
+
+  useEffect(() => {
+    setPageIndex(0);
+  }, [debouncedPathSearch, eventIdFilter, eventTypeFilter, events, opFilter, pageSize, pathPrefix, turnFrom, turnTo]);
+
+  useEffect(() => {
+    if (pageIndex > pageCount - 1) {
+      setPageIndex(pageCount - 1);
+    }
+  }, [pageCount, pageIndex]);
 
   return (
     <section className="debug-group statedelta-viewer">
@@ -21973,6 +25479,7 @@ function StateDeltaViewerPanel({ events }: { events: DebugEvent[] }) {
           Path search
           <input value={pathSearch} placeholder="inventory" onChange={(event) => setPathSearch(event.target.value)} />
         </label>
+        {pathSearch !== debouncedPathSearch ? <span className="badge">filtering...</span> : null}
         <label>
           Event type
           <select value={eventTypeFilter} onChange={(event) => setEventTypeFilter(event.target.value)}>
@@ -21983,6 +25490,10 @@ function StateDeltaViewerPanel({ events }: { events: DebugEvent[] }) {
               </option>
             ))}
           </select>
+        </label>
+        <label>
+          Event id
+          <input value={eventIdFilter} placeholder="event id" onChange={(event) => setEventIdFilter(event.target.value)} />
         </label>
         <label>
           Turn from
@@ -22010,36 +25521,71 @@ function StateDeltaViewerPanel({ events }: { events: DebugEvent[] }) {
       ) : filteredRows.length === 0 ? (
         <EmptyState title="No StateDelta rows match these filters." detail="Try another op, path prefix, event type, or turn range." />
       ) : (
-        <div className="debug-event-list">
-          {filteredRows.map((row) => (
-            <details className="timeline-event statedelta-row" key={row.id}>
-              <summary>
-                <span>Turn {row.turn}</span>
-                <StateDeltaOpBadge op={row.op} />
-                <span>{row.path}</span>
-                <span>{row.eventId}</span>
-              </summary>
-              <dl className="event-details">
-                <dt>Event id</dt>
-                <dd>{row.eventId}</dd>
-                <dt>Delta op</dt>
-                <dd><StateDeltaOpBadge op={row.op} /></dd>
-                <dt>Path</dt>
-                <dd>{row.path}</dd>
-                <dt>Value summary</dt>
-                <dd>{row.valueSummary}</dd>
-                <dt>Apply status</dt>
-                <dd>{row.applyStatus}</dd>
-                <dt>Source action/module</dt>
-                <dd>
-                  {row.eventType} / {row.sourceModule}
-                </dd>
-                <dt>Actor</dt>
-                <dd>{row.actorId}</dd>
-              </dl>
-            </details>
-          ))}
-        </div>
+        <>
+          <div className="eventlog-window-toolbar statedelta-window-toolbar" aria-label="StateDelta window controls">
+            <p className="muted">
+              Rendering {windowStart + 1}-{windowEnd} of {filteredRows.length} filtered StateDelta row(s). {filteredRows.length - visibleRows.length} filtered row(s) remain outside the current DOM window.
+            </p>
+            <label>
+              Rows
+              <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>
+                {[50, 100, 200, 500].map((size) => (
+                  <option key={size} value={size}>
+                    {size}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button type="button" onClick={() => setPageIndex(0)} disabled={clampedPageIndex === 0}>
+              First
+            </button>
+            <button type="button" onClick={() => setPageIndex((current) => Math.max(0, current - 1))} disabled={clampedPageIndex === 0}>
+              Previous
+            </button>
+            <span className="muted">Page {clampedPageIndex + 1} / {pageCount}</span>
+            <button type="button" onClick={() => setPageIndex((current) => Math.min(pageCount - 1, current + 1))} disabled={clampedPageIndex >= pageCount - 1}>
+              Next
+            </button>
+            <button type="button" onClick={() => setPageIndex(pageCount - 1)} disabled={clampedPageIndex >= pageCount - 1}>
+              Last
+            </button>
+          </div>
+          <div className="debug-event-list" data-windowed-statedelta="true" data-rendered-count={visibleRows.length}>
+            {visibleRows.map((row) => (
+              <details className="timeline-event statedelta-row" key={row.id}>
+                <summary>
+                  <span>Turn {row.turn}</span>
+                  <StateDeltaOpBadge op={row.op} />
+                  <span>{row.path}</span>
+                  <span>{row.eventId}</span>
+                </summary>
+                <dl className="event-details">
+                  <dt>Event id</dt>
+                  <dd>{row.eventId}</dd>
+                  <dt>Delta op</dt>
+                  <dd><StateDeltaOpBadge op={row.op} /></dd>
+                  <dt>Path</dt>
+                  <dd>{row.path}</dd>
+                  <dt>Value summary</dt>
+                  <dd>{row.valueSummary}</dd>
+                  <dt>Apply status</dt>
+                  <dd>{row.applyStatus}</dd>
+                  <dt>Source action/module</dt>
+                  <dd>
+                    {row.eventType} / {row.sourceModule}
+                  </dd>
+                  <dt>Actor</dt>
+                  <dd>{row.actorId}</dd>
+                </dl>
+                <details className="statedelta-value-detail">
+                  <summary>Debug redacted value detail</summary>
+                  <p className="muted">StateDelta values are debug-sensitive. This expanded view is only available inside DebugGate and remains redacted.</p>
+                  <pre>{JSON.stringify(row.redactedValue, null, 2)}</pre>
+                </details>
+              </details>
+            ))}
+          </div>
+        </>
       )}
     </section>
   );
@@ -22057,6 +25603,7 @@ function flattenStateDeltaRows(events: DebugEvent[]): StateDeltaViewerRow[] {
       op: redactReportText(delta.operation),
       path: redactStateDeltaPath(delta.path),
       valueSummary: summarizeStateDeltaValue(delta.value),
+      redactedValue: redactDebugText(delta.value),
       applyStatus: delta.caused_by_event_id || event.event_id ? "recorded in EventLog" : "recorded",
     }))
   );
@@ -22696,6 +26243,8 @@ function TimelineReplayPanel({
   error,
   dryRun,
   dryRunError,
+  isLoading,
+  cacheStatus,
   debugEnabled
 }: {
   timeline: TimelineReplayResponse | null;
@@ -22709,13 +26258,17 @@ function TimelineReplayPanel({
   error: string;
   dryRun: TimelineReplayResponse | null;
   dryRunError: string;
+  isLoading: boolean;
+  cacheStatus: SafeApiCacheStatus | null;
   debugEnabled: boolean;
 }) {
   const [actorFilter, setActorFilter] = useState("");
   const [turnFrom, setTurnFrom] = useState("");
   const [turnTo, setTurnTo] = useState("");
   const [jumpTurn, setJumpTurn] = useState("");
-  const [currentTurnIndex, setCurrentTurnIndex] = useState(0);
+  const [activeEventIndex, setActiveEventIndex] = useState(0);
+  const [turnWindowSize, setTurnWindowSize] = useState(20);
+  const [turnPageIndex, setTurnPageIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const filteredTurns = useMemo(
     () =>
@@ -22729,7 +26282,21 @@ function TimelineReplayPanel({
     [timeline, selectedFilter, actorFilter, turnFrom, turnTo]
   );
   const replaySummary = dryRun?.replay_summary ?? timeline?.replay_summary ?? null;
-  const eventCount = filteredTurns.reduce((total, turnGroup) => total + turnGroup.events.length, 0);
+  const visibleReplayEvents = useMemo(
+    () =>
+      filteredTurns.flatMap((turnGroup) =>
+        turnGroup.events.map((event) => ({
+          turn: turnGroup.turn,
+          event
+        }))
+      ),
+    [filteredTurns]
+  );
+  const eventIndexById = useMemo(
+    () => new Map(visibleReplayEvents.map((item, index) => [item.event.event_id, index])),
+    [visibleReplayEvents]
+  );
+  const eventCount = visibleReplayEvents.length;
   const deltaCount = filteredTurns.reduce(
     (total, turnGroup) =>
       total + turnGroup.events.reduce((turnTotal, event) => turnTotal + event.delta_count, 0),
@@ -22738,48 +26305,103 @@ function TimelineReplayPanel({
   const actorOptions = useMemo(() => {
     const actors = new Set<string>();
     timeline?.turns.forEach((turnGroup) => {
-      turnGroup.events.forEach((event) => actors.add(event.actor_id));
+      turnGroup.events.filter(isTimelineEventSafeForNormalReplay).forEach((event) => actors.add(event.actor_id));
     });
     return Array.from(actors).sort();
   }, [timeline]);
-  const currentTurn = filteredTurns[currentTurnIndex] ?? null;
+  const pageCount = Math.max(1, Math.ceil(filteredTurns.length / turnWindowSize));
+  const clampedTurnPageIndex = Math.min(turnPageIndex, pageCount - 1);
+  const turnWindowStart = clampedTurnPageIndex * turnWindowSize;
+  const turnWindowEnd = Math.min(turnWindowStart + turnWindowSize, filteredTurns.length);
+  const windowedTurns = filteredTurns.slice(turnWindowStart, turnWindowEnd);
+  const activeReplayEvent = visibleReplayEvents[Math.min(activeEventIndex, Math.max(visibleReplayEvents.length - 1, 0))] ?? null;
+  const activeEventId = activeReplayEvent?.event.event_id ?? "";
+  const activeTurn = activeReplayEvent?.turn ?? null;
+  const renderedEventCount = windowedTurns.reduce((total, turnGroup) => total + turnGroup.events.length, 0);
 
   useEffect(() => {
-    setCurrentTurnIndex(0);
+    setActiveEventIndex(0);
+    setTurnPageIndex(0);
     setIsPlaying(false);
   }, [timeline, selectedFilter, actorFilter, turnFrom, turnTo]);
 
   useEffect(() => {
-    if (!isPlaying || filteredTurns.length <= 1) {
+    if (activeEventIndex > visibleReplayEvents.length - 1) {
+      setActiveEventIndex(Math.max(0, visibleReplayEvents.length - 1));
+    }
+  }, [activeEventIndex, visibleReplayEvents.length]);
+
+  useEffect(() => {
+    if (turnPageIndex > pageCount - 1) {
+      setTurnPageIndex(pageCount - 1);
+    }
+  }, [pageCount, turnPageIndex]);
+
+  useEffect(() => {
+    if (!isPlaying || visibleReplayEvents.length <= 1) {
       return;
     }
+    const replayAdvanceMs = reducedMotionActive() ? 2200 : 1200;
     const timer = window.setInterval(() => {
-      setCurrentTurnIndex((index) => {
-        if (index >= filteredTurns.length - 1) {
+      setActiveEventIndex((index) => {
+        if (index >= visibleReplayEvents.length - 1) {
           setIsPlaying(false);
           return index;
         }
-        return index + 1;
+        const nextIndex = index + 1;
+        const nextEvent = visibleReplayEvents[nextIndex];
+        const nextTurnIndex = filteredTurns.findIndex((turnGroup) => turnGroup.turn === nextEvent?.turn);
+        if (nextTurnIndex >= 0) {
+          setTurnPageIndex(Math.floor(nextTurnIndex / turnWindowSize));
+        }
+        return nextIndex;
       });
-    }, 1200);
+    }, replayAdvanceMs);
     return () => window.clearInterval(timer);
-  }, [filteredTurns.length, isPlaying]);
+  }, [filteredTurns, isPlaying, turnWindowSize, visibleReplayEvents]);
+
+  function selectActiveEvent(nextIndex: number) {
+    const clampedIndex = Math.min(Math.max(nextIndex, 0), Math.max(visibleReplayEvents.length - 1, 0));
+    const nextEvent = visibleReplayEvents[clampedIndex];
+    setActiveEventIndex(clampedIndex);
+    const nextTurnIndex = filteredTurns.findIndex((turnGroup) => turnGroup.turn === nextEvent?.turn);
+    if (nextTurnIndex >= 0) {
+      setTurnPageIndex(Math.floor(nextTurnIndex / turnWindowSize));
+    }
+  }
+
+  function firstEventIndexForTurnPage(page: number): number {
+    const nextTurn = filteredTurns[page * turnWindowSize];
+    if (!nextTurn) {
+      return 0;
+    }
+    const eventIndex = visibleReplayEvents.findIndex((item) => item.turn === nextTurn.turn);
+    return eventIndex >= 0 ? eventIndex : 0;
+  }
+
+  function selectTurnPage(nextPage: number) {
+    const clampedPage = Math.min(Math.max(nextPage, 0), pageCount - 1);
+    setIsPlaying(false);
+    setTurnPageIndex(clampedPage);
+    setActiveEventIndex(firstEventIndexForTurnPage(clampedPage));
+  }
 
   function handlePrevious() {
     setIsPlaying(false);
-    setCurrentTurnIndex((index) => Math.max(0, index - 1));
+    selectActiveEvent(activeEventIndex - 1);
   }
 
   function handleNext() {
-    setCurrentTurnIndex((index) => Math.min(Math.max(filteredTurns.length - 1, 0), index + 1));
+    setIsPlaying(false);
+    selectActiveEvent(activeEventIndex + 1);
   }
 
   function handleJumpToTurn() {
     setIsPlaying(false);
-    const targetTurn = Number(jumpTurn || currentTurn?.turn || 0);
-    const index = filteredTurns.findIndex((turnGroup) => turnGroup.turn >= targetTurn);
+    const targetTurn = Number(jumpTurn || activeTurn || 0);
+    const index = visibleReplayEvents.findIndex((item) => item.turn >= targetTurn);
     if (index >= 0) {
-      setCurrentTurnIndex(index);
+      selectActiveEvent(index);
     }
   }
 
@@ -22794,6 +26416,7 @@ function TimelineReplayPanel({
         </div>
         <StatusBadge label={debugEnabled ? "Debug details gated on" : "Debug details disabled"} enabled={debugEnabled} />
       </div>
+      <SafeApiCacheStatusPanel status={cacheStatus} onRefresh={source === "save" ? onLoadSave : onLoadSession} />
       <div className="timeline-controls">
         <label>
           Replay source
@@ -22858,13 +26481,13 @@ function TimelineReplayPanel({
         </button>
       </div>
       <div className="timeline-controls replay-controls" aria-label="Replay controls">
-        <button type="button" onClick={() => setIsPlaying(true)} disabled={!filteredTurns.length}>
+        <button type="button" onClick={() => setIsPlaying(true)} disabled={!visibleReplayEvents.length}>
           Start
         </button>
-        <button type="button" onClick={handlePrevious} disabled={!filteredTurns.length || currentTurnIndex === 0}>
+        <button type="button" onClick={handlePrevious} disabled={!visibleReplayEvents.length || activeEventIndex === 0}>
           Previous
         </button>
-        <button type="button" onClick={handleNext} disabled={!filteredTurns.length || currentTurnIndex >= filteredTurns.length - 1}>
+        <button type="button" onClick={handleNext} disabled={!visibleReplayEvents.length || activeEventIndex >= visibleReplayEvents.length - 1}>
           Next
         </button>
         <label>
@@ -22877,18 +26500,33 @@ function TimelineReplayPanel({
             onChange={(event) => setJumpTurn(event.target.value.replace(/\D/g, ""))}
           />
         </label>
-        <button type="button" onClick={handleJumpToTurn} disabled={!filteredTurns.length}>
+        <button type="button" onClick={handleJumpToTurn} disabled={!visibleReplayEvents.length}>
           Jump to turn
         </button>
         <button type="button" onClick={() => setIsPlaying(false)} disabled={!isPlaying}>
           Pause
         </button>
         <span className="badge">{isPlaying ? "Replay started" : "Replay paused"}</span>
-        <span className="badge">Current turn: {currentTurn?.turn ?? "none"}</span>
+        <span className="badge">Active turn: {activeTurn ?? "none"}</span>
+        <span className="badge">Active event: {activeEventId || "none"}</span>
       </div>
-      {error && <p className="error">{error}</p>}
+      {error && <p className="error">{redactReportText(error)}</p>}
       {error && error.toLowerCase().includes("debug") && <p className="muted">debug disabled</p>}
-      {dryRunError && <p className="error">{dryRunError}</p>}
+      {dryRunError && <p className="error">{redactReportText(dryRunError)}</p>}
+      {isLoading && !timeline && (
+        <LoadingSkeletonPanel
+          title="Timeline Replay loading"
+          detail="Loading visible replay summary before rendering turn windows. Hidden/debug events and raw deltas are not included in normal loading UI."
+          summaryItems={["replay summary", "turn groups", "visible events", "debug-gated deltas"]}
+          rows={5}
+        />
+      )}
+      {isLoading && timeline && (
+        <ProgressiveLoadNote
+          title="Refreshing Timeline Replay"
+          detail="Replay summary remains visible while turn windows are refreshed from local safe summaries."
+        />
+      )}
       {timeline ? (
         <>
           <div className="timeline-summary">
@@ -22902,24 +26540,65 @@ function TimelineReplayPanel({
           {filteredTurns.length === 0 ? (
             <EmptyState title="No replay events match this view." detail="Try another event type, actor, or turn range. Hidden/debug-only events stay out of the normal replay view." />
           ) : (
-            <div className="timeline-turns">
-              {filteredTurns.map((turnGroup) => (
-                <section className={`timeline-turn ${currentTurn?.turn === turnGroup.turn ? "active" : ""}`} key={turnGroup.turn}>
-                  <h3>
-                    Turn {turnGroup.turn}
-                    <span>{turnGroup.events.length} events</span>
-                    <span>{turnGroup.events.reduce((total, event) => total + event.delta_count, 0)} deltas</span>
-                  </h3>
-                  {turnGroup.events.map((event) => (
-                    <TimelineEventCard event={event} debugEnabled={debugEnabled} key={event.event_id} />
-                  ))}
-                </section>
-              ))}
-            </div>
+            <>
+              <div className="eventlog-window-toolbar timeline-window-toolbar" aria-label="Timeline replay window controls">
+                <p className="muted">
+                  Rendering turns {turnWindowStart + 1}-{turnWindowEnd} of {filteredTurns.length} matching turn group(s), with {renderedEventCount} of {eventCount} event row(s) in the current DOM window.
+                </p>
+                <label>
+                  Turn groups
+                  <select value={turnWindowSize} onChange={(event) => {
+                    const nextSize = Number(event.target.value);
+                    setTurnWindowSize(nextSize);
+                    setTurnPageIndex(0);
+                    setActiveEventIndex(0);
+                  }}>
+                    {[10, 20, 50, 100].map((size) => (
+                      <option key={size} value={size}>
+                        {size}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button type="button" onClick={() => selectTurnPage(0)} disabled={clampedTurnPageIndex === 0}>
+                  First window
+                </button>
+                <button type="button" onClick={() => selectTurnPage(clampedTurnPageIndex - 1)} disabled={clampedTurnPageIndex === 0}>
+                  Previous window
+                </button>
+                <span className="muted">Window {clampedTurnPageIndex + 1} / {pageCount}</span>
+                <button type="button" onClick={() => selectTurnPage(clampedTurnPageIndex + 1)} disabled={clampedTurnPageIndex >= pageCount - 1}>
+                  Next window
+                </button>
+                <button type="button" onClick={() => selectTurnPage(pageCount - 1)} disabled={clampedTurnPageIndex >= pageCount - 1}>
+                  Last window
+                </button>
+              </div>
+              <div className="timeline-turns" data-windowed-timeline="true" data-rendered-turn-count={windowedTurns.length} data-rendered-event-count={renderedEventCount}>
+                {windowedTurns.map((turnGroup) => (
+                  <section className={`timeline-turn ${activeTurn === turnGroup.turn ? "active" : ""}`} key={turnGroup.turn}>
+                    <h3>
+                      Turn {turnGroup.turn}
+                      <span>{turnGroup.events.length} events</span>
+                      <span>{turnGroup.events.reduce((total, event) => total + event.delta_count, 0)} deltas</span>
+                    </h3>
+                    {turnGroup.events.map((event) => (
+                      <TimelineEventCard
+                        event={event}
+                        active={activeEventId === event.event_id}
+                        debugEnabled={debugEnabled}
+                        key={event.event_id}
+                        onActivate={() => selectActiveEvent(eventIndexById.get(event.event_id) ?? activeEventIndex)}
+                      />
+                    ))}
+                  </section>
+                ))}
+              </div>
+            </>
           )}
         </>
       ) : (
-        !error && <EmptyState title="No replay data loaded." detail="Load a session replay or save replay. Replay is read-only and never writes GameState or EventLog." />
+        !isLoading && !error && <EmptyState title="No replay data loaded." detail="Load a session replay or save replay. Replay is read-only and never writes GameState or EventLog." />
       )}
     </section>
   );
@@ -22954,24 +26633,45 @@ function ReplaySummaryView({ summary }: { summary: NonNullable<TimelineReplayRes
   );
 }
 
-function TimelineEventCard({ event, debugEnabled }: { event: TimelineEventView; debugEnabled: boolean }) {
+function TimelineEventCard({
+  event,
+  active,
+  debugEnabled,
+  onActivate
+}: {
+  event: TimelineEventView;
+  active: boolean;
+  debugEnabled: boolean;
+  onActivate: () => void;
+}) {
+  const eventType = timelineEventSafeType(event);
+  const actor = timelineEventSafeActor(event);
+  const target = timelineEventSafeTarget(event);
+  const visibleSummary = timelineEventSafeSummary(event);
   return (
-    <details className={`timeline-event replay-event ${event.event_kind}`}>
+    <details className={`timeline-event replay-event ${event.event_kind} ${active ? "active" : ""}`} onClick={onActivate}>
       <summary>
         <span>Turn {event.turn}</span>
         <span>#{event.event_id}</span>
-        <span>{event.event_kind}</span>
-        <span>{event.action_type}</span>
-        <span>{event.actor_id}</span>
-        <span>{event.result}</span>
+        <span>{active ? "active event" : "event"}</span>
+        <span>{timelineEventSafeKind(event)}</span>
+        <span>{eventType}</span>
+        <span>{actor}</span>
+        <span data-timeline-redacted-normal-summary="true">{visibleSummary}</span>
       </summary>
       <dl className="event-details">
         <dt>Visible</dt>
         <dd>{event.visible_to_player ? "yes" : event.visible_changes.length > 0 ? "visible changes only" : "debug-gated"}</dd>
+        <dt>Safe summary</dt>
+        <dd>{visibleSummary}</dd>
+        <dt>Type</dt>
+        <dd>{eventType}</dd>
+        <dt>Actor</dt>
+        <dd>{actor}</dd>
         <dt>Target</dt>
-        <dd>{event.target_id ?? "None"}</dd>
+        <dd>{target}</dd>
         <dt>Created</dt>
-        <dd>{event.created_at}</dd>
+        <dd>{redactReportText(event.created_at)}</dd>
         <dt>State changes</dt>
         <dd>{event.delta_count} debug-gated change(s)</dd>
       </dl>
@@ -22984,8 +26684,8 @@ function TimelineEventCard({ event, debugEnabled }: { event: TimelineEventView; 
           <ul className="compact-list">
             {event.visible_changes.map((change, index) => (
               <li key={`${change.path}-${index}`}>
-                {change.operation} {change.path}
-                {change.reason ? ` (${change.reason})` : ""}
+                {redactReportText(change.operation)} {redactStateDeltaPath(change.path)}
+                {change.reason ? ` (${redactReportText(change.reason)})` : ""}
               </li>
             ))}
           </ul>
@@ -22999,6 +26699,32 @@ function TimelineEventCard({ event, debugEnabled }: { event: TimelineEventView; 
       </DebugGate>
     </details>
   );
+}
+
+function timelineEventSafeKind(event: TimelineEventView): string {
+  return event.visible_to_player ? redactReportText(event.event_kind) : "debug-gated";
+}
+
+function timelineEventSafeType(event: TimelineEventView): string {
+  return event.visible_to_player ? redactReportText(event.action_type) : "debug-gated";
+}
+
+function timelineEventSafeActor(event: TimelineEventView): string {
+  return event.visible_to_player ? redactReportText(event.actor_id) : "debug-gated actor";
+}
+
+function timelineEventSafeTarget(event: TimelineEventView): string {
+  return event.visible_to_player ? redactReportText(event.target_id ?? "None") : "debug-gated target";
+}
+
+function timelineEventSafeSummary(event: TimelineEventView): string {
+  if (event.visible_to_player) {
+    return redactReportText(event.result);
+  }
+  if (event.visible_changes.length > 0) {
+    return "Debug-only event has player-visible state changes. Hidden/debug summary is redacted from normal replay view.";
+  }
+  return "Debug-only event. Hidden/debug summary is redacted from normal replay view.";
 }
 
 function filterTimelineTurns(
@@ -23263,6 +26989,166 @@ function groupValidationIssues(validation: AuthoringValidation) {
 
 function toErrorMessage(error: unknown): string {
   return getErrorMessageSafe(error);
+}
+
+function formatDateTime(value: string): string {
+  if (!value) {
+    return "unknown";
+  }
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+}
+
+function eventLogCacheKey(source: "session" | "save", id: string): string {
+  return `eventlog:${source}:${id || "none"}`;
+}
+
+function timelineReplayCacheKey(source: "session" | "save", id: string): string {
+  return `timeline:${source}:${id || "none"}`;
+}
+
+function qualityWorldHealthCacheKey(worldId: string): string {
+  return `quality:world-health:${worldId || "unknown"}`;
+}
+
+function qualityContentCoverageCacheKey(worldId: string): string {
+  return `quality:content-coverage:${worldId || "unknown"}`;
+}
+
+function providerModelListCacheKey(projectId: string): string {
+  return `provider-model-list:${projectId || "default"}`;
+}
+
+function providerStatusCacheKey(projectId: string, profileId: string): string {
+  return `provider-status:${projectId || "default"}:${profileId || "unknown"}`;
+}
+
+function moduleBrowserCacheKey(projectId: string): string {
+  return `module-browser:${projectId || "default"}`;
+}
+
+function buildEventLogSafeCacheSummary(events: DebugEvent[], source: "session" | "save", sourceId: string) {
+  const visibleCount = events.filter((event) => event.visible_to_player).length;
+  const eventTypes = sortedUnique(events.map((event) => eventLogSafeType(event))).slice(0, 20);
+  return {
+    kind: "eventlog_safe_summary",
+    source,
+    source_id: sourceId || "not_selected",
+    event_count: events.length,
+    visible_event_count: visibleCount,
+    hidden_event_count: Math.max(0, events.length - visibleCount),
+    linked_delta_count: events.reduce((total, event) => total + event.state_deltas.length, 0),
+    event_types: eventTypes,
+    latest_turn: events.reduce((turn, event) => Math.max(turn, event.turn), 0)
+  };
+}
+
+function buildTimelineReplaySafeCacheSummary(timeline: TimelineReplayResponse, source: "session" | "save", sourceId: string) {
+  const visibleEvents = timeline.turns.flatMap((turnGroup) => turnGroup.events.filter(isTimelineEventSafeForNormalReplay));
+  return {
+    kind: "timeline_replay_safe_summary",
+    source,
+    source_id: sourceId || "not_selected",
+    turn_count: timeline.turns.length,
+    safe_event_count: visibleEvents.length,
+    linked_delta_count: visibleEvents.reduce((total, event) => total + event.delta_count, 0),
+    replay_event_count: timeline.replay_summary?.event_count ?? timeline.event_count,
+    invariant_violation_count: timeline.replay_summary?.invariant_violations.length ?? 0
+  };
+}
+
+function buildWorldHealthSafeCacheSummary(health: WorldHealthScore, worldId: string) {
+  return {
+    kind: "world_health_safe_summary",
+    world_id: worldId,
+    overall_score: health.overall_score,
+    category_count: health.category_scores.length,
+    blocker_count: health.blockers.length,
+    warning_count: health.warnings.length,
+    recommended_action_count: health.recommended_actions.length,
+    created_at: health.created_at
+  };
+}
+
+function buildContentCoverageSafeCacheSummary(report: ContentCoverageReport, worldId: string) {
+  const sections = [
+    report.locations,
+    report.npcs,
+    report.items,
+    report.quests,
+    report.facts,
+    report.factions,
+    report.rumors,
+    report.crimes,
+    report.combat_encounters,
+    report.shops_trade
+  ];
+  return {
+    kind: "content_coverage_safe_summary",
+    world_id: worldId,
+    total_entities: sections.reduce((total, section) => total + section.total, 0),
+    uncovered_entities: sections.reduce((total, section) => total + section.uncovered, 0),
+    average_coverage_percent: Math.round(sections.reduce((total, section) => total + section.coverage_percent, 0) / Math.max(1, sections.length)),
+    hidden_entities_redacted_count: Object.values(report.hidden_entities_redacted).reduce((total, count) => total + count, 0)
+  };
+}
+
+function buildProviderModelListSafeCacheSummary(
+  projectId: string,
+  profiles: ProviderProfileSummary[],
+  matrix: ProviderModelCapabilityMatrix | null
+) {
+  return {
+    kind: "provider_model_list_safe_summary",
+    project_id: projectId || "default",
+    provider_count: profiles.length,
+    model_count: profiles.reduce((total, profile) => total + profile.model_profiles.length, 0),
+    enabled_provider_count: profiles.filter((profile) => profile.enabled).length,
+    provider_types: sortedUnique(profiles.map((profile) => profile.provider_type)),
+    capability_row_count: matrix?.rows.length ?? 0,
+    matrix_warning_count: matrix?.warnings.length ?? 0
+  };
+}
+
+function buildProviderStatusSafeCacheValue(profileId: string, status: Record<string, unknown>) {
+  return {
+    provider_profile_id: profileId,
+    status: typeof status.status === "string" ? status.status : "unknown",
+    tested_at: typeof status.tested_at === "string" ? status.tested_at : new Date().toISOString(),
+    latency_ms: typeof status.latency_ms === "number" ? status.latency_ms : null,
+    safe_error_type: typeof status.error_type === "string" ? status.error_type : typeof status.safe_error_type === "string" ? status.safe_error_type : null,
+    model_count: typeof status.model_count === "number" ? status.model_count : null,
+    redaction_applied: Boolean(status.redaction_applied),
+    cache_state: "fresh",
+    stale: false
+  };
+}
+
+function buildModuleBrowserSafeCacheSummary(
+  projectId: string,
+  modules: ModuleBrowserSummary[],
+  permissions: ModulePermissionSummary[],
+  matrix: ModCompatibilityMatrix
+) {
+  const byRisk = modules.reduce<Record<string, number>>((counts, module) => {
+    counts[module.permission_risk_level] = (counts[module.permission_risk_level] ?? 0) + 1;
+    return counts;
+  }, {});
+  const byValidation = modules.reduce<Record<string, number>>((counts, module) => {
+    counts[module.validation_status] = (counts[module.validation_status] ?? 0) + 1;
+    return counts;
+  }, {});
+  return {
+    kind: "module_browser_safe_summary",
+    project_id: projectId || "default",
+    package_count: modules.length,
+    permission_summary_count: permissions.length,
+    compatibility_entry_count: matrix.entries.length,
+    conflict_count: matrix.conflicts_summary.length,
+    load_order_count: matrix.load_order.length,
+    by_risk: byRisk,
+    by_validation: byValidation
+  };
 }
 
 function sanitizeDisplayError(message: string): string {

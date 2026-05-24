@@ -106,13 +106,56 @@ Provider connectivity boundaries:
   OpenAI, OpenAI-compatible, relay, local HTTP, or custom provider endpoints by
   default.
 
-v3.6 should include provider model list performance, capability matrix
-performance, provider routing table performance, and provider UI accessibility
-polish. v3.7 Local Complete Product acceptance should include successful fake
-provider connection tests, model list discovery, local `ModelProfile`
-synchronization, mode-based model assignment for Novel/Tavern/World/Cross-Mode
-/Quality, and checks that API keys remain out of projects, logs, diagnostics,
-backups, exports, and frontend state.
+### v3.6 Local Performance & Accessibility Polish
+
+v3.6 implements **Local Performance & Accessibility Polish**. This is an
+optimization phase over the existing v0.1-v3.5 product surface, not a new
+large feature phase. It does not add account systems, cloud sync, online
+marketplaces, remote package auto-download, arbitrary-code plugins, real
+provider CI checks, new gameplay modules, or new World Engine rules.
+
+Implemented v3.6 scope:
+
+- Route-level code splitting and safe lazy-loading fallbacks for major Studio
+  pages.
+- Large-list windowing, pagination, collapsed groups, debounced filters, and
+  memoized safe summaries for EventLog, Timeline Replay, StateDelta, Quality,
+  Hidden Leak, Provider models, Module Browser, Compatibility Matrix, Novel,
+  Tavern, World, and Authoring / Mod package surfaces.
+- Provider model-list and capability-matrix performance polish, plus safe
+  stale/refresh state for local provider status and model summaries.
+- `ProviderConnectionStatusCache` for local safe connection status metadata.
+  The cache may store provider id, status, tested time, latency, safe error
+  type, model count, and redaction flag only.
+- Frontend safe API cache summaries for frequently refreshed safe reports.
+  These caches are local UI performance helpers and do not change backend
+  semantics.
+- Backup / Restore / Diagnostics progress UI, Slow Provider warnings,
+  Performance Dashboard polish, keyboard shortcuts, focus management,
+  accessibility labels, reduced motion, visual comfort, ErrorBoundary polish,
+  loading skeletons, and progressive rendering.
+
+v3.6 semantic boundaries:
+
+- Optimization must not change business results, validation outcomes, routing
+  rules, visibility, migration behavior, package security, or quality-gate
+  pass/fail criteria.
+- UI still cannot directly modify `GameState`. Debug / Replay remains
+  observational and cannot apply deltas or rewrite `EventLog`.
+- `visible_state` remains the normal UI safety source. Raw `state_deltas`,
+  hidden facts, NPC secrets, debug memory, mature/private content, raw prompts,
+  raw outputs, API keys, provider secrets, Authorization headers, raw env, and
+  raw provider responses must not be cached or rendered in normal UI.
+- Provider caches do not store secrets and do not trigger background real
+  provider checks by default. Provider Gateway remains the only model entry
+  point and routing authority.
+
+v3.7 Local Complete Product acceptance should include successful fake provider
+connection tests, model list discovery, local `ModelProfile` synchronization,
+mode-based model assignment for Novel/Tavern/World/Cross-Mode/Quality, large
+local-project performance checks, accessibility checks, and checks that API
+keys remain out of projects, logs, diagnostics, backups, exports, caches, and
+frontend state.
 
 ### v2.9 Implemented UI Scope
 
