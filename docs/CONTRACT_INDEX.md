@@ -6,14 +6,22 @@ Generated from local schema constants. This document contains no raw env, API ke
 
 v2.9 is now planned as **Local UI / UX Foundation**. The v3.x near-term roadmap
 continues with local desktop, Novel, Tavern, World, authoring/mod, QA/debug/
-replay, performance, and accessibility UI polish. Online-Ready Architecture,
-account systems, cloud sync, online marketplaces, remote package registries,
-online narrative platforms, and online mature-content platforms are long-term
-optional directions, not active contract targets.
+replay, Provider connectivity, performance, accessibility, and local complete
+product polish. Online-Ready Architecture, account systems, cloud sync, online
+marketplaces, remote package registries, online narrative platforms, API resale
+services, and online mature-content platforms are long-term optional
+directions, not active contract targets.
 
 v2.9 also introduces frontend-only UI safety contracts for the Local UI / UX
 Foundation. These contracts are not new backend authority layers; they document
 safe summary, navigation, redaction, diagnostics, and local-first UI behavior.
+
+v3.5 Provider Connection & Model Discovery contracts are local configuration
+contracts for Provider Gateway. They may test configured providers and discover
+safe model metadata, but they do not store raw API keys, create online accounts,
+provide API resale, bypass Provider Gateway, or change World Engine,
+`StateDelta`, `EventLog`, visibility, validation, import/export, or quality
+gate authority.
 
 ## Stable Contracts
 - `GameState`: `1.8` (compatible)
@@ -169,6 +177,22 @@ safe summary, navigation, redaction, diagnostics, and local-first UI behavior.
 - `ImportExportWizardProUI`: `3.4` (frontend local import/export wizard contract; dry-run/preview first, explicit confirm, and default filtering for secrets, databases, logs/cache/build outputs, debug reports, mature/private content, executables, path traversal, and zip slip)
 - `ModQualityGateUI`: `3.4` (frontend deterministic local mod quality gate UI contract for manifest, permissions, compatibility, secrets, executable files, action tests, hidden leaks, and migration impact; no LLM judge)
 - `V34AuthoringUICheck`: `3.4` (`npm.cmd run check:v34-authoring-ui` static Authoring / Mod UI safety check for importable UI entries, local-first copy, no plaintext API key field, no online marketplace/remote download primary entry, and no arbitrary code execution UI)
+- `TimelineReplayUIPro`: `3.5` (frontend local replay contract for save/session selection, event filters, replay controls, and visible/safe event summaries; replay does not write `GameState` or `EventLog`)
+- `EventLogViewerPro`: `3.5` (frontend safe EventLog viewer contract; normal view shows event id, turn/time, type, actor safe summary, visible summary, and linked StateDelta counts, not raw JSON)
+- `StateDeltaViewerPro`: `3.5` (debug-gated frontend StateDelta viewer contract; requires `ENABLE_DEBUG_API`, redacts values, and cannot apply deltas)
+- `VisibleDebugStateCompare`: `3.5` (debug-gated redacted compare contract for visible_state vs debug/raw state summaries and filtered-field counts)
+- `HiddenLeakReportUI`: `3.5` (safe report UI contract for visible_state, prompt, Tavern, Novel, World UI, export, diagnostics, backup, and debug leak categories; no hidden text bodies)
+- `UnifiedQualityGateDashboardUI`: `3.5` (local quality dashboard contract for Project/World/Novel/Tavern/Cross-Mode/Provider/Mods/Modules/RP-Mature/Backup-Diagnostics safe blocker summaries)
+- `SafeDebugExportWizard`: `3.5` (debug export preview/confirm UI contract; raw debug export requires explicit confirm and excludes API keys, provider secrets, and raw env)
+- `ProviderConnectivityDashboard`: `3.5` (local provider connection/status UI contract for OpenAI, OpenAI-compatible, relay, local_http, custom, mock, and local_stub provider profiles; no online platform, account, cloud sync, marketplace, remote package download, or API resale service)
+- `ProviderConnectionStatus` / `ProviderConnectionTestRequest`: `3.5` (one-time safe connection-test API contract; may accept `transient_api_key` for a single test only, never persists it, and excludes it from logs, diagnostics, backups, exports, prompt profiles, provider profiles, packages, and frontend state)
+- `ProviderModelFetchRequest` / `ProviderModelDiscoveryReport`: `3.5` (local model-list fetch contract through Provider Gateway/fake clients in tests; normalizes safe model metadata and returns unsupported_model_list safely)
+- `ProviderModelSyncReport`: `3.5` (safe model sync report contract for added/updated/disabled/unchanged counts and `ModelProfile` metadata; no raw provider response or secrets)
+- `ModelProfileSync`: `3.5` (project-local model profile synchronization contract; manual model ids and fetched model ids are stored as safe `ModelProfile` metadata only)
+- `ProviderModeModelAssignment`: `3.5` (local routing-assignment contract for Novel, Tavern, World, Cross-Mode, structured JSON, memory, and Quality use cases; Provider Gateway remains the only model entry point)
+- `ProviderRedactionService`: `3.5` (provider diagnostics/log/error redaction contract for transient keys, Authorization headers, OpenAI-style keys, relay tokens, secret refs, and token-like base URLs)
+- `ProviderCapabilityMatrixPerformance`: `3.6 planned` (provider model-list and capability-matrix performance/accessibility polish contract; preserves secret redaction and fake-provider CI defaults)
+- `LocalCompleteProductProviderAcceptance`: `3.7 planned` (acceptance contract requiring provider connection test, model discovery, local model-profile synchronization, and mode-based model assignment while keeping API keys out of project files, logs, diagnostics, backups, exports, and frontend state)
 - `WorldProjectSection`: `2.1` (project-aware World Mode adapter config)
 - `ProjectPackageManifest`: `2.1` (NarrativeProject import/export package manifest)
 - `ProjectValidationReport`: `2.1` (normal/debug-safe project validation report)

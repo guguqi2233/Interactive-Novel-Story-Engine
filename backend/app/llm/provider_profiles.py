@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from collections import defaultdict
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -18,6 +19,16 @@ from app.platform.narrative_project import validate_project_relative_path
 from app.platform.security import contains_secret_text, redact_text, safe_identifier
 
 
+SAFE_SECRET_REF_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]*(?:/[A-Za-z0-9][A-Za-z0-9_.:-]*){0,7}")
+UNSAFE_SECRET_REF_PATTERNS = (
+    re.compile(r"sk-[A-Za-z0-9_-]{8,}", re.IGNORECASE),
+    re.compile(r"(?i)authorization\s*[:=]?\s*bearer"),
+    re.compile(r"(?i)\b(api[_-]?key|access[_-]?token|relay[_-]?token|password)\s*[:=]"),
+    re.compile(r"(?i)BEGIN (?:RSA |OPENSSH |EC |DSA )?PRIVATE KEY"),
+    re.compile(r"[?&](?:api[_-]?key|token|secret|signature|sig|auth)=", re.IGNORECASE),
+)
+
+
 def now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
@@ -27,6 +38,7 @@ class ProviderProfileType(StrEnum):
     OPENAI_COMPATIBLE = "openai_compatible"
     LOCAL_HTTP = "local_http"
     RELAY = "relay"
+    CUSTOM = "custom"
     MOCK = "mock"
     LOCAL_STUB = "local_stub"
 
@@ -79,6 +91,7 @@ class ModelProfile(BaseModel):
 
     model_id: str
     display_name: str = ""
+    provider_profile_id: str | None = None
     context_window: int | None = Field(default=None, gt=0)
     supports_text: bool = True
     supports_json: bool = True
@@ -90,6 +103,8 @@ class ModelProfile(BaseModel):
     recommended_use_cases: list[str] = Field(default_factory=list)
     structured_output_reliability_hint: str | None = None
     cost_hint: ProviderCostHint | None = None
+    enabled: bool = True
+    last_seen_at: str | None = None
 
     def safe_summary(self) -> dict[str, Any]:
         return self.model_dump(mode="json", exclude_none=True)
@@ -136,6 +151,20 @@ class ProviderProfileV2(BaseModel):
             raise ValueError("Provider env refs must be environment variable names")
         return value
 
+    @field_validator("secret_ref")
+    @classmethod
+    def validate_secret_ref(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        stripped = value.strip()
+        if stripped != value or not stripped:
+            raise ValueError("Provider secret_ref must be a non-empty safe reference")
+        if not SAFE_SECRET_REF_PATTERN.fullmatch(stripped):
+            raise ValueError("Provider secret_ref must be a safe local reference, not a secret value")
+        if any(pattern.search(stripped) for pattern in UNSAFE_SECRET_REF_PATTERNS):
+            raise ValueError("Provider secret_ref must not contain secret-like values")
+        return stripped
+
     @model_validator(mode="before")
     @classmethod
     def reject_raw_key(cls, data: Any) -> Any:
@@ -153,7 +182,7 @@ class ProviderProfileV2(BaseModel):
     def key_required(self) -> bool:
         if self.requires_api_key is not None:
             return self.requires_api_key
-        return str(self.provider_type) in {"openai", "openai_compatible", "relay"}
+        return str(self.provider_type) in {"openai", "openai_compatible", "relay", "custom"}
 
     def primary_model_id(self) -> str:
         if self.model_profiles:
@@ -168,7 +197,8 @@ class ProviderProfileV2(BaseModel):
             "base_url_configured": bool(self.base_url or self.base_url_env),
             "base_url_source": "env" if self.base_url_env else "profile" if self.base_url else None,
             "api_key_env": self.api_key_env,
-            "secret_ref": self.secret_ref,
+            "secret_ref": "[configured]" if self.secret_ref else None,
+            "secret_ref_configured": bool(self.secret_ref),
             "model_profiles": [model.safe_summary() for model in self.model_profiles],
             "capabilities": list(self.capabilities),
             "allowed_modes": [str(mode) for mode in self.allowed_modes],

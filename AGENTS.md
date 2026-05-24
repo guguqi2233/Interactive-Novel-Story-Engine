@@ -35,10 +35,14 @@ Near-term roadmap:
 - v3.2 Tavern Studio UI Pro.
 - v3.3 World Studio UI Pro.
 - v3.4 Authoring / Mod UI Pro.
-- v3.5 Local QA / Debug / Replay UI Pro.
-- v3.6 Local Performance & Accessibility Polish.
+- v3.5 Local QA / Debug / Replay & Provider Connectivity UI Pro.
+- v3.6 Local Performance & Accessibility Polish, including Provider model
+  list performance, capability matrix performance, and Provider UI
+  accessibility polish.
+- v3.7 Local Complete Product.
+- v4.0 Local AI Narrative Studio Stable.
 
-Explicitly deferred from v2.9-v3.6 primary scope:
+Explicitly deferred from v2.9-v3.7 primary scope:
 
 - account system;
 - cloud sync;
@@ -64,6 +68,20 @@ API keys may only be read through environment variables or local safe
 configuration. Real API keys must never enter frontend code, logs, crash reports,
 exports, backups, mods, tests, fixtures, package manifests, prompt profiles, or
 documentation examples.
+
+Provider Connection & Model Discovery is a local configuration capability for
+v3.5-v3.7. Users may configure OpenAI, OpenAI-compatible, relay-style,
+`local_http`, and custom providers, test a connection, read a model list, store
+safe model metadata as `ModelProfile`, and assign models by Novel, Tavern,
+World, Cross-Mode, and Quality use case. This does not create an online
+platform, API resale service, account system, cloud sync feature, online
+marketplace, or remote package downloader. Relay means a generic
+OpenAI-compatible/custom base URL configuration, not a specific resale service.
+`ProviderProfile` may store only `api_key_env` or `secret_ref`. A
+`transient_api_key` may be accepted only for a one-time connection test; it must
+not be persisted and must not enter logs, diagnostics, backups, exports,
+project files, prompt profiles, or frontend state. Provider connectivity tests
+in CI must use fake providers/fake clients and must not call real providers.
 
 # Local-First Rules
 

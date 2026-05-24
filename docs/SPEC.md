@@ -14,8 +14,12 @@ Planned local roadmap:
 - v3.2: Tavern Studio UI Pro
 - v3.3: World Studio UI Pro
 - v3.4: Authoring / Mod UI Pro
-- v3.5: Local QA / Debug / Replay UI Pro
-- v3.6: Local Performance & Accessibility Polish
+- v3.5: Local QA / Debug / Replay & Provider Connectivity UI Pro
+- v3.6: Local Performance & Accessibility Polish, including provider model
+  list performance, capability matrix performance, and provider UI
+  accessibility polish
+- v3.7: Local Complete Product
+- v4.0: Local AI Narrative Studio Stable
 
 Near-term non-goals:
 
@@ -31,6 +35,84 @@ Online-Ready Architecture is demoted to a long-term optional direction. It
 should not be treated as a v2.9 or v3.x near-term commitment. UI/UX work must
 not weaken local privacy, provider routing, visibility, package validation,
 export filtering, `StateDelta`, or `EventLog` boundaries.
+
+### v3.5 Local QA / Debug / Replay & Provider Connectivity UI Pro
+
+v3.5 implements **Local QA / Debug / Replay & Provider Connectivity UI Pro**.
+The scope is local observability, safe debugging, deterministic quality review,
+replay inspection, diagnostics review, and local Provider Gateway
+configuration. It is not an account system, cloud sync service, online
+marketplace, remote package downloader, online QA platform, hosted provider
+platform, API resale service, or real-provider CI test suite.
+
+Implemented v3.5 QA / Debug / Replay scope:
+
+- Timeline Replay UI for replay session/save selection, turn/time/event
+  timelines, filters, replay controls, and visible replay summaries.
+- EventLog Viewer Pro for safe EventLog filtering and linked StateDelta counts.
+  Normal view does not show raw event JSON or raw StateDelta payloads.
+- StateDelta Viewer Pro, Visible vs Debug State Compare, and Safe Debug Export
+  Wizard as debug-gated tools. They require `ENABLE_DEBUG_API` and do not write
+  `GameState`.
+- Hidden Leak Report, Playtest Dashboard, Unified Quality Gate Dashboard,
+  Performance Dashboard, CrossMode Conflict Review, Module Playtest / Stress,
+  Save Migration Visualizer, Diagnostics Bundle Review, and Local Test Run
+  Dashboard with safe summaries and local-only workflows.
+
+Debug and replay boundaries:
+
+- Debug / Replay UI is observational only. It must not modify `GameState`,
+  directly apply `StateDelta`, rewrite or delete `EventLog`, or decide action
+  outcomes.
+- Raw `state_deltas`, debug-only state, raw EventLog details, debug compare
+  reports, and raw debug export options must stay behind a debug-gated view.
+- `visible_state` remains the normal UI safe state source. Hidden facts, NPC
+  secrets, debug memory, raw prompts, raw `state_deltas`, API keys, raw env,
+  provider secrets, and mature/private bodies must not enter normal QA,
+  replay, quality, diagnostics, or provider dashboards.
+
+v3.5 Provider Connectivity scope:
+
+- Provider Connectivity Dashboard for local provider profile health, model
+  count, last-tested status, warnings, and safe routing status.
+- Provider Connection Test for `openai`, `openai_compatible`, `relay`,
+  `local_http`, `custom`, `mock`, and `local_stub` provider profile types.
+- Provider Model Discovery to read the configured provider's model list and
+  save safe model metadata as `ModelProfile`.
+- Provider Model Assignment by Mode for Novel, Tavern, World, Cross-Mode, and
+  Quality use cases, including JSON-capability validation for structured
+  output routes.
+- Provider Usage / Cost Dashboard for local estimates only; it stores no prompt
+  or output bodies and is not a billing system.
+
+Provider connectivity boundaries:
+
+- `ProviderProfile` stores only provider metadata plus `api_key_env` or
+  `secret_ref`; it must not store raw API keys, authorization headers, provider
+  secrets, raw env, or embedded credentials.
+- A `transient_api_key` may be used only for a one-time connection test. It is
+  never persisted and must not enter logs, diagnostics, backups, exports,
+  project files, prompt profiles, provider profile packs, or frontend state.
+- Model discovery stores model ids, context/capability hints, structured-output
+  support, modality hints, and safe status as `ModelProfile`; it must not store
+  secrets or raw provider responses containing sensitive content.
+- Model assignment is configuration metadata for Provider Gateway routing. It
+  does not let UI code call providers directly and does not change World Engine
+  authority, `StateDelta`, `EventLog`, visibility, or proposal-apply rules.
+- Relay means generic OpenAI-compatible/custom base URL configuration. The
+  project must not claim support for a specific relay vendor or operate as an
+  API resale service.
+- Tests and CI must use fake providers/fake clients and must not call real
+  OpenAI, OpenAI-compatible, relay, local HTTP, or custom provider endpoints by
+  default.
+
+v3.6 should include provider model list performance, capability matrix
+performance, provider routing table performance, and provider UI accessibility
+polish. v3.7 Local Complete Product acceptance should include successful fake
+provider connection tests, model list discovery, local `ModelProfile`
+synchronization, mode-based model assignment for Novel/Tavern/World/Cross-Mode
+/Quality, and checks that API keys remain out of projects, logs, diagnostics,
+backups, exports, and frontend state.
 
 ### v2.9 Implemented UI Scope
 

@@ -25,6 +25,7 @@ import {
   DebugNPCSimulationDetail,
   DebugNPCSimulationDryRunResponse,
   DebugNPCSimulationSummary,
+  DebugPerformanceSample,
   ModuleActionDryRunResponse,
   ModuleDebugSummary,
   NPCBehaviorTimelineResponse,
@@ -183,9 +184,12 @@ import {
   fetchProjectProviderUsageByMode,
   fetchProjectProviderUsageByProvider,
   fetchProjectProviderCapabilityMatrix,
+  fetchProjectProviderModelAssignments,
   fetchProjectProviders,
   createProjectProvider,
+  saveProjectProviderModelAssignments,
   validateProjectProvider,
+  validateProjectProviderModelAssignments,
   fetchProjectProviderStatus,
   fetchProjectProviderUsageRecent,
   fetchProjectProviderUsageSummary,
@@ -201,6 +205,7 @@ import {
   fetchRecentProjects,
   removeRecentProject,
   clearRecentProjects,
+  createDiagnosticsBundle,
   fetchReferenceIndex,
   fetchLocalContentLibrary,
   searchLocalContentLibrary,
@@ -274,8 +279,10 @@ import {
   ModelUsageRecord,
   ModelUsageSummary,
   CostLatencyGroupSummary,
+  DiagnosticsBundleCreateResponse,
   ProviderProfileDraft,
   ProviderProfileSummary,
+  ModelCapabilityMatrixRow,
   ProviderModelCapabilityMatrix,
   ProviderBenchmarkReport,
   ProviderCapabilityCatalog,
@@ -283,6 +290,7 @@ import {
   TokenBudgetProfile,
   TokenBudgetUseCase,
   ProviderRoutingPreview,
+  ProjectProviderModelAssignmentSummary,
   ProviderRoutingRule,
   ProviderRoutingSummary,
   ProviderRoutingUseCase,
@@ -293,6 +301,7 @@ import {
   PromptDiffReport,
   PromptRegressionReport,
   PlaytestReport,
+  PlaytestActionRecord,
   PlaytestBatchRun,
   PromptABTestReport,
   PromptABUseCase,
@@ -844,6 +853,7 @@ export function App() {
   const [localLogs, setLocalLogs] = useState<LocalLogListResponse | null>(null);
   const [localLogsError, setLocalLogsError] = useState<string>("");
   const [diagnosticsBundlePreview, setDiagnosticsBundlePreview] = useState<DiagnosticsBundlePreview | null>(null);
+  const [diagnosticsBundleCreateResult, setDiagnosticsBundleCreateResult] = useState<DiagnosticsBundleCreateResponse | null>(null);
   const [diagnosticsBundleError, setDiagnosticsBundleError] = useState<string>("");
   const [firstRunDismissed, setFirstRunDismissed] = useState<boolean>(() => firstRunOnboardingDismissed());
   const [studioConfigError, setStudioConfigError] = useState<string>("");
@@ -1125,6 +1135,35 @@ export function App() {
       setDiagnosticsBundlePreview(await previewDiagnosticsBundle(currentNarrativeProjectId || currentWorkspaceId || "local_project", false));
     } catch (err) {
       setDiagnosticsBundlePreview(null);
+      setDiagnosticsBundleError(toErrorMessage(err));
+    }
+  }
+
+  async function handlePreviewDiagnosticsBundle(includeDebug = false, explicitConfirmDebug = false) {
+    setDiagnosticsBundleError("");
+    setDiagnosticsBundleCreateResult(null);
+    try {
+      setDiagnosticsBundlePreview(await previewDiagnosticsBundle(currentNarrativeProjectId || currentWorkspaceId || "local_project", includeDebug, explicitConfirmDebug));
+    } catch (err) {
+      setDiagnosticsBundlePreview(null);
+      setDiagnosticsBundleError(toErrorMessage(err));
+    }
+  }
+
+  async function handleCreateDiagnosticsBundle(includeDebug = false, explicitConfirmDebug = false) {
+    setDiagnosticsBundleError("");
+    try {
+      const response = await createDiagnosticsBundle(currentNarrativeProjectId || currentWorkspaceId || "local_project", includeDebug, explicitConfirmDebug);
+      setDiagnosticsBundleCreateResult(response);
+      setDiagnosticsBundlePreview({
+        local_only: response.local_only,
+        writes_file: true,
+        manifest: response.manifest,
+        safe_payload: {},
+        warnings: response.warnings
+      });
+    } catch (err) {
+      setDiagnosticsBundleCreateResult(null);
       setDiagnosticsBundleError(toErrorMessage(err));
     }
   }
@@ -2324,6 +2363,7 @@ export function App() {
             localLogs={localLogs}
             localLogsError={localLogsError}
             diagnosticsBundlePreview={diagnosticsBundlePreview}
+            diagnosticsBundleCreateResult={diagnosticsBundleCreateResult}
             diagnosticsBundleError={diagnosticsBundleError}
             workspaces={projectWorkspaces}
             workspaceTemplates={workspaceTemplates}
@@ -2391,6 +2431,8 @@ export function App() {
             onDryRunRecovery={() => void handleDryRunRecovery()}
             onRefreshLocalLogs={() => void refreshLocalLogs()}
             onPreviewDiagnosticsBundle={() => void refreshDiagnosticsBundlePreview()}
+            onPreviewDiagnosticsBundleWithOptions={(includeDebug, explicitConfirmDebug) => void handlePreviewDiagnosticsBundle(includeDebug, explicitConfirmDebug)}
+            onCreateDiagnosticsBundle={(includeDebug, explicitConfirmDebug) => void handleCreateDiagnosticsBundle(includeDebug, explicitConfirmDebug)}
             onSelectPromptProfile={(profileId) => void handleSelectPromptProfile(profileId)}
             onRunNarrativeEval={() => void handleRunNarrativeEval()}
             onSelectNarrativeEval={(runId) => void handleSelectNarrativeEval(runId)}
@@ -2536,6 +2578,39 @@ export function App() {
 
         {debugOpen && (
           <div className="debug-content">
+            <TimelineReplayPanel
+              timeline={timelineReplay}
+              source={timelineReplaySource}
+              selectedSaveId={selectedSaveId}
+              selectedFilter={timelineReplayFilter}
+              onFilterChange={setTimelineReplayFilter}
+              onLoadSession={() => void refreshTimelineReplay("session")}
+              onLoadSave={() => void refreshTimelineReplay("save")}
+              onDryRun={() => void handleReplayDryRun()}
+              error={timelineReplayError}
+              dryRun={timelineReplayDryRun}
+              dryRunError={timelineReplayDryRunError}
+              debugEnabled={studioStatus?.debug_api_enabled ?? false}
+            />
+            <EventLogViewerPanel
+              events={timeline}
+              error={timelineError}
+              selectedSaveId={selectedSaveId}
+              hasSession={Boolean(sessionId)}
+              onLoadSession={() => void refreshTimeline()}
+              onLoadSave={() => void refreshSaveTimeline()}
+              debugEnabled={studioStatus?.debug_api_enabled ?? false}
+            />
+            <HiddenLeakReportPanel
+              visibleState={visibleState}
+              events={timeline}
+              worldHealth={worldHealth}
+              narrativeEvalReports={narrativeEvalReports}
+              diagnosticsBundlePreview={diagnosticsBundlePreview}
+              backupPlan={backupPlan}
+              selectedWorldId={selectedWorldId}
+              onRunLeakCheck={() => void handleRunWorldHealth()}
+            />
             <DebugGate debugEnabled={studioStatus?.debug_api_enabled ?? false}>
             <LocalOnlyNotice>
               Debug data is local-only and separate from player narrative. Raw event deltas stay in this panel.
@@ -2607,38 +2682,6 @@ export function App() {
               <dt>Known Facts</dt>
               <dd>{knownFacts.length > 0 ? knownFacts.map((fact) => fact.id).join(", ") : "None"}</dd>
             </dl>
-            <section className="timeline">
-              <h2>Timeline</h2>
-              {timelineError && <p className="error">{timelineError}</p>}
-              {timelineError && timelineError.toLowerCase().includes("debug") && (
-                <p className="muted">debug disabled</p>
-              )}
-              {timeline.length === 0 && !timelineError && <p className="muted">No events yet.</p>}
-              {timeline.map((event) => (
-                <details className="timeline-event" key={event.event_id}>
-                  <summary>
-                    <span>Turn {event.turn}</span>
-                    <span>{event.action_type}</span>
-                    <span>{event.actor_id}</span>
-                    <span>{event.result}</span>
-                  </summary>
-                  <pre>{JSON.stringify(event.state_deltas, null, 2)}</pre>
-                </details>
-              ))}
-            </section>
-            <TimelineReplayPanel
-              timeline={timelineReplay}
-              source={timelineReplaySource}
-              selectedSaveId={selectedSaveId}
-              selectedFilter={timelineReplayFilter}
-              onFilterChange={setTimelineReplayFilter}
-              onLoadSession={() => void refreshTimelineReplay("session")}
-              onLoadSave={() => void refreshTimelineReplay("save")}
-              onDryRun={() => void handleReplayDryRun()}
-              error={timelineReplayError}
-              dryRun={timelineReplayDryRun}
-              dryRunError={timelineReplayDryRunError}
-            />
             <section className="debug-group">
               <h2>Debug Graphs</h2>
               {debugGraphError && <p className="error">{debugGraphError}</p>}
@@ -2690,6 +2733,14 @@ export function App() {
               onDryRun={(actionId) => void handleGameplayModuleDryRun(actionId)}
               disabled={isLoading}
             />
+            <VisibleDebugStateCompare
+              visibleState={visibleState}
+              events={timeline}
+              saves={saves}
+              modules={moduleDebugSummaries}
+              lastResponse={lastResponse}
+            />
+            <StateDeltaViewerPanel events={timeline} />
             <CrashReportViewer
               reports={crashReports}
               selectedReportId={selectedCrashReportId}
@@ -2750,6 +2801,7 @@ function StudioHome({
   localLogs,
   localLogsError,
   diagnosticsBundlePreview,
+  diagnosticsBundleCreateResult,
   diagnosticsBundleError,
   workspaces,
   workspaceTemplates,
@@ -2812,6 +2864,8 @@ function StudioHome({
   onDryRunRecovery,
   onRefreshLocalLogs,
   onPreviewDiagnosticsBundle,
+  onPreviewDiagnosticsBundleWithOptions,
+  onCreateDiagnosticsBundle,
   onSelectPromptProfile,
   onNavigate
 }: {
@@ -2837,6 +2891,7 @@ function StudioHome({
   localLogs: LocalLogListResponse | null;
   localLogsError: string;
   diagnosticsBundlePreview: DiagnosticsBundlePreview | null;
+  diagnosticsBundleCreateResult: DiagnosticsBundleCreateResponse | null;
   diagnosticsBundleError: string;
   workspaces: ProjectWorkspace[];
   workspaceTemplates: WorkspaceTemplate[];
@@ -2912,6 +2967,8 @@ function StudioHome({
   onDryRunRecovery: () => void;
   onRefreshLocalLogs: () => void;
   onPreviewDiagnosticsBundle: () => void;
+  onPreviewDiagnosticsBundleWithOptions: (includeDebug: boolean, explicitConfirmDebug: boolean) => void;
+  onCreateDiagnosticsBundle: (includeDebug: boolean, explicitConfirmDebug: boolean) => void;
   onSelectPromptProfile: (profileId: string) => void;
   onNavigate: (mode: AppMode, toolId?: AuthoringToolId) => void;
 }) {
@@ -2964,6 +3021,29 @@ function StudioHome({
         scenarioRegressionRuns={scenarioRegressionRuns}
         contentCoverage={contentCoverage}
       />
+      <UnifiedQualityGateDashboard
+        worldHealth={worldHealth}
+        narrativeEvalReports={narrativeEvalReports}
+        playtestReports={playtestReports}
+        scenarioRegressionRuns={scenarioRegressionRuns}
+        contentCoverage={contentCoverage}
+        diagnosticsBundlePreview={diagnosticsBundlePreview}
+        backupPlan={backupPlan}
+        configSummary={configSummary}
+        localConfigIssues={localConfigIssues}
+        onRunWorld={onRunWorldHealth}
+        onRunNovel={onRunNarrativeEval}
+        onRunPlaytest={() =>
+          onRunPlaytest({
+            worldId: "mist_valley",
+            agentType: "random_valid_action_agent",
+            steps: 12,
+            seed: 123,
+            saveLoadCheck: true
+          })
+        }
+        onRunDiagnostics={onPreviewDiagnosticsBundle}
+      />
       <DiagnosticsExportPanel
         selectedProjectId={selectedProjectId}
         status={status}
@@ -2975,8 +3055,28 @@ function StudioHome({
       />
       <DiagnosticsBundlePanel
         preview={diagnosticsBundlePreview}
+        createResult={diagnosticsBundleCreateResult}
         error={diagnosticsBundleError}
-        onPreview={onPreviewDiagnosticsBundle}
+        debugEnabled={status?.debug_api_enabled ?? false}
+        onPreview={onPreviewDiagnosticsBundleWithOptions}
+        onCreate={onCreateDiagnosticsBundle}
+      />
+      <LocalTestRunDashboard
+        diagnosticsBundlePreview={diagnosticsBundlePreview}
+        worldHealth={worldHealth}
+        narrativeEvalReports={narrativeEvalReports}
+        playtestReports={playtestReports}
+        scenarioRegressionRuns={scenarioRegressionRuns}
+        performanceSummary={performanceSummary}
+        contentCoverage={contentCoverage}
+      />
+      <SafeDebugExportWizard
+        debugEnabled={status?.debug_api_enabled ?? false}
+        diagnosticsPreview={diagnosticsBundlePreview}
+        diagnosticsCreateResult={diagnosticsBundleCreateResult}
+        error={diagnosticsBundleError}
+        onPreview={onPreviewDiagnosticsBundleWithOptions}
+        onCreate={onCreateDiagnosticsBundle}
       />
       <ProjectSelectorPanel
         workspaces={workspaces}
@@ -3656,8 +3756,10 @@ function PerformanceDashboard({
   error: string;
   onRefresh: () => void;
 }) {
+  const [range, setRange] = useState<"all" | "hour" | "day">("all");
   const entries = summary?.entries ?? [];
-  const samples = recent?.samples ?? [];
+  const samples = useMemo(() => filterPerformanceSamplesByRange(recent?.samples ?? [], range), [range, recent]);
+  const proRows = useMemo(() => buildPerformanceProRows(entries, samples), [entries, samples]);
   const maxDuration = Math.max(1, ...entries.map((entry) => entry.max_duration_ms));
   const trackedStages = [
     "intent_parse",
@@ -3673,14 +3775,24 @@ function PerformanceDashboard({
     <section className="studio-section performance-dashboard">
       <div className="mod-detail-header">
         <div>
-          <h3>Performance</h3>
-          <p className="muted">Local samples only. Prompt text, hidden facts, and API keys are not recorded.</p>
+          <h3>Performance Dashboard Pro</h3>
+          <p className="muted">Local samples only. Prompt text, output text, hidden facts, and API keys are not recorded or displayed.</p>
         </div>
         <button type="button" onClick={onRefresh}>
           Refresh Performance
         </button>
       </div>
       <ErrorPanel message={error} compact />
+      <FilterToolbar>
+        <label>
+          Time range
+          <select value={range} onChange={(event) => setRange(event.target.value as "all" | "hour" | "day")}>
+            <option value="all">All loaded</option>
+            <option value="hour">Last hour</option>
+            <option value="day">Last day</option>
+          </select>
+        </label>
+      </FilterToolbar>
       <div className="studio-grid compact-dashboard-grid">
         <DashboardCard title="Logging" value={summary?.enabled ? "enabled" : "disabled"}>
           <p>{summary ? `${summary.sample_count} samples` : "Debug API unavailable"}</p>
@@ -3695,6 +3807,28 @@ function PerformanceDashboard({
           <p>max observed sample</p>
         </DashboardCard>
       </div>
+
+      <section>
+        <h3>Performance Overview</h3>
+        <div className="mode-landing-grid">
+          {proRows.map((row) => (
+            <section className="feature-card" key={row.category}>
+              <div>
+                <h4>{row.category}</h4>
+                <p className="muted">{row.detail}</p>
+              </div>
+              <dl className="event-details">
+                <dt>Average</dt>
+                <dd>{formatDuration(row.averageMs)}</dd>
+                <dt>Max</dt>
+                <dd>{formatDuration(row.maxMs)}</dd>
+                <dt>Samples</dt>
+                <dd>{row.sampleCount}</dd>
+              </dl>
+            </section>
+          ))}
+        </div>
+      </section>
 
       <section>
         <h3>Summary</h3>
@@ -3745,6 +3879,76 @@ function PerformanceDashboard({
   );
 }
 
+type PerformanceProRow = {
+  category: string;
+  averageMs?: number;
+  maxMs?: number;
+  sampleCount: number;
+  detail: string;
+};
+
+function filterPerformanceSamplesByRange(samples: DebugPerformanceSample[], range: "all" | "hour" | "day"): DebugPerformanceSample[] {
+  if (range === "all") {
+    return samples;
+  }
+  const cutoff = Date.now() - (range === "hour" ? 60 * 60 * 1000 : 24 * 60 * 60 * 1000);
+  return samples.filter((sample) => {
+    const startedAt = Date.parse(sample.started_at);
+    return Number.isFinite(startedAt) && startedAt >= cutoff;
+  });
+}
+
+function buildPerformanceProRows(
+  entries: DebugPerformanceSummaryResponse["entries"],
+  samples: DebugPerformanceSample[]
+): PerformanceProRow[] {
+  return [
+    performanceRow("backend API duration", entries, samples, ["api", "request", "game_loop.step"], "Local backend request and game-loop timing."),
+    performanceRow("save/load duration", entries, samples, ["save", "load", "migration"], "Save/load and migration timing summaries."),
+    {
+      category: "event log size",
+      averageMs: undefined,
+      maxMs: undefined,
+      sampleCount: samples.reduce((total, sample) => total + Number(sample.tags.event_count ?? 0), 0),
+      detail: "EventLog size is shown as loaded sample event-count metadata when available.",
+    },
+    performanceRow("timeline replay duration", entries, samples, ["timeline", "replay"], "Timeline replay and debug replay timing."),
+    performanceRow("provider call duration", entries, samples, ["provider", "llm", "narrator", "intent_parse"], "Provider Gateway timing only; prompts and outputs are not shown."),
+    performanceRow("quality gate duration", entries, samples, ["quality", "eval", "validation"], "Quality, eval, and validation timing."),
+    performanceRow("playtest duration", entries, samples, ["playtest", "scenario"], "Local automated playtest and scenario regression timing."),
+    {
+      category: "frontend build/chunk warning summary",
+      averageMs: undefined,
+      maxMs: undefined,
+      sampleCount: 1,
+      detail: "Latest build reports a Vite chunk-size warning; no source maps, prompts, secrets, or hidden data are displayed.",
+    },
+  ];
+}
+
+function performanceRow(
+  category: string,
+  entries: DebugPerformanceSummaryResponse["entries"],
+  samples: DebugPerformanceSample[],
+  tokens: string[],
+  detail: string
+): PerformanceProRow {
+  const matchingEntries = entries.filter((entry) => tokens.some((token) => entry.name.toLowerCase().includes(token)));
+  const matchingSamples = samples.filter((sample) => tokens.some((token) => sample.name.toLowerCase().includes(token) || Object.keys(sample.tags).some((tag) => tag.toLowerCase().includes(token))));
+  const count = matchingEntries.reduce((total, entry) => total + entry.count, 0) || matchingSamples.length;
+  const averageMs = matchingEntries.length
+    ? matchingEntries.reduce((total, entry) => total + entry.average_duration_ms, 0) / matchingEntries.length
+    : matchingSamples.length
+      ? matchingSamples.reduce((total, sample) => total + sample.duration_ms, 0) / matchingSamples.length
+      : undefined;
+  const maxMs = matchingEntries.length
+    ? Math.max(...matchingEntries.map((entry) => entry.max_duration_ms))
+    : matchingSamples.length
+      ? Math.max(...matchingSamples.map((sample) => sample.duration_ms))
+      : undefined;
+  return { category, averageMs, maxMs, sampleCount: count, detail };
+}
+
 function findPerfEntry(entries: DebugPerformanceSummaryResponse["entries"], name: string) {
   return entries.find((entry) => entry.name === name);
 }
@@ -3789,12 +3993,44 @@ function PlaytestingDashboard({
   const [batchAgents, setBatchAgents] = useState<string>("random_valid_action_agent,explore_agent");
   const [stopOnBlocker, setStopOnBlocker] = useState<boolean>(true);
   const [saveLoadCheck, setSaveLoadCheck] = useState<boolean>(true);
+  const playtestSuites = useMemo(
+    () => [
+      {
+        id: "world_action_path",
+        title: "World action path",
+        detail: "Single deterministic world path through GameLoop.",
+        run: () => onRun({ worldId, agentType, steps, seed, saveLoadCheck })
+      },
+      {
+        id: "scenario_tests",
+        title: "Scenario tests",
+        detail: "Batch-safe scenario-style probes using deterministic seeds.",
+        run: () => onRunBatch({ worldId, agentTypes: ["quest_following_agent"], seeds: parseSeedList(batchSeeds), steps, stopOnBlocker, saveLoadCheck })
+      },
+      {
+        id: "module_playtests",
+        title: "Module playtests",
+        detail: "Stress module actions through local playtest agents; no module code execution.",
+        run: () => onRunBatch({ worldId, agentTypes: ["stress_agent"], seeds: parseSeedList(batchSeeds), steps, stopOnBlocker, saveLoadCheck })
+      },
+      {
+        id: "regression_packs",
+        title: "Regression packs",
+        detail: "Multi-agent regression pack over local temporary runs.",
+        run: () => onRunBatch({ worldId, agentTypes: parseCsvList(batchAgents), seeds: parseSeedList(batchSeeds), steps, stopOnBlocker, saveLoadCheck })
+      }
+    ],
+    [agentType, batchAgents, batchSeeds, onRun, onRunBatch, saveLoadCheck, seed, steps, stopOnBlocker, worldId]
+  );
   const issueCount = selectedReport
     ? selectedReport.errors.length +
       selectedReport.invariant_violations.length +
       selectedReport.visibility_leaks.length +
       selectedReport.save_load_failures.length
     : 0;
+  const failedStep = selectedReport ? firstFailedPlaytestStep(selectedReport) : null;
+  const actionCoverage = selectedReport ? new Set(selectedReport.actions_taken.map((action) => action.action_type)).size : 0;
+  const eventCoverage = selectedReport?.final_state_summary.event_count ?? 0;
 
   return (
     <section className="studio-section playtesting-dashboard">
@@ -3813,6 +4049,22 @@ function PlaytestingDashboard({
           Playtest API is disabled. Enable <code>ENABLE_PLAYTEST_API=true</code> or local debug API.
         </div>
       )}
+      <section className="studio-section">
+        <h3>Playtest Dashboard Pro</h3>
+        <p className="muted">
+          Local deterministic suites only. Reports are not uploaded, do not call real providers, and do not write real saves.
+        </p>
+        <div className="studio-grid compact-dashboard-grid">
+          {playtestSuites.map((suite) => (
+            <FeatureCard
+              key={suite.id}
+              title={suite.title}
+              detail={suite.detail}
+              action={<button type="button" onClick={suite.run}>Run Suite</button>}
+            />
+          ))}
+        </div>
+      </section>
       <div className="playtest-controls">
         <label>
           World
@@ -3937,6 +4189,12 @@ function PlaytestingDashboard({
         <DashboardCard title="Seed" value={String(selectedReport?.seed ?? seed)}>
           <p>{selectedReport?.agent_type ?? agentType}</p>
         </DashboardCard>
+        <DashboardCard title="Result" value={selectedReport ? (issueCount ? "failed" : "passed") : "not run"}>
+          <p>{failedStep ? `failed step ${failedStep.step}` : "safe summary only"}</p>
+        </DashboardCard>
+        <DashboardCard title="Coverage" value={`${actionCoverage} actions`}>
+          <p>{eventCoverage} EventLog events</p>
+        </DashboardCard>
       </div>
 
       {reports.length > 0 && (
@@ -3954,12 +4212,26 @@ function PlaytestingDashboard({
 
       {selectedReport ? (
         <div className="studio-columns">
+          <SectionCard title="Safe Replay Summary" description="Replay-like summary without raw StateDelta or hidden content.">
+            <dl className="metadata-list">
+              <dt>Status</dt>
+              <dd>{issueCount ? "failed" : "passed"}</dd>
+              <dt>Duration</dt>
+              <dd>{playtestDurationSummary(selectedReport, batchReport)}</dd>
+              <dt>Failed step</dt>
+              <dd>{failedStep ? `#${failedStep.step} ${redactReportText(failedStep.action_type)} / ${redactReportText(failedStep.result)}` : "None"}</dd>
+              <dt>Action coverage</dt>
+              <dd>{actionCoverage} unique action type(s)</dd>
+              <dt>Event coverage</dt>
+              <dd>{eventCoverage} EventLog event(s)</dd>
+            </dl>
+          </SectionCard>
           <SectionCard title="Actions" description="Recent agent inputs through GameLoop.">
             <ItemList
               emptyText="No actions."
               items={selectedReport.actions_taken.slice(-8).map((action) => (
                 <span key={`${action.step}-${action.input_text}`}>
-                  #{action.step} {action.input_text} <span className="badge">{action.result}</span>
+                  #{action.step} {redactReportText(action.input_text)} <span className="badge">{redactReportText(action.result)}</span>
                 </span>
               ))}
             />
@@ -3978,9 +4250,15 @@ function PlaytestingDashboard({
               ))}
             />
           </SectionCard>
+          <SectionCard title="Hidden Leak Warnings" description="Safe leak warnings only; hidden text is never printed.">
+            <ItemList
+              emptyText="No hidden leak warnings."
+              items={selectedReport.visibility_leaks.map((item) => <span key={item}>{redactLeakSummary(item)}</span>)}
+            />
+          </SectionCard>
         </div>
       ) : (
-        <EmptyState title="No playtest selected." detail="Run a deterministic playtest to inspect actions and invariant checks." />
+        <EmptyState title="No playtest selected." detail="Run a deterministic playtest suite to inspect pass/fail, failed steps, coverage, and safe replay summaries." />
       )}
 
       {selectedReport && (
@@ -4000,6 +4278,18 @@ function PlaytestingDashboard({
       )}
     </section>
   );
+}
+
+function firstFailedPlaytestStep(report: PlaytestReport): PlaytestActionRecord | null {
+  return report.actions_taken.find((action) => !/success|ok|observed|moved|waited/i.test(action.result)) ?? null;
+}
+
+function playtestDurationSummary(report: PlaytestReport, batchReport: PlaytestBatchRun | null): string {
+  const batchItem = batchReport?.run_items.find((item) => item.report.run_id === report.run_id);
+  if (batchItem) {
+    return `${Math.round(batchItem.duration_ms)}ms`;
+  }
+  return "single run duration not reported";
 }
 
 function ScenarioRegressionDashboard({
@@ -4200,6 +4490,9 @@ function PromptLabPage({
   const [providerProfiles, setProviderProfiles] = useState<ProviderProfileSummary[]>([]);
   const [providerCapabilityMatrix, setProviderCapabilityMatrix] = useState<ProviderModelCapabilityMatrix | null>(null);
   const [providerStatus, setProviderStatus] = useState<Record<string, unknown> | null>(null);
+  const [providerStatusById, setProviderStatusById] = useState<Record<string, Record<string, unknown>>>({});
+  const [providerLastTestedById, setProviderLastTestedById] = useState<Record<string, string>>({});
+  const [modelAssignmentOpen, setModelAssignmentOpen] = useState(false);
   const [providerValidation, setProviderValidation] = useState<string>("");
   const [providerDraft, setProviderDraft] = useState<ProviderProfileDraft>({
     provider_profile_id: "local_stub",
@@ -4275,11 +4568,14 @@ function PromptLabPage({
   async function validateProvider(profileId: string) {
     const result = await validateProjectProvider(projectId, profileId);
     setProviderValidation(result.ok ? "Provider profile validates." : `Provider profile failed validation: ${result.warnings.join(", ")}`);
+    setProviderLastTestedById((current) => ({ ...current, [profileId]: new Date().toISOString() }));
   }
 
   async function loadProviderStatus(profileId: string) {
     const result = await fetchProjectProviderStatus(projectId, profileId);
     setProviderStatus(result.status);
+    setProviderStatusById((current) => ({ ...current, [profileId]: result.status }));
+    setProviderLastTestedById((current) => ({ ...current, [profileId]: new Date().toISOString() }));
   }
 
   return (
@@ -4303,6 +4599,24 @@ function PromptLabPage({
           <p>Normal UI does not show hidden facts, raw env, or raw prompts.</p>
         </DashboardCard>
       </div>
+
+      <ProviderConnectivityDashboard
+        profiles={providerProfiles}
+        matrix={providerCapabilityMatrix}
+        statusById={providerStatusById}
+        lastTestedById={providerLastTestedById}
+        modelAssignmentOpen={modelAssignmentOpen}
+        onTestConnection={(profileId) => void runLabAction(async () => {
+          await validateProvider(profileId);
+          await loadProviderStatus(profileId);
+        })}
+        onFetchModels={() => void runLabAction(loadProviderProfiles)}
+        onRefreshModels={() => void runLabAction(loadProviderProfiles)}
+        onOpenModelAssignment={() => setModelAssignmentOpen((open) => !open)}
+        onOpenProviderSetup={() => {
+          document.querySelector(".provider-profile-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }}
+      />
 
       <section className="studio-section">
         <div className="authoring-pane-header">
@@ -4345,7 +4659,7 @@ function PromptLabPage({
           <FeatureCard title="relay" detail="Relay-style profile metadata only. No API resale or specific relay support is implied." />
           <FeatureCard title="mock / local_stub" detail="Safe defaults for tests and local dry-runs." />
         </div>
-        <form className="form-grid" onSubmit={(event) => void runLabAction(async () => saveProviderProfile(event))}>
+        <form className="form-grid provider-profile-form" onSubmit={(event) => void runLabAction(async () => saveProviderProfile(event))}>
           <label>
             Profile ID
             <input
@@ -4544,62 +4858,15 @@ function PromptLabPage({
       </section>
 
       <section className="studio-section">
-        <div className="authoring-pane-header">
-          <div>
-            <h4>Provider Usage Dashboard</h4>
-            <p className="muted">Local estimates for project {projectId}. Prompts, outputs, API keys, hidden facts, and raw state deltas are never displayed.</p>
-          </div>
-          <div className="button-row">
-            <select value={usageRange ?? 0} onChange={(event) => setUsageRange(Number(event.target.value) || undefined)} aria-label="Usage time range">
-              <option value={0}>All time</option>
-              <option value={60}>Last hour</option>
-              <option value={1440}>Last day</option>
-              <option value={10080}>Last 7 days</option>
-            </select>
-            <button type="button" onClick={() => void runLabAction(loadProjectUsage)}>
-              Load Project Usage
-            </button>
-          </div>
-        </div>
-        <div className="studio-grid compact-dashboard-grid">
-          <DashboardCard title="Calls" value={projectUsageSummary ? String(projectUsageSummary.total_calls) : "empty"}>
-            <p>{projectUsageSummary ? `${projectUsageSummary.successes} ok / ${projectUsageSummary.failures} errors` : "Usage API may be disabled or empty."}</p>
-          </DashboardCard>
-          <DashboardCard title="Tokens" value={projectUsageSummary ? String(projectUsageSummary.total_input_tokens_estimated + projectUsageSummary.total_output_tokens_estimated) : "empty"}>
-            <p>{projectUsageSummary ? `in ${projectUsageSummary.total_input_tokens_estimated} / out ${projectUsageSummary.total_output_tokens_estimated}` : "Estimates only, not billing."}</p>
-          </DashboardCard>
-          <DashboardCard title="Cost" value={projectUsageSummary ? String(projectUsageSummary.total_cost_estimated) : "empty"}>
-            <p>Estimated local metadata only.</p>
-          </DashboardCard>
-          <DashboardCard title="Errors" value={projectUsageSummary ? String(projectUsageSummary.failures) : "empty"}>
-            <p>{projectUsageSummary ? `${Math.round(projectUsageSummary.error_rate * 100)}% error rate` : "No usage summary."}</p>
-          </DashboardCard>
-        </div>
-        <div className="studio-grid two-column-grid">
-          <ItemList
-            emptyText="No usage by mode."
-            items={usageByMode.map((item) => (
-              <span key={item.key}>
-                {item.key}: {item.count} calls, {item.total_tokens_estimated} tokens, cost {item.total_cost_estimated}
-              </span>
-            ))}
-          />
-          <ItemList
-            emptyText="No usage by provider."
-            items={usageByProvider.map((item) => (
-              <span key={item.key}>
-                {item.key}: {item.count} calls, {item.failures} failures
-              </span>
-            ))}
-          />
-        </div>
-        <ItemList
-          emptyText="No project usage records."
-          items={projectRecentUsage.map((record) => (
-            <span key={record.usage_id}>
-              {(record.mode ?? "mode")}/{record.use_case}: {record.provider_id}/{record.model_id} {record.success ? "ok" : record.error_type ?? "failed"} ({record.total_tokens_estimated ?? record.input_tokens_estimated + record.output_tokens_estimated} tokens)
-            </span>
-          ))}
+        <ProviderUsageCostDashboard
+          projectId={projectId}
+          summary={projectUsageSummary}
+          recent={projectRecentUsage}
+          usageByMode={usageByMode}
+          usageByProvider={usageByProvider}
+          usageRange={usageRange}
+          onRangeChange={setUsageRange}
+          onLoad={() => void runLabAction(loadProjectUsage)}
         />
       </section>
 
@@ -4608,6 +4875,127 @@ function PromptLabPage({
       <SettingsPrivacyPanel summary={summary} error="" onSelectPromptProfile={onSelectPromptProfile} promptLabOnly />
     </section>
   );
+}
+
+function ProviderUsageCostDashboard({
+  projectId,
+  summary,
+  recent,
+  usageByMode,
+  usageByProvider,
+  usageRange,
+  onRangeChange,
+  onLoad
+}: {
+  projectId: string;
+  summary: ModelUsageSummary | null;
+  recent: ModelUsageRecord[];
+  usageByMode: CostLatencyGroupSummary[];
+  usageByProvider: CostLatencyGroupSummary[];
+  usageRange: number | undefined;
+  onRangeChange: (range: number | undefined) => void;
+  onLoad: () => void;
+}) {
+  const successErrorRows = summary
+    ? [
+        { key: "success", count: summary.successes, failures: 0, total_tokens_estimated: summary.total_input_tokens_estimated + summary.total_output_tokens_estimated, total_cost_estimated: summary.total_cost_estimated, latency_p50_ms: summary.latency_p50_ms, latency_p95_ms: summary.latency_p95_ms },
+        { key: "error", count: summary.failures, failures: summary.failures, total_tokens_estimated: 0, total_cost_estimated: 0, latency_p50_ms: 0, latency_p95_ms: 0 }
+      ]
+    : [];
+  const totalTokens = summary ? summary.total_input_tokens_estimated + summary.total_output_tokens_estimated : 0;
+
+  return (
+    <>
+      <div className="authoring-pane-header">
+        <div>
+          <h4>Provider Usage / Cost Dashboard Pro</h4>
+          <p className="muted">
+            Local estimates for project {projectId}. Prompts, outputs, API keys, hidden facts, mature/private text, and raw state deltas are never displayed.
+          </p>
+        </div>
+        <div className="button-row">
+          <select value={usageRange ?? 0} onChange={(event) => onRangeChange(Number(event.target.value) || undefined)} aria-label="Usage time range">
+            <option value={0}>All time</option>
+            <option value={60}>Last hour</option>
+            <option value={1440}>Last day</option>
+            <option value={10080}>Last 7 days</option>
+          </select>
+          <button type="button" onClick={onLoad}>
+            Load Project Usage
+          </button>
+        </div>
+      </div>
+      <div className="studio-grid compact-dashboard-grid">
+        <DashboardCard title="Usage Overview" value={summary ? String(summary.total_calls) : "empty"}>
+          <p>{summary ? `${summary.successes} ok / ${summary.failures} errors` : "Usage API may be disabled or no local calls have been recorded."}</p>
+        </DashboardCard>
+        <DashboardCard title="Estimated Tokens" value={summary ? String(totalTokens) : "empty"}>
+          <p>{summary ? `input ${summary.total_input_tokens_estimated} / output ${summary.total_output_tokens_estimated}` : "Token estimates only; prompt and output text are not stored here."}</p>
+        </DashboardCard>
+        <DashboardCard title="Estimated Cost" value={summary ? formatEstimatedCost(summary.total_cost_estimated) : "empty"}>
+          <p>Cost is approximate local metadata, not billing-grade and never uploaded.</p>
+        </DashboardCard>
+        <DashboardCard title="Average Latency" value={summary ? formatDuration(summary.average_latency_ms) : "empty"}>
+          <p>{summary ? `p50 ${formatDuration(summary.latency_p50_ms)} / p95 ${formatDuration(summary.latency_p95_ms)}` : "No latency summary."}</p>
+        </DashboardCard>
+        <DashboardCard title="Error Count" value={summary ? String(summary.failures) : "empty"}>
+          <p>{summary ? `${Math.round(summary.error_rate * 100)}% error rate` : "No usage summary."}</p>
+        </DashboardCard>
+      </div>
+      <div className="studio-grid two-column-grid">
+        <UsageGroupList title="By provider" emptyText="No usage by provider." rows={usageByProvider} />
+        <UsageGroupList title="By model" emptyText="No usage by model." rows={summary?.by_model ?? []} />
+        <UsageGroupList title="By mode" emptyText="No usage by mode." rows={usageByMode} />
+        <UsageUseCaseList rows={summary?.by_use_case ?? []} />
+        <UsageGroupList title="By success/error" emptyText="No success/error usage summary." rows={successErrorRows} />
+      </div>
+      <ItemList
+        emptyText="No project usage records."
+        items={recent.map((record) => (
+          <span key={record.usage_id}>
+            {(record.mode ?? "mode")}/{record.use_case}: {record.provider_id}/{record.model_id} {record.success ? "ok" : record.error_type ?? "failed"} ({record.input_tokens_estimated} in / {record.output_tokens_estimated} out, {formatDuration(record.duration_ms)})
+          </span>
+        ))}
+      />
+      <p className="muted">
+        Usage records contain metadata only: provider, model, mode, use case, token estimates, estimated cost, latency, and error type. Full prompt/output text and secrets are excluded.
+      </p>
+    </>
+  );
+}
+
+function UsageGroupList({ title, emptyText, rows }: { title: string; emptyText: string; rows: CostLatencyGroupSummary[] }) {
+  return (
+    <SectionCard title={title} description="Safe usage summary only.">
+      <ItemList
+        emptyText={emptyText}
+        items={rows.map((item) => (
+          <span key={item.key}>
+            {item.key}: {item.count} calls, {item.failures} errors, {item.total_tokens_estimated} tokens, cost {formatEstimatedCost(item.total_cost_estimated)}, p50 {formatDuration(item.latency_p50_ms)}
+          </span>
+        ))}
+      />
+    </SectionCard>
+  );
+}
+
+function UsageUseCaseList({ rows }: { rows: ModelUsageSummary["by_use_case"] }) {
+  return (
+    <SectionCard title="By use case" description="Mode routing and task-level usage distribution.">
+      <ItemList
+        emptyText="No usage by use case."
+        items={rows.map((item) => (
+          <span key={item.use_case}>
+            {item.use_case}: {item.count} calls, {item.failures} errors, input {item.total_input_tokens_estimated}, output {item.total_output_tokens_estimated}, cost {formatEstimatedCost(item.total_cost_estimated)}, avg {formatDuration(item.average_latency_ms)}
+          </span>
+        ))}
+      />
+    </SectionCard>
+  );
+}
+
+function formatEstimatedCost(value: number): string {
+  return `$${value.toFixed(value > 0 && value < 0.01 ? 6 : 4)}`;
 }
 
 function PromptLabPanelIndex() {
@@ -4692,6 +5080,7 @@ function SettingsPrivacyPanel({
   const [compatibilityMatrix, setCompatibilityMatrix] = useState<ModelCompatibilityMatrix | null>(null);
   const [compatibilityError, setCompatibilityError] = useState<string>("");
   const [routingSummary, setRoutingSummary] = useState<ProviderRoutingSummary | null>(null);
+  const [modelAssignmentSummary, setModelAssignmentSummary] = useState<ProjectProviderModelAssignmentSummary | null>(null);
   const [routingPreview, setRoutingPreview] = useState<ProviderRoutingPreview | null>(null);
   const [routingError, setRoutingError] = useState<string>("");
   const [routingUseCase, setRoutingUseCase] = useState<ProviderRoutingUseCase>("narrator");
@@ -4869,10 +5258,15 @@ function SettingsPrivacyPanel({
       primary_model_id: routingPrimaryModel.trim(),
       fallback_provider_id: routingFallbackProvider.trim() || null,
       fallback_model_id: routingFallbackModel.trim() || null,
-      require_json_support: routingRequireJson || routingUseCase !== "narrator" && routingUseCase !== "RP_dialogue",
+      require_json_support: routingRequireJson || routingUseCaseRequiresJson(routingUseCase),
       require_local_only: routingRequireLocalOnly,
       enabled: true
     };
+  }
+
+  function currentRoutingConfig(): { rules: ProviderRoutingRule[] } {
+    const existingRules = (modelAssignmentSummary?.rules ?? routingSummary?.rules ?? []).filter((rule) => rule.use_case !== routingUseCase);
+    return { rules: [...existingRules, currentRoutingRule()] };
   }
 
   async function handlePreviewRoutingRule() {
@@ -4889,9 +5283,27 @@ function SettingsPrivacyPanel({
   async function handleSaveRoutingRule() {
     setRoutingError("");
     try {
-      const existingRules = routingSummary?.rules.filter((rule) => rule.use_case !== routingUseCase) ?? [];
-      const saved = await saveProviderRoutingConfig({ rules: [...existingRules, currentRoutingRule()] });
-      setRoutingSummary(saved);
+      if (selectedProjectId) {
+        const saved = await saveProjectProviderModelAssignments(selectedProjectId, currentRoutingConfig());
+        setModelAssignmentSummary(saved);
+      } else {
+        const saved = await saveProviderRoutingConfig(currentRoutingConfig());
+        setRoutingSummary(saved);
+      }
+      setRoutingPreview(null);
+    } catch (err) {
+      setRoutingError(toErrorMessage(err));
+    }
+  }
+
+  async function handleValidateModelAssignment() {
+    if (!selectedProjectId) {
+      setRoutingError("Select a project before validating project model assignments.");
+      return;
+    }
+    setRoutingError("");
+    try {
+      setModelAssignmentSummary(await validateProjectProviderModelAssignments(selectedProjectId, currentRoutingConfig()));
       setRoutingPreview(null);
     } catch (err) {
       setRoutingError(toErrorMessage(err));
@@ -4901,10 +5313,15 @@ function SettingsPrivacyPanel({
   async function handleLoadRoutingSummary() {
     setRoutingError("");
     try {
-      const loaded = await fetchProviderRoutingSummary();
-      setRoutingSummary(loaded);
+      if (selectedProjectId) {
+        setModelAssignmentSummary(await fetchProjectProviderModelAssignments(selectedProjectId));
+      } else {
+        const loaded = await fetchProviderRoutingSummary();
+        setRoutingSummary(loaded);
+      }
     } catch (err) {
       setRoutingSummary(null);
+      setModelAssignmentSummary(null);
       setRoutingError(toErrorMessage(err));
     }
   }
@@ -5622,9 +6039,7 @@ function SettingsPrivacyPanel({
                     >
                       <strong>{row.provider_id}/{row.model_id}</strong>
                       <span className="chip">{row.use_case}</span>
-                      <span className="badge">
-                        {row.unsupported ? "unsupported" : row.caution ? "caution" : row.recommended ? "recommended" : "supported"}
-                      </span>
+                      <ModelCapabilityBadge label={row.unsupported ? "unsupported" : row.caution ? "caution" : row.recommended ? "recommended" : "supported"} supported={!row.unsupported} />
                       <p className="muted">{row.reason}</p>
                     </div>
                   ))}
@@ -5637,18 +6052,21 @@ function SettingsPrivacyPanel({
           <section className="studio-section">
             <div className="authoring-pane-header">
               <div>
-                <h4>Provider Routing Rules</h4>
-                <p className="muted">Select local provider/model preferences per use case. Rules do not call providers or change LLM permissions.</p>
+                <h4>Provider Model Assignment by Mode</h4>
+                <p className="muted">Assign provider/model pairs for Novel, Tavern, World, Cross-Mode, Quality, and summary use cases. This validates metadata only and never calls providers.</p>
               </div>
               <div className="button-row">
                 <button type="button" onClick={() => void handleLoadRoutingSummary()}>
-                  Load Rules
+                  Load Assignments
                 </button>
                 <button type="button" onClick={() => void handlePreviewRoutingRule()}>
                   Preview Rule
                 </button>
+                <button type="button" onClick={() => void handleValidateModelAssignment()}>
+                  Validate Assignment
+                </button>
                 <button type="button" onClick={() => void handleSaveRoutingRule()}>
-                  Save Rule
+                  Save Assignment
                 </button>
               </div>
             </div>
@@ -5657,32 +6075,41 @@ function SettingsPrivacyPanel({
               <label>
                 Use case
                 <select value={routingUseCase} onChange={(event) => setRoutingUseCase(event.target.value as ProviderRoutingUseCase)}>
-                  <option value="intent_parser">Intent parser</option>
-                  <option value="narrator">Narrator</option>
-                  <option value="RP_dialogue">RP dialogue</option>
-                  <option value="memory_summary">Memory summary</option>
-                  <option value="character_import">Character import</option>
-                  <option value="lorebook_classification">Lorebook classification</option>
-                  <option value="quest_draft">Quest draft</option>
-                  <option value="structured_json">Structured JSON</option>
+                  {PROVIDER_MODEL_ASSIGNMENT_USE_CASES.map((useCase) => (
+                    <option key={useCase.value} value={useCase.value}>{useCase.label}</option>
+                  ))}
                 </select>
               </label>
               <label>
                 Primary provider
-                <input value={routingPrimaryProvider} onChange={(event) => setRoutingPrimaryProvider(event.target.value)} />
+                <input list="provider-routing-provider-options" value={routingPrimaryProvider} onChange={(event) => setRoutingPrimaryProvider(event.target.value)} />
               </label>
               <label>
                 Primary model
-                <input value={routingPrimaryModel} onChange={(event) => setRoutingPrimaryModel(event.target.value)} />
+                <input list="provider-routing-model-options" value={routingPrimaryModel} onChange={(event) => setRoutingPrimaryModel(event.target.value)} />
               </label>
               <label>
                 Fallback provider
-                <input value={routingFallbackProvider} onChange={(event) => setRoutingFallbackProvider(event.target.value)} />
+                <input list="provider-routing-provider-options" value={routingFallbackProvider} onChange={(event) => setRoutingFallbackProvider(event.target.value)} />
               </label>
               <label>
                 Fallback model
-                <input value={routingFallbackModel} onChange={(event) => setRoutingFallbackModel(event.target.value)} />
+                <input list="provider-routing-model-options" value={routingFallbackModel} onChange={(event) => setRoutingFallbackModel(event.target.value)} />
               </label>
+              <datalist id="provider-routing-provider-options">
+                <option value="local_stub" />
+                <option value="mock" />
+                <option value="openai" />
+                <option value="openai_compatible" />
+                <option value="relay" />
+                <option value="custom" />
+              </datalist>
+              <datalist id="provider-routing-model-options">
+                <option value="local_stub" />
+                <option value="mock" />
+                <option value="fake-json-pro" />
+                <option value="fake-chat-small" />
+              </datalist>
               <label>
                 Require JSON
                 <input type="checkbox" checked={routingRequireJson} onChange={(event) => setRoutingRequireJson(event.target.checked)} />
@@ -5705,7 +6132,33 @@ function SettingsPrivacyPanel({
                 </DashboardCard>
               </div>
             )}
-            {routingSummary ? (
+            {modelAssignmentSummary ? (
+              <>
+                <div className="studio-grid compact-dashboard-grid">
+                  <DashboardCard title="Assignment Validation" value={modelAssignmentSummary.validation_reports.every((report) => report.ok) ? "ok" : "blocked"}>
+                    <p>{modelAssignmentSummary.warnings.join(", ") || "No global warnings"}</p>
+                  </DashboardCard>
+                  <DashboardCard title="Fallback Chains" value={String(Object.keys(modelAssignmentSummary.fallback_chains).length)}>
+                    <p>Fallbacks are metadata only; Provider Gateway remains the only runtime entry.</p>
+                  </DashboardCard>
+                  <DashboardCard title="JSON Capability" value={routingUseCaseRequiresJson(routingUseCase) ? "required" : "optional"}>
+                    <p>World intent parser and structured JSON assignments require JSON-capable models.</p>
+                  </DashboardCard>
+                </div>
+                <ItemList
+                  emptyText="No project model assignments saved."
+                  items={modelAssignmentSummary.rules.map((rule) => (
+                    <span key={`${rule.use_case}-${rule.primary_provider_id}-${rule.primary_model_id}`}>
+                      {rule.use_case}: {rule.primary_provider_id}/{rule.primary_model_id}
+                      {rule.fallback_provider_id ? ` -> ${rule.fallback_provider_id}/${rule.fallback_model_id}` : ""}
+                      {modelAssignmentSummary.validation_reports.find((report) => report.rule.use_case === rule.use_case)?.warnings.length
+                        ? ` (${modelAssignmentSummary.validation_reports.find((report) => report.rule.use_case === rule.use_case)?.warnings.join(", ")})`
+                        : ""}
+                    </span>
+                  ))}
+                />
+              </>
+            ) : routingSummary ? (
               <ItemList
                 emptyText="No routing rules saved."
                 items={routingSummary.rules.map((rule) => (
@@ -5716,7 +6169,7 @@ function SettingsPrivacyPanel({
                 ))}
               />
             ) : (
-              <p className="muted">Load or save local routing rules to see the current safe summary.</p>
+              <p className="muted">Load or save local model assignments to see provider/model routes and fallback chains. No API keys are displayed.</p>
             )}
           </section>
           <div className="studio-columns">
@@ -5744,6 +6197,206 @@ function SettingsPrivacyPanel({
       )}
     </section>
   );
+}
+
+const PROVIDER_CONNECTIVITY_STATUSES = [
+  "unconfigured",
+  "configured_not_tested",
+  "connected",
+  "disconnected",
+  "missing_secret",
+  "invalid_base_url",
+  "auth_failed",
+  "model_list_failed",
+  "unsupported_model_list",
+  "timeout"
+] as const;
+
+const PROVIDER_MODEL_ASSIGNMENT_USE_CASES: Array<{ value: ProviderRoutingUseCase; label: string }> = [
+  { value: "novel_draft", label: "Novel draft" },
+  { value: "novel_rewrite", label: "Novel rewrite" },
+  { value: "tavern_reply", label: "Tavern reply" },
+  { value: "multi_npc_reply", label: "Multi-NPC reply" },
+  { value: "world_intent_parse", label: "World intent parser" },
+  { value: "world_narration", label: "World narrator" },
+  { value: "memory_summary", label: "Memory summary" },
+  { value: "cross_mode_draft", label: "Cross-Mode draft" },
+  { value: "structured_json", label: "Structured JSON" },
+  { value: "quality_eval", label: "Quality eval" },
+  { value: "cheap_summary", label: "Cheap summary" }
+];
+
+function routingUseCaseRequiresJson(useCase: ProviderRoutingUseCase): boolean {
+  return ["world_intent_parse", "structured_json", "cross_mode_draft", "quality_eval", "memory_summary"].includes(useCase);
+}
+
+function modelOptionsForProvider(profiles: ProviderProfileSummary[], providerId: string, currentModelId: string): string[] {
+  const profile = profiles.find((item) => item.provider_profile_id === providerId);
+  const modelIds = profile?.model_profiles.map((model) => model.model_id).filter(Boolean) ?? [];
+  const options = new Set<string>(modelIds);
+  if (currentModelId) options.add(currentModelId);
+  if (options.size === 0) options.add(providerId || "local_stub");
+  return Array.from(options);
+}
+
+function providerIdsForRouting(capabilities: ProviderCapabilityCatalog | null, currentProviderId: string): string[] {
+  const options = new Set<string>((capabilities?.providers ?? []).map((provider) => provider.provider_id));
+  if (currentProviderId) options.add(currentProviderId);
+  if (options.size === 0) {
+    options.add("local_stub");
+    options.add("mock");
+  }
+  return Array.from(options);
+}
+
+function modelIdsForRouting(capabilities: ProviderCapabilityCatalog | null, providerId: string, currentModelId: string): string[] {
+  const options = new Set<string>((capabilities?.models ?? []).filter((model) => model.provider_id === providerId).map((model) => model.model_id));
+  if (currentModelId) options.add(currentModelId);
+  if (options.size === 0) options.add(providerId || "local_stub");
+  return Array.from(options);
+}
+type ProviderConnectivityStatus = (typeof PROVIDER_CONNECTIVITY_STATUSES)[number];
+
+function ProviderConnectivityDashboard({
+  profiles,
+  matrix,
+  statusById,
+  lastTestedById,
+  modelAssignmentOpen,
+  onTestConnection,
+  onFetchModels,
+  onRefreshModels,
+  onOpenModelAssignment,
+  onOpenProviderSetup
+}: {
+  profiles: ProviderProfileSummary[];
+  matrix: ProviderModelCapabilityMatrix | null;
+  statusById: Record<string, Record<string, unknown>>;
+  lastTestedById: Record<string, string>;
+  modelAssignmentOpen: boolean;
+  onTestConnection: (profileId: string) => void;
+  onFetchModels: () => void;
+  onRefreshModels: () => void;
+  onOpenModelAssignment: () => void;
+  onOpenProviderSetup: () => void;
+}) {
+  const rows = useMemo(() => profiles.map((profile) => buildProviderConnectivityRow(profile, matrix, statusById[profile.provider_profile_id], lastTestedById[profile.provider_profile_id])), [lastTestedById, matrix, profiles, statusById]);
+  return (
+    <section className="studio-section provider-connectivity-dashboard">
+      <div className="authoring-pane-header">
+        <div>
+          <h4>Provider Connectivity Dashboard</h4>
+          <p className="muted">Local Provider Gateway connectivity view. API keys, raw env, and Authorization headers are never displayed.</p>
+        </div>
+        <div className="button-row">
+          <button type="button" onClick={onFetchModels}>Fetch Models</button>
+          <button type="button" onClick={onRefreshModels}>Refresh Models</button>
+          <button type="button" onClick={onOpenModelAssignment}>Open Model Assignment</button>
+          <button type="button" onClick={onOpenProviderSetup}>Open Provider Setup</button>
+        </div>
+      </div>
+      {rows.length === 0 ? (
+        <EmptyState title="No providers loaded." detail="Load or create local provider profiles. ProviderProfile stores api_key_env or secret_ref only, never plaintext keys." />
+      ) : (
+        <div className="debug-event-list">
+          {rows.map((row) => (
+            <details className="timeline-event provider-connectivity-row" key={row.providerId}>
+              <summary>
+                <span>{row.displayName}</span>
+                <span>{row.providerType}</span>
+                <ProviderConnectionStatusBadge status={row.connectionStatus} />
+                <span>{row.modelCount} models</span>
+              </summary>
+              <dl className="event-details">
+                <dt>Display name</dt><dd>{row.displayName}</dd>
+                <dt>Provider type</dt><dd>{row.providerType}</dd>
+                <dt>Connection status</dt><dd><ProviderConnectionStatusBadge status={row.connectionStatus} /></dd>
+                <dt>Model count</dt><dd>{row.modelCount}</dd>
+                <dt>Last tested</dt><dd>{row.lastTestedTime}</dd>
+                <dt>Allowed modes</dt><dd>{row.allowedModes.join(", ") || "none"}</dd>
+                <dt>Default model</dt><dd>{row.defaultModel}</dd>
+                <dt>Warnings</dt><dd>{row.warnings.length ? row.warnings.map(redactReportText).join("; ") : "None"}</dd>
+              </dl>
+              <div className="button-row">
+                <button type="button" onClick={() => onTestConnection(row.providerId)}>Test Connection</button>
+                <button type="button" onClick={onFetchModels}>Fetch Models</button>
+                <button type="button" onClick={onRefreshModels}>Refresh Models</button>
+                <button type="button" onClick={onOpenModelAssignment}>Assign Models</button>
+              </div>
+            </details>
+          ))}
+        </div>
+      )}
+      {modelAssignmentOpen && (
+        <section className="section-card">
+          <h4>Provider Model Assignment by Mode</h4>
+          <p className="muted">Assignment preview uses existing allowed_modes and recommended use cases. Persisted routing remains Provider Gateway configuration.</p>
+          <div className="mode-landing-grid">
+            {["Novel", "Tavern", "World", "Cross-Mode", "Quality"].map((mode) => {
+              const modeId = mode.toLowerCase().replace("-", "_");
+              const candidates = rows.filter((row) => row.allowedModes.map((item) => item.toLowerCase()).includes(modeId));
+              return <FeatureCard key={mode} title={mode} detail={candidates.length ? candidates.map((candidate) => `${candidate.displayName}/${candidate.defaultModel}`).join(", ") : "No compatible model loaded."} />;
+            })}
+          </div>
+        </section>
+      )}
+      <p className="muted">Relay is treated as OpenAI-compatible/custom base URL configuration, not an API resale service.</p>
+    </section>
+  );
+}
+
+function buildProviderConnectivityRow(
+  profile: ProviderProfileSummary,
+  matrix: ProviderModelCapabilityMatrix | null,
+  status: Record<string, unknown> | undefined,
+  lastTested: string | undefined
+): {
+  providerId: string;
+  displayName: string;
+  providerType: string;
+  connectionStatus: ProviderConnectivityStatus;
+  modelCount: number;
+  lastTestedTime: string;
+  allowedModes: string[];
+  defaultModel: string;
+  warnings: string[];
+} {
+  const matrixRows = matrix?.rows.filter((row) => row.provider_profile_id === profile.provider_profile_id) ?? [];
+  const warnings = [...matrixRows.flatMap((row) => row.warnings), ...providerConnectivityWarnings(profile, matrixRows)];
+  return {
+    providerId: profile.provider_profile_id,
+    displayName: redactReportText(profile.display_name),
+    providerType: redactReportText(profile.provider_type),
+    connectionStatus: providerConnectivityStatus(profile, status, matrixRows),
+    modelCount: profile.model_profiles.length || matrixRows.length,
+    lastTestedTime: lastTested ?? "not tested",
+    allowedModes: profile.allowed_modes ?? sortedUnique(matrixRows.flatMap((row) => row.allowed_modes)),
+    defaultModel: redactReportText(profile.model_profiles[0]?.model_id ?? matrixRows[0]?.model_id ?? "not assigned"),
+    warnings
+  };
+}
+
+function providerConnectivityStatus(profile: ProviderProfileSummary, status: Record<string, unknown> | undefined, matrixRows: ModelCapabilityMatrixRow[]): ProviderConnectivityStatus {
+  if (!profile.enabled) return "unconfigured";
+  if (profile.provider_type !== "mock" && profile.provider_type !== "local_stub" && !profile.api_key_env && !profile.secret_ref) return "missing_secret";
+  if (profile.provider_type !== "mock" && profile.provider_type !== "local_stub" && profile.base_url_configured === false && profile.provider_type !== "openai") return "invalid_base_url";
+  const serializedStatus = JSON.stringify(redactDebugText(status ?? {})).toLowerCase();
+  if (!status) return "configured_not_tested";
+  if (serializedStatus.includes("auth")) return "auth_failed";
+  if (serializedStatus.includes("timeout")) return "timeout";
+  if (serializedStatus.includes("disconnect") || serializedStatus.includes("failed")) return "disconnected";
+  if (serializedStatus.includes("model_list_failed")) return "model_list_failed";
+  if (matrixRows.length === 0 && profile.model_profiles.length === 0) return "unsupported_model_list";
+  return "connected";
+}
+
+function providerConnectivityWarnings(profile: ProviderProfileSummary, matrixRows: ModelCapabilityMatrixRow[]): string[] {
+  const warnings: string[] = [];
+  if (!profile.enabled) warnings.push("Provider profile is disabled.");
+  if (profile.provider_type !== "mock" && profile.provider_type !== "local_stub" && !profile.api_key_env && !profile.secret_ref) warnings.push("Missing secret reference or api_key_env.");
+  if (profile.model_profiles.length === 0 && matrixRows.length === 0) warnings.push("No local model metadata loaded.");
+  if (profile.provider_notes) warnings.push(redactReportText(profile.provider_notes));
+  return warnings;
 }
 
 function formatDuration(value: number | undefined): string {
@@ -5935,6 +6588,70 @@ function RiskBadge({ level }: { level: "safe" | "warning" | "blocked" | "unknown
 
 function ValidationStatusBadge({ status }: { status: "passed" | "warning" | "failed" | "not_run" }) {
   return <span className={`validation-status-badge ${status}`}>{status.replace("_", " ")}</span>;
+}
+
+function SafeDebugNotice({ children }: { children?: ReactNode }) {
+  return (
+    <p className="muted">
+      {children ?? "Debug data is local-only, redacted by default, and separated from normal player-facing UI."}
+    </p>
+  );
+}
+
+function EventTypeBadge({ type }: { type: string }) {
+  return <span className="badge">{redactReportText(type || "event")}</span>;
+}
+
+function StateDeltaOpBadge({ op }: { op: string }) {
+  return <span className="badge">{redactReportText(op || "op")}</span>;
+}
+
+function QualitySeverityBadge({ severity }: { severity: string }) {
+  const normalized = severity.toLowerCase();
+  const tone = normalized.includes("block") || normalized.includes("error") || normalized.includes("fail")
+    ? "failed"
+    : normalized.includes("warn") || normalized.includes("review")
+      ? "warning"
+      : normalized.includes("pass") || normalized.includes("clear")
+        ? "passed"
+        : "not_run";
+  return <ValidationStatusBadge status={tone} />;
+}
+
+function LeakRiskBadge({ severity }: { severity: string }) {
+  return <span className={`severity ${severity}`}>{redactReportText(severity)}</span>;
+}
+
+function ProviderConnectionStatusBadge({ status }: { status: string }) {
+  const normalized = status.toLowerCase();
+  const enabled = ["connected", "configured", "available", "ok"].some((token) => normalized.includes(token));
+  return <StatusBadge label={redactReportText(status || "provider unknown")} enabled={enabled} />;
+}
+
+function ModelCapabilityBadge({ label, supported }: { label: string; supported: boolean }) {
+  return <span className={`badge ${supported ? "enabled" : "disabled"}`}>{label}: {supported ? "supported" : "unavailable"}</span>;
+}
+
+function TestRunStatusBadge({ status }: { status: string }) {
+  return <QualitySeverityBadge severity={status} />;
+}
+
+function RedactedValue({ value = "[redacted]" }: { value?: string }) {
+  return <span className="redacted-value">{sanitizeDisplayError(value)}</span>;
+}
+
+function SafeReportCard({ title, status, summary }: { title: string; status: string; summary: string }) {
+  return (
+    <section className="safe-summary-card safe-report-card">
+      <p className="muted">{title}</p>
+      <TestRunStatusBadge status={status} />
+      <p>{redactReportText(summary)}</p>
+    </section>
+  );
+}
+
+function FilterToolbar({ children }: { children: ReactNode }) {
+  return <div className="timeline-controls filter-toolbar">{children}</div>;
 }
 
 function moduleRiskBadgeLevel(level: string): "safe" | "warning" | "blocked" | "unknown" {
@@ -6462,7 +7179,7 @@ function DiagnosticsExportPanel({
       description="Local-only safe JSON preview. Nothing is uploaded."
     >
       <SecretSafeNotice compact />
-      <div className="diagnostics-controls">
+      <FilterToolbar>
         <label>
           <input
             type="checkbox"
@@ -6491,7 +7208,7 @@ function DiagnosticsExportPanel({
             detail="ENABLE_DEBUG_API is disabled, so diagnostics remain normal safe summaries only."
           />
         )}
-      </div>
+      </FilterToolbar>
       <SafeJSON value={diagnostics} />
       <button type="button" onClick={downloadDiagnostics} disabled={includeDebug && (!debugAllowed || !confirmedDebug)}>
         Export local diagnostics JSON
@@ -6502,32 +7219,411 @@ function DiagnosticsExportPanel({
 
 function DiagnosticsBundlePanel({
   preview,
+  createResult,
   error,
-  onPreview
+  debugEnabled,
+  onPreview,
+  onCreate
 }: {
   preview: DiagnosticsBundlePreview | null;
+  createResult: DiagnosticsBundleCreateResponse | null;
   error: string;
-  onPreview: () => void;
+  debugEnabled: boolean;
+  onPreview: (includeDebug: boolean, explicitConfirmDebug: boolean) => void;
+  onCreate: (includeDebug: boolean, explicitConfirmDebug: boolean) => void;
 }) {
+  const [includeDebug, setIncludeDebug] = useState(false);
+  const [confirmedDebug, setConfirmedDebug] = useState(false);
+  const includedSections = normalizeDiagnosticsSections(preview?.manifest.included_sections, DIAGNOSTICS_INCLUDED_SECTIONS);
+  const excludedSections = normalizeDiagnosticsSections(preview?.manifest.excluded_sections, DIAGNOSTICS_EXCLUDED_SECTIONS);
+  const redactedLogCount = countDiagnosticsPayloadItems(preview?.safe_payload, "redacted_logs");
+  const recentErrorCount = countDiagnosticsPayloadItems(preview?.safe_payload, "recent_safe_errors");
+  const canCreate = !includeDebug || (debugEnabled && confirmedDebug);
+
   return (
-    <SectionCard title="Diagnostics Bundle UI" description="Preview a local diagnostics bundle. Default bundle excludes .env, API keys, provider secrets, raw env, raw prompts, hidden facts, raw state_deltas, debug memory, mature/private content, databases, and full saves.">
+    <SectionCard title="Diagnostics Bundle Review UI" description="Diagnostics Bundle UI preview before writing it. Default bundle excludes secrets, hidden/debug, mature/private, databases, raw logs, and raw state. Nothing is uploaded.">
       <div className="section-heading-row">
         <div>
-          <h4>Diagnostics Bundle Preview</h4>
-          <p className="muted">Nothing is uploaded. Debug bundle requires explicit flag and ENABLE_DEBUG_API.</p>
+          <h4>Diagnostics Preview</h4>
+          <p className="muted">Review included sections, excluded sections, redaction status, and debug bundle gating before creating a local zip.</p>
         </div>
-        <button type="button" onClick={onPreview}>Preview Bundle</button>
+        <div className="button-row">
+          <button type="button" onClick={() => onPreview(includeDebug, confirmedDebug)}>Preview Bundle</button>
+          <button type="button" onClick={() => onCreate(includeDebug, confirmedDebug)} disabled={!canCreate}>Create Diagnostics Bundle</button>
+        </div>
       </div>
+      <FilterToolbar>
+        <label>
+          <input
+            type="checkbox"
+            checked={includeDebug}
+            onChange={(event) => {
+              setIncludeDebug(event.target.checked);
+              setConfirmedDebug(false);
+            }}
+          />
+          Request debug bundle metadata
+        </label>
+        {includeDebug && (
+          <label>
+            <input
+              type="checkbox"
+              checked={confirmedDebug}
+              disabled={!debugEnabled}
+              onChange={(event) => setConfirmedDebug(event.target.checked)}
+            />
+            I confirm debug bundle export. It requires ENABLE_DEBUG_API and may include internal state summaries.
+          </label>
+        )}
+      </FilterToolbar>
+      {includeDebug && !debugEnabled && (
+        <DisabledState title="Debug bundle gated" detail="ENABLE_DEBUG_API is disabled, so diagnostics creation remains normal safe summaries only." />
+      )}
       <ErrorPanel message={error} compact />
       {preview ? (
-        <div className="safe-summary-grid">
-          <SafeSummaryCard title="Bundle" value={preview.manifest.bundle_id} detail={preview.writes_file ? "writes file" : "preview only"} />
-          <SafeSummaryCard title="Included" value={String(preview.manifest.included_sections.length)} detail={preview.manifest.included_sections.join(", ")} />
-          <SafeSummaryCard title="Excluded" value={String(preview.manifest.excluded_sections.length)} detail="Secrets, hidden/debug, mature/private, database and save files excluded by default." />
-          <SafeSummaryCard title="Secrets" value={preview.manifest.contains_secrets ? "blocked" : "excluded"} detail={preview.manifest.redaction_policy} />
-        </div>
+        <>
+          <div className="safe-summary-grid">
+            <SafeSummaryCard title="Bundle" value={preview.manifest.bundle_id} detail={preview.writes_file ? "writes file" : "preview only"} />
+            <SafeSummaryCard title="Redaction" value={preview.manifest.contains_secrets ? "blocked" : "applied"} detail={preview.manifest.redaction_policy} />
+            <SafeSummaryCard title="Debug/private" value={preview.manifest.contains_hidden_debug_mature_private ? "blocked" : "excluded"} detail={preview.manifest.debug_bundle ? "debug explicitly confirmed" : "normal safe bundle"} />
+            <SafeSummaryCard title="Recent redacted errors" value={String(recentErrorCount)} detail="Safe summaries only." />
+            <SafeSummaryCard title="Redacted logs" value={String(redactedLogCount)} detail="Raw logs with secrets are never shown here." />
+            <SafeSummaryCard title="Upload" value="never" detail="Diagnostics bundle review is local-only." />
+          </div>
+          <div className="grid two-column">
+            <div>
+              <h4>Included sections</h4>
+              <ItemList emptyText="No included sections." items={includedSections.map((section) => <span key={section}>{section}</span>)} />
+            </div>
+            <div>
+              <h4>Excluded sections</h4>
+              <ItemList emptyText="No exclusions listed." items={excludedSections.map((section) => <span key={section}>{section}</span>)} />
+            </div>
+          </div>
+          <details>
+            <summary>Safe payload preview</summary>
+            <SafeJSON value={buildDiagnosticsSafePayloadPreview(preview.safe_payload)} />
+          </details>
+          <ItemList emptyText="No diagnostics warnings." items={preview.warnings.map((warning) => <span key={warning}>{sanitizeDisplayError(warning)}</span>)} />
+          {createResult && (
+            <SuccessPanel
+              compact
+              message={`Diagnostics bundle created locally: ${createResult.bundle_path_summary ?? createResult.manifest.bundle_id}. No upload was performed.`}
+            />
+          )}
+        </>
       ) : (
         <EmptyState title="No diagnostics bundle preview." detail="Preview creates a safe manifest without writing files." />
+      )}
+    </SectionCard>
+  );
+}
+
+const DIAGNOSTICS_INCLUDED_SECTIONS = [
+  "app summary",
+  "project safe summary",
+  "provider safe summary",
+  "quality summary",
+  "module status",
+  "recent redacted errors",
+  "redacted logs"
+];
+
+const DIAGNOSTICS_EXCLUDED_SECTIONS = [
+  ".env",
+  "API key",
+  "provider secrets",
+  "raw env",
+  "raw prompt/output",
+  "hidden facts",
+  "NPC secrets",
+  "debug memory",
+  "raw state_deltas",
+  "mature/private",
+  "database files"
+];
+
+function normalizeDiagnosticsSections(sections: string[] | undefined, fallback: string[]): string[] {
+  const existing = new Set((sections ?? []).map((section) => section.replace(/_/g, " ").replace(/ content$/i, "").trim()));
+  fallback.forEach((section) => existing.add(section));
+  return Array.from(existing).filter(Boolean);
+}
+
+function countDiagnosticsPayloadItems(payload: Record<string, unknown> | undefined, key: string): number {
+  const value = payload?.[key];
+  if (Array.isArray(value)) {
+    return value.length;
+  }
+  if (value && typeof value === "object") {
+    return Object.keys(value).length;
+  }
+  return value ? 1 : 0;
+}
+
+function buildDiagnosticsSafePayloadPreview(payload: Record<string, unknown>): Record<string, unknown> {
+  return {
+    app_summary: payload.app_summary ?? payload.app_version ?? "safe summary",
+    project_safe_summary: payload.project_safe_summary ?? "safe summary",
+    provider_safe_summary: payload.provider_safe_summary ?? "configured/missing only",
+    quality_summary: payload.quality_summary ?? "safe counts only",
+    module_status: payload.module_status_summary ?? "safe module status only",
+    recent_redacted_errors: countDiagnosticsPayloadItems(payload, "recent_safe_errors"),
+    redacted_logs: countDiagnosticsPayloadItems(payload, "redacted_logs"),
+    excluded_raw_sections: DIAGNOSTICS_EXCLUDED_SECTIONS
+  };
+}
+
+function LocalTestRunDashboard({
+  diagnosticsBundlePreview,
+  worldHealth,
+  narrativeEvalReports,
+  playtestReports,
+  scenarioRegressionRuns,
+  performanceSummary,
+  contentCoverage
+}: {
+  diagnosticsBundlePreview: DiagnosticsBundlePreview | null;
+  worldHealth: WorldHealthScore | null;
+  narrativeEvalReports: NarrativeEvalReport[];
+  playtestReports: PlaytestReport[];
+  scenarioRegressionRuns: ScenarioRegressionRun[];
+  performanceSummary: DebugPerformanceSummaryResponse | null;
+  contentCoverage: ContentCoverageReport | null;
+}) {
+  const recommendedCommands = [
+    "python -m pytest",
+    "cd frontend && npm.cmd run build",
+    "python -m pytest backend/tests/test_v35_provider_connection_test_backend.py backend/tests/test_v35_provider_model_discovery_sync.py",
+    "$env:PYTHONPATH='backend'; python -m app.tools.validate_world mist_valley",
+    "python -m backend.app.tools.quality_gate --world mist_valley"
+  ];
+  const safeReports = buildLocalTestSafeReports({
+    diagnosticsBundlePreview,
+    worldHealth,
+    narrativeEvalReports,
+    playtestReports,
+    scenarioRegressionRuns,
+    performanceSummary,
+    contentCoverage
+  });
+  const frontendBuildStatus = performanceSummary ? "local metrics available" : "run build locally";
+
+  return (
+    <SectionCard title="Local Test Run Dashboard" description="Read-only local verification guide. This UI does not execute arbitrary shell commands, upload results, show raw env, or modify GameState.">
+      <div className="safe-summary-grid">
+        <SafeSummaryCard title="Local-only" value="yes" detail="Commands run outside this UI in your local shell." />
+        <SafeReportCard title="Frontend build status" status={frontendBuildStatus} summary="Use the recommended build command for authoritative result." />
+        <SafeSummaryCard title="Latest safe reports" value={String(safeReports.filter((report) => report.status !== "not run").length)} detail="Derived from local QA summaries already loaded in the app." />
+        <SafeReportCard title="Shell execution" status="blocked" summary="No arbitrary command input or terminal is exposed." />
+      </div>
+      <div className="grid two-column">
+        <div>
+          <h4>Recommended commands</h4>
+          <ItemList
+            emptyText="No recommended commands."
+            items={recommendedCommands.map((command) => (
+              <code key={command}>{command}</code>
+            ))}
+          />
+          <p className="muted">provider/model discovery tests use fake provider or fake client. CI must not call real providers.</p>
+        </div>
+        <div>
+          <h4>Latest safe test report</h4>
+          <ItemList
+            emptyText="No local QA reports loaded yet."
+            items={safeReports.map((report) => (
+              <span key={report.label}>
+                <strong>{report.label}</strong>: <TestRunStatusBadge status={report.status} /> · {report.safeSummary}
+              </span>
+            ))}
+          />
+        </div>
+      </div>
+      <div className="mode-landing-grid">
+        <FeatureCard title="Pytest" detail="Run the full backend suite locally. Output should stay redacted and use mock/local_stub providers." status={<ValidationStatusBadge status="not_run" />} />
+        <FeatureCard title="Frontend build" detail="Run Vite/TypeScript build locally. The dashboard does not execute npm or shell commands." status={<ValidationStatusBadge status="not_run" />} />
+        <FeatureCard title="Quality gate tools" detail="Use local quality gate tools for world, module, provider, and release readiness checks." status={<ValidationStatusBadge status={worldHealth ? "passed" : "not_run"} />} />
+        <FeatureCard title="No arbitrary command UI" detail="No generic terminal, no custom shell input, no upload, no secrets, no raw env." status={<ValidationStatusBadge status="passed" />} />
+      </div>
+    </SectionCard>
+  );
+}
+
+function buildLocalTestSafeReports({
+  diagnosticsBundlePreview,
+  worldHealth,
+  narrativeEvalReports,
+  playtestReports,
+  scenarioRegressionRuns,
+  performanceSummary,
+  contentCoverage
+}: {
+  diagnosticsBundlePreview: DiagnosticsBundlePreview | null;
+  worldHealth: WorldHealthScore | null;
+  narrativeEvalReports: NarrativeEvalReport[];
+  playtestReports: PlaytestReport[];
+  scenarioRegressionRuns: ScenarioRegressionRun[];
+  performanceSummary: DebugPerformanceSummaryResponse | null;
+  contentCoverage: ContentCoverageReport | null;
+}): Array<{ label: string; status: string; safeSummary: string }> {
+  return [
+    {
+      label: "World quality",
+      status: worldHealth ? (worldHealth.blockers.length ? "blocked" : "loaded") : "not run",
+      safeSummary: worldHealth ? `${worldHealth.blockers.length} blockers, ${worldHealth.warnings.length} warnings` : "Run local quality gate."
+    },
+    {
+      label: "Novel quality",
+      status: narrativeEvalReports.length ? "loaded" : "not run",
+      safeSummary: `${narrativeEvalReports.length} safe report(s) loaded.`
+    },
+    {
+      label: "Playtest",
+      status: playtestReports.length ? "loaded" : "not run",
+      safeSummary: `${playtestReports.length} local playtest report(s); no real provider required.`
+    },
+    {
+      label: "Scenario regression",
+      status: scenarioRegressionRuns.length ? "loaded" : "not run",
+      safeSummary: `${scenarioRegressionRuns.length} regression run(s) loaded.`
+    },
+    {
+      label: "Diagnostics preview",
+      status: diagnosticsBundlePreview ? "previewed" : "not run",
+      safeSummary: diagnosticsBundlePreview ? `${diagnosticsBundlePreview.manifest.included_sections.length} included, ${diagnosticsBundlePreview.manifest.excluded_sections.length} excluded.` : "Preview diagnostics bundle before release."
+    },
+    {
+      label: "Performance metrics",
+      status: performanceSummary ? "loaded" : "not run",
+      safeSummary: performanceSummary ? `${performanceSummary.sample_count} local sample(s).` : "Performance dashboard can show local samples when debug API is available."
+    },
+    {
+      label: "Content coverage",
+      status: contentCoverage ? "loaded" : "not run",
+      safeSummary: contentCoverage ? `${contentCoverage.locations.covered}/${contentCoverage.locations.total} locations, ${contentCoverage.quests.covered}/${contentCoverage.quests.total} quests covered.` : "Run coverage tools when preparing release."
+    }
+  ];
+}
+
+const SAFE_DEBUG_EXPORT_SCOPES = [
+  { id: "eventlog_debug", label: "EventLog debug", rawRisk: true },
+  { id: "statedelta_debug", label: "StateDelta debug", rawRisk: true },
+  { id: "visibility_compare_report", label: "visibility compare report", rawRisk: false },
+  { id: "module_debug_summary", label: "module debug summary", rawRisk: false },
+  { id: "provider_diagnostics_safe_summary", label: "provider diagnostics safe summary", rawRisk: false }
+];
+
+function SafeDebugExportWizard({
+  debugEnabled,
+  diagnosticsPreview,
+  diagnosticsCreateResult,
+  error,
+  onPreview,
+  onCreate
+}: {
+  debugEnabled: boolean;
+  diagnosticsPreview: DiagnosticsBundlePreview | null;
+  diagnosticsCreateResult: DiagnosticsBundleCreateResponse | null;
+  error: string;
+  onPreview: (includeDebug: boolean, explicitConfirmDebug: boolean) => void;
+  onCreate: (includeDebug: boolean, explicitConfirmDebug: boolean) => void;
+}) {
+  const [selectedScopes, setSelectedScopes] = useState<string[]>(["visibility_compare_report", "module_debug_summary", "provider_diagnostics_safe_summary"]);
+  const [confirmRawExport, setConfirmRawExport] = useState(false);
+  const selectedRawScopes = SAFE_DEBUG_EXPORT_SCOPES.filter((scope) => selectedScopes.includes(scope.id) && scope.rawRisk);
+  const rawExportRequested = selectedRawScopes.length > 0;
+  const canPreview = debugEnabled && (!rawExportRequested || confirmRawExport);
+  const canCreate = debugEnabled && (!rawExportRequested || confirmRawExport);
+
+  function toggleScope(scopeId: string) {
+    setSelectedScopes((current) =>
+      current.includes(scopeId) ? current.filter((item) => item !== scopeId) : [...current, scopeId]
+    );
+  }
+
+  return (
+    <SectionCard title="Safe Debug Export Wizard" description="Local-only debug export review. Debug exports require ENABLE_DEBUG_API and explicit confirmation. Defaults stay on safe summaries.">
+      <div className="safe-summary-grid">
+        <SafeSummaryCard title="ENABLE_DEBUG_API" value={debugEnabled ? "enabled" : "disabled"} detail={debugEnabled ? "Debug export can be previewed with confirmation." : "Debug export disabled until local debug API is enabled."} />
+        <SafeSummaryCard title="Raw exports" value={rawExportRequested ? "requested" : "not selected"} detail={rawExportRequested ? "Explicit confirm required before preview/create." : "Safe summaries only."} />
+        <SafeSummaryCard title="Redaction policy" value={diagnosticsPreview?.manifest.redaction_policy ?? "desktop_safe_redaction"} detail="API keys, provider secrets, raw env, and sensitive provider errors are redacted." />
+        <SafeSummaryCard title="Upload" value="never" detail="Debug export is local-only and never uploaded." />
+      </div>
+      {!debugEnabled && <DisabledState title="Debug export disabled" detail="ENABLE_DEBUG_API is false. Safe debug export preview/create is unavailable." />}
+      <SafeDebugNotice>Risk warning: raw debug materials can include internal state summaries. They must not include API keys, raw env, provider secrets, or hidden/mature/private content by default.</SafeDebugNotice>
+      <div className="mode-landing-grid">
+        {SAFE_DEBUG_EXPORT_SCOPES.map((scope) => (
+          <label key={scope.id} className="feature-card checkbox-row">
+            <input
+              type="checkbox"
+              checked={selectedScopes.includes(scope.id)}
+              onChange={() => toggleScope(scope.id)}
+              disabled={!debugEnabled}
+            />
+            <span>
+              <strong>{scope.label}</strong>
+              <small>{scope.rawRisk ? "raw debug scope, explicit confirm required" : "safe summary scope"}</small>
+            </span>
+          </label>
+        ))}
+      </div>
+      {rawExportRequested && (
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={confirmRawExport}
+            disabled={!debugEnabled}
+            onChange={(event) => setConfirmRawExport(event.target.checked)}
+          />
+          I explicitly confirm raw debug export preview/create for selected local scopes.
+        </label>
+      )}
+      <div className="button-row">
+        <button type="button" disabled={!canPreview} onClick={() => onPreview(true, rawExportRequested ? confirmRawExport : true)}>
+          Preview Debug Export
+        </button>
+        <button type="button" disabled={!canCreate} onClick={() => onCreate(true, rawExportRequested ? confirmRawExport : true)}>
+          Create Local Debug Export
+        </button>
+      </div>
+      <ErrorPanel message={error} compact />
+      <div className="grid two-column">
+        <div>
+          <h4>Selected scopes</h4>
+          <ItemList
+            emptyText="No debug export scopes selected."
+            items={selectedScopes.map((scopeId) => {
+              const scope = SAFE_DEBUG_EXPORT_SCOPES.find((item) => item.id === scopeId);
+              return <span key={scopeId}>{scope?.label ?? scopeId}: {scope?.rawRisk ? "raw gated" : "safe summary"}</span>;
+            })}
+          />
+        </div>
+        <div>
+          <h4>Excluded from export</h4>
+          <ItemList
+            emptyText="No exclusions listed."
+            items={["API key", "provider secrets", "raw env", "Authorization header", "raw prompt/output", "mature/private by default", "hidden text full content"].map((item) => (
+              <RedactedValue key={item} value={item} />
+            ))}
+          />
+        </div>
+      </div>
+      {diagnosticsPreview && (
+        <details>
+          <summary>Debug export preview safe manifest</summary>
+          <SafeJSON value={{
+            bundle_id: diagnosticsPreview.manifest.bundle_id,
+            debug_bundle: diagnosticsPreview.manifest.debug_bundle,
+            included_sections: selectedScopes,
+            excluded_sections: diagnosticsPreview.manifest.excluded_sections,
+            redaction_policy: diagnosticsPreview.manifest.redaction_policy,
+            contains_secrets: diagnosticsPreview.manifest.contains_secrets,
+            contains_hidden_debug_mature_private: diagnosticsPreview.manifest.contains_hidden_debug_mature_private
+          }} />
+        </details>
+      )}
+      {diagnosticsCreateResult && (
+        <SuccessPanel compact message={`Local debug export created: ${diagnosticsCreateResult.bundle_path_summary ?? diagnosticsCreateResult.manifest.bundle_id}. No upload was performed.`} />
       )}
     </SectionCard>
   );
@@ -6816,6 +7912,204 @@ function QualityDashboardUXPanel({
       </div>
     </SectionCard>
   );
+}
+
+const QUALITY_GATE_CATEGORIES = [
+  "Project",
+  "World",
+  "Novel",
+  "Tavern",
+  "Cross-Mode",
+  "Provider",
+  "Mods",
+  "Modules",
+  "RP/Mature",
+  "Backup/Diagnostics"
+] as const;
+
+type UnifiedQualityGateCategory = (typeof QUALITY_GATE_CATEGORIES)[number];
+type UnifiedQualityGateRow = {
+  category: UnifiedQualityGateCategory;
+  blockers: number;
+  errors: number;
+  warnings: number;
+  lastRunTime: string;
+  suggestedNextActions: string[];
+  run?: () => void;
+};
+
+function UnifiedQualityGateDashboard({
+  worldHealth,
+  narrativeEvalReports,
+  playtestReports,
+  scenarioRegressionRuns,
+  contentCoverage,
+  diagnosticsBundlePreview,
+  backupPlan,
+  configSummary,
+  localConfigIssues,
+  onRunWorld,
+  onRunNovel,
+  onRunPlaytest,
+  onRunDiagnostics
+}: {
+  worldHealth: WorldHealthScore | null;
+  narrativeEvalReports: NarrativeEvalReport[];
+  playtestReports: PlaytestReport[];
+  scenarioRegressionRuns: ScenarioRegressionRun[];
+  contentCoverage: ContentCoverageReport | null;
+  diagnosticsBundlePreview: DiagnosticsBundlePreview | null;
+  backupPlan: BackupPlan | null;
+  configSummary: StudioConfigSummary | null;
+  localConfigIssues: LocalConfigIssue[];
+  onRunWorld: () => void;
+  onRunNovel: () => void;
+  onRunPlaytest: () => void;
+  onRunDiagnostics: () => void;
+}) {
+  const [selectedCategory, setSelectedCategory] = useState<UnifiedQualityGateCategory>("Project");
+  const rows = useMemo(
+    () =>
+      buildUnifiedQualityGateRows({
+        worldHealth,
+        narrativeEvalReports,
+        playtestReports,
+        scenarioRegressionRuns,
+        contentCoverage,
+        diagnosticsBundlePreview,
+        backupPlan,
+        configSummary,
+        localConfigIssues,
+        onRunWorld,
+        onRunNovel,
+        onRunPlaytest,
+        onRunDiagnostics
+      }),
+    [backupPlan, configSummary, contentCoverage, diagnosticsBundlePreview, localConfigIssues, narrativeEvalReports, onRunDiagnostics, onRunNovel, onRunPlaytest, onRunWorld, playtestReports, scenarioRegressionRuns, worldHealth]
+  );
+  const blockerCount = rows.reduce((total, row) => total + row.blockers, 0);
+  const errorCount = rows.reduce((total, row) => total + row.errors, 0);
+  const warningCount = rows.reduce((total, row) => total + row.warnings, 0);
+  const overall = blockerCount || errorCount ? "fail" : warningCount ? "review" : rows.some((row) => row.lastRunTime !== "not run") ? "pass" : "not run";
+  const selectedRow = rows.find((row) => row.category === selectedCategory) ?? rows[0];
+
+  function runAllAvailable() {
+    rows.forEach((row) => row.run?.());
+  }
+
+  return (
+    <section className="studio-section unified-quality-gate">
+      <div className="authoring-pane-header">
+        <div>
+          <h3>Quality Gate Unified Dashboard Pro</h3>
+          <p className="muted">Unified local quality status for Project, World, Novel, Tavern, Cross-Mode, Provider, Mods, Modules, RP/Mature, Backup, and Diagnostics.</p>
+        </div>
+        <ValidationStatusBadge status={overall === "fail" ? "failed" : overall === "pass" ? "passed" : overall === "review" ? "warning" : "not_run"} />
+      </div>
+      <FilterToolbar>
+        <button type="button" onClick={runAllAvailable} disabled={!rows.some((row) => row.run)}>
+          Run All Available Gates
+        </button>
+        <label>
+          Selected gate
+          <select value={selectedCategory} onChange={(event) => setSelectedCategory(event.target.value as UnifiedQualityGateCategory)}>
+            {rows.map((row) => (
+              <option key={row.category} value={row.category}>{row.category}</option>
+            ))}
+          </select>
+        </label>
+        <button type="button" onClick={() => selectedRow.run?.()} disabled={!selectedRow.run}>
+          Run Selected Gate
+        </button>
+      </FilterToolbar>
+      <div className="timeline-summary">
+        <span>overall: {overall}</span>
+        <span>{blockerCount} blockers</span>
+        <span>{errorCount} errors</span>
+        <span>{warningCount} warnings</span>
+      </div>
+      <div className="mode-landing-grid">
+        {rows.map((row) => (
+          <section className="feature-card" key={row.category}>
+            <div>
+              <h4>{row.category}</h4>
+              <p className="muted">Last run: {row.lastRunTime}</p>
+            </div>
+            <dl className="event-details">
+              <dt>Blockers</dt><dd>{row.blockers}</dd>
+              <dt>Errors</dt><dd>{row.errors}</dd>
+              <dt>Warnings</dt><dd>{row.warnings}</dd>
+            </dl>
+            <ItemList emptyText="No suggested action." items={row.suggestedNextActions.slice(0, 3).map((action) => <span key={action}>{redactLeakSummary(action)}</span>)} />
+          </section>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function buildUnifiedQualityGateRows({
+  worldHealth,
+  narrativeEvalReports,
+  playtestReports,
+  scenarioRegressionRuns,
+  contentCoverage,
+  diagnosticsBundlePreview,
+  backupPlan,
+  configSummary,
+  localConfigIssues,
+  onRunWorld,
+  onRunNovel,
+  onRunPlaytest,
+  onRunDiagnostics
+}: {
+  worldHealth: WorldHealthScore | null;
+  narrativeEvalReports: NarrativeEvalReport[];
+  playtestReports: PlaytestReport[];
+  scenarioRegressionRuns: ScenarioRegressionRun[];
+  contentCoverage: ContentCoverageReport | null;
+  diagnosticsBundlePreview: DiagnosticsBundlePreview | null;
+  backupPlan: BackupPlan | null;
+  configSummary: StudioConfigSummary | null;
+  localConfigIssues: LocalConfigIssue[];
+  onRunWorld: () => void;
+  onRunNovel: () => void;
+  onRunPlaytest: () => void;
+  onRunDiagnostics: () => void;
+}): UnifiedQualityGateRow[] {
+  const latestNarrative = narrativeEvalReports.at(-1) ?? null;
+  const latestPlaytest = playtestReports.at(-1) ?? null;
+  const latestScenario = scenarioRegressionRuns.at(-1) ?? null;
+  const playtestIssues = latestPlaytest ? latestPlaytest.errors.length + latestPlaytest.invariant_violations.length + latestPlaytest.visibility_leaks.length + latestPlaytest.save_load_failures.length : 0;
+  const scenarioFailures = latestScenario?.case_results.filter((result) => !result.passed).length ?? 0;
+  const providerWarnings = configSummary?.api_key_configured ? 0 : 1;
+  const diagnosticsWarnings = (diagnosticsBundlePreview?.warnings.length ?? 0) + (backupPlan?.warnings.length ?? 0);
+  const diagnosticsBlockers = Number(Boolean(diagnosticsBundlePreview?.manifest.contains_secrets || diagnosticsBundlePreview?.manifest.contains_hidden_debug_mature_private));
+  const coverageWarnings = contentCoverage ? Object.values(contentCoverage.hidden_entities_redacted).reduce((total, value) => total + value, 0) : 0;
+  return [
+    qualityRow("Project", localConfigIssues.filter((issue) => issue.severity === "error").length, 0, localConfigIssues.filter((issue) => issue.severity !== "error").length, "current", localConfigIssues.length ? localConfigIssues.map((issue) => issue.message) : ["Project config has no loaded blockers."], undefined),
+    qualityRow("World", worldHealth?.blockers.length ?? 0, 0, (worldHealth?.warnings.length ?? 0) + coverageWarnings, worldHealth?.created_at ?? "not run", worldHealth?.recommended_actions ?? ["Run World Health Gate."], onRunWorld),
+    qualityRow("Novel", 0, latestNarrative?.failed ?? 0, 0, latestNarrative?.created_at ?? "not run", latestNarrative ? ["Review failed Novel quality cases."] : ["Run Novel quality eval."], onRunNovel),
+    qualityRow("Tavern", 0, 0, 0, "safe summary only", ["Run RP Safety Dashboard from Tavern Studio for detailed checks."], undefined),
+    qualityRow("Cross-Mode", scenarioFailures, 0, latestScenario ? 0 : 1, latestScenario?.created_at ?? "not run", latestScenario ? ["Review failed scenario regression cases."] : ["Run scenario regression for cross-mode paths."], undefined),
+    qualityRow("Provider", 0, 0, providerWarnings, "current", providerWarnings ? ["Configure Provider profile by api_key_env or secret_ref."] : ["Provider configuration summary loaded."], undefined),
+    qualityRow("Mods", 0, 0, 1, "safe summary only", ["Run Mod Quality Gate from Authoring / Mod Studio."], undefined),
+    qualityRow("Modules", 0, playtestIssues, 0, latestPlaytest?.created_at ?? "not run", latestPlaytest ? ["Review module playtest failures and hidden leak warnings."] : ["Run module playtests."], onRunPlaytest),
+    qualityRow("RP/Mature", 0, 0, 1, "safe summary only", ["Confirm Mature module remains default-off and run RP/Mature quality gates when configured."], undefined),
+    qualityRow("Backup/Diagnostics", diagnosticsBlockers, 0, diagnosticsWarnings, diagnosticsBundlePreview?.manifest.created_at ?? "not run", diagnosticsWarnings || diagnosticsBlockers ? ["Review backup/diagnostics exclusions and redaction warnings."] : ["Preview diagnostics bundle and backup plan before release."], onRunDiagnostics),
+  ];
+}
+
+function qualityRow(
+  category: UnifiedQualityGateCategory,
+  blockers: number,
+  errors: number,
+  warnings: number,
+  lastRunTime: string,
+  suggestedNextActions: string[],
+  run: (() => void) | undefined
+): UnifiedQualityGateRow {
+  return { category, blockers, errors, warnings, lastRunTime, suggestedNextActions: suggestedNextActions.map(redactReportText), run };
 }
 
 function WorldStudioLanding({
@@ -7296,6 +8590,102 @@ function ModQualityGateProPanel({ gate }: { gate: ModQualityGateResult | null })
   );
 }
 
+function ModulePlaytestStressProPanel({
+  modules,
+  selectedModuleId,
+  compatibilityMatrix,
+  qualityGate,
+  error,
+  disabled,
+  onSelectModule,
+  onRunSelectedPlaytest,
+  onRunCompatibilityStress,
+  onRunQualityGate
+}: {
+  modules: ModuleBrowserSummary[];
+  selectedModuleId: string;
+  compatibilityMatrix: ModCompatibilityMatrix | null;
+  qualityGate: ModQualityGateResult | null;
+  error: string;
+  disabled: boolean;
+  onSelectModule: (packageId: string) => void;
+  onRunSelectedPlaytest: () => void;
+  onRunCompatibilityStress: () => void;
+  onRunQualityGate: () => void;
+}) {
+  const selectedModule = modules.find((module) => module.package_id === selectedModuleId) ?? modules[0] ?? null;
+  const matrixIssues = [
+    ...(compatibilityMatrix?.conflicts_summary ?? []),
+    ...(compatibilityMatrix?.entries ?? []).flatMap((entry) => [...entry.errors, ...entry.warnings])
+  ].map(redactReportText);
+  const namespaceConflicts = matrixIssues.filter((issue) => /namespace|state/i.test(issue));
+  const migrationConflicts = [
+    ...matrixIssues,
+    ...(qualityGate?.blockers ?? []).map(redactReportText),
+    ...(qualityGate?.warnings ?? []).map(redactReportText)
+  ].filter((issue) => /migration|schema/i.test(issue));
+  const hiddenLeakWarnings = [
+    ...(qualityGate?.blockers ?? []).map(redactReportText).filter((issue) => /hidden|leak|secret/i.test(issue)),
+    ...(qualityGate?.warnings ?? []).map(redactReportText).filter((issue) => /hidden|leak|secret/i.test(issue))
+  ];
+  const failedStep = qualityGate
+    ? qualityGate.blockers[0]
+      ? redactReportText(qualityGate.blockers[0])
+      : "none"
+    : "not run";
+  const playtestPassed = Boolean(qualityGate?.ok);
+
+  return (
+    <section className="module-pro-panel" data-v35-module-playtest-stress="safe-summary">
+      <h4>Module Playtest / Stress UI Pro</h4>
+      <p className="muted">Local module playtest suites use declared rules and safe summaries only. No arbitrary code execution, no provider calls, no upload, no auto-fix, and no active GameState mutation.</p>
+      <div className="button-row">
+        <select value={selectedModule?.package_id ?? ""} onChange={(event) => onSelectModule(event.target.value)} disabled={disabled || modules.length === 0} aria-label="Module playtest suite">
+          {modules.map((module) => (
+            <option key={module.package_id} value={module.package_id}>{module.name} ({module.package_id})</option>
+          ))}
+        </select>
+        <button type="button" onClick={onRunSelectedPlaytest} disabled={disabled || !selectedModule}>Run Selected Module Playtest</button>
+        <button type="button" onClick={onRunCompatibilityStress} disabled={disabled}>Run Compatibility Stress</button>
+        <button type="button" onClick={onRunQualityGate} disabled={disabled}>Run Module Quality Gate</button>
+      </div>
+      {error && <p className="error">{sanitizeDisplayError(error)}</p>}
+      {modules.length === 0 ? (
+        <EmptyState title="No module playtest suites loaded." detail="Refresh the local gameplay module debugger to load declared module actions. Missing data stays unavailable instead of being invented." />
+      ) : (
+        <div className="safe-summary-grid">
+          <SafeSummaryCard title="Selected module" value={selectedModule?.package_id ?? "none"} detail={selectedModule?.name ?? "Choose a local module suite."} />
+          <SafeSummaryCard title="Pass / fail" value={qualityGate ? (playtestPassed ? "pass" : "fail") : "not run"} detail="Based on local quality/playtest safe summary, redaction, and no-provider checks." />
+          <SafeSummaryCard title="Failed step" value={failedStep} detail="Safe step label only; hidden details are not rendered." />
+          <SafeSummaryCard title="Action coverage" value={selectedModule?.package_type === "action_mod" ? "declared action mod" : "safe package summary"} detail="Coverage is reported by local gates when available; UI does not execute module code." />
+          <SafeSummaryCard title="State namespace conflicts" value={String(namespaceConflicts.length)} detail="Compatibility matrix safe summaries." />
+          <SafeSummaryCard title="Migration conflicts" value={String(migrationConflicts.length)} detail="Schema/migration warnings from local gates." />
+          <SafeSummaryCard title="Hidden leak warnings" value={String(hiddenLeakWarnings.length)} detail="No hidden text full content is shown." />
+          <SafeSummaryCard title="Raw StateDelta" value="debug-gated only" detail="Normal module stress view never renders raw StateDelta payloads." />
+        </div>
+      )}
+      {selectedModule && (
+        <div className="mode-landing-grid">
+          <FeatureCard title="Declared rules only" detail={`${selectedModule.package_type} package metadata is inspected without loading runtime code.`} status={<ValidationStatusBadge status={selectedModule.local_only ? "passed" : "warning"} />} />
+          <FeatureCard title="Validation status" detail={selectedModule.validation_status} status={<ValidationStatusBadge status={selectedModule.validation_status === "valid" ? "passed" : "warning"} />} />
+          <FeatureCard title="Hidden details" detail="Redacted from normal module QA view; debug-only details stay behind DebugGate." status={<ValidationStatusBadge status="passed" />} />
+        </div>
+      )}
+      <div className="grid two-column">
+        <div>
+          <h5>Compatibility stress blockers / warnings</h5>
+          <ItemList emptyText="No namespace, migration, or compatibility stress issue loaded." items={[...namespaceConflicts, ...migrationConflicts].map((issue, index) => <span key={`${issue}-${index}`}>{issue}</span>)} />
+        </div>
+        <div>
+          <h5>Hidden leak warnings</h5>
+          <ItemList emptyText="No hidden leak warning loaded." items={hiddenLeakWarnings.map((issue, index) => <span key={`${issue}-${index}`}>{issue}</span>)} />
+        </div>
+      </div>
+      <p className="muted">Module playtest safe summary: quality gate and compatibility reports provide pass/fail, failed step, action coverage, namespace conflict, migration conflict, and hidden leak warning rows. Raw StateDelta payloads are not rendered in this normal QA view.</p>
+    </section>
+  );
+}
+
 function RuleModuleContractPanel() {
   return (
     <section className="module-pro-panel">
@@ -7486,6 +8876,9 @@ function CrossModeDashboardPanel({
 }) {
   const conflictCount = conflicts?.conflicts.length ?? 0;
   const pendingReview = drafts.filter((draft) => draft.status !== "applied").length;
+  const [reviewedConflictIds, setReviewedConflictIds] = useState<string[]>([]);
+  const [fixDrafts, setFixDrafts] = useState<Record<string, string>>({});
+  const conflictRows = useMemo(() => buildCrossModeConflictRows(conflicts, links), [conflicts, links]);
   return (
     <section className="cross-mode-dashboard">
       <div className="safe-summary-grid">
@@ -7511,8 +8904,163 @@ function CrossModeDashboardPanel({
           Link review: broken {links.broken_links.length}, hidden risk {links.hidden_target_risks.length}, duplicate {links.duplicate_links.length}.
         </p>
       )}
+      <CrossModeConflictReviewPro
+        rows={conflictRows}
+        reviewedConflictIds={reviewedConflictIds}
+        fixDrafts={fixDrafts}
+        onMarkReviewed={(conflictId) => setReviewedConflictIds((current) => current.includes(conflictId) ? current : [...current, conflictId])}
+        onCreateFixDraft={(conflict) => setFixDrafts((current) => ({
+          ...current,
+          [conflict.conflictId]: `Fix draft for ${conflict.category}: ${conflict.suggestedAction}. This local draft does not apply automatically.`
+        }))}
+        onJumpToRef={(ref) => {
+          const target = document.querySelector(`[data-cross-mode-ref="${CSS.escape(ref)}"]`);
+          target?.scrollIntoView({ behavior: "smooth", block: "center" });
+        }}
+      />
     </section>
   );
+}
+
+type CrossModeConflictReviewRow = {
+  conflictId: string;
+  category: string;
+  severity: string;
+  affectedRefs: string[];
+  safeSummary: string;
+  status: string;
+  suggestedAction: string;
+};
+
+function CrossModeConflictReviewPro({
+  rows,
+  reviewedConflictIds,
+  fixDrafts,
+  onMarkReviewed,
+  onCreateFixDraft,
+  onJumpToRef
+}: {
+  rows: CrossModeConflictReviewRow[];
+  reviewedConflictIds: string[];
+  fixDrafts: Record<string, string>;
+  onMarkReviewed: (conflictId: string) => void;
+  onCreateFixDraft: (conflict: CrossModeConflictReviewRow) => void;
+  onJumpToRef: (ref: string) => void;
+}) {
+  const categories = ["character identity", "timeline order", "relationship", "fact visibility", "stale link", "broken link", "proposal validation"];
+  const groups = categories.map((category) => ({ category, rows: rows.filter((row) => row.category === category) }));
+  const uncategorized = rows.filter((row) => !categories.includes(row.category));
+  const allGroups = uncategorized.length ? [...groups, { category: "other", rows: uncategorized }] : groups;
+
+  return (
+    <section className="studio-section cross-mode-conflict-review">
+      <div className="authoring-pane-header">
+        <div>
+          <h4>CrossMode Conflict Review Pro</h4>
+          <p className="muted">Review Novel/Tavern/World conflicts, stale links, broken links, hidden target risks, and proposal validation issues. Fix drafts are local review notes only.</p>
+        </div>
+        <StatusBadge label={rows.length ? `${rows.length} conflict(s)` : "No conflicts"} enabled={rows.length === 0} />
+      </div>
+      {rows.length === 0 ? (
+        <EmptyState title="No CrossMode conflicts." detail="Run Cross-Mode validation or conflict detection to refresh Novel/Tavern/World link health." />
+      ) : (
+        <div className="stack">
+          {allGroups.map((group) => (
+            <section className="tool-card" key={group.category}>
+              <h5>{group.category}</h5>
+              {group.rows.length === 0 ? (
+                <p className="muted">No {group.category} conflicts.</p>
+              ) : (
+                <div className="safe-preview-list">
+                  {group.rows.map((conflict) => {
+                    const reviewed = reviewedConflictIds.includes(conflict.conflictId);
+                    return (
+                      <article className="diff-summary" key={conflict.conflictId}>
+                        <div className="authoring-pane-header">
+                          <div>
+                            <strong>{conflict.severity}: {conflict.conflictId}</strong>
+                            <p>{sanitizeDisplayError(conflict.safeSummary)}</p>
+                          </div>
+                          <StatusBadge label={reviewed ? "reviewed" : conflict.status} enabled={reviewed} />
+                        </div>
+                        <dl className="metadata-list">
+                          <dt>Affected refs</dt>
+                          <dd>
+                            {conflict.affectedRefs.length
+                              ? conflict.affectedRefs.map((ref) => <button key={ref} type="button" onClick={() => onJumpToRef(ref)}>{sanitizeDisplayError(ref)}</button>)
+                              : "Safe refs unavailable"}
+                          </dd>
+                          <dt>Suggested action</dt>
+                          <dd>{conflict.suggestedAction}</dd>
+                        </dl>
+                        <div className="button-row">
+                          <button type="button" onClick={() => onMarkReviewed(conflict.conflictId)}>Mark reviewed</button>
+                          <button type="button" onClick={() => onCreateFixDraft(conflict)}>Create fix draft</button>
+                          {conflict.affectedRefs[0] && <button type="button" onClick={() => onJumpToRef(conflict.affectedRefs[0])}>Jump to source/target</button>}
+                        </div>
+                        {fixDrafts[conflict.conflictId] && <p className="muted">{fixDrafts[conflict.conflictId]}</p>}
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          ))}
+        </div>
+      )}
+      <p className="muted">Hidden target details, hidden facts, NPC secrets, raw state_deltas, and API keys are not displayed. Review and fix drafts do not bypass CrossMode validation.</p>
+    </section>
+  );
+}
+
+function buildCrossModeConflictRows(conflicts: CrossModeConflictReport | null, links: CrossModeLinkReviewReport | null): CrossModeConflictReviewRow[] {
+  const rows: CrossModeConflictReviewRow[] = (conflicts?.conflicts ?? []).map((conflict) => ({
+    conflictId: conflict.conflict_id,
+    category: crossModeConflictCategory(conflict.conflict_type),
+    severity: conflict.severity,
+    affectedRefs: (conflict.affected_refs ?? []).map((ref) => sanitizeDisplayError(ref)),
+    safeSummary: sanitizeDisplayError(conflict.safe_summary || "CrossMode conflict requires review."),
+    status: conflict.status,
+    suggestedAction: crossModeSuggestedAction(conflict.conflict_type)
+  }));
+  for (const linkId of links?.broken_links ?? []) {
+    rows.push({ conflictId: `broken_${linkId}`, category: "broken link", severity: "error", affectedRefs: [linkId], safeSummary: "CrossMode link points to a missing source or target.", status: "open", suggestedAction: "Repair missing source/target refs and rerun CrossMode validation." });
+  }
+  for (const linkId of links?.stale_links ?? []) {
+    rows.push({ conflictId: `stale_${linkId}`, category: "stale link", severity: "warning", affectedRefs: [linkId], safeSummary: "CrossMode link is deprecated or stale.", status: "open", suggestedAction: "Refresh the link target or archive the stale link after review." });
+  }
+  for (const linkId of links?.hidden_target_risks ?? []) {
+    rows.push({ conflictId: `hidden_${linkId}`, category: "fact visibility", severity: "error", affectedRefs: [linkId], safeSummary: "Hidden target risk detected; details are redacted in normal UI.", status: "open", suggestedAction: "Review in authoring/debug-safe context and keep hidden details out of normal cross-mode views." });
+  }
+  const seen = new Set<string>();
+  return rows.filter((row) => {
+    if (seen.has(row.conflictId)) return false;
+    seen.add(row.conflictId);
+    return true;
+  });
+}
+
+function crossModeConflictCategory(conflictType: string): string {
+  const normalized = conflictType.toLowerCase();
+  if (normalized.includes("character") || normalized.includes("identity")) return "character identity";
+  if (normalized.includes("timeline") || normalized.includes("order")) return "timeline order";
+  if (normalized.includes("relationship")) return "relationship";
+  if (normalized.includes("visibility") || normalized.includes("hidden") || normalized.includes("fact")) return "fact visibility";
+  if (normalized.includes("stale") || normalized.includes("deprecated")) return "stale link";
+  if (normalized.includes("broken") || normalized.includes("missing")) return "broken link";
+  if (normalized.includes("proposal") || normalized.includes("validation") || normalized.includes("apply")) return "proposal validation";
+  return "proposal validation";
+}
+
+function crossModeSuggestedAction(conflictType: string): string {
+  const category = crossModeConflictCategory(conflictType);
+  if (category === "character identity") return "Compare Novel/Tavern/World character refs and create a safe identity mapping draft.";
+  if (category === "timeline order") return "Review timeline order and create a reorder proposal; do not rewrite EventLog.";
+  if (category === "relationship") return "Review relationship refs and create a proposal for validation.";
+  if (category === "fact visibility") return "Keep hidden target details redacted and rerun visibility validation before apply.";
+  if (category === "stale link") return "Refresh or archive the stale CrossModeLink after validation.";
+  if (category === "broken link") return "Repair missing source/target refs and rerun CrossMode validation.";
+  return "Create a fix draft, validate it, and require explicit apply confirmation.";
 }
 
 function ProjectShell({
@@ -7848,6 +9396,25 @@ function ProjectShell({
       setModuleCertificationLevel(report.quality_gate.certification_level);
       setModuleMessage(report.quality_gate.ok ? "Mod Quality Gate passed." : "Mod Quality Gate found blockers.");
       await loadModuleData(selectedModuleId);
+    } catch (err) {
+      setModuleError(toErrorMessage(err));
+    }
+  }
+
+  async function handleModulePlaytestGate() {
+    if (!selectedModuleId) {
+      return;
+    }
+    await handleModuleQualityGate();
+    setModuleMessage("Selected module playtest safe summary refreshed through local quality gates. No package code was executed.");
+  }
+
+  async function handleModuleCompatibilityStressSummary() {
+    setModuleError("");
+    setModuleMessage("");
+    try {
+      await loadModuleData(selectedModuleId);
+      setModuleMessage("Module compatibility stress summaries refreshed. No package code was executed.");
     } catch (err) {
       setModuleError(toErrorMessage(err));
     }
@@ -8880,7 +10447,7 @@ function ProjectShell({
             <ItemList
               emptyText="No cross-mode drafts"
               items={crossModeDrafts.map((draft) => (
-                <div key={draft.artifact_id} className="stack">
+                <div key={draft.artifact_id} className="stack" data-cross-mode-ref={`cross_mode:draft:${draft.artifact_id}`}>
                   <span>{draft.artifact_type} · {draft.validation_status ?? draft.status}</span>
                   <small>{draft.source_refs.join(", ") || "no source"} → {draft.target_refs.join(", ") || "no target"}</small>
                   <button type="button" onClick={() => void handleValidateCrossModeDraft(draft.artifact_id)}>Validate</button>
@@ -8893,7 +10460,7 @@ function ProjectShell({
             <ItemList
               emptyText="No timeline entries"
               items={crossModeTimeline.map((entry) => (
-                <span key={entry.entry_id}>{entry.source_mode}: {entry.title} · {entry.visibility}</span>
+                <span key={entry.entry_id} data-cross-mode-ref={entry.source_ref}>{entry.source_mode}: {entry.title} · {entry.visibility}</span>
               ))}
             />
           </div>
@@ -9015,6 +10582,18 @@ function ProjectShell({
           <CompatibilityMatrixProPanel matrix={moduleMatrix} selectedCompatibility={moduleCompatibility} />
           <ImportExportWizardProPanel />
           <ModQualityGateProPanel gate={moduleQualityGate} />
+          <ModulePlaytestStressProPanel
+            modules={modules}
+            selectedModuleId={selectedModuleId}
+            compatibilityMatrix={moduleMatrix}
+            qualityGate={moduleQualityGate}
+            error={moduleError}
+            disabled={!selectedProjectId}
+            onSelectModule={(packageId) => void handleSelectModule(packageId)}
+            onRunSelectedPlaytest={() => void handleModulePlaytestGate()}
+            onRunCompatibilityStress={() => void handleModuleCompatibilityStressSummary()}
+            onRunQualityGate={handleModuleQualityGate}
+          />
           <RuleModuleContractPanel />
           <AuthoringValidationDashboardPanel modules={modules} />
           <AuthoringDiffPreview validationStatus={moduleDetail?.summary.validation_status ?? "not_run"} destructive={Boolean(moduleCompatibility && String(moduleCompatibility.status ?? "") === "blocked")} />
@@ -9260,7 +10839,9 @@ function SaveBrowser({
         ))}
       </div>
       <MigrationPanel
+        saves={saves}
         selectedSave={selectedSave}
+        migrationStatusBySaveId={migrationStatusBySaveId}
         status={selectedStatus}
         result={selectedResult}
         error={migrationError}
@@ -9274,7 +10855,9 @@ function SaveBrowser({
 }
 
 function MigrationPanel({
+  saves,
   selectedSave,
+  migrationStatusBySaveId,
   status,
   result,
   error,
@@ -9283,7 +10866,9 @@ function MigrationPanel({
   onDryRun,
   onApply
 }: {
+  saves: SaveSummary[];
   selectedSave: SaveSummary | null;
+  migrationStatusBySaveId: Record<string, SaveMigrationStatus>;
   status: SaveMigrationStatus | undefined;
   result: SaveMigrationResponse | undefined;
   error: string;
@@ -9295,16 +10880,47 @@ function MigrationPanel({
   if (!selectedSave) {
     return (
       <div className="migration-panel">
-        <h3>Migration</h3>
-        <EmptyState title="No save selected." detail="Select a save to inspect migration status." />
+        <h3>Save Migration Visualizer</h3>
+        <EmptyState title="No save selected." detail="Select a save to inspect schema version, migration plan, dry-run result, module changes, and destructive-change blockers." />
       </div>
     );
   }
+  const planRows = buildSaveMigrationPlanRows(selectedSave, status, result);
+  const moduleRows = buildSaveModuleMigrationRows(selectedSave, status, result);
+  const destructiveBlocked = buildDestructiveMigrationBlockers(status, result);
 
   return (
-    <div className="migration-panel">
-      <h3>Migration</h3>
+    <div className="migration-panel save-migration-visualizer">
+      <h3>Save Migration Visualizer</h3>
+      <p className="muted">Local read-only visualizer. Dry-run does not write data; apply requires explicit confirm and the backend migration flow. Raw save JSON, hidden facts, and API keys are not displayed.</p>
       <ErrorPanel message={error} compact />
+      <div className="provider-table-wrap">
+        <table className="provider-table">
+          <thead>
+            <tr>
+              <th>Save</th>
+              <th>World</th>
+              <th>Schema version</th>
+              <th>Migration needed</th>
+              <th>Updated</th>
+            </tr>
+          </thead>
+          <tbody>
+            {saves.map((save) => {
+              const saveStatus = migrationStatusBySaveId[save.save_id];
+              return (
+                <tr key={save.save_id} className={save.save_id === selectedSave.save_id ? "selected-row" : ""}>
+                  <td>{save.save_id}</td>
+                  <td>{save.world_id}</td>
+                  <td>{saveStatus?.schema_version ?? "not checked"}</td>
+                  <td>{saveStatus ? (saveStatus.needs_migration ? "yes" : "no") : "check required"}</td>
+                  <td>{save.updated_at}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
       <dl className="metadata-list">
         <dt>Save</dt>
         <dd>{selectedSave.save_id}</dd>
@@ -9333,6 +10949,34 @@ function MigrationPanel({
       ) : (
         <p className="muted">Dry-run is safe and does not write the database.</p>
       )}
+      <section>
+        <h4>Migration plan</h4>
+        <div className="safe-summary-grid">
+          <SafeSummaryCard title="Steps" value={String(planRows.length)} detail="Schema migration steps from local status/dry-run summaries." />
+          <SafeSummaryCard title="Affected fields" value={planRows.map((row) => row.affectedFields).join(", ") || "none"} detail="Field groups only; raw save JSON is hidden." />
+          <SafeSummaryCard title="Module state changes" value={String(moduleRows.length)} detail="Module ids and schema-impact summaries only." />
+          <SafeSummaryCard title="Destructive blocked" value={destructiveBlocked.length ? "blocked" : "not requested"} detail="Removal/destructive changes are not applied automatically." />
+        </div>
+        <ItemList
+          emptyText="No migration steps loaded. Run Check or Dry-run."
+          items={planRows.map((row) => (
+            <span key={row.stepId}>
+              {row.stepId}: {row.sourceVersion} {"->"} {row.targetVersion} · {row.affectedFields}
+            </span>
+          ))}
+        />
+      </section>
+      <section>
+        <h4>Module state migration</h4>
+        <ItemList
+          emptyText="No module state migration changes detected."
+          items={moduleRows.map((row) => (
+            <span key={row.moduleId}>
+              {row.moduleId}: {row.changeSummary}
+            </span>
+          ))}
+        />
+      </section>
       {status?.warnings.length ? (
         <ul className="compact-list warning-list">
           {status.warnings.map((warning) => (
@@ -9375,10 +11019,89 @@ function MigrationPanel({
               </ul>
             </details>
           )}
+          <details>
+            <summary>Warnings and destructive blockers</summary>
+            <ItemList
+              emptyText="No migration warnings or destructive blockers."
+              items={[...result.warnings.map(sanitizeDisplayError), ...destructiveBlocked].map((warning, index) => (
+                <span key={`${warning}-${index}`}>{warning}</span>
+              ))}
+            />
+          </details>
         </div>
       )}
     </div>
   );
+}
+
+function buildSaveMigrationPlanRows(
+  save: SaveSummary,
+  status: SaveMigrationStatus | undefined,
+  result: SaveMigrationResponse | undefined
+): Array<{ stepId: string; sourceVersion: string; targetVersion: string; affectedFields: string }> {
+  if (result?.applied_migrations.length) {
+    return result.applied_migrations.map((entry) => ({
+      stepId: entry.migration_id,
+      sourceVersion: entry.source_version,
+      targetVersion: entry.target_version,
+      affectedFields: inferMigrationAffectedFields(entry.description)
+    }));
+  }
+  if (status?.migration_path.length) {
+    return status.migration_path.map((step, index) => ({
+      stepId: step,
+      sourceVersion: index === 0 ? status.schema_version : status.migration_path[index - 1] ?? status.schema_version,
+      targetVersion: index === status.migration_path.length - 1 ? status.target_schema_version : status.migration_path[index + 1] ?? status.target_schema_version,
+      affectedFields: inferMigrationAffectedFields(`${step} ${status.warnings.join(" ")}`)
+    }));
+  }
+  return [{
+    stepId: "current-schema-check",
+    sourceVersion: status?.schema_version ?? "unknown",
+    targetVersion: status?.target_schema_version ?? status?.schema_version ?? "unknown",
+    affectedFields: save.enabled_mods && Object.keys(save.enabled_mods).length ? "schema metadata, module state summary" : "schema metadata"
+  }];
+}
+
+function buildSaveModuleMigrationRows(
+  save: SaveSummary,
+  status: SaveMigrationStatus | undefined,
+  result: SaveMigrationResponse | undefined
+): Array<{ moduleId: string; changeSummary: string }> {
+  const moduleIds = Object.keys(save.enabled_mods ?? {});
+  const warningText = [...(status?.warnings ?? []), ...(result?.warnings ?? [])].join(" ");
+  if (!moduleIds.length && !/module/i.test(warningText)) {
+    return [];
+  }
+  if (!moduleIds.length) {
+    return [{ moduleId: "module-state", changeSummary: "Module migration warning present; run dry-run for safe details." }];
+  }
+  return moduleIds.map((moduleId) => ({
+    moduleId,
+    changeSummary: /remove|delete|destructive/i.test(warningText)
+      ? "Destructive module state change blocked by default."
+      : "Preserve module state unless backend migration plan explicitly confirms a safe schema update."
+  }));
+}
+
+function buildDestructiveMigrationBlockers(
+  status: SaveMigrationStatus | undefined,
+  result: SaveMigrationResponse | undefined
+): string[] {
+  const warnings = [...(status?.warnings ?? []), ...(result?.warnings ?? [])].map(sanitizeDisplayError);
+  const blockers = warnings.filter((warning) => /destructive|remove|delete|drop|erase/i.test(warning));
+  return blockers.length ? blockers : ["Destructive remove blocked by default; no module state is deleted without confirmed backend migration flow."];
+}
+
+function inferMigrationAffectedFields(description: string): string {
+  const text = description.toLowerCase();
+  const fields: string[] = [];
+  if (/schema|version|engine/.test(text)) fields.push("schema version");
+  if (/module|combat|economy|faction|magic|hacking|crafting|survival|cultivation/.test(text)) fields.push("module state");
+  if (/event|timeline|delta/.test(text)) fields.push("EventLog metadata");
+  if (/visibility|hidden|secret/.test(text)) fields.push("visibility metadata");
+  if (/location|npc|quest|inventory/.test(text)) fields.push("visible state summary");
+  return fields.length ? fields.join(", ") : "schema metadata";
 }
 
 function lastMigratedAt(result: SaveMigrationResponse | undefined): string {
@@ -19724,6 +21447,865 @@ function DebugEventSummary({ events, emptyText }: { events: DebugEvent[]; emptyT
   );
 }
 
+function EventLogViewerPanel({
+  events,
+  error,
+  selectedSaveId,
+  hasSession,
+  onLoadSession,
+  onLoadSave,
+  debugEnabled
+}: {
+  events: DebugEvent[];
+  error: string;
+  selectedSaveId: string;
+  hasSession: boolean;
+  onLoadSession: () => void;
+  onLoadSave: () => void;
+  debugEnabled: boolean;
+}) {
+  const [turnFilter, setTurnFilter] = useState("");
+  const [eventTypeFilter, setEventTypeFilter] = useState("");
+  const [actorFilter, setActorFilter] = useState("");
+  const [moduleFilter, setModuleFilter] = useState("");
+  const [tagFilter, setTagFilter] = useState("");
+  const eventTypes = useMemo(() => sortedUnique(events.map((event) => eventLogSafeType(event))), [events]);
+  const actors = useMemo(() => sortedUnique(events.map((event) => eventLogSafeActor(event))), [events]);
+  const sourceModules = useMemo(() => sortedUnique(events.map((event) => eventLogSafeSourceModule(event))), [events]);
+  const tags = useMemo(() => sortedUnique(events.flatMap((event) => eventLogSafeTags(event))), [events]);
+  const filteredEvents = useMemo(
+    () =>
+      events.filter((event) => {
+        if (turnFilter && event.turn !== Number(turnFilter)) return false;
+        if (eventTypeFilter && eventLogSafeType(event) !== eventTypeFilter) return false;
+        if (actorFilter && eventLogSafeActor(event) !== actorFilter) return false;
+        if (moduleFilter && eventLogSafeSourceModule(event) !== moduleFilter) return false;
+        if (tagFilter && !eventLogSafeTags(event).includes(tagFilter)) return false;
+        return true;
+      }),
+    [actorFilter, eventTypeFilter, events, moduleFilter, tagFilter, turnFilter]
+  );
+
+  return (
+    <section className="debug-group timeline eventlog-viewer">
+      <div className="authoring-pane-header">
+        <div>
+          <h2>EventLog Viewer Pro</h2>
+          <p className="muted">
+            Read-only EventLog inspection. Normal rows show safe summaries and linked StateDelta counts; raw details require DebugGate.
+          </p>
+        </div>
+        <StatusBadge label={debugEnabled ? "Debug details gated on" : "Debug details disabled"} enabled={debugEnabled} />
+      </div>
+      <div className="timeline-controls">
+        <button type="button" onClick={onLoadSession} disabled={!hasSession}>
+          Load Session EventLog
+        </button>
+        <button type="button" onClick={onLoadSave} disabled={!selectedSaveId}>
+          Load Save EventLog
+        </button>
+        <label>
+          Turn
+          <input
+            inputMode="numeric"
+            pattern="[0-9]*"
+            placeholder="any"
+            value={turnFilter}
+            onChange={(event) => setTurnFilter(event.target.value.replace(/\D/g, ""))}
+          />
+        </label>
+        <label>
+          Event type
+          <select value={eventTypeFilter} onChange={(event) => setEventTypeFilter(event.target.value)}>
+            <option value="">All types</option>
+            {eventTypes.map((eventType) => (
+              <option key={eventType} value={eventType}>
+                {eventType}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Actor
+          <select value={actorFilter} onChange={(event) => setActorFilter(event.target.value)}>
+            <option value="">All actors</option>
+            {actors.map((actor) => (
+              <option key={actor} value={actor}>
+                {actor}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Source module
+          <select value={moduleFilter} onChange={(event) => setModuleFilter(event.target.value)}>
+            <option value="">All modules</option>
+            {sourceModules.map((source) => (
+              <option key={source} value={source}>
+                {source}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Tags
+          <select value={tagFilter} onChange={(event) => setTagFilter(event.target.value)}>
+            <option value="">All tags</option>
+            {tags.map((tag) => (
+              <option key={tag} value={tag}>
+                {tag}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      {error && <p className="error">{redactReportText(error)}</p>}
+      {error && error.toLowerCase().includes("debug") && <p className="muted">ENABLE_DEBUG_API required for loading raw debug-backed EventLog data.</p>}
+      {!error && events.length === 0 && (
+        <EmptyState title="No EventLog events loaded." detail="Load a session or save EventLog. This viewer is read-only and cannot modify EventLog or GameState." />
+      )}
+      {events.length > 0 && filteredEvents.length === 0 && (
+        <EmptyState title="No events match these filters." detail="Try another turn, event type, actor, source module, or tag." />
+      )}
+      {filteredEvents.length > 0 && (
+        <div className="debug-event-list">
+          {filteredEvents.map((event) => (
+            <EventLogSafeCard event={event} debugEnabled={debugEnabled} key={event.event_id} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+const HIDDEN_LEAK_CATEGORIES = [
+  "visible_state leak",
+  "prompt leak",
+  "Tavern leak",
+  "Novel leak",
+  "World UI leak",
+  "export leak",
+  "diagnostics leak",
+  "backup leak",
+  "debug leak"
+] as const;
+
+type HiddenLeakCategory = (typeof HIDDEN_LEAK_CATEGORIES)[number];
+type HiddenLeakIssue = {
+  id: string;
+  category: HiddenLeakCategory;
+  severity: "blocker" | "warning" | "info";
+  source: string;
+  target: string;
+  safeSummary: string;
+  suggestedAction: string;
+};
+
+function HiddenLeakReportPanel({
+  visibleState,
+  events,
+  worldHealth,
+  narrativeEvalReports,
+  diagnosticsBundlePreview,
+  backupPlan,
+  selectedWorldId,
+  onRunLeakCheck
+}: {
+  visibleState: VisibleState | null;
+  events: DebugEvent[];
+  worldHealth: WorldHealthScore | null;
+  narrativeEvalReports: NarrativeEvalReport[];
+  diagnosticsBundlePreview: DiagnosticsBundlePreview | null;
+  backupPlan: BackupPlan | null;
+  selectedWorldId: string;
+  onRunLeakCheck: () => void;
+}) {
+  const [category, setCategory] = useState<HiddenLeakCategory | "all">("all");
+  const issues = useMemo(
+    () => buildHiddenLeakIssues(visibleState, events, worldHealth, narrativeEvalReports, diagnosticsBundlePreview, backupPlan),
+    [backupPlan, diagnosticsBundlePreview, events, narrativeEvalReports, visibleState, worldHealth]
+  );
+  const filteredIssues = category === "all" ? issues : issues.filter((issue) => issue.category === category);
+  const blockerCount = issues.filter((issue) => issue.severity === "blocker").length;
+  const warningCount = issues.filter((issue) => issue.severity === "warning").length;
+  const status = blockerCount ? "blocked" : warningCount ? "review" : issues.length ? "clear with notes" : "no report";
+
+  return (
+    <section className="debug-group hidden-leak-report">
+      <div className="authoring-pane-header">
+        <div>
+          <h2>Hidden Leak Report UI Pro</h2>
+          <p className="muted">
+            Safe local leak report for visible_state, prompts, mode UIs, exports, diagnostics, backups, and debug surfaces. Hidden text and secrets are never printed.
+          </p>
+        </div>
+        <ValidationStatusBadge status={blockerCount ? "failed" : warningCount ? "warning" : issues.length ? "passed" : "not_run"} />
+      </div>
+      <FilterToolbar>
+        <button type="button" onClick={onRunLeakCheck} disabled={!selectedWorldId}>
+          Run Leak Check
+        </button>
+        <label>
+          Category
+          <select value={category} onChange={(event) => setCategory(event.target.value as HiddenLeakCategory | "all")}>
+            <option value="all">All categories</option>
+            {HIDDEN_LEAK_CATEGORIES.map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
+          </select>
+        </label>
+      </FilterToolbar>
+      <div className="timeline-summary">
+        <span>overall: {status}</span>
+        <span>{blockerCount} blockers</span>
+        <span>{warningCount} warnings</span>
+        <span>{issues.length} safe issue rows</span>
+      </div>
+      {issues.length === 0 ? (
+        <EmptyState title="No hidden leak report loaded." detail="Run the local leak check or load quality reports. This panel never uploads data or calls an external LLM judge." />
+      ) : filteredIssues.length === 0 ? (
+        <EmptyState title="No issues in this category." detail="Try another category or run the local leak check again." />
+      ) : (
+        <div className="debug-event-list">
+          {filteredIssues.map((issue) => (
+            <div className="section-card" key={issue.id}>
+              <div className="card-header">
+                <h3>{issue.category}</h3>
+                <LeakRiskBadge severity={issue.severity} />
+              </div>
+              <dl className="event-details">
+                <dt>Source</dt>
+                <dd>{issue.source}</dd>
+                <dt>Target</dt>
+                <dd>{issue.target}</dd>
+                <dt>Safe summary</dt>
+                <dd>{issue.safeSummary}</dd>
+                <dt>Suggested action</dt>
+                <dd>{issue.suggestedAction}</dd>
+              </dl>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function buildHiddenLeakIssues(
+  visibleState: VisibleState | null,
+  events: DebugEvent[],
+  worldHealth: WorldHealthScore | null,
+  narrativeEvalReports: NarrativeEvalReport[],
+  diagnosticsBundlePreview: DiagnosticsBundlePreview | null,
+  backupPlan: BackupPlan | null
+): HiddenLeakIssue[] {
+  const issues: HiddenLeakIssue[] = [];
+  const visibleMarkers = hiddenLeakMarkers(visibleState);
+  visibleMarkers.forEach((marker, index) => {
+    issues.push(hiddenLeakIssue("visible_state leak", "blocker", `visible_state:${index}`, "visible_state", "normal UI", marker, "Inspect visibility rules and remove hidden/debug markers from visible_state."));
+  });
+  const rawDeltaVisibleEvents = events.filter((event) => event.visible_to_player && event.state_deltas.length > 0);
+  if (rawDeltaVisibleEvents.length > 0) {
+    issues.push(hiddenLeakIssue("debug leak", "warning", "visible-state-delta-count", "EventLog", "debug viewer", `${rawDeltaVisibleEvents.length} visible event(s) have StateDelta records; raw payloads must stay debug-gated.`, "Keep raw StateDelta rendering inside DebugGate and expose only safe counts in normal UI."));
+  }
+  events.filter((event) => !event.visible_to_player).slice(0, 8).forEach((event) => {
+    issues.push(hiddenLeakIssue("debug leak", "info", `debug-event-${event.event_id}`, "EventLog", "normal UI", `Debug-only event ${redactReportText(event.event_id)} is gated from normal report.`, "No action required unless this event appears in normal/player UI."));
+  });
+  collectLeakStrings(worldHealth?.blockers ?? [], "World Health blocker").forEach((item, index) => {
+    issues.push(hiddenLeakIssue("World UI leak", "blocker", `world-health-blocker-${index}`, "Quality Gate", "World UI", item, "Fix the reported visibility/export/debug boundary before release."));
+  });
+  collectLeakStrings(worldHealth?.warnings ?? [], "World Health warning").forEach((item, index) => {
+    issues.push(hiddenLeakIssue("World UI leak", "warning", `world-health-warning-${index}`, "Quality Gate", "World UI", item, "Review the warning and add/adjust a local leak regression if needed."));
+  });
+  narrativeEvalReports.flatMap((report) => Object.values(report.failure_reasons).flat()).forEach((reason, index) => {
+    if (isLeakText(reason)) {
+      issues.push(hiddenLeakIssue("Novel leak", "warning", `novel-eval-${index}`, "Narrative Eval", "Novel Studio", reason, "Review Novel prompt/export context and keep hidden facts out of normal prose reports."));
+    }
+  });
+  const diagnosticsMarkers = hiddenLeakMarkers(diagnosticsBundlePreview);
+  diagnosticsMarkers.forEach((marker, index) => {
+    issues.push(hiddenLeakIssue("diagnostics leak", "warning", `diagnostics-${index}`, "Diagnostics Bundle Preview", "diagnostics", marker, "Keep diagnostics preview/create exclusions and redaction enabled."));
+  });
+  const backupMarkers = hiddenLeakMarkers(backupPlan);
+  backupMarkers.forEach((marker, index) => {
+    issues.push(hiddenLeakIssue("backup leak", "warning", `backup-${index}`, "Backup Plan", "backup", marker, "Keep backup exclusions for secrets, debug data, mature/private content, logs, and databases enabled."));
+  });
+  HIDDEN_LEAK_CATEGORIES.forEach((category) => {
+    if (!issues.some((issue) => issue.category === category)) {
+      issues.push(hiddenLeakIssue(category, "info", `clear-${category}`, "local report", category, "No leak marker found in currently loaded safe summaries.", "No action required; run the relevant local quality check for fresh coverage."));
+    }
+  });
+  return issues;
+}
+
+function hiddenLeakIssue(
+  category: HiddenLeakCategory,
+  severity: HiddenLeakIssue["severity"],
+  id: string,
+  source: string,
+  target: string,
+  summary: string,
+  suggestedAction: string
+): HiddenLeakIssue {
+  return {
+    id,
+    category,
+    severity,
+    source: redactReportText(source),
+    target: redactReportText(target),
+    safeSummary: redactLeakSummary(summary),
+    suggestedAction: redactReportText(suggestedAction),
+  };
+}
+
+function collectLeakStrings(values: string[], fallback: string): string[] {
+  return values.filter(isLeakText).map((value) => value || fallback);
+}
+
+function hiddenLeakMarkers(value: unknown): string[] {
+  const markers: string[] = [];
+  collectHiddenLeakMarkers(value, markers, "root");
+  return Array.from(new Set(markers)).slice(0, 20);
+}
+
+function collectHiddenLeakMarkers(value: unknown, markers: string[], path: string): void {
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => collectHiddenLeakMarkers(item, markers, `${path}[${index}]`));
+    return;
+  }
+  if (!value || typeof value !== "object") {
+    if (typeof value === "string" && isLeakText(value)) {
+      markers.push(`${path}: ${redactLeakSummary(value)}`);
+    }
+    return;
+  }
+  Object.entries(value as Record<string, unknown>).forEach(([key, item]) => {
+    const nextPath = `${path}.${key}`;
+    if (isLeakText(key)) {
+      markers.push(`${nextPath}: marker redacted`);
+    }
+    collectHiddenLeakMarkers(item, markers, nextPath);
+  });
+}
+
+function isLeakText(value: string): boolean {
+  return /(hidden|secret|npc_knowledge|debug memory|state_delta|state_deltas|private|mature|api[_-]?key|provider secret|raw_env|sk-)/i.test(value);
+}
+
+function redactLeakSummary(value: string): string {
+  return redactReportText(value)
+    .replace(/hidden\s+fact[^,.;]*/gi, "hidden fact [redacted]")
+    .replace(/npc[_\s-]?knowledge[^,.;]*/gi, "npc_knowledge [redacted]")
+    .replace(/private[^,.;]*/gi, "private content [redacted]")
+    .replace(/mature[^,.;]*/gi, "mature content [redacted]")
+    .replace(/state_delta(s)?[^,.;]*/gi, "raw StateDelta [redacted]")
+    .replace(/secret[^,.;]*/gi, "secret [redacted]");
+}
+
+function EventLogSafeCard({ event, debugEnabled }: { event: DebugEvent; debugEnabled: boolean }) {
+  const eventType = eventLogSafeType(event);
+  const actor = eventLogSafeActor(event);
+  const sourceModule = eventLogSafeSourceModule(event);
+  const tags = eventLogSafeTags(event);
+  const visibleSummary = event.visible_to_player
+    ? redactReportText(event.result)
+    : "Debug-only event. Hidden/debug summary is redacted from normal view.";
+  return (
+    <details className="timeline-event eventlog-event">
+      <summary>
+        <span>Turn {event.turn}</span>
+        <span>#{event.event_id}</span>
+        <EventTypeBadge type={eventType} />
+        <span>{actor}</span>
+        <span>{event.visible_to_player ? "visible" : "debug-gated"}</span>
+      </summary>
+      <dl className="event-details">
+        <dt>Event id</dt>
+        <dd>{event.event_id}</dd>
+        <dt>Turn/time</dt>
+        <dd>
+          Turn {event.turn} / {event.created_at}
+        </dd>
+        <dt>Type</dt>
+        <dd><EventTypeBadge type={eventType} /></dd>
+        <dt>Actor</dt>
+        <dd>{actor}</dd>
+        <dt>Source module</dt>
+        <dd>{sourceModule}</dd>
+        <dt>Visible summary</dt>
+        <dd>{visibleSummary}</dd>
+        <dt>Linked StateDelta count</dt>
+        <dd>{event.state_deltas.length}</dd>
+        <dt>Tags</dt>
+        <dd>{tags.length > 0 ? tags.map(redactReportText).join(", ") : "None"}</dd>
+      </dl>
+      <p className="muted">Raw EventLog JSON and raw StateDelta payloads are hidden from normal view.</p>
+      <DebugGate debugEnabled={debugEnabled} title="EventLog Debug Details">
+        <details>
+          <summary>Raw event JSON and StateDelta details ({event.state_deltas.length})</summary>
+          <pre>{JSON.stringify(redactDebugText(event), null, 2)}</pre>
+        </details>
+      </DebugGate>
+    </details>
+  );
+}
+
+function sortedUnique(values: string[]): string[] {
+  return Array.from(new Set(values.filter(Boolean))).sort();
+}
+
+function eventLogSafeType(event: DebugEvent): string {
+  return event.visible_to_player ? redactReportText(event.action_type) : "debug-gated";
+}
+
+function eventLogSafeActor(event: DebugEvent): string {
+  return event.visible_to_player ? redactReportText(event.actor_id) : "debug-gated actor";
+}
+
+function eventLogSafeSourceModule(event: DebugEvent): string {
+  if (!event.visible_to_player) {
+    return "debug-gated";
+  }
+  const metadataSource = event.state_deltas
+    .map((delta) => delta.metadata.source || delta.metadata.module || delta.metadata.module_id)
+    .find(Boolean);
+  if (metadataSource) {
+    return redactReportText(metadataSource);
+  }
+  const [prefix] = event.action_type.split("_");
+  return prefix || "core";
+}
+
+function eventLogSafeTags(event: DebugEvent): string[] {
+  if (!event.visible_to_player) {
+    return ["debug-gated"];
+  }
+  const tags = new Set<string>();
+  event.state_deltas.forEach((delta) => {
+    Object.entries(delta.metadata).forEach(([key, value]) => {
+      const lowerKey = key.toLowerCase();
+      if (lowerKey === "tag" || lowerKey === "tags" || lowerKey === "event_tag") {
+        value
+          .split(",")
+          .map((tag) => tag.trim())
+          .filter(Boolean)
+          .forEach((tag) => tags.add(redactReportText(tag)));
+      }
+    });
+  });
+  if (event.visible_to_player) {
+    tags.add("player-visible");
+  } else {
+    tags.add("debug-gated");
+  }
+  return Array.from(tags).sort();
+}
+
+type StateDeltaViewerRow = {
+  id: string;
+  eventId: string;
+  turn: number;
+  eventType: string;
+  actorId: string;
+  sourceModule: string;
+  op: string;
+  path: string;
+  valueSummary: string;
+  applyStatus: string;
+};
+
+function StateDeltaViewerPanel({ events }: { events: DebugEvent[] }) {
+  const [opFilter, setOpFilter] = useState("");
+  const [pathPrefix, setPathPrefix] = useState("");
+  const [eventTypeFilter, setEventTypeFilter] = useState("");
+  const [turnFrom, setTurnFrom] = useState("");
+  const [turnTo, setTurnTo] = useState("");
+  const [pathSearch, setPathSearch] = useState("");
+  const rows = useMemo(() => flattenStateDeltaRows(events), [events]);
+  const ops = useMemo(() => sortedUnique(rows.map((row) => row.op)), [rows]);
+  const eventTypes = useMemo(() => sortedUnique(rows.map((row) => row.eventType)), [rows]);
+  const filteredRows = useMemo(
+    () =>
+      rows.filter((row) => {
+        const from = turnFrom ? Number(turnFrom) : null;
+        const to = turnTo ? Number(turnTo) : null;
+        if (opFilter && row.op !== opFilter) return false;
+        if (eventTypeFilter && row.eventType !== eventTypeFilter) return false;
+        if (from !== null && row.turn < from) return false;
+        if (to !== null && row.turn > to) return false;
+        if (pathPrefix && !row.path.startsWith(pathPrefix)) return false;
+        if (pathSearch && !row.path.toLowerCase().includes(pathSearch.toLowerCase())) return false;
+        return true;
+      }),
+    [eventTypeFilter, opFilter, pathPrefix, pathSearch, rows, turnFrom, turnTo]
+  );
+
+  return (
+    <section className="debug-group statedelta-viewer">
+      <div className="authoring-pane-header">
+        <div>
+          <h2>StateDelta Viewer Pro</h2>
+          <p className="muted">
+            Debug-only StateDelta inspection. This viewer is read-only and cannot apply deltas or modify GameState.
+          </p>
+        </div>
+        <span className="badge">ENABLE_DEBUG_API required</span>
+      </div>
+      <div className="timeline-controls">
+        <label>
+          Op
+          <select value={opFilter} onChange={(event) => setOpFilter(event.target.value)}>
+            <option value="">All ops</option>
+            {ops.map((op) => (
+              <option key={op} value={op}>
+                {op}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Path prefix
+          <input value={pathPrefix} placeholder="player." onChange={(event) => setPathPrefix(event.target.value)} />
+        </label>
+        <label>
+          Path search
+          <input value={pathSearch} placeholder="inventory" onChange={(event) => setPathSearch(event.target.value)} />
+        </label>
+        <label>
+          Event type
+          <select value={eventTypeFilter} onChange={(event) => setEventTypeFilter(event.target.value)}>
+            <option value="">All types</option>
+            {eventTypes.map((eventType) => (
+              <option key={eventType} value={eventType}>
+                {eventType}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Turn from
+          <input
+            inputMode="numeric"
+            pattern="[0-9]*"
+            value={turnFrom}
+            placeholder="start"
+            onChange={(event) => setTurnFrom(event.target.value.replace(/\D/g, ""))}
+          />
+        </label>
+        <label>
+          Turn to
+          <input
+            inputMode="numeric"
+            pattern="[0-9]*"
+            value={turnTo}
+            placeholder="end"
+            onChange={(event) => setTurnTo(event.target.value.replace(/\D/g, ""))}
+          />
+        </label>
+      </div>
+      {rows.length === 0 ? (
+        <EmptyState title="No StateDelta rows loaded." detail="Load a session or save EventLog first. StateDelta debug details remain gated." />
+      ) : filteredRows.length === 0 ? (
+        <EmptyState title="No StateDelta rows match these filters." detail="Try another op, path prefix, event type, or turn range." />
+      ) : (
+        <div className="debug-event-list">
+          {filteredRows.map((row) => (
+            <details className="timeline-event statedelta-row" key={row.id}>
+              <summary>
+                <span>Turn {row.turn}</span>
+                <StateDeltaOpBadge op={row.op} />
+                <span>{row.path}</span>
+                <span>{row.eventId}</span>
+              </summary>
+              <dl className="event-details">
+                <dt>Event id</dt>
+                <dd>{row.eventId}</dd>
+                <dt>Delta op</dt>
+                <dd><StateDeltaOpBadge op={row.op} /></dd>
+                <dt>Path</dt>
+                <dd>{row.path}</dd>
+                <dt>Value summary</dt>
+                <dd>{row.valueSummary}</dd>
+                <dt>Apply status</dt>
+                <dd>{row.applyStatus}</dd>
+                <dt>Source action/module</dt>
+                <dd>
+                  {row.eventType} / {row.sourceModule}
+                </dd>
+                <dt>Actor</dt>
+                <dd>{row.actorId}</dd>
+              </dl>
+            </details>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function flattenStateDeltaRows(events: DebugEvent[]): StateDeltaViewerRow[] {
+  return events.flatMap((event) =>
+    event.state_deltas.map((delta, index) => ({
+      id: `${event.event_id}-${index}`,
+      eventId: event.event_id,
+      turn: event.turn,
+      eventType: redactReportText(event.action_type),
+      actorId: redactReportText(event.actor_id),
+      sourceModule: redactReportText(delta.metadata.source || delta.metadata.module || delta.metadata.module_id || eventLogSafeSourceModule(event)),
+      op: redactReportText(delta.operation),
+      path: redactStateDeltaPath(delta.path),
+      valueSummary: summarizeStateDeltaValue(delta.value),
+      applyStatus: delta.caused_by_event_id || event.event_id ? "recorded in EventLog" : "recorded",
+    }))
+  );
+}
+
+function summarizeStateDeltaValue(value: unknown): string {
+  if (value === undefined) {
+    return "not provided";
+  }
+  const redacted = redactDebugText(value);
+  if (redacted === null || typeof redacted === "boolean" || typeof redacted === "number") {
+    return String(redacted);
+  }
+  if (typeof redacted === "string") {
+    return redactReportText(redacted).length > 80 ? `${redactReportText(redacted).slice(0, 77)}...` : redactReportText(redacted);
+  }
+  if (Array.isArray(redacted)) {
+    return `array(${redacted.length})`;
+  }
+  if (redacted && typeof redacted === "object") {
+    return `object(${Object.keys(redacted as Record<string, unknown>).length} keys)`;
+  }
+  return "redacted";
+}
+
+function redactStateDeltaPath(path: string): string {
+  return redactReportText(path.replace(/secrets?\.[^.]+/gi, "secrets.[redacted]"));
+}
+
+const VISIBLE_DEBUG_COMPARE_SECTIONS = ["facts", "NPCs", "inventory", "quests", "modules", "timeline"] as const;
+type VisibleDebugCompareSection = (typeof VISIBLE_DEBUG_COMPARE_SECTIONS)[number];
+
+function VisibleDebugStateCompare({
+  visibleState,
+  events,
+  saves,
+  modules,
+  lastResponse
+}: {
+  visibleState: VisibleState | null;
+  events: DebugEvent[];
+  saves: SaveSummary[];
+  modules: ModuleDebugSummary[];
+  lastResponse: unknown;
+}) {
+  const [section, setSection] = useState<VisibleDebugCompareSection>("facts");
+  const report = useMemo(
+    () => buildVisibleDebugCompareReport(visibleState, events, saves, modules, lastResponse),
+    [events, lastResponse, modules, saves, visibleState]
+  );
+  const selected = report.sections[section];
+
+  return (
+    <section className="debug-group visible-debug-compare">
+      <div className="authoring-pane-header">
+        <div>
+          <h2>Visible vs Debug State Compare</h2>
+          <p className="muted">
+            ENABLE_DEBUG_API required. Debug-gated boundary check for visible_state filtering. Hidden text is summarized and redacted by default.
+          </p>
+        </div>
+        <span className="badge">Debug only</span>
+      </div>
+      <div className="timeline-controls">
+        <label>
+          Compare section
+          <select value={section} onChange={(event) => setSection(event.target.value as VisibleDebugCompareSection)}>
+            {VISIBLE_DEBUG_COMPARE_SECTIONS.map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      {!visibleState ? (
+        <EmptyState title="No visible_state loaded." detail="Start or load a world session before comparing visibility boundaries." />
+      ) : (
+        <>
+          <div className="comparison-grid">
+            <section className="section-card player">
+              <h3>visible_state: {section}</h3>
+              <dl className="event-details">
+                <dt>Visible count</dt>
+                <dd>{selected.visibleCount}</dd>
+                <dt>Safe examples</dt>
+                <dd>{selected.safeExamples.length > 0 ? selected.safeExamples.join(", ") : "None"}</dd>
+              </dl>
+            </section>
+            <section className="section-card">
+              <h3>debug/raw summary: {section}</h3>
+              <dl className="event-details">
+                <dt>Debug count</dt>
+                <dd>{selected.debugCount}</dd>
+                <dt>Filtered count</dt>
+                <dd>{selected.filteredCount}</dd>
+                <dt>Redacted summary</dt>
+                <dd>{selected.redactedSummary}</dd>
+              </dl>
+            </section>
+          </div>
+          <div className="timeline-summary">
+            <span>{report.filteredFieldCount} filtered field markers</span>
+            <span>{report.rawDeltaCount} raw StateDelta records gated</span>
+            <span>{report.debugOnlyEventCount} debug-only events gated</span>
+            <span>{report.lastResponseKeyCount} last response keys summarized</span>
+          </div>
+          <section className="section-card">
+            <h3>Visibility Rule Warnings</h3>
+            {report.warnings.length === 0 ? (
+              <p className="muted">No visibility warning markers found in visible_state safe summary.</p>
+            ) : (
+              <ul className="compact-list">
+                {report.warnings.map((warning) => (
+                  <li key={warning}>{warning}</li>
+                ))}
+              </ul>
+            )}
+          </section>
+        </>
+      )}
+    </section>
+  );
+}
+
+function buildVisibleDebugCompareReport(
+  visibleState: VisibleState | null,
+  events: DebugEvent[],
+  saves: SaveSummary[],
+  modules: ModuleDebugSummary[],
+  lastResponse: unknown
+): {
+  sections: Record<VisibleDebugCompareSection, {
+    visibleCount: number;
+    debugCount: number;
+    filteredCount: number;
+    safeExamples: string[];
+    redactedSummary: string;
+  }>;
+  filteredFieldCount: number;
+  rawDeltaCount: number;
+  debugOnlyEventCount: number;
+  lastResponseKeyCount: number;
+  warnings: string[];
+} {
+  const visibleFacts = visibleState?.known_facts ?? [];
+  const visibleNpcs = visibleState?.visible_npcs ?? [];
+  const inventory = visibleState?.inventory ?? [];
+  const quests = visibleState?.quests ?? [];
+  const rawDeltaCount = events.reduce((total, event) => total + event.state_deltas.length, 0);
+  const debugOnlyEventCount = events.filter((event) => !event.visible_to_player).length;
+  const filteredFieldCount =
+    countSensitiveMarkers(visibleState) +
+    countSensitiveMarkers(events.map((event) => event.state_deltas)) +
+    countSensitiveMarkers(lastResponse);
+  const lastResponseKeyCount = lastResponse && typeof lastResponse === "object" ? Object.keys(lastResponse as Record<string, unknown>).length : 0;
+  const hiddenDeltaCount = events.reduce(
+    (total, event) => total + event.state_deltas.filter((delta) => !event.visible_to_player && delta.metadata.visible_to_player !== "true").length,
+    0
+  );
+  const warnings = buildVisibilityWarnings(visibleState);
+
+  return {
+    sections: {
+      facts: {
+        visibleCount: visibleFacts.length,
+        debugCount: visibleFacts.length + hiddenDeltaCount,
+        filteredCount: hiddenDeltaCount,
+        safeExamples: visibleFacts.slice(0, 5).map((fact) => redactReportText(fact.id)),
+        redactedSummary: `${hiddenDeltaCount} debug-only fact/path marker(s) redacted`,
+      },
+      NPCs: {
+        visibleCount: visibleNpcs.length,
+        debugCount: visibleNpcs.length + debugOnlyEventCount,
+        filteredCount: debugOnlyEventCount,
+        safeExamples: visibleNpcs.slice(0, 5).map((npc) => redactReportText(npc.id)),
+        redactedSummary: "NPC secrets and npc_knowledge are not displayed; debug-only actor details are grouped.",
+      },
+      inventory: {
+        visibleCount: inventory.length,
+        debugCount: inventory.length + events.filter((event) => event.state_deltas.some((delta) => delta.path.includes("objects") || delta.path.includes("inventory"))).length,
+        filteredCount: events.filter((event) => !event.visible_to_player && event.state_deltas.some((delta) => delta.path.includes("objects") || delta.path.includes("inventory"))).length,
+        safeExamples: inventory.slice(0, 5).map((item) => redactReportText(item.id)),
+        redactedSummary: "Hidden item properties are summarized by count only.",
+      },
+      quests: {
+        visibleCount: quests.length,
+        debugCount: quests.length + events.filter((event) => event.action_type.includes("quest") || event.state_deltas.some((delta) => delta.path.includes("quest"))).length,
+        filteredCount: events.filter((event) => !event.visible_to_player && (event.action_type.includes("quest") || event.state_deltas.some((delta) => delta.path.includes("quest")))).length,
+        safeExamples: quests.slice(0, 5).map((quest) => redactReportText(quest.id)),
+        redactedSummary: "Hidden objectives/truth are not printed; quest debug changes are counted.",
+      },
+      modules: {
+        visibleCount: Number(Boolean(visibleState?.active_combat)),
+        debugCount: modules.length,
+        filteredCount: modules.filter((module) => module.hidden_details_redacted).length,
+        safeExamples: modules.slice(0, 5).map((module) => redactReportText(module.module_id)),
+        redactedSummary: "Module debug state is summarized by status; hidden module internals are not shown.",
+      },
+      timeline: {
+        visibleCount: events.filter((event) => event.visible_to_player).length,
+        debugCount: events.length,
+        filteredCount: debugOnlyEventCount,
+        safeExamples: events.filter((event) => event.visible_to_player).slice(0, 5).map((event) => redactReportText(event.event_id)),
+        redactedSummary: `${rawDeltaCount} raw StateDelta record(s) require debug-gated viewers.`,
+      },
+    },
+    filteredFieldCount,
+    rawDeltaCount,
+    debugOnlyEventCount,
+    lastResponseKeyCount,
+    warnings,
+  };
+}
+
+function countSensitiveMarkers(value: unknown): number {
+  if (Array.isArray(value)) {
+    return value.reduce((total, item) => total + countSensitiveMarkers(item), 0);
+  }
+  if (!value || typeof value !== "object") {
+    return typeof value === "string" && /(api[_-]?key|secret|hidden|npc_knowledge|state_delta|raw_env)/i.test(value) ? 1 : 0;
+  }
+  return Object.entries(value as Record<string, unknown>).reduce((total, [key, item]) => {
+    const keyHit = /(api[_-]?key|secret|hidden|npc_knowledge|debug|state_delta|raw_env)/i.test(key) ? 1 : 0;
+    return total + keyHit + countSensitiveMarkers(item);
+  }, 0);
+}
+
+function buildVisibilityWarnings(visibleState: VisibleState | null): string[] {
+  if (!visibleState) {
+    return [];
+  }
+  const serialized = JSON.stringify(redactDebugText(visibleState)).toLowerCase();
+  const warnings: string[] = [];
+  if (serialized.includes("api_key") || serialized.includes("sk-")) {
+    warnings.push("Potential API key marker found in visible_state summary.");
+  }
+  if (serialized.includes("npc_knowledge")) {
+    warnings.push("npc_knowledge marker found in visible_state summary.");
+  }
+  if (serialized.includes("state_delta")) {
+    warnings.push("raw StateDelta marker found in visible_state summary.");
+  }
+  if (serialized.includes("secret") || serialized.includes("hidden")) {
+    warnings.push("hidden/secret marker found in visible_state summary; inspect source visibility rules.");
+  }
+  return warnings;
+}
+
 function GameplayModuleDebugger({
   modules,
   selectedModuleId,
@@ -19751,7 +22333,7 @@ function GameplayModuleDebugger({
       <header className="panel-header">
         <div>
           <h2>Gameplay Module Debugger</h2>
-          <p className="muted">Local debug only. Dry-run previews StateDelta/Event output without applying it.</p>
+          <p className="muted">ENABLE_DEBUG_API required. Local debug only. Dry-run previews StateDelta/Event output without applying it.</p>
         </div>
         <button type="button" onClick={onRefresh} disabled={disabled}>Refresh</button>
       </header>
@@ -20113,7 +22695,8 @@ function TimelineReplayPanel({
   onDryRun,
   error,
   dryRun,
-  dryRunError
+  dryRunError,
+  debugEnabled
 }: {
   timeline: TimelineReplayResponse | null;
   source: "session" | "save";
@@ -20126,8 +22709,25 @@ function TimelineReplayPanel({
   error: string;
   dryRun: TimelineReplayResponse | null;
   dryRunError: string;
+  debugEnabled: boolean;
 }) {
-  const filteredTurns = useMemo(() => filterTimelineTurns(timeline, selectedFilter), [timeline, selectedFilter]);
+  const [actorFilter, setActorFilter] = useState("");
+  const [turnFrom, setTurnFrom] = useState("");
+  const [turnTo, setTurnTo] = useState("");
+  const [jumpTurn, setJumpTurn] = useState("");
+  const [currentTurnIndex, setCurrentTurnIndex] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const filteredTurns = useMemo(
+    () =>
+      filterTimelineTurns(timeline, {
+        eventType: selectedFilter,
+        actor: actorFilter,
+        turnFrom,
+        turnTo,
+        visibleOnly: true
+      }),
+    [timeline, selectedFilter, actorFilter, turnFrom, turnTo]
+  );
   const replaySummary = dryRun?.replay_summary ?? timeline?.replay_summary ?? null;
   const eventCount = filteredTurns.reduce((total, turnGroup) => total + turnGroup.events.length, 0);
   const deltaCount = filteredTurns.reduce(
@@ -20135,20 +22735,75 @@ function TimelineReplayPanel({
       total + turnGroup.events.reduce((turnTotal, event) => turnTotal + event.delta_count, 0),
     0
   );
+  const actorOptions = useMemo(() => {
+    const actors = new Set<string>();
+    timeline?.turns.forEach((turnGroup) => {
+      turnGroup.events.forEach((event) => actors.add(event.actor_id));
+    });
+    return Array.from(actors).sort();
+  }, [timeline]);
+  const currentTurn = filteredTurns[currentTurnIndex] ?? null;
+
+  useEffect(() => {
+    setCurrentTurnIndex(0);
+    setIsPlaying(false);
+  }, [timeline, selectedFilter, actorFilter, turnFrom, turnTo]);
+
+  useEffect(() => {
+    if (!isPlaying || filteredTurns.length <= 1) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      setCurrentTurnIndex((index) => {
+        if (index >= filteredTurns.length - 1) {
+          setIsPlaying(false);
+          return index;
+        }
+        return index + 1;
+      });
+    }, 1200);
+    return () => window.clearInterval(timer);
+  }, [filteredTurns.length, isPlaying]);
+
+  function handlePrevious() {
+    setIsPlaying(false);
+    setCurrentTurnIndex((index) => Math.max(0, index - 1));
+  }
+
+  function handleNext() {
+    setCurrentTurnIndex((index) => Math.min(Math.max(filteredTurns.length - 1, 0), index + 1));
+  }
+
+  function handleJumpToTurn() {
+    setIsPlaying(false);
+    const targetTurn = Number(jumpTurn || currentTurn?.turn || 0);
+    const index = filteredTurns.findIndex((turnGroup) => turnGroup.turn >= targetTurn);
+    if (index >= 0) {
+      setCurrentTurnIndex(index);
+    }
+  }
 
   return (
     <section className="debug-group timeline-replay">
-      <h2>Timeline Replay</h2>
+      <div className="authoring-pane-header">
+        <div>
+          <h2>Timeline Replay UI Pro</h2>
+          <p className="muted">
+            Visible replay view shows player-safe event summaries. Raw StateDelta details are debug-gated and read-only.
+          </p>
+        </div>
+        <StatusBadge label={debugEnabled ? "Debug details gated on" : "Debug details disabled"} enabled={debugEnabled} />
+      </div>
       <div className="timeline-controls">
         <label>
-          Source
+          Replay source
           <select value={source} disabled>
             <option value="session">Session</option>
             <option value="save">Save</option>
           </select>
         </label>
         <label>
-          Filter
+          Event type
           <select value={selectedFilter} onChange={(event) => onFilterChange(event.target.value as TimelineFilter)}>
             {TIMELINE_FILTERS.map((filter) => (
               <option key={filter} value={filter}>
@@ -20156,6 +22811,41 @@ function TimelineReplayPanel({
               </option>
             ))}
           </select>
+        </label>
+        <label>
+          Actor
+          <select value={actorFilter} onChange={(event) => setActorFilter(event.target.value)}>
+            <option value="">All actors</option>
+            {actorOptions.map((actor) => (
+              <option key={actor} value={actor}>
+                {actor}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Turn from
+          <input
+            inputMode="numeric"
+            pattern="[0-9]*"
+            placeholder="start"
+            value={turnFrom}
+            onChange={(event) => setTurnFrom(event.target.value.replace(/\D/g, ""))}
+          />
+        </label>
+        <label>
+          Turn to
+          <input
+            inputMode="numeric"
+            pattern="[0-9]*"
+            placeholder="end"
+            value={turnTo}
+            onChange={(event) => setTurnTo(event.target.value.replace(/\D/g, ""))}
+          />
+        </label>
+        <label className="checkbox-row">
+          <input type="checkbox" checked readOnly />
+          Visible/system-safe replay only
         </label>
         <button type="button" onClick={onLoadSession}>
           Session Replay
@@ -20167,6 +22857,35 @@ function TimelineReplayPanel({
           Replay Dry-Run
         </button>
       </div>
+      <div className="timeline-controls replay-controls" aria-label="Replay controls">
+        <button type="button" onClick={() => setIsPlaying(true)} disabled={!filteredTurns.length}>
+          Start
+        </button>
+        <button type="button" onClick={handlePrevious} disabled={!filteredTurns.length || currentTurnIndex === 0}>
+          Previous
+        </button>
+        <button type="button" onClick={handleNext} disabled={!filteredTurns.length || currentTurnIndex >= filteredTurns.length - 1}>
+          Next
+        </button>
+        <label>
+          Jump turn
+          <input
+            inputMode="numeric"
+            pattern="[0-9]*"
+            placeholder="turn"
+            value={jumpTurn}
+            onChange={(event) => setJumpTurn(event.target.value.replace(/\D/g, ""))}
+          />
+        </label>
+        <button type="button" onClick={handleJumpToTurn} disabled={!filteredTurns.length}>
+          Jump to turn
+        </button>
+        <button type="button" onClick={() => setIsPlaying(false)} disabled={!isPlaying}>
+          Pause
+        </button>
+        <span className="badge">{isPlaying ? "Replay started" : "Replay paused"}</span>
+        <span className="badge">Current turn: {currentTurn?.turn ?? "none"}</span>
+      </div>
       {error && <p className="error">{error}</p>}
       {error && error.toLowerCase().includes("debug") && <p className="muted">debug disabled</p>}
       {dryRunError && <p className="error">{dryRunError}</p>}
@@ -20177,21 +22896,22 @@ function TimelineReplayPanel({
             <span>{eventCount} events</span>
             <span>{deltaCount} deltas</span>
             <span>{timeline.turns.length} turns</span>
+            <span>visible/system-safe replay only</span>
           </div>
           {replaySummary && <ReplaySummaryView summary={replaySummary} />}
           {filteredTurns.length === 0 ? (
-            <EmptyState title="No timeline events." detail="Try another filter or load a session/save replay." />
+            <EmptyState title="No replay events match this view." detail="Try another event type, actor, or turn range. Hidden/debug-only events stay out of the normal replay view." />
           ) : (
             <div className="timeline-turns">
               {filteredTurns.map((turnGroup) => (
-                <section className="timeline-turn" key={turnGroup.turn}>
+                <section className={`timeline-turn ${currentTurn?.turn === turnGroup.turn ? "active" : ""}`} key={turnGroup.turn}>
                   <h3>
                     Turn {turnGroup.turn}
                     <span>{turnGroup.events.length} events</span>
                     <span>{turnGroup.events.reduce((total, event) => total + event.delta_count, 0)} deltas</span>
                   </h3>
                   {turnGroup.events.map((event) => (
-                    <TimelineEventCard event={event} key={event.event_id} />
+                    <TimelineEventCard event={event} debugEnabled={debugEnabled} key={event.event_id} />
                   ))}
                 </section>
               ))}
@@ -20199,7 +22919,7 @@ function TimelineReplayPanel({
           )}
         </>
       ) : (
-        !error && <EmptyState title="No replay loaded." detail="Load a debug session or save replay." />
+        !error && <EmptyState title="No replay data loaded." detail="Load a session replay or save replay. Replay is read-only and never writes GameState or EventLog." />
       )}
     </section>
   );
@@ -20234,14 +22954,11 @@ function ReplaySummaryView({ summary }: { summary: NonNullable<TimelineReplayRes
   );
 }
 
-function TimelineEventCard({ event }: { event: TimelineEventView }) {
-  const deltaSummary = event.state_deltas
-    .slice(0, 3)
-    .map((delta) => `${delta.operation} ${delta.path}`)
-    .join("; ");
+function TimelineEventCard({ event, debugEnabled }: { event: TimelineEventView; debugEnabled: boolean }) {
   return (
     <details className={`timeline-event replay-event ${event.event_kind}`}>
       <summary>
+        <span>Turn {event.turn}</span>
         <span>#{event.event_id}</span>
         <span>{event.event_kind}</span>
         <span>{event.action_type}</span>
@@ -20250,14 +22967,17 @@ function TimelineEventCard({ event }: { event: TimelineEventView }) {
       </summary>
       <dl className="event-details">
         <dt>Visible</dt>
-        <dd>{event.visible_to_player ? "yes" : "no"}</dd>
+        <dd>{event.visible_to_player ? "yes" : event.visible_changes.length > 0 ? "visible changes only" : "debug-gated"}</dd>
         <dt>Target</dt>
         <dd>{event.target_id ?? "None"}</dd>
         <dt>Created</dt>
         <dd>{event.created_at}</dd>
-        <dt>Delta summary</dt>
-        <dd>{deltaSummary || "No deltas"}</dd>
+        <dt>State changes</dt>
+        <dd>{event.delta_count} debug-gated change(s)</dd>
       </dl>
+      <p className="muted">
+        Event safe summary only. Hidden facts and raw StateDelta payloads are not shown in normal replay view.
+      </p>
       {event.visible_changes.length > 0 && (
         <div>
           <strong>Visible changes</strong>
@@ -20271,30 +22991,47 @@ function TimelineEventCard({ event }: { event: TimelineEventView }) {
           </ul>
         </div>
       )}
-      <details>
-        <summary>StateDelta details ({event.state_deltas.length})</summary>
-        <pre>{JSON.stringify(event.state_deltas, null, 2)}</pre>
-      </details>
+      <DebugGate debugEnabled={debugEnabled} title="Timeline Replay Debug Details">
+        <details>
+          <summary>Debug StateDelta details ({event.state_deltas.length})</summary>
+          <pre>{JSON.stringify(redactDebugText(event.state_deltas), null, 2)}</pre>
+        </details>
+      </DebugGate>
     </details>
   );
 }
 
 function filterTimelineTurns(
   timeline: TimelineReplayResponse | null,
-  filter: TimelineFilter
+  filters: {
+    eventType: TimelineFilter;
+    actor: string;
+    turnFrom: string;
+    turnTo: string;
+    visibleOnly: boolean;
+  }
 ): TimelineReplayResponse["turns"] {
   if (!timeline) {
     return [];
   }
-  if (filter === "all") {
-    return timeline.turns;
-  }
+  const from = filters.turnFrom ? Number(filters.turnFrom) : null;
+  const to = filters.turnTo ? Number(filters.turnTo) : null;
   return timeline.turns
     .map((turnGroup) => ({
       ...turnGroup,
-      events: turnGroup.events.filter((event) => timelineEventMatchesFilter(event, filter))
+      events: turnGroup.events.filter((event) => {
+        if (from !== null && event.turn < from) return false;
+        if (to !== null && event.turn > to) return false;
+        if (filters.actor && event.actor_id !== filters.actor) return false;
+        if (filters.visibleOnly && !isTimelineEventSafeForNormalReplay(event)) return false;
+        return timelineEventMatchesFilter(event, filters.eventType);
+      })
     }))
     .filter((turnGroup) => turnGroup.events.length > 0);
+}
+
+function isTimelineEventSafeForNormalReplay(event: TimelineEventView): boolean {
+  return event.visible_to_player || event.visible_changes.length > 0;
 }
 
 function timelineEventMatchesFilter(event: TimelineEventView, filter: TimelineFilter): boolean {
@@ -20531,8 +23268,11 @@ function toErrorMessage(error: unknown): string {
 function sanitizeDisplayError(message: string): string {
   return message
     .replace(/sk-[A-Za-z0-9_-]+/g, "sk-[redacted]")
-    .replace(/(authorization\s*[:=]\s*)(bearer\s+)?[A-Za-z0-9._~+/=-]+/gi, "$1[redacted]")
-    .replace(/(api[_-]?key|secret|token|password)\s*[:=]\s*['"]?[^'",\s}]+/gi, "$1=[redacted]")
+    .replace(/(authorization\s*[:=]\s*)(bearer\s+)?[A-Za-z0-9._~+/=-]+/gi, "[redacted authorization]")
+    .replace(/((?:transient[_-]?)?api[_-]?key|secret[_-]?ref|provider[_-]?secret|relay[_-]?token|access[_-]?token|secret|token|password)\s*[:=]\s*['"]?[^'",\s}\]]+/gi, "$1=[redacted]")
+    .replace(/([?&](?:api[_-]?key|key|token|access[_-]?token|secret|signature|sig|auth|authorization)=)[^&#\s"'<>]+/gi, "$1[redacted]")
+    .replace(/(\/(?:token|tokens|key|keys|secret|secrets|bearer|auth)\/)[A-Za-z0-9._~+/=-]{8,}/gi, "$1[redacted]")
+    .replace(/(raw[_\s-]?provider[_\s-]?(?:error|response)|provider[_\s-]?raw[_\s-]?response|raw[_\s-]?response)\s*[:=]\s*[^}\n]+/gi, "[redacted provider response]")
     .replace(/[A-Z]:\\[^\s"'<>]+/g, "[local path redacted]")
     .replace(/\/[^\s"'<>]*(?:\.env|\.db|\.sqlite|logs?|cache|backups?|crash-reports|node_modules|dist)[^\s"'<>]*/gi, "[local path redacted]")
     .replace(/(hidden[_\s-]?facts?|npc[_\s-]?secrets?|raw[_\s-]?prompts?|state[_\s-]?deltas?)\s*[:=]\s*[^}\n]+/gi, "$1=[redacted]")
@@ -20542,8 +23282,8 @@ function sanitizeDisplayError(message: string): string {
 function redactAuthoringPreviewText(value: string): string {
   const sanitized = sanitizeDisplayError(value)
     .replace(/sk-[A-Za-z0-9_-]+/g, "sk-[redacted]")
-    .replace(/(authorization\s*[:=]\s*)(bearer\s+)?[A-Za-z0-9._~+/=-]+/gi, "$1[redacted]")
-    .replace(/(api[_-]?key|provider[_-]?secret|secret[_-]?ref|token|password)\s*[:=]\s*['"]?[^'",\s}]+/gi, "$1=[redacted]");
+    .replace(/(authorization\s*[:=]\s*)(bearer\s+)?[A-Za-z0-9._~+/=-]+/gi, "[redacted authorization]")
+    .replace(/((?:transient[_-]?)?api[_-]?key|provider[_-]?secret|secret[_-]?ref|relay[_-]?token|access[_-]?token|token|password)\s*[:=]\s*['"]?[^'",\s}\]]+/gi, "$1=[redacted]");
   const sensitiveLine = /(hidden|secret|private|npc[_-]?knowledge|witness|raw[_-]?state[_-]?delta|state[_-]?deltas|debug|api[_-]?key|authorization|provider[_-]?secret|mature_only|raw[_-]?prompt)/i;
   return sanitized
     .split(/\r?\n/)

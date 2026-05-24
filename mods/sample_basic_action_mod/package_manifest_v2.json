@@ -1,0 +1,68 @@
+{
+  "package_id": "sample_basic_action_mod",
+  "name": "Sample Basic Action Mod",
+  "version": "1.0.0",
+  "package_type": "action_mod",
+  "description": "Minimal local-only declarative Action Mod sample for checklist and demo use. It is not enabled by default and contains no executable code.",
+  "author": "local-sample",
+  "engine_version_min": "2.6",
+  "engine_version_max": null,
+  "schema_version": "2.6",
+  "target_project_modes": [
+    "world",
+    "quality"
+  ],
+  "target_worlds": [],
+  "dependencies": [],
+  "optional_dependencies": [],
+  "conflicts": [],
+  "permissions": {
+    "content_permissions": {},
+    "action_permissions": {
+      "add_declarative_action": true
+    },
+    "rule_permissions": {},
+    "prompt_permissions": {},
+    "provider_permissions": {},
+    "file_permissions": {},
+    "network_permissions": {},
+    "secret_permissions": {},
+    "state_permissions": {}
+  },
+  "included_files": [
+    {
+      "path": "action_mod.json",
+      "media_type": "application/json",
+      "required": true
+    },
+    {
+      "path": "tests/basic_check.test.json",
+      "media_type": "application/json",
+      "required": true
+    },
+    {
+      "path": "README.md",
+      "media_type": "text/markdown",
+      "required": true
+    }
+  ],
+  "checksums": {},
+  "entry_points": [],
+  "compatibility_notes": [
+    "Local-only declarative sample. No executable runtime code is included."
+  ],
+  "migration_notes": [],
+  "mature_policy": {
+    "contains_mature_content": false,
+    "max_content_rating": "safe",
+    "requires_mature_module": false,
+    "requires_adult_characters": true,
+    "requires_consent": true,
+    "export_restrictions": [],
+    "default_enabled": false,
+    "can_access_hidden_facts": false,
+    "can_bypass_boundary": false,
+    "can_bypass_provider_policy": false
+  },
+  "created_at": "2026-05-24T00:00:00Z"
+}

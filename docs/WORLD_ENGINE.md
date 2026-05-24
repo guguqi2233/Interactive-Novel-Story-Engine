@@ -143,6 +143,36 @@ Authoring / Mod UI rules:
   mature/private content, executable payloads, path traversal, and zip slip by
   default.
 
+v3.5 focuses on Local QA / Debug / Replay & Provider Connectivity UI Pro.
+Timeline Replay, EventLog Viewer, StateDelta Viewer, Visible vs Debug Compare,
+Hidden Leak Report, Playtest, Quality Gate, Performance, Save Migration,
+Diagnostics, Safe Debug Export, and Provider Connectivity panels are local
+observation/configuration surfaces. They do not change World Engine fact
+authority.
+
+QA / Debug / Replay rules:
+
+- Replay UI is read-only. It may select saves/sessions, filter events, and step
+  through safe replay summaries, but it must not write `GameState`, rewrite
+  `EventLog`, or apply `StateDelta`.
+- EventLog Viewer normal view shows safe event summaries and linked delta
+  counts only. Raw event JSON and raw StateDelta payloads require a
+  debug-gated view.
+- StateDelta Viewer and Visible vs Debug State Compare are debug-sensitive
+  tools. They require `ENABLE_DEBUG_API`, must redact sensitive values, and
+  must never offer an apply-delta or edit-state action.
+- Hidden Leak, Quality, Playtest, CrossMode Conflict, Module Stress,
+  Performance, Diagnostics, and Debug Export reports are analysis surfaces.
+  They may produce blockers/warnings/safe suggestions, but they do not become
+  World facts and do not alter active saves.
+- Safe Debug Export defaults to safe summaries, requires explicit confirmation
+  for raw debug selections, excludes API keys/provider secrets/raw env, and
+  does not upload debug material.
+- Provider Connectivity, Model Discovery, Model Assignment, and Provider Usage
+  configure or summarize Provider Gateway metadata only. They do not let a
+  provider decide facts, action success, StateDelta application, EventLog
+  writes, or visibility.
+
 ## v2.8 Roleplay Immersion & Mature Module Integration
 
 v2.8 strengthens Tavern/RP immersion and adds default-off mature safety policy

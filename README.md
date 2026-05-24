@@ -11,8 +11,12 @@ experience-first. The near-term roadmap is now:
 - v3.2: Tavern Studio UI Pro
 - v3.3: World Studio UI Pro
 - v3.4: Authoring / Mod UI Pro
-- v3.5: Local QA / Debug / Replay UI Pro
-- v3.6: Local Performance & Accessibility Polish
+- v3.5: Local QA / Debug / Replay & Provider Connectivity UI Pro
+- v3.6: Local Performance & Accessibility Polish, including provider model
+  list performance, capability matrix performance, and provider UI
+  accessibility polish
+- v3.7: Local Complete Product
+- v4.0: Local AI Narrative Studio Stable
 
 Online-Ready Architecture, account systems, cloud sync, online marketplaces,
 remote package registries, online narrative platforms, and online mature-content
@@ -21,6 +25,48 @@ only after the local privacy, export, provider, package, and UI boundaries are
 stable. The project remains local-first: API keys stay local, are not uploaded,
 are not synchronized, do not enter frontend code, and do not enter exports,
 mods, packages, logs, or documentation examples.
+
+### v3.5-v3.7 Provider Connectivity Roadmap
+
+Provider Connection & Model Discovery is now part of the local v3.5-v3.7 plan.
+It is a local configuration and diagnostics workflow for the existing Provider
+Gateway, not an online platform, account system, cloud sync feature, online
+marketplace, remote package downloader, or API resale service.
+
+v3.5 provider surfaces:
+
+- Provider Connectivity Dashboard for local provider profile status.
+- Provider Connection Test for `openai`, `openai_compatible`, `relay`,
+  `local_http`, `custom`, `mock`, and `local_stub` provider profiles through
+  the Provider Gateway.
+- Provider Model Discovery to read available model lists from the configured
+  provider endpoint and save safe metadata as `ModelProfile` records.
+- Provider Model Assignment by Mode for Novel, Tavern, World, Cross-Mode, and
+  Quality use cases.
+
+Provider connectivity boundaries:
+
+- `ProviderProfile` may store only `api_key_env` or `secret_ref`, never a raw
+  API key.
+- `transient_api_key` may be used only for one connection test. It is not
+  persisted and must not enter logs, diagnostics, backups, exports, prompt
+  profiles, project files, or frontend state.
+- Model discovery stores model ids and safe capability metadata as
+  `ModelProfile`; it does not store credentials or raw provider responses that
+  contain secrets.
+- Relay configuration means OpenAI-compatible or custom base URL metadata. It
+  is not a specific relay vendor integration and not an API resale service.
+- Tests and CI must use fake providers or fake clients. They must not call real
+  OpenAI, OpenAI-compatible, relay, local HTTP, or custom provider endpoints by
+  default.
+
+v3.6 should polish provider model list performance, capability matrix
+performance, cache invalidation UX, and accessibility for provider setup,
+connection results, model discovery, and mode assignment screens. v3.7 Local
+Complete Product acceptance should include provider connection tests, model
+list discovery, local model-profile synchronization, and mode-based assignment
+for Novel, Tavern, World, Cross-Mode, and Quality while preserving Provider
+Gateway as the only model entry point.
 
 ## v3.0 Local Desktop Studio Polish
 
@@ -344,6 +390,82 @@ python -m pytest backend/tests/test_v34_integration_regression.py
 cd frontend
 npm.cmd run build
 npm.cmd run check:v34-authoring-ui
+```
+
+## v3.5 Local QA / Debug / Replay & Provider Connectivity UI Pro
+
+v3.5 polishes the local QA, Debug, Replay, Quality, Diagnostics, and Provider
+Connectivity workflow. It is a local observability and configuration release,
+not an online QA platform, account system, cloud sync feature, marketplace,
+remote package downloader, API resale service, or real-provider CI test suite.
+
+Implemented v3.5 QA / Debug / Provider surfaces:
+
+- Timeline Replay UI for local replay session/save selection, event timeline
+  filtering, replay controls, and player-visible event summaries.
+- EventLog Viewer Pro for safe event-list filtering by turn, type, actor,
+  module, and tags. Raw EventLog JSON is not shown in normal view.
+- StateDelta Viewer Pro for debug-sensitive StateDelta inspection inside
+  `DebugGate`; normal UI does not render raw `state_deltas`.
+- Visible vs Debug State Compare for debug-gated visibility checks with
+  redacted filtered-field summaries.
+- Hidden Leak Report UI Pro for visible_state, prompt, Tavern, Novel, World UI,
+  export, diagnostics, backup, and debug leak categories.
+- Playtest Dashboard Pro, Unified Quality Gate Dashboard Pro, Module Playtest /
+  Stress UI Pro, and CrossMode Conflict Review Pro for local deterministic safe
+  reports.
+- Performance Dashboard Pro for local API duration, save/load duration,
+  EventLog size, replay duration, provider duration, quality-gate duration,
+  playtest duration, and build/chunk warning summaries.
+- Provider Connectivity Dashboard for local provider status, model counts,
+  last-tested time, allowed modes, default model, warnings, connection test,
+  model fetch/refresh, setup, and model assignment entry points.
+- Provider Connection Test backend for `openai`, `openai_compatible`, `relay`,
+  `local_http`, `custom`, `mock`, and `local_stub` profiles using fake clients
+  in tests.
+- Provider Model Discovery / Sync for OpenAI-compatible model-list responses,
+  custom model-list endpoints, unsupported-list status, manual model ids, and
+  safe `ModelProfile` synchronization.
+- Provider Model Assignment by Mode for Novel draft/rewrite, Tavern reply,
+  multi-NPC reply, World intent parsing/narration, memory summary, Cross-Mode
+  draft, structured JSON, Quality, and cheap-summary use cases.
+- Provider Usage / Cost Dashboard Pro for local token/cost estimates, latency,
+  error count, and provider/model/mode/use-case distribution without prompt or
+  output bodies.
+- Save Migration Visualizer, Diagnostics Bundle Review UI, Local Test Run
+  Dashboard, and Safe Debug Export Wizard for local dry-run/preview/confirm
+  workflows.
+
+v3.5 boundaries:
+
+- Debug, replay, diagnostics, and QA views observe and analyze only. They do
+  not modify `GameState`, apply `StateDelta`, rewrite `EventLog`, or decide
+  World facts.
+- Raw `state_deltas`, raw debug payloads, debug compare reports, and debug
+  exports require `DebugGate` plus `ENABLE_DEBUG_API`.
+- Normal QA/Replay UI uses safe summaries and must not show hidden facts, NPC
+  secrets, debug memory, raw prompts, raw `state_deltas`, API keys, raw env, or
+  provider secrets.
+- Provider Gateway remains the only model entry point. Model discovery and
+  assignment configure local routing metadata only; they do not let a provider
+  judge world facts or bypass World Engine rules.
+- `ProviderProfile` stores `api_key_env` / `secret_ref` references only.
+  `transient_api_key` is allowed only for a one-time connection/model-list
+  operation and is not persisted, logged, exported, backed up, included in
+  diagnostics, or stored in frontend state.
+- Relay means generic OpenAI-compatible/custom base URL configuration. It is
+  not a specific relay-vendor integration and not an API resale service.
+- Tests and CI use fake provider/fake client paths. They must not call real
+  provider networks by default.
+
+Useful v3.5 checks:
+
+```powershell
+python -m pytest backend/tests/test_v35_integration_regression.py
+python -m pytest backend/tests/test_v35_provider_connection_test_backend.py backend/tests/test_v35_provider_model_discovery_sync.py backend/tests/test_v35_provider_redaction.py
+cd frontend
+npm.cmd run build
+npm.cmd run check:v35-qa-debug-provider-ui
 ```
 
 ## v2.9 Local UI / UX Foundation
@@ -3316,6 +3438,31 @@ Frontend build:
 cd frontend
 npm run build
 ```
+
+## Running Backend Tools Locally
+
+Most release, quality, compatibility, and diagnostics tools can be run with the
+`backend.app.tools` module path from the repository root. A few lower-level
+`app.tools` entrypoints need `PYTHONPATH=backend`. To avoid that footgun, use the
+local allowlisted wrapper:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run_tool.ps1 compatibility_matrix --json
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run_tool.ps1 generate_contract_docs --check
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run_tool.ps1 project_quality_gate backend/tests/fixtures/projects/minimal_valid_project --json --skip-world-quality-gate
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run_tool.ps1 mod_quality_gate mods/sample_basic_action_mod --json
+```
+
+```bash
+scripts/run_tool.sh compatibility_matrix --json
+scripts/run_tool.sh generate_contract_docs --check
+scripts/run_tool.sh project_quality_gate backend/tests/fixtures/projects/minimal_valid_project --json --skip-world-quality-gate
+scripts/run_tool.sh mod_quality_gate mods/sample_basic_action_mod --json
+```
+
+The wrapper sets `PYTHONPATH=backend`, runs only known backend tool modules, and
+does not accept arbitrary shell commands. It is local-only and does not print raw
+environment values, API keys, or provider secrets.
 
 ## Content Pack Files
 

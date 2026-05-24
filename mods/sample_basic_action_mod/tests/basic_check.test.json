@@ -1,0 +1,45 @@
+[
+  {
+    "test_id": "sample_basic_check_success",
+    "action_id": "sample.basic_check",
+    "input_intent": {
+      "raw_text": "check surroundings",
+      "confidence": 1.0,
+      "requires_clarification": false
+    },
+    "initial_state_fixture": {
+      "world_id": "sample_world",
+      "turn": 0,
+      "locations": {
+        "square": {
+          "id": "square",
+          "name": "Sample Square"
+        }
+      },
+      "player": {
+        "id": "player",
+        "location_id": "square"
+      }
+    },
+    "expected_result_type": "success",
+    "expected_state_deltas": [
+      {
+        "operation": "set",
+        "path": "flags.sample_basic_check_done",
+        "value": true
+      },
+      {
+        "operation": "set",
+        "path": "current_time"
+      }
+    ],
+    "forbidden_visible_text_patterns": [
+      "api[_-]?key",
+      "secret",
+      "state_deltas"
+    ],
+    "expected_event_tags": [
+      "sample.basic_check"
+    ]
+  }
+]

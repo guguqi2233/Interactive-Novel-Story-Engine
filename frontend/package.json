@@ -12,6 +12,7 @@
     "check:v32-tavern-ui": "node scripts/check-v32-tavern-ui.mjs",
     "check:v33-world-ui": "node scripts/check-v33-world-ui.mjs",
     "check:v34-authoring-ui": "node scripts/check-v34-authoring-ui.mjs",
+    "check:v35-qa-debug-provider-ui": "node scripts/check-v35-qa-debug-provider-ui.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

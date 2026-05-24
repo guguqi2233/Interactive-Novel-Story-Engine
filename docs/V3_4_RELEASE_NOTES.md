@@ -249,12 +249,18 @@ npm.cmd run check:v34-authoring-ui
 
 ## 15. Recommended v3.5 Direction
 
-Recommended v3.5 theme: **Local QA / Debug / Replay UI Pro**.
+Recommended v3.5 theme: **Local QA / Debug / Replay & Provider Connectivity
+UI Pro**.
 
 Suggested priorities:
 
 - Consolidate local QA, debug, replay, timeline, diagnostics, and quality
   surfaces into a clearer workspace.
+- Add local Provider Connectivity Dashboard, Provider Connection Test, Provider
+  Model Discovery / Sync, Provider Model Assignment by Mode, provider
+  diagnostics redaction, and Provider Usage / Cost Dashboard. These must remain
+  local Provider Gateway configuration workflows, not API resale, online
+  accounts, cloud sync, or real-provider CI checks.
 - Add a shared backend Safe Apply contract for all authoring editor writes.
 - Complete the missing v3.4 Authoring Accessibility / Usability audit and fold
   findings into v3.5/v3.6 polish.

@@ -546,6 +546,25 @@ from app.llm.provider_profiles import (
     ProviderProfileV2,
     build_model_capability_matrix,
 )
+from app.llm.provider_connection_test import (
+    ProviderConnectionStatus,
+    ProviderConnectionTestRequest,
+    build_provider_profile_for_connection_test,
+    test_provider_connection_safe,
+)
+from app.llm.provider_model_discovery import (
+    ProviderModelFetchRequest,
+    ProviderModelPatchRequest,
+    ProviderModelSyncRequest,
+    build_provider_profile_for_model_request,
+    fetch_provider_models_safe,
+    sync_provider_models_safe,
+)
+from app.llm.provider_model_assignment import (
+    ProviderModelAssignmentRepository,
+    apply_provider_model_assignments,
+    validate_provider_model_assignments,
+)
 from app.llm.structured_output_reliability import (
     StructuredOutputReliabilityReport,
     StructuredOutputReliabilityRun,
@@ -6358,9 +6377,16 @@ def create_project_provider_profile(project_id: str, payload: dict[str, Any]) ->
     try:
         profile = ProviderProfileV2.model_validate(payload)
     except ValidationError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=_safe_provider_profile_validation_detail(exc)) from exc
     saved = get_provider_profile_repository(project_id).create_provider_profile(profile)
     return {"local_only": True, "provider": saved.safe_summary()}
+
+
+def _safe_provider_profile_validation_detail(exc: ValidationError | ValueError) -> dict[str, Any]:
+    if isinstance(exc, ValidationError):
+        fields = sorted({".".join(str(part) for part in error.get("loc", ())) for error in exc.errors(include_input=False)})
+        return {"error": "provider_profile_validation_failed", "fields": fields}
+    return {"error": "provider_profile_validation_failed"}
 
 
 @app.get("/projects/{project_id}/providers/capability-matrix", response_model=dict[str, Any])
@@ -6371,16 +6397,99 @@ def get_project_provider_capability_matrix(project_id: str) -> dict[str, Any]:
     return {"local_only": True, "matrix": matrix.safe_summary()}
 
 
+@app.post("/projects/{project_id}/providers/test-connection", response_model=ProviderConnectionStatus)
+def test_project_provider_connection_from_payload(project_id: str, payload: ProviderConnectionTestRequest) -> ProviderConnectionStatus:
+    require_authoring_api()
+    repo = get_provider_profile_repository(project_id)
+    existing_profile = repo.load_provider_profile(payload.provider_profile_id) if payload.provider_profile_id else None
+    profile = build_provider_profile_for_connection_test(payload, existing_profile=existing_profile)
+    return test_provider_connection_safe(profile, payload)
+
+
+@app.post("/projects/{project_id}/providers/fetch-models", response_model=dict[str, Any])
+def fetch_project_provider_models(project_id: str, payload: ProviderModelFetchRequest) -> dict[str, Any]:
+    require_authoring_api()
+    repo = get_provider_profile_repository(project_id)
+    existing_profile = repo.load_provider_profile(payload.provider_profile_id) if payload.provider_profile_id else None
+    profile = build_provider_profile_for_model_request(payload, existing_profile=existing_profile)
+    report = fetch_provider_models_safe(profile, payload)
+    return {"local_only": True, "report": report.model_dump(mode="json", exclude_none=True)}
+
+
+@app.post("/projects/{project_id}/providers/sync-models", response_model=dict[str, Any])
+def sync_project_provider_models(project_id: str, payload: ProviderModelSyncRequest) -> dict[str, Any]:
+    require_authoring_api()
+    if not payload.provider_profile_id:
+        raise HTTPException(status_code=422, detail="provider_profile_id is required for sync")
+    repo = get_provider_profile_repository(project_id)
+    profile = repo.load_provider_profile(payload.provider_profile_id)
+    candidate = build_provider_profile_for_model_request(payload, existing_profile=profile)
+    synced_profile, report = sync_provider_models_safe(candidate, payload)
+    if report.status == "ok":
+        repo.save_provider_profile(synced_profile)
+    return {"local_only": True, "report": report.model_dump(mode="json", exclude_none=True)}
+
+
+@app.get("/projects/{project_id}/providers/model-assignments", response_model=dict[str, Any])
+def get_project_provider_model_assignments(project_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    project = get_project_repository().load_project(project_id)
+    repo = get_provider_profile_repository(project_id)
+    config = ProviderModelAssignmentRepository(project.project_root).load()
+    summary = validate_provider_model_assignments(config, repo.list_provider_profiles())
+    return summary.model_dump(mode="json")
+
+
+@app.post("/projects/{project_id}/providers/model-assignments/validate", response_model=dict[str, Any])
+def validate_project_provider_model_assignments(project_id: str, config: ProviderRoutingConfig) -> dict[str, Any]:
+    require_authoring_api()
+    profiles = get_provider_profile_repository(project_id).list_provider_profiles()
+    summary = validate_provider_model_assignments(config, profiles)
+    return summary.model_dump(mode="json")
+
+
+@app.post("/projects/{project_id}/providers/model-assignments/save", response_model=dict[str, Any])
+def save_project_provider_model_assignments(project_id: str, config: ProviderRoutingConfig) -> dict[str, Any]:
+    require_authoring_api()
+    project = get_project_repository().load_project(project_id)
+    profiles = get_provider_profile_repository(project_id).list_provider_profiles()
+    summary = apply_provider_model_assignments(config, profiles)
+    if any(not report.ok for report in summary.validation_reports):
+        raise HTTPException(status_code=400, detail=summary.model_dump_safe())
+    saved = ProviderModelAssignmentRepository(project.project_root).save(config)
+    return validate_provider_model_assignments(saved, profiles).model_dump(mode="json")
+
+
 @app.get("/projects/{project_id}/providers/{provider_profile_id}", response_model=dict[str, Any])
 def get_project_provider_profile(project_id: str, provider_profile_id: str) -> dict[str, Any]:
     require_authoring_api()
     return {"local_only": True, "provider": get_provider_profile_repository(project_id).load_provider_profile(provider_profile_id).safe_summary()}
 
 
+@app.get("/projects/{project_id}/providers/{provider_profile_id}/models", response_model=dict[str, Any])
+def list_project_provider_models(project_id: str, provider_profile_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    profile = get_provider_profile_repository(project_id).load_provider_profile(provider_profile_id)
+    return {"local_only": True, "provider_profile_id": provider_profile_id, "models": [model.safe_summary() for model in profile.model_profiles]}
+
+
+@app.patch("/projects/{project_id}/providers/{provider_profile_id}/models", response_model=dict[str, Any])
+def patch_project_provider_models(project_id: str, provider_profile_id: str, payload: ProviderModelPatchRequest) -> dict[str, Any]:
+    require_authoring_api()
+    repo = get_provider_profile_repository(project_id)
+    profile = repo.load_provider_profile(provider_profile_id)
+    models = [model.model_copy(update={"provider_profile_id": provider_profile_id}) for model in payload.models]
+    saved = repo.save_provider_profile(profile.model_copy(update={"model_profiles": models}))
+    return {"local_only": True, "provider_profile_id": provider_profile_id, "models": [model.safe_summary() for model in saved.model_profiles]}
+
+
 @app.patch("/projects/{project_id}/providers/{provider_profile_id}", response_model=dict[str, Any])
 def update_project_provider_profile(project_id: str, provider_profile_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     require_authoring_api()
-    profile = get_provider_profile_repository(project_id).update_provider_profile(provider_profile_id, payload)
+    try:
+        profile = get_provider_profile_repository(project_id).update_provider_profile(provider_profile_id, payload)
+    except (ValidationError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=_safe_provider_profile_validation_detail(exc)) from exc
     return {"local_only": True, "provider": profile.safe_summary()}
 
 

@@ -2454,6 +2454,14 @@ export type DiagnosticsBundlePreview = {
   warnings: string[];
 };
 
+export type DiagnosticsBundleCreateResponse = {
+  local_only: boolean;
+  created: boolean;
+  bundle_path_summary?: string | null;
+  manifest: DiagnosticsBundleManifest;
+  warnings: string[];
+};
+
 export type CrashReport = {
   id: string;
   timestamp: string;
@@ -2757,6 +2765,7 @@ export type ProviderRoutingUseCase =
   | "novel_draft"
   | "novel_rewrite"
   | "tavern_reply"
+  | "multi_npc_reply"
   | "world_intent_parse"
   | "world_narration"
   | "cross_mode_draft"
@@ -2801,6 +2810,11 @@ export type ProviderRoutingSummary = {
   rules: ProviderRoutingRule[];
   validation_reports: ProviderRoutingValidationReport[];
   warnings: string[];
+};
+
+export type ProjectProviderModelAssignmentSummary = ProviderRoutingSummary & {
+  supported_use_cases: ProviderRoutingUseCase[];
+  fallback_chains: Record<string, string[]>;
 };
 
 export type ProviderRoutingPreview = {
@@ -2857,6 +2871,9 @@ export type ProviderProfileSummary = {
     supports_tools?: boolean;
     supports_streaming?: boolean;
     recommended_use_cases?: string[];
+    provider_profile_id?: string | null;
+    enabled?: boolean;
+    last_seen_at?: string | null;
   }>;
   capabilities?: string[];
   allowed_modes?: string[];
@@ -3236,11 +3253,19 @@ export async function fetchLocalLogs(limit = 50): Promise<LocalLogListResponse> 
   return requestJson<LocalLogListResponse>(`/local-studio/logs/recent?limit=${limit}`);
 }
 
-export async function previewDiagnosticsBundle(projectId: string, includeDebug = false): Promise<DiagnosticsBundlePreview> {
+export async function previewDiagnosticsBundle(projectId: string, includeDebug = false, explicitConfirmDebug = false): Promise<DiagnosticsBundlePreview> {
   return requestJson<DiagnosticsBundlePreview>("/local-studio/diagnostics/preview", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ project_id: projectId || "local_project", include_debug: includeDebug, explicit_confirm_debug: false })
+    body: JSON.stringify({ project_id: projectId || "local_project", include_debug: includeDebug, explicit_confirm_debug: explicitConfirmDebug })
+  });
+}
+
+export async function createDiagnosticsBundle(projectId: string, includeDebug = false, explicitConfirmDebug = false): Promise<DiagnosticsBundleCreateResponse> {
+  return requestJson<DiagnosticsBundleCreateResponse>("/local-studio/diagnostics", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ project_id: projectId || "local_project", include_debug: includeDebug, explicit_confirm_debug: explicitConfirmDebug })
   });
 }
 
@@ -3464,6 +3489,26 @@ export async function fetchProjectProviderStatus(projectId: string, providerProf
 
 export async function fetchProjectProviderCapabilityMatrix(projectId: string): Promise<{ local_only: boolean; matrix: ProviderModelCapabilityMatrix }> {
   return requestJson<{ local_only: boolean; matrix: ProviderModelCapabilityMatrix }>(`/projects/${encodeURIComponent(projectId)}/providers/capability-matrix`);
+}
+
+export async function fetchProjectProviderModelAssignments(projectId: string): Promise<ProjectProviderModelAssignmentSummary> {
+  return requestJson<ProjectProviderModelAssignmentSummary>(`/projects/${encodeURIComponent(projectId)}/providers/model-assignments`);
+}
+
+export async function validateProjectProviderModelAssignments(projectId: string, config: ProviderRoutingConfig): Promise<ProjectProviderModelAssignmentSummary> {
+  return requestJson<ProjectProviderModelAssignmentSummary>(`/projects/${encodeURIComponent(projectId)}/providers/model-assignments/validate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(config)
+  });
+}
+
+export async function saveProjectProviderModelAssignments(projectId: string, config: ProviderRoutingConfig): Promise<ProjectProviderModelAssignmentSummary> {
+  return requestJson<ProjectProviderModelAssignmentSummary>(`/projects/${encodeURIComponent(projectId)}/providers/model-assignments/save`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(config)
+  });
 }
 
 export async function fetchProjectProviderUsageSummary(projectId: string, sinceMinutes?: number): Promise<ModelUsageSummary> {
@@ -6210,7 +6255,7 @@ export type CrossModeLinkReviewReport = {
 export type CrossModeConflictReport = {
   project_id: string;
   ok: boolean;
-  conflicts: Array<{ conflict_id: string; conflict_type: string; severity: string; safe_summary: string; status: string }>;
+  conflicts: Array<{ conflict_id: string; conflict_type: string; severity: string; affected_refs?: string[]; safe_summary: string; status: string }>;
 };
 
 export type CrossModeAuditRecord = {
@@ -6758,8 +6803,11 @@ function extractErrorInfo(payload: unknown): { message: string; code?: string } 
 function redactSensitiveText(value: string): string {
   return value
     .replace(/sk-[A-Za-z0-9_-]+/g, "sk-[redacted]")
-    .replace(/(authorization\s*[:=]\s*)(bearer\s+)?[A-Za-z0-9._~+/=-]+/gi, "$1[redacted]")
-    .replace(/(api[_-]?key|secret|token|password)\s*[:=]\s*['"]?[^'",\s}]+/gi, "$1=[redacted]")
+    .replace(/(authorization\s*[:=]\s*)(bearer\s+)?[A-Za-z0-9._~+/=-]+/gi, "[redacted authorization]")
+    .replace(/((?:transient[_-]?)?api[_-]?key|secret[_-]?ref|provider[_-]?secret|relay[_-]?token|access[_-]?token|secret|token|password)\s*[:=]\s*['"]?[^'",\s}\]]+/gi, "$1=[redacted]")
+    .replace(/([?&](?:api[_-]?key|key|token|access[_-]?token|secret|signature|sig|auth|authorization)=)[^&#\s"'<>]+/gi, "$1[redacted]")
+    .replace(/(\/(?:token|tokens|key|keys|secret|secrets|bearer|auth)\/)[A-Za-z0-9._~+/=-]{8,}/gi, "$1[redacted]")
+    .replace(/(raw[_\s-]?provider[_\s-]?(?:error|response)|provider[_\s-]?raw[_\s-]?response|raw[_\s-]?response)\s*[:=]\s*[^}\n]+/gi, "[redacted provider response]")
     .replace(/[A-Z]:\\[^\s"'<>]+/g, "[local path redacted]")
     .replace(/\/[^\s"'<>]*(?:\.env|\.db|\.sqlite|logs?|cache|backups?|crash-reports|node_modules|dist)[^\s"'<>]*/gi, "[local path redacted]")
     .replace(/(hidden[_\s-]?facts?|npc[_\s-]?secrets?|raw[_\s-]?prompts?|state[_\s-]?deltas?)\s*[:=]\s*[^}\n]+/gi, "$1=[redacted]")

@@ -7,6 +7,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from app.desktop.studio_policy import redact_desktop_secret_text
+from app.llm.provider_redaction import provider_redactor
 
 
 LogLevel = Literal["debug", "info", "warning", "error", "unknown"]
@@ -36,7 +37,8 @@ class LocalLogService:
 
     def redact_log_line(self, line: str) -> tuple[str, bool]:
         redacted = redact_desktop_secret_text(line)
-        return redacted.text, redacted.redaction_count > 0
+        provider_redacted = provider_redactor.redact_text(redacted.text)
+        return provider_redacted.text, redacted.redaction_count + provider_redacted.redaction_count > 0
 
     def list_safe_logs(
         self,

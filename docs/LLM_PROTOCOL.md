@@ -384,6 +384,72 @@ Provider API and UI rules:
   The project does not provide API resale, online billing, cloud accounts, or
   vendor-specific relay integrations.
 
+### v3.5 Provider Connection & Model Discovery Boundary
+
+v3.5 adds Provider Connectivity UI Pro to the local QA/debug/replay roadmap.
+Provider connection testing and model discovery are local configuration
+workflows for Provider Gateway. They do not create a new provider entry point,
+online platform, API resale service, account system, cloud sync feature, online
+marketplace, or remote package download feature.
+
+Supported local provider profile types for this workflow are `openai`,
+`openai_compatible`, `relay`, `local_http`, `custom`, `mock`, and
+`local_stub`. `relay` means a generic OpenAI-compatible/custom base URL
+configuration. The project must not claim support for a specific relay provider
+or resell API access.
+
+Connection testing rules:
+
+- `ProviderProfile` may persist only provider metadata, `api_key_env`, or
+  `secret_ref`; it must not persist raw API keys.
+- A `transient_api_key` may be accepted only for a single connection test. It
+  must not be written to project files, provider profiles, prompt profiles,
+  package manifests, logs, diagnostics, backups, exports, usage records, call
+  traces, crash reports, or frontend state.
+- Connection test reports must contain only safe status, provider/profile id,
+  model id when applicable, capability hints, latency/error category, and
+  redacted messages.
+- Tests and CI must use fake providers or fake clients and must not call real
+  OpenAI, OpenAI-compatible, relay, local HTTP, or custom provider endpoints by
+  default.
+
+Model discovery rules:
+
+- Model list discovery may read model ids and safe capability metadata through
+  the configured provider connection path.
+- Discovered models are saved as `ModelProfile` records containing safe
+  metadata such as model id, display label, context-window hint,
+  structured-output support, modality/capability hints, and recommended use
+  cases.
+- Raw provider responses must be normalized and redacted before storage or UI
+  display. Secrets, raw env, Authorization headers, request bodies, prompt
+  text, output text, hidden facts, debug memory, and raw `state_deltas` must
+  not be stored.
+
+Mode assignment rules:
+
+- Users may assign discovered or manually configured models to Novel, Tavern,
+  World, Cross-Mode, and Quality use cases.
+- Assignment records are Provider Gateway routing metadata only. They do not
+  allow frontend code to call providers directly and do not grant access to
+  hidden facts, NPC secrets, raw prompts, raw `GameState`, raw `state_deltas`,
+  or proposal apply authority.
+- Provider Gateway remains the only model entry point. World Engine,
+  `StateDelta`, `EventLog`, visibility, validation, and quality gate boundaries
+  remain unchanged.
+- Model discovery is not a capability grant. A discovered model can be assigned
+  to a mode/use case only as Provider Gateway routing metadata; it cannot judge
+  World facts, apply proposals, bypass visibility, or override deterministic
+  rules.
+- Provider Usage / Cost Dashboard stores local estimates for provider/model,
+  mode, use case, token counts, duration, success/error, and cost hints only.
+  It must not store full prompts, full outputs, API keys, hidden facts,
+  mature/private bodies, debug memory, or raw `state_deltas`.
+- Provider connectivity diagnostics, logs, diagnostics bundles, backups,
+  exports, and frontend error states must redact `transient_api_key`,
+  `api_key_env` values, `secret_ref` values, Authorization headers, token-like
+  base URL segments, raw provider errors, and raw provider responses.
+
 ## v2.4 Cross-Mode Bridge LLM Boundary
 
 v2.4 Cross-Mode Bridge does not grant the LLM any new world authority. Cross

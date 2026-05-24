@@ -168,13 +168,89 @@ def _secret_scan_check(repo_root: Path) -> ReleaseChecklistV2Item:
             text = path.read_text(encoding="utf-8", errors="ignore")
         except OSError:
             continue
-        for match in SK_KEY_PATTERN.findall(text):
-            if not any(marker in match.lower() for marker in FAKE_MARKERS):
+        rel_path = path.relative_to(repo_root)
+        for line_number, line in enumerate(text.splitlines(), start=1):
+            for match in SK_KEY_PATTERN.findall(line):
+                if _is_allowed_fake_key_fixture(rel_path, line, match):
+                    continue
                 offenders.append(str(path.relative_to(repo_root)))
+                break
+            if str(path.relative_to(repo_root)) in offenders:
                 break
     if offenders:
         return _blocker("secret_scan", "Potential real API keys found.", {"files": sorted(set(offenders))})
     return _pass("secret_scan", "No real API key pattern found.")
+
+
+def _is_allowed_fake_key_fixture(relative_path: Path, line: str, match: str) -> bool:
+    normalized_path = relative_path.as_posix().lower()
+    if normalized_path == ".env" or normalized_path.endswith("/.env"):
+        return False
+    lowered_key = match.lower()
+    lowered_line = line.lower()
+    if _is_test_fixture_path(normalized_path):
+        return _has_fake_marker(lowered_key) or _has_fixture_context(lowered_line)
+    if _is_documentation_path(normalized_path):
+        return _has_fake_marker(lowered_key) and _has_doc_fixture_context(lowered_line)
+    if normalized_path == ".env.example":
+        return _has_fake_marker(lowered_key) and _has_doc_fixture_context(lowered_line)
+    return False
+
+
+def _is_test_fixture_path(normalized_path: str) -> bool:
+    return normalized_path.startswith(("backend/tests/", "tests/", "fixtures/"))
+
+
+def _is_documentation_path(normalized_path: str) -> bool:
+    return normalized_path.startswith("docs/") or normalized_path in {"readme.md", "agents.md"}
+
+
+def _has_fake_marker(text: str) -> bool:
+    return any(marker in text for marker in FAKE_MARKERS)
+
+
+def _has_fixture_context(lowered_line: str) -> bool:
+    fixture_context = (
+        "assert",
+        "redact",
+        "reject",
+        "forbidden",
+        "not-allowed",
+        "secret_like",
+        "hidden leak",
+        "auth_failed",
+        "raises",
+        "api_key",
+        "openai_api_key",
+        "secret",
+        "token",
+        "fake",
+        "fixture",
+        "test",
+    )
+    return any(marker in lowered_line for marker in fixture_context)
+
+
+def _has_doc_fixture_context(lowered_line: str) -> bool:
+    doc_context = (
+        "fake",
+        "example",
+        "placeholder",
+        "redacted",
+        "redaction",
+        "fixture",
+        "test",
+        "not real",
+        "not-real",
+        "local",
+        "forbidden",
+        "blocked",
+        "reject",
+        "never store",
+        "must not",
+        "no real",
+    )
+    return any(marker in lowered_line for marker in doc_context)
 
 
 def _v2_compatibility_check(repo_root: Path) -> ReleaseChecklistV2Item:

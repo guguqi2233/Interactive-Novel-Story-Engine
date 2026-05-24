@@ -1,0 +1,36 @@
+active_campaign_id: null
+created_at: '2026-05-24T00:00:00+00:00'
+default_world_id: null
+description: Safe local fixture for project quality gate readiness checks.
+engine_version: '0.6.0'
+libraries:
+  character_library: null
+  lore_facts: null
+  memory_library: null
+  prompt_profiles: null
+  provider_profiles: null
+  timeline: null
+  world_bible: null
+migration_history: []
+modes:
+  novel_enabled: true
+  quality_enabled: true
+  script_platform_enabled: true
+  tavern_enabled: true
+  world_enabled: true
+name: v3.6 Readiness Project Fixture
+project_id: v36_readiness_project
+project_root: fixtures/projects/v36_readiness_project
+safety_policy:
+  allow_debug_exports: false
+  allow_external_providers: false
+  allow_mature_content: false
+  export_secrets: false
+  local_only: true
+schema_version: '2.1'
+settings:
+  default_mode: quality
+  notes: Safe deterministic fixture for local checklist commands. No credentials or provider keys.
+  ui_locale: en
+updated_at: '2026-05-24T00:00:00+00:00'
+version: 2.1.0

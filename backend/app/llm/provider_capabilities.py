@@ -16,6 +16,7 @@ class ProviderType(StrEnum):
     LOCAL_STUB = "local_stub"
     MOCK = "mock"
     RELAY = "relay"
+    CUSTOM = "custom"
 
 
 class ProviderCapability(BaseModel):

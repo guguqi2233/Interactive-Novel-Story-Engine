@@ -24,6 +24,7 @@ class ProviderRoutingUseCase(StrEnum):
     NOVEL_DRAFT = "novel_draft"
     NOVEL_REWRITE = "novel_rewrite"
     TAVERN_REPLY = "tavern_reply"
+    MULTI_NPC_REPLY = "multi_npc_reply"
     WORLD_INTENT_PARSE = "world_intent_parse"
     WORLD_NARRATION = "world_narration"
     CROSS_MODE_DRAFT = "cross_mode_draft"
@@ -350,7 +351,7 @@ def _capability_use_case(use_case: ProviderRoutingUseCase) -> str:
         return "structured_output"
     if use_case in {ProviderRoutingUseCase.NARRATOR, ProviderRoutingUseCase.WORLD_NARRATION, ProviderRoutingUseCase.NOVEL_DRAFT, ProviderRoutingUseCase.NOVEL_REWRITE}:
         return "narration"
-    if use_case in {ProviderRoutingUseCase.RP_DIALOGUE, ProviderRoutingUseCase.TAVERN_REPLY}:
+    if use_case in {ProviderRoutingUseCase.RP_DIALOGUE, ProviderRoutingUseCase.TAVERN_REPLY, ProviderRoutingUseCase.MULTI_NPC_REPLY}:
         return "rp_expression"
     if use_case in {ProviderRoutingUseCase.MEMORY_SUMMARY, ProviderRoutingUseCase.CHEAP_SUMMARY}:
         return "structured_output"

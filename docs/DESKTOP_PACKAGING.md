@@ -163,6 +163,31 @@ diagnostics, recovery, and log APIs are local-only and redacted by default.
 They must not be treated as a cloud diagnostics channel, remote support upload,
 or installer packaging mechanism.
 
+## v3.5 Provider Connectivity Packaging Boundary
+
+v3.5 adds local Provider Connectivity, connection testing, model discovery,
+model assignment, usage summaries, and diagnostics review surfaces. These are
+local Provider Gateway configuration and observability workflows, not API
+resale, online accounts, cloud sync, an online provider platform, or real
+provider CI checks.
+
+Desktop bundles, diagnostics bundles, backups, exports, logs, crash reports,
+and frontend builds must not contain:
+
+- `transient_api_key` values used for a one-time connection test or model-list
+  fetch;
+- API key values resolved from `api_key_env`;
+- `secret_ref` values or backend-only secret resolver output;
+- Authorization headers, relay tokens, token-like base URL query/path segments,
+  raw provider errors, or raw provider responses;
+- provider prompt/output bodies, hidden facts, NPC secrets, debug memory, raw
+  `GameState`, or raw `state_deltas`.
+
+Provider tests and CI packaging checks must use fake provider/fake client
+paths. A packaged local desktop build may let a user configure local provider
+profiles at runtime, but it must not ship real provider credentials or assume a
+real network connection during verification.
+
 ## Tauri / Electron Review
 
 Tauri and Electron remain future options only. v3.0 does not add either runtime

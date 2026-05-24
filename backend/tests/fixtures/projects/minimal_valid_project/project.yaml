@@ -1,0 +1,36 @@
+active_campaign_id: null
+created_at: '2026-05-24T00:00:00+00:00'
+default_world_id: null
+description: Minimal local fixture for project quality gate tests.
+engine_version: '0.6.0'
+libraries:
+  character_library: null
+  lore_facts: null
+  memory_library: null
+  prompt_profiles: null
+  provider_profiles: null
+  timeline: null
+  world_bible: null
+migration_history: []
+modes:
+  novel_enabled: true
+  quality_enabled: true
+  script_platform_enabled: true
+  tavern_enabled: true
+  world_enabled: true
+name: Minimal Valid Project Fixture
+project_id: minimal_valid_project
+project_root: backend/tests/fixtures/projects/minimal_valid_project
+safety_policy:
+  allow_debug_exports: false
+  allow_external_providers: false
+  allow_mature_content: false
+  export_secrets: false
+  local_only: true
+schema_version: '2.1'
+settings:
+  default_mode: quality
+  notes: Minimal deterministic local fixture for quality gate tests.
+  ui_locale: en
+updated_at: '2026-05-24T00:00:00+00:00'
+version: 2.1.0

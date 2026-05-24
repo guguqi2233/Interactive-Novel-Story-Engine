@@ -1,0 +1,58 @@
+{
+  "package_id": "minimal_valid_action_mod",
+  "name": "Minimal Valid Action Mod Fixture",
+  "version": "1.0.0",
+  "package_type": "action_mod",
+  "description": "Minimal declarative action mod fixture for mod quality gate tests. It contains metadata only and no executable entrypoints.",
+  "author": "local-fixture",
+  "engine_version_min": "2.6",
+  "engine_version_max": null,
+  "schema_version": "2.6",
+  "target_project_modes": [
+    "world",
+    "quality"
+  ],
+  "target_worlds": [],
+  "dependencies": [],
+  "optional_dependencies": [],
+  "conflicts": [],
+  "permissions": {
+    "content_permissions": {},
+    "action_permissions": {
+      "add_declarative_action": true
+    },
+    "rule_permissions": {},
+    "prompt_permissions": {},
+    "provider_permissions": {},
+    "file_permissions": {},
+    "network_permissions": {},
+    "secret_permissions": {},
+    "state_permissions": {}
+  },
+  "included_files": [
+    {
+      "path": "README.md",
+      "media_type": "text/markdown",
+      "required": true
+    }
+  ],
+  "checksums": {},
+  "entry_points": [],
+  "compatibility_notes": [
+    "Local-only deterministic fixture. No code execution."
+  ],
+  "migration_notes": [],
+  "mature_policy": {
+    "contains_mature_content": false,
+    "max_content_rating": "safe",
+    "requires_mature_module": false,
+    "requires_adult_characters": true,
+    "requires_consent": true,
+    "export_restrictions": [],
+    "default_enabled": false,
+    "can_access_hidden_facts": false,
+    "can_bypass_boundary": false,
+    "can_bypass_provider_policy": false
+  },
+  "created_at": "2026-05-24T00:00:00Z"
+}

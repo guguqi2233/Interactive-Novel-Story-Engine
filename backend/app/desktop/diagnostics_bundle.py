@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from app.desktop.local_logs import LocalLogService, SafeLogEntry
 from app.desktop.studio_policy import DesktopStudioPolicy, ExportBundle, redact_desktop_secret_text
+from app.llm.provider_redaction import provider_redactor
 
 
 class DiagnosticsBundleManifest(BaseModel):
@@ -122,7 +123,9 @@ class DiagnosticsBundleService:
                 return DiagnosticsBundleValidation(valid=False, blockers=["manifest_missing"])
             text = archive.read("manifest.json").decode("utf-8")
             payload = archive.read("safe_payload.json").decode("utf-8") if "safe_payload.json" in names else ""
-            if redact_desktop_secret_text(text + payload).redaction_count:
+            desktop_redaction = redact_desktop_secret_text(text + payload)
+            provider_redaction = provider_redactor.redact_text(desktop_redaction.text)
+            if desktop_redaction.redaction_count or provider_redaction.redaction_count:
                 return DiagnosticsBundleValidation(valid=False, blockers=["sensitive_text_detected"])
             return DiagnosticsBundleValidation(valid=True, manifest=DiagnosticsBundleManifest.model_validate_json(text))
 
