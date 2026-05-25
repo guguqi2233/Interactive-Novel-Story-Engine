@@ -1,0 +1,73 @@
+provider_profile_id: local_stub
+display_name: Local Stub Provider
+provider_type: local_stub
+base_url: null
+base_url_env: null
+model_profiles:
+  - model_id: local_stub_story
+    display_name: Local Stub Story Model
+    provider_profile_id: local_stub
+    context_window: 8192
+    supports_text: true
+    supports_json: true
+    supports_tools: false
+    supports_streaming: true
+    supports_embeddings: false
+    supports_long_context: false
+    max_output_tokens: 1024
+    recommended_use_cases:
+      - novel_draft
+      - novel_rewrite
+      - tavern_reply
+      - multi_npc_reply
+      - world_intent_parse
+      - world_narration
+      - memory_summary
+      - cross_mode_draft
+      - structured_json
+      - quality_eval
+      - cheap_summary
+    structured_output_reliability_hint: deterministic local stub
+    cost_hint: null
+    enabled: true
+    last_seen_at: "2026-05-25T00:00:00+00:00"
+capabilities:
+  - text
+  - json
+  - streaming
+allowed_modes:
+  - novel
+  - tavern
+  - world
+  - cross_mode
+  - quality
+  - authoring
+default_timeout_seconds: 10.0
+retry_policy:
+  max_attempts: 1
+  backoff_seconds: 0.0
+fallback_profile_ids: []
+cost_tracking: false
+safety_policy:
+  allowed_modes:
+    - novel
+    - tavern
+    - world
+    - cross_mode
+    - quality
+    - authoring
+  disallowed_modes: []
+  allow_sensitive_prompts: false
+  allow_mature_content: false
+  allowed_content_ratings:
+    - safe
+  allow_explicit_adult: false
+  require_local_only_for_mature: false
+  allow_debug_prompts: false
+  log_prompts: false
+  log_outputs: false
+  redact_secrets: true
+  require_local_only: true
+model_mapping: {}
+provider_notes: Fake local metadata for demo checks only.
+enabled: true

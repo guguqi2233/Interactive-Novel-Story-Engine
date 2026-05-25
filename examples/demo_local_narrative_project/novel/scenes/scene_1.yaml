@@ -1,0 +1,22 @@
+scene_id: scene_1
+project_id: demo_local_narrative_project
+chapter_id: chapter_1
+title: Lens on the Workbench
+summary: Lina checks the lantern while Mira explains the public task.
+draft_text: >
+  The lantern house smelled of salt and clean oil. Lina lifted the glass lens
+  and smiled when it caught the afternoon light.
+pov_character_id: lina
+location_ref: world:location:lantern_house
+timeline_event_refs: []
+linked_world_event_ids: []
+linked_character_ids:
+  - lina
+  - mira
+linked_fact_ids:
+  - lantern_needs_lens
+status: draft
+prompt_profile_id: null
+visibility: normal
+created_at: "2026-05-25T00:00:00+00:00"
+updated_at: "2026-05-25T00:00:00+00:00"

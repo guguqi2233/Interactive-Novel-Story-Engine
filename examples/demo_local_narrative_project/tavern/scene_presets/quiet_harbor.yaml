@@ -1,0 +1,10 @@
+scene_mood_preset_id: quiet_harbor
+title: Quiet Harbor
+description: Calm, practical, and focused on local tasks.
+mood_tags:
+  - calm
+  - helpful
+  - local
+lighting: warm evening light
+soundscape: low tide and distant bells
+safe_for_default_use: true

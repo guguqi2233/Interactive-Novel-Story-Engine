@@ -207,7 +207,7 @@ def _manifest_for_plan(plan: BackupPlan, request: BackupCreateRequest) -> Backup
 
 
 def _default_exclusions(include_mature_private: bool, include_debug: bool) -> list[str]:
-    excluded = [".env", "API key", "provider secrets", "logs", "cache", "node_modules", "frontend/dist", "desktop build outputs", "databases"]
+    excluded = [".env", "API key", "provider secrets", "local provider secret store", "logs", "cache", "node_modules", "frontend/dist", "desktop build outputs", "databases"]
     if not include_debug:
         excluded.append("debug-only data")
     if not include_mature_private:

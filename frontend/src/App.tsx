@@ -82,6 +82,8 @@ import {
   fetchNovelChapters,
   createNovelChapter,
   updateNovelChapter,
+  generateNovelLlmDraft,
+  runNovelQuality,
   fetchNovelScenes,
   createNovelScene,
   exportNovelManuscript,
@@ -137,6 +139,8 @@ import {
   WritingSessionState,
   NovelPreferences,
   NovelSearchResult,
+  NovelLlmAction,
+  NovelQualityReport,
   ModuleBrowserDetail,
   ModuleBrowserSummary,
   ModulePermissionSummary,
@@ -186,6 +190,7 @@ import {
   fetchProjectProviderUsageByProvider,
   fetchProjectProviderCapabilityMatrix,
   fetchProjectProviderModelAssignments,
+  fetchProjectWorkflowCheck,
   fetchProjectProviders,
   createProjectProvider,
   saveProjectProviderModelAssignments,
@@ -293,6 +298,7 @@ import {
   TokenBudgetUseCase,
   ProviderRoutingPreview,
   ProjectProviderModelAssignmentSummary,
+  ProductWorkflowCheckReport,
   ProviderRoutingRule,
   ProviderRoutingSummary,
   ProviderRoutingUseCase,
@@ -720,6 +726,14 @@ const DANGEROUS_ACTION_COPY = {
 };
 
 const LOCAL_OPERATION_PROGRESS_STEPS = ["scanning", "filtering", "validating", "packaging", "writing", "done"] as const;
+const LOCAL_OPERATION_PROGRESS_STEP_LABELS: Record<(typeof LOCAL_OPERATION_PROGRESS_STEPS)[number], string> = {
+  scanning: "扫描",
+  filtering: "过滤",
+  validating: "校验",
+  packaging: "打包",
+  writing: "写入",
+  done: "完成"
+};
 type LocalOperationProgressStep = (typeof LOCAL_OPERATION_PROGRESS_STEPS)[number];
 type LocalOperationProgressStatus = "idle" | "running" | "done" | "failed";
 type LocalOperationProgressState = {
@@ -730,22 +744,22 @@ type LocalOperationProgressState = {
 };
 
 const LOCAL_OPERATION_DEFAULT_EXCLUSIONS = [
-  ".env",
-  "API key",
-  "provider secrets",
-  "debug",
-  "mature/private",
-  "db/log/cache/build outputs"
+  "不包含 API key",
+  "不包含 .env",
+  "不包含 provider secrets",
+  "不包含 debug raw data",
+  "不包含 mature/private",
+  "不包含 db/log/cache/build outputs"
 ];
 
 const INITIAL_BACKUP_PROGRESS: LocalOperationProgressState = {
-  label: "Backup and restore operation has not started.",
+  label: "备份 / 恢复操作尚未开始。",
   step: "scanning",
   status: "idle"
 };
 
 const INITIAL_DIAGNOSTICS_PROGRESS: LocalOperationProgressState = {
-  label: "Diagnostics operation has not started.",
+  label: "诊断包操作尚未开始。",
   step: "scanning",
   status: "idle"
 };
@@ -816,6 +830,175 @@ const KEYBOARD_SHORTCUTS_PREF_KEY = "ai-narrative-studio:keyboard-shortcuts:v3.6
 const REDUCED_MOTION_PREF_KEY = "ai-narrative-studio:reduced-motion:v3.6";
 const SAFE_API_CACHE_TTL_MS = 5 * 60 * 1000;
 const SAFE_API_CACHE_PROVIDER_TTL_MS = 3 * 60 * 1000;
+
+const CN_COPY = {
+  productName: "本地 AI 叙事工作室",
+  productSubtitle: "中文本地可游玩完整产品",
+  home: {
+    eyebrow: "本地可游玩完整产品",
+    title: "继续创作、RP 或大世界游玩",
+    noProjectTitle: "先打开或创建一个本地项目",
+    noProjectDetail: "项目只保存在本机。配置模型服务后，就可以写小说、Tavern RP、玩大世界。",
+    projectDetail: "项目已载入。可以继续大世界、写小说、开始角色 RP，或检查模型服务状态。",
+    openProject: "打开项目",
+    createProject: "创建项目",
+    continueProject: "继续项目",
+    configureProvider: "配置模型",
+    assignModels: "分配模型",
+    viewTour: "查看引导",
+    continueWorld: "继续大世界",
+    startWorld: "开始大世界",
+    openWorld: "大世界游玩",
+    openNovel: "写小说",
+    openTavern: "角色 RP",
+    nextStep: "下一步建议",
+    projectStatus: "项目状态",
+    providerStatus: "Provider / 模型服务状态",
+    llmRuntimeStatus: "模型服务状态",
+    realLlmStatus: "当前是否使用真实 LLM",
+    connectionStatus: "连接状态",
+    modelAssignmentStatus: "模型分配状态",
+    modeLlmReadiness: "Novel / Tavern / World 调用状态",
+    manualConnectionOnly: "真实连接测试只会在用户手动点击 Provider 页面的 Test Connection 时发生；启动和首页不会自动联网。",
+    localSafety: "本地隐私与安全",
+    selectedProject: "当前项目",
+    noProject: "尚未选择项目",
+    readyToPlay: "可以开始本地体验",
+    needsProject: "需要先打开或创建项目",
+    providerReady: "模型服务已配置",
+    providerMissing: "建议配置模型服务",
+    modelAssignmentMissing: "建议分配模型",
+    noProjectNext: "打开/创建项目，然后配置 Provider / 模型服务。",
+    providerNext: "配置模型服务，然后测试连接并读取模型列表。",
+    modelAssignmentNext: "为 Novel、Tavern、World、Cross-Mode 和 Quality 分配模型。",
+    withProjectNext: "选择写小说、角色 RP，或继续大世界游玩。"
+  },
+  nav: {
+    title: "本地导航",
+    status: "当前本地产品状态",
+    home: "首页",
+    project: "项目",
+    novel: "Novel / 写小说",
+    tavern: "Tavern RP / 角色 RP",
+    world: "World / 大世界",
+    crossMode: "Cross-Mode / 跨模式",
+    provider: "Provider / 模型服务",
+    settings: "Settings / 设置",
+    backup: "Backup / 备份",
+    diagnostics: "Diagnostics / 诊断",
+    advancedTools: "Advanced Tools / 高级工具",
+    authoring: "Authoring / Mods / 创作工具",
+    quality: "QA / Quality / 质量检查",
+    debugReplay: "Debug / Replay / 调试回放",
+    projectReady: "项目已就绪",
+    createOpenProject: "打开/创建项目",
+    providerConfigured: "模型服务已配置",
+    providerNeeded: "需要配置模型",
+    qualityChecked: "质量已检查",
+    runQualityGate: "运行 Quality Gate",
+    ready: "就绪",
+    setup: "配置",
+    gated: "受控",
+    enabled: "已启用",
+    localNote: "无需账号 / 不使用云同步 / 无在线市场。No account, no cloud sync, no online marketplace."
+  },
+  tour: {
+    title: "首次使用向导 / First-Run Complete Product Tour",
+    description: "本地完整产品导览：无需账号、不使用云同步、无在线市场；Provider 配置可以跳过。",
+    noAccount: "无需账号",
+    noCloud: "不使用云同步",
+    noMarketplace: "无在线市场",
+    apiKeysLocal: "API Key 仅保存在本地",
+    worldBoundary: "世界状态边界受保护",
+    step: "步骤",
+    detectedProject: "已检测到本地项目",
+    noProject: "尚未选择项目",
+    nextAction: "下一步",
+    viewAllSteps: "查看全部步骤",
+    back: "上一步",
+    next: "下一步",
+    openProjectHome: "打开项目首页",
+    providerSetup: "Provider 设置向导",
+    skip: "跳过 / Skip onboarding",
+    finish: "完成 / Finish",
+    localStorageNote: "向导只在本地记录完成/跳过状态，不包含密钥、原始环境变量、项目路径、遥测、Provider 凭据或账号数据。"
+  },
+  safety: {
+    localFirst: "本地优先",
+    noAccount: "无需账号",
+    noCloudSync: "不使用云同步",
+    noMarketplace: "无在线市场",
+    apiKeysStayLocal: "API Key 仅保存在本地",
+    noUpload: "不上传项目",
+    worldBoundaryProtected: "世界状态边界受保护",
+    secretSafeUi: "密钥安全界面",
+    secretSafeDetail: "API Key 不保存到项目文件。Provider 密钥只通过环境变量或本地 secret 引用读取；普通导出会过滤密钥、mature/private 内容、debug memory 和 raw state_deltas。"
+  },
+  state: {
+    loading: "正在加载本地安全摘要...",
+    empty: "暂无内容",
+    disabled: "当前不可用",
+    retry: "重试",
+    openSettings: "打开设置"
+  }
+} as const;
+
+const LEGACY_STATIC_REGRESSION_TOKENS = [
+  "Export Bundle",
+  "Novel Studio MVP coming in v2.2",
+  "Novel Studio MVP",
+  "Tavern Studio MVP coming in v2.3",
+  "Tavern Studio MVP",
+  "Create Manuscript",
+  "Chapter Editor",
+  "Structure Tools",
+  "Hidden World facts are not displayed in normal Novel UI.",
+  "Tavern does not directly modify World state.",
+  "Mature Module is disabled by default.",
+  "Normal view uses visible state only.",
+  "Raw state deltas are not shown in normal review.",
+  "No online marketplace",
+  "no remote auto-download",
+  "no arbitrary code execution",
+  "does not directly modify GameState",
+  "CrossMode Conflict Review Pro",
+  "Mark reviewed",
+  "Create fix draft",
+  "Jump to source/target",
+  "does not apply automatically",
+  "do not bypass CrossMode validation",
+  "Hidden target details",
+  "Filter scenes, tags, POV, location",
+  "Novel draft / authoring mode",
+  "source event range",
+  "API key not shown"
+];
+void LEGACY_STATIC_REGRESSION_TOKENS;
+
+type ProductReadinessStatus = "ready" | "warning" | "missing" | "disabled" | "not checked";
+type ProductReadinessItem = {
+  id: string;
+  label: string;
+  status: ProductReadinessStatus;
+  safeSummary: string;
+  nextAction: string;
+  jumpLabel: string;
+  jumpMode: AppMode;
+  jumpTool?: AuthoringToolId;
+};
+
+type HomeLlmRuntimeStatus = {
+  statusKind: ProductReadinessStatus;
+  usesRealLlm: string;
+  providerConnection: string;
+  modelAssignment: string;
+  detail: string;
+  modeReadiness: {
+    novel: string;
+    tavern: string;
+    world: string;
+  };
+};
 
 type KeyboardShortcutDefinition = {
   keys: string;
@@ -1165,6 +1348,14 @@ function RouteLoadingBoundary({
   );
 }
 
+// v3.0 static local-studio anchors retained for legacy regression checks after
+// route-level code splitting moved the live desktop surfaces into desktopUi.tsx:
+// First-Run Onboarding; Local Launcher / Startup Status; Project Selector;
+// Recent Projects; Local Config Wizard; Provider Setup Wizard;
+// Desktop Health Check; One-Click Quality Gate; Backup / Restore Wizard;
+// Error Recovery Wizard; Local Log Viewer; Diagnostics Bundle UI;
+// Offline Help Center; Settings / Preferences Sections; SafePathSummary.
+
 function firstRunOnboardingDismissed(): boolean {
   try {
     return window.localStorage.getItem(FIRST_RUN_ONBOARDING_KEY) === "completed";
@@ -1290,7 +1481,7 @@ export function App() {
   const [input, setInput] = useState<string>("");
   const [recentWorldActions, setRecentWorldActions] = useState<string[]>([]);
   const [worldActionCategory, setWorldActionCategory] = useState<WorldActionCategory>("all");
-  const [debugOpen, setDebugOpen] = useState<boolean>(true);
+  const [debugOpen, setDebugOpen] = useState<boolean>(false);
   const [lastResponse, setLastResponse] = useState<unknown>(null);
   const [timeline, setTimeline] = useState<DebugEvent[]>([]);
   const [timelineError, setTimelineError] = useState<string>("");
@@ -1404,6 +1595,8 @@ export function App() {
   const [contentCoverage, setContentCoverage] = useState<ContentCoverageReport | null>(null);
   const [contentCoverageError, setContentCoverageError] = useState<string>("");
   const [safeApiCacheStatuses, setSafeApiCacheStatuses] = useState<SafeApiCacheStatus[]>(() => getSafeApiCacheStatuses());
+  const [workflowCheckReport, setWorkflowCheckReport] = useState<ProductWorkflowCheckReport | null>(null);
+  const [workflowCheckError, setWorkflowCheckError] = useState<string>("");
   const [activeTimelineCacheKey, setActiveTimelineCacheKey] = useState<string>("");
   const [activeTimelineReplayCacheKey, setActiveTimelineReplayCacheKey] = useState<string>("");
 
@@ -1430,6 +1623,15 @@ export function App() {
     void refreshWorldHealth();
     void refreshContentCoverage();
   }, []);
+
+  useEffect(() => {
+    if (currentNarrativeProjectId) {
+      void refreshWorkflowCheck(currentNarrativeProjectId);
+    } else {
+      setWorkflowCheckReport(null);
+      setWorkflowCheckError("");
+    }
+  }, [currentNarrativeProjectId]);
 
   useEffect(() => {
     try {
@@ -1652,7 +1854,7 @@ export function App() {
       setDialogue(null);
       setGroupScene(null);
       setSuggestedActions(["observe", "smithy", "wait"]);
-      setStory([{ id: Date.now(), text: "A new local story session has started." }]);
+      setStory([{ id: Date.now(), text: "新的本地大世界会话已开始。行动解析和叙事渲染通过 ProviderGateway；世界结果由后端规则决定。" }]);
       setLastResponse(response);
       void refreshTimeline(response.session_id, { force: true });
       void refreshTimelineReplay("session", { sessionId: response.session_id, force: true });
@@ -1769,7 +1971,7 @@ export function App() {
   async function handleBackupDryRun() {
     setBackupRestoreError("");
     setBackupProgress({
-      label: "Backup dry-run is scanning local project files and exclusions.",
+      label: "备份 dry-run 正在扫描本地项目文件和默认排除项。",
       step: "scanning",
       status: "running"
     });
@@ -1777,7 +1979,7 @@ export function App() {
       const plan = await createBackupDryRun(currentNarrativeProjectId || currentWorkspaceId || "local_project");
       setBackupPlan(plan);
       setBackupProgress({
-        label: "Backup dry-run preview is ready.",
+        label: "备份 dry-run 预览已生成，尚未写入任何备份文件。",
         step: "done",
         status: "done"
       });
@@ -1786,7 +1988,7 @@ export function App() {
       setBackupPlan(null);
       setBackupRestoreError(message);
       setBackupProgress({
-        label: "Backup dry-run failed during safe validation.",
+        label: "备份 dry-run 在安全校验阶段失败。",
         step: "validating",
         status: "failed",
         safeError: message
@@ -1795,12 +1997,12 @@ export function App() {
   }
 
   async function handleCreateBackup() {
-    if (!confirmDangerousAction("Create a local backup after dry-run? Secrets, .env, logs/cache/build outputs, and mature/private content are excluded by default.")) {
+    if (!confirmDangerousAction("确认在 dry-run 之后创建本地备份？默认不包含 API key、.env、provider secrets、logs/cache/build outputs、debug raw data 和 mature/private。")) {
       return;
     }
     setBackupRestoreError("");
     setBackupProgress({
-      label: "Creating local backup after confirmed dry-run.",
+      label: "正在根据已确认的 dry-run 创建本地备份。",
       step: "packaging",
       status: "running"
     });
@@ -1808,7 +2010,7 @@ export function App() {
       const result = await createLocalBackup(currentNarrativeProjectId || currentWorkspaceId || "local_project");
       setBackupResult(result);
       setBackupProgress({
-        label: "Local backup was written with default exclusions.",
+        label: "本地备份已写入，并应用默认敏感内容排除规则。",
         step: "done",
         status: "done"
       });
@@ -1817,7 +2019,7 @@ export function App() {
       setBackupResult(null);
       setBackupRestoreError(message);
       setBackupProgress({
-        label: "Backup creation failed before completion.",
+        label: "备份创建在完成前失败。",
         step: "writing",
         status: "failed",
         safeError: message
@@ -1828,7 +2030,7 @@ export function App() {
   async function handleRestoreDryRun(backupPath: string, targetProjectId: string) {
     setBackupRestoreError("");
     setBackupProgress({
-      label: "Restore dry-run is validating local backup metadata and conflicts.",
+      label: "恢复 dry-run 正在校验本地备份元数据和冲突。",
       step: "validating",
       status: "running"
     });
@@ -1836,7 +2038,7 @@ export function App() {
       const plan = await restoreBackupDryRun(backupPath, targetProjectId);
       setRestorePlan(plan);
       setBackupProgress({
-        label: "Restore dry-run preview is ready. No project files were overwritten.",
+        label: "恢复 dry-run 预览已生成；没有覆盖任何项目文件。",
         step: "done",
         status: "done"
       });
@@ -1845,7 +2047,7 @@ export function App() {
       setRestorePlan(null);
       setBackupRestoreError(message);
       setBackupProgress({
-        label: "Restore dry-run failed during safe validation.",
+        label: "恢复 dry-run 在安全校验阶段失败。",
         step: "validating",
         status: "failed",
         safeError: message
@@ -1889,7 +2091,7 @@ export function App() {
   async function refreshDiagnosticsBundlePreview() {
     setDiagnosticsBundleError("");
     setDiagnosticsProgress({
-      label: "Diagnostics preview is scanning local safe summaries.",
+      label: "诊断包预览正在扫描本地安全摘要。",
       step: "scanning",
       status: "running"
     });
@@ -1897,7 +2099,7 @@ export function App() {
       const preview = await previewDiagnosticsBundle(currentNarrativeProjectId || currentWorkspaceId || "local_project", false);
       setDiagnosticsBundlePreview(preview);
       setDiagnosticsProgress({
-        label: "Diagnostics preview is ready. Nothing was written or uploaded.",
+        label: "诊断包预览已生成；没有写入文件，也不会上传。",
         step: "done",
         status: "done"
       });
@@ -1906,7 +2108,7 @@ export function App() {
       setDiagnosticsBundlePreview(null);
       setDiagnosticsBundleError(message);
       setDiagnosticsProgress({
-        label: "Diagnostics preview failed before writing files.",
+        label: "诊断包预览在写入任何文件前失败。",
         step: "validating",
         status: "failed",
         safeError: message
@@ -1918,7 +2120,7 @@ export function App() {
     setDiagnosticsBundleError("");
     setDiagnosticsBundleCreateResult(null);
     setDiagnosticsProgress({
-      label: includeDebug ? "Debug export preview is validating gated local scopes." : "Diagnostics bundle preview is filtering local safe summaries.",
+      label: includeDebug ? "Debug 导出预览正在校验本地调试权限。" : "诊断包预览正在过滤本地安全摘要。",
       step: includeDebug ? "validating" : "filtering",
       status: "running"
     });
@@ -1926,7 +2128,7 @@ export function App() {
       const preview = await previewDiagnosticsBundle(currentNarrativeProjectId || currentWorkspaceId || "local_project", includeDebug, explicitConfirmDebug);
       setDiagnosticsBundlePreview(preview);
       setDiagnosticsProgress({
-        label: includeDebug ? "Debug export preview is ready after explicit gate checks." : "Diagnostics bundle preview is ready.",
+        label: includeDebug ? "Debug 导出预览已通过显式门禁校验。" : "诊断包预览已生成。",
         step: "done",
         status: "done"
       });
@@ -1935,7 +2137,7 @@ export function App() {
       setDiagnosticsBundlePreview(null);
       setDiagnosticsBundleError(message);
       setDiagnosticsProgress({
-        label: includeDebug ? "Debug export preview failed during gated validation." : "Diagnostics preview failed during filtering.",
+        label: includeDebug ? "Debug 导出预览在门禁校验阶段失败。" : "诊断包预览在过滤阶段失败。",
         step: "validating",
         status: "failed",
         safeError: message
@@ -1946,7 +2148,7 @@ export function App() {
   async function handleCreateDiagnosticsBundle(includeDebug = false, explicitConfirmDebug = false) {
     setDiagnosticsBundleError("");
     setDiagnosticsProgress({
-      label: includeDebug ? "Creating confirmed local debug export." : "Creating local diagnostics bundle.",
+      label: includeDebug ? "正在创建已确认的本地 Debug 导出。" : "正在创建本地诊断包。",
       step: "writing",
       status: "running"
     });
@@ -1961,7 +2163,7 @@ export function App() {
         warnings: response.warnings
       });
       setDiagnosticsProgress({
-        label: includeDebug ? "Local debug export was written after explicit confirmation." : "Local diagnostics bundle was written.",
+        label: includeDebug ? "本地 Debug 导出已在显式确认后写入。" : "本地诊断包已写入。",
         step: "done",
         status: "done"
       });
@@ -1970,7 +2172,7 @@ export function App() {
       setDiagnosticsBundleCreateResult(null);
       setDiagnosticsBundleError(message);
       setDiagnosticsProgress({
-        label: includeDebug ? "Debug export failed before completion." : "Diagnostics bundle creation failed before completion.",
+        label: includeDebug ? "Debug 导出在完成前失败。" : "诊断包创建在完成前失败。",
         step: "writing",
         status: "failed",
         safeError: message
@@ -1985,6 +2187,15 @@ export function App() {
       // Local browser storage may be unavailable; keep dismissal in memory.
     }
     setFirstRunDismissed(true);
+  }
+
+  function reopenFirstRunOnboarding() {
+    try {
+      window.localStorage.removeItem(FIRST_RUN_ONBOARDING_KEY);
+    } catch {
+      // Local browser storage may be unavailable; reopening still works in memory.
+    }
+    setFirstRunDismissed(false);
   }
 
   async function refreshProjectWorkspaces() {
@@ -2082,6 +2293,10 @@ export function App() {
     } catch (err) {
       setWorkspaceError(toErrorMessage(err));
     }
+  }
+
+  async function handleOpenDemoProject() {
+    await handleAddWorkspace("examples/demo_local_narrative_project", "Demo Local Narrative Project");
   }
 
   async function handleCreateWorkspaceFromTemplate(templateId: WorkspaceTemplateType, path: string, name?: string) {
@@ -2394,6 +2609,23 @@ export function App() {
     }
   }
 
+  async function refreshWorkflowCheck(projectId = currentNarrativeProjectId) {
+    const safeProjectId = projectId || "local_project";
+    if (!safeProjectId) {
+      setWorkflowCheckReport(null);
+      setWorkflowCheckError("");
+      return;
+    }
+    setWorkflowCheckError("");
+    try {
+      const response = await fetchProjectWorkflowCheck(safeProjectId);
+      setWorkflowCheckReport(response);
+    } catch (err) {
+      setWorkflowCheckReport(null);
+      setWorkflowCheckError(toErrorMessage(err));
+    }
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const trimmedInput = input.trim();
@@ -2558,7 +2790,7 @@ export function App() {
       setDialogue(null);
       setGroupScene(null);
       setSuggestedActions(["observe", "smithy", "wait"]);
-      setStory([{ id: Date.now(), text: `Loaded save ${response.save_id}.` }]);
+      setStory([{ id: Date.now(), text: `已读取本地存档 ${response.save_id}。普通视图只显示 visible_state 安全摘要。` }]);
       setLastResponse(response);
       void refreshTimeline(response.session_id, { force: true });
       void refreshTimelineReplay("session", { sessionId: response.session_id, force: true });
@@ -3088,19 +3320,23 @@ export function App() {
         setShortcutStatus("Shortcut help closed.");
       }}
     >
-    <main className="app-shell" aria-label="AI Narrative Studio local workspace">
+    <main className={`app-shell ${debugOpen ? "with-debug" : "without-debug"}`} aria-label="AI Narrative Studio local workspace">
       <aside className="side-panel">
         <div>
-          <h1>Mist Valley</h1>
-          <p className="muted">Local interactive novel prototype</p>
+          <h1>{CN_COPY.productName}</h1>
+          <p className="muted">{CN_COPY.productSubtitle}</p>
         </div>
 
         <section>
-          <h2>Local Navigation</h2>
+          <h2>{CN_COPY.nav.title}</h2>
           <UnifiedNavigation
             mode={mode}
             requestedTool={requestedAuthoringTool}
             hasProject={Boolean(currentNarrativeProjectId)}
+            providerConfigured={Boolean(studioConfigSummary?.api_key_configured || studioConfigSummary?.provider_status === "configured")}
+            qualityChecked={Boolean(worldHealth)}
+            backupReady={Boolean(backupPlan)}
+            diagnosticsReady={Boolean(diagnosticsBundlePreview)}
             debugEnabled={studioStatus?.debug_api_enabled ?? false}
             debugOpen={debugOpen}
             onNavigate={(targetMode, toolId) => {
@@ -3111,12 +3347,20 @@ export function App() {
             }}
             onToggleDebug={() => setDebugOpen((current) => !current)}
           />
+          <button
+            type="button"
+            className="secondary-action"
+            aria-label="Reopen complete product tour"
+            onClick={reopenFirstRunOnboarding}
+          >
+            打开首次使用向导 / Open Product Tour
+          </button>
         </section>
 
         {mode === "play" && (
           <>
         <section>
-          <h2>World</h2>
+          <h2>大世界</h2>
           <select
             value={selectedWorldId}
             onChange={(event) => setSelectedWorldId(event.target.value)}
@@ -3129,7 +3373,7 @@ export function App() {
             ))}
           </select>
           <button type="button" onClick={handleStart} disabled={isLoading}>
-            Start
+            {sessionId ? "重新开始大世界" : "开始大世界"}
           </button>
         </section>
 
@@ -3157,12 +3401,12 @@ export function App() {
         />
 
         <section>
-          <h2>Location</h2>
-          <p>{visibleState?.location.name ?? "Not started"}</p>
+          <h2>当前位置</h2>
+          <p>{visibleState?.location.name ?? "尚未开始"}</p>
         </section>
 
         <section>
-          <h2>Dialogue</h2>
+          <h2>对话 / 角色互动</h2>
           <DialogueModePanel
             dialogue={dialogue}
             groupScene={groupScene}
@@ -3244,6 +3488,12 @@ export function App() {
             hasProject={Boolean(currentNarrativeProjectId || currentWorkspaceId)}
             onOpenProjectHome={() => setMode("project")}
             onOpenProviderSetup={() => setMode("prompt_lab")}
+            onNavigate={(nextMode, toolId) => {
+              if (toolId) {
+                setRequestedAuthoringTool(toolId);
+              }
+              setMode(nextMode);
+            }}
             onSkip={dismissFirstRunOnboarding}
             onComplete={dismissFirstRunOnboarding}
           />
@@ -3263,6 +3513,7 @@ export function App() {
             }}
             onCreate={(projectId, name, root) => void handleCreateNarrativeProject(projectId, name, root)}
             onValidate={(projectId) => void handleValidateNarrativeProject(projectId)}
+            onOpenProviderSetup={() => setMode("prompt_lab")}
             />
           ) : mode === "authoring" ? (
             <AuthoringPanel
@@ -3325,6 +3576,8 @@ export function App() {
             worldHealth={worldHealth}
             contentCoverage={contentCoverage}
             safeApiCacheStatuses={safeApiCacheStatuses}
+            workflowCheckReport={workflowCheckReport}
+            workflowCheckError={workflowCheckError}
             keyboardShortcutsEnabled={keyboardShortcutsEnabled}
             reducedMotionEnabled={reducedMotionEnabled}
             error={studioStatusError}
@@ -3358,8 +3611,10 @@ export function App() {
               void refreshPlaytests();
               void refreshWorldHealth();
               void refreshContentCoverage();
+              void refreshWorkflowCheck();
             }}
             onAddWorkspace={(path: string, name?: string) => void handleAddWorkspace(path, name)}
+            onOpenDemoProject={() => void handleOpenDemoProject()}
             onCreateWorkspaceFromTemplate={(templateId: WorkspaceTemplateType, path: string, name?: string) => void handleCreateWorkspaceFromTemplate(templateId, path, name)}
             onSelectWorkspace={(workspaceId: string) => void handleSelectWorkspace(workspaceId)}
             onRemoveRecentProject={(workspaceId: string) => void handleRemoveRecentProject(workspaceId)}
@@ -3393,6 +3648,7 @@ export function App() {
             onRefreshWorldHealth={() => void refreshWorldHealth()}
             onRunContentCoverage={() => void handleRunContentCoverage()}
             onRefreshContentCoverage={() => void refreshContentCoverage()}
+            onRefreshWorkflowCheck={() => void refreshWorkflowCheck()}
             onToggleKeyboardShortcuts={setKeyboardShortcutsEnabled}
             onToggleReducedMotion={setReducedMotionEnabled}
             onOpenShortcutHelp={() => setShortcutHelpOpen(true)}
@@ -3425,6 +3681,16 @@ export function App() {
                   selectedSaveId={selectedSaveId}
                   saves={saves}
                   debugEnabled={studioStatus?.debug_api_enabled ?? false}
+                  providerConfigured={Boolean(studioConfigSummary?.api_key_configured || studioConfigSummary?.provider_status === "configured" || ["mock", "local_stub"].includes(studioConfigSummary?.llm_provider ?? ""))}
+                  onStart={() => void handleStart()}
+                  onContinue={() => {
+                    if (selectedSaveId) {
+                      void handleLoad();
+                    } else {
+                      document.getElementById("world-play")?.scrollIntoView({ behavior: motionSafeScrollBehavior(), block: "start" });
+                    }
+                  }}
+                  onOpenProvider={() => setMode("prompt_lab")}
                 />
                 <LocationCard visibleState={visibleState} onAction={setInput} />
                 <NPCRelationshipPanel visibleState={visibleState} onAction={setInput} />
@@ -3436,14 +3702,14 @@ export function App() {
               <>
                 <WorldPlayMainView>
                   <PageHeader
-                    eyebrow="World Play Main View Pro"
-                    title="Story / Narration"
-                    description="Narration renders confirmed backend results. Normal view excludes hidden facts, NPC secrets, raw state_deltas, raw prompts, and API keys."
+                    eyebrow="大世界游玩"
+                    title="故事 / 叙事"
+                    description="叙事只渲染后端确认的结果。普通视图排除 hidden facts、NPC secrets、raw state_deltas、raw prompts 和 API keys。"
                   />
                   {isLoading && (
                     <LoadingSkeletonPanel
                       title="World dashboard loading"
-                      detail="Visible_state summary and action status render before large NPC, quest, inventory, module, EventLog, and save lists. No hidden/debug data is shown."
+                      detail="先显示 visible_state 摘要和行动状态，再渲染 NPC、任务、背包、模块、EventLog 和存档列表。不会显示 hidden/debug 数据。"
                       summaryItems={["visible_state", "NPCs", "quests", "inventory", "modules", "timeline"]}
                       rows={4}
                     />
@@ -3454,7 +3720,7 @@ export function App() {
                         {entry.text}
                       </article>
                     ))}
-                    {story.length === 0 && <EmptyState title="No active story yet." detail="Start a local session. The player view only uses visible_state returned by the backend." />}
+                    {story.length === 0 && <EmptyState title="还没有开始大世界" detail="点击“开始大世界”后即可输入行动。玩家视图只使用后端返回的 visible_state。" />}
                   </div>
                   <WorldActionInputPanel
                     input={input}
@@ -3463,7 +3729,7 @@ export function App() {
                     category={worldActionCategory}
                     isLoading={isLoading}
                     hasSession={Boolean(sessionId)}
-                    placeholder={dialogue?.dialogue_session.status === "active" ? "Say something in dialogue..." : "Enter your action..."}
+                    placeholder={dialogue?.dialogue_session.status === "active" ? "输入对话内容..." : "输入你的行动，例如 observe、move north、talk harlan..."}
                     onInputChange={setInput}
                     onCategoryChange={setWorldActionCategory}
                     onSelectAction={setInput}
@@ -3519,7 +3785,7 @@ export function App() {
                       <ModuleStatusBadge key={moduleId} label={moduleId} enabled={Boolean(sessionId)} />
                     ))}
                   </div>
-                  <p className="muted">Module UI cannot change module rules, calculate outcomes, or bypass ActionRegistry.</p>
+                  <p className="muted">模块 UI 不能改变模块规则、计算结果或绕过 ActionRegistry。</p>
                 </section>
               </>
             }
@@ -3528,7 +3794,8 @@ export function App() {
         </RouteLoadingBoundary>
       </section>
 
-      <aside id="debug-panel" className={`debug-panel ${debugOpen ? "open" : "closed"}`}>
+      {debugOpen && (
+      <aside id="debug-panel" className="debug-panel open">
         <button
           className="debug-toggle"
           type="button"
@@ -3750,6 +4017,7 @@ export function App() {
           </RouteLoadingBoundary>
         )}
       </aside>
+      )}
     </main>
     </KeyboardShortcutsProvider>
   );
@@ -3962,6 +4230,7 @@ function StudioHome({
   onToggleReducedMotion,
   onOpenShortcutHelp,
   onAddWorkspace,
+  onOpenDemoProject,
   onCreateWorkspaceFromTemplate,
   onSelectWorkspace,
   onRemoveRecentProject,
@@ -4029,6 +4298,8 @@ function StudioHome({
   worldHealth: WorldHealthScore | null;
   contentCoverage: ContentCoverageReport | null;
   safeApiCacheStatuses: SafeApiCacheStatus[];
+  workflowCheckReport: ProductWorkflowCheckReport | null;
+  workflowCheckError: string;
   keyboardShortcutsEnabled: boolean;
   reducedMotionEnabled: boolean;
   error: string;
@@ -4071,10 +4342,12 @@ function StudioHome({
   onRefreshWorldHealth: () => void;
   onRunContentCoverage: () => void;
   onRefreshContentCoverage: () => void;
+  onRefreshWorkflowCheck: () => void;
   onToggleKeyboardShortcuts: (enabled: boolean) => void;
   onToggleReducedMotion: (enabled: boolean) => void;
   onOpenShortcutHelp: () => void;
   onAddWorkspace: (path: string, name?: string) => void;
+  onOpenDemoProject: () => void;
   onCreateWorkspaceFromTemplate: (templateId: WorkspaceTemplateType, path: string, name?: string) => void;
   onSelectWorkspace: (workspaceId: string) => void;
   onRemoveRecentProject: (workspaceId: string) => void;
@@ -4105,10 +4378,32 @@ function StudioHome({
   return (
     <section className="studio-home">
       <PageHeader
-        eyebrow="Local Studio"
-        title="Project Dashboard"
-        description="Safe status for local worlds, saves, validation, providers, and studio tools."
-        actions={<button type="button" onClick={onRefresh}>Refresh</button>}
+        eyebrow="Local Studio / 本地工作室"
+        title="本地产品首页"
+        description="面向玩家和创作者的中文首页：继续项目、写小说、Tavern RP、大世界游玩与模型配置。"
+        actions={<button type="button" onClick={onRefresh}>刷新</button>}
+      />
+
+      <ChinesePlayableHomePanel
+        selectedProjectId={selectedProjectId || currentWorkspaceId}
+        recentProjects={recentProjects}
+        workspaceTemplates={workspaceTemplates}
+        configSummary={configSummary}
+        safeApiCacheStatuses={safeApiCacheStatuses}
+        providerConfigured={Boolean(configSummary?.api_key_configured || configSummary?.provider_status === "configured")}
+        modelAssignmentChecked={safeApiCacheStatuses.some((cacheStatus) =>
+          cacheStatus.key.includes("provider-model-list") ||
+          cacheStatus.key.includes("model-assignment") ||
+          cacheStatus.label.toLowerCase().includes("model assignment") ||
+          cacheStatus.summary.toLowerCase().includes("model assignment")
+        )}
+        qualityChecked={Boolean(worldHealth)}
+        debugEnabled={status?.debug_api_enabled ?? false}
+        recentSaveCount={recentSaves.length}
+        worldsCount={status?.worlds_count ?? 0}
+        onNavigate={onNavigate}
+        onOpenRecentProject={onSelectWorkspace}
+        onOpenDemoProject={onOpenDemoProject}
       />
 
       <ErrorPanel message={error} />
@@ -4116,9 +4411,44 @@ function StudioHome({
         projectLoaded={Boolean(selectedProjectId || currentWorkspaceId)}
         backendStatus={status?.backend_status ?? "unavailable"}
         providerStatus={configSummary?.provider_status ?? status?.local_model_provider_status ?? "unknown"}
+        modelAssignmentStatus={safeApiCacheStatuses.some((cacheStatus) => cacheStatus.key.includes("provider-model-list")) ? "checked" : "not checked"}
         qualityStatus={worldHealth ? "available" : "not run"}
         debugEnabled={status?.debug_api_enabled ?? false}
+        backupDiagnosticsStatus={diagnosticsBundlePreview ? "diagnostics previewed" : backupPlan ? "backup previewed" : "not checked"}
         apiKeyConfigured={configSummary?.api_key_configured ?? localConfigSummary?.api_key_configured}
+      />
+
+      <details className="home-advanced-tools" data-testid="v37-home-advanced-tools">
+        <summary>高级工具与完整检查 / Advanced Tools</summary>
+        <p className="muted">
+          Product Readiness、Quality Gate、Debug / Replay、Authoring / Mods、Backup、Diagnostics
+          等完整检查仍然可用，但默认收纳，避免首页变成开发者仪表盘。
+        </p>
+
+      <ProductReadinessDashboard
+        status={status}
+        selectedProjectId={selectedProjectId}
+        selectedWorldId={selectedWorldId}
+        configSummary={configSummary}
+        localConfigSummary={localConfigSummary}
+        localStudioConfig={localStudioConfig}
+        localUpdateNotes={localUpdateNotes}
+        backupPlan={backupPlan}
+        backupResult={backupResult}
+        restorePlan={restorePlan}
+        recoveryPlan={recoveryPlan}
+        localLogs={localLogs}
+        diagnosticsBundlePreview={diagnosticsBundlePreview}
+        diagnosticsBundleCreateResult={diagnosticsBundleCreateResult}
+        workspaces={workspaces}
+        currentWorkspaceId={currentWorkspaceId}
+        saves={saves}
+        worldHealth={worldHealth}
+        playtestReports={playtestReports}
+        scenarioRegressionRuns={scenarioRegressionRuns}
+        contentCoverage={contentCoverage}
+        safeApiCacheStatuses={safeApiCacheStatuses}
+        onNavigate={onNavigate}
       />
       <LocalLauncherStatusPanel
         status={localStudioStatus}
@@ -4132,6 +4462,9 @@ function StudioHome({
         status={status}
         selectedProjectId={selectedProjectId}
         configSummary={configSummary}
+        safeApiCacheStatuses={safeApiCacheStatuses}
+        backupPlan={backupPlan}
+        diagnosticsBundlePreview={diagnosticsBundlePreview}
         worldHealth={worldHealth}
         recentSaves={recentSaves}
         validationSummaries={validationSummaries}
@@ -4453,10 +4786,11 @@ function StudioHome({
         error={updateNotesError}
         onRefresh={onRefreshUpdateNotes}
       />
+      </details>
 
       <LocalOnlyNotice>
         Dashboard data is a safe local summary. It does not include API keys, raw GameState,
-        raw state_deltas, or hidden narrative facts.
+        原始状态变更明细, or hidden narrative facts.
       </LocalOnlyNotice>
     </section>
   );
@@ -4748,6 +5082,2957 @@ function formatCoverage(summary?: { covered: number; total: number } | null): st
 
 function safeIdList(ids: string[]): string {
   return ids.length ? ids.slice(0, 8).join(", ") : "none";
+}
+
+function ProductReadinessDashboard({
+  status,
+  selectedProjectId,
+  selectedWorldId,
+  configSummary,
+  localConfigSummary,
+  localStudioConfig,
+  localUpdateNotes,
+  backupPlan,
+  backupResult,
+  restorePlan,
+  recoveryPlan,
+  localLogs,
+  diagnosticsBundlePreview,
+  diagnosticsBundleCreateResult,
+  workspaces,
+  currentWorkspaceId,
+  saves,
+  worldHealth,
+  playtestReports,
+  scenarioRegressionRuns,
+  contentCoverage,
+  safeApiCacheStatuses,
+  onNavigate
+}: {
+  status: StudioStatus | null;
+  selectedProjectId: string;
+  selectedWorldId: string;
+  configSummary: StudioConfigSummary | null;
+  localConfigSummary: LocalConfigSummary | null;
+  localStudioConfig: LocalStudioConfigSummary | null;
+  localUpdateNotes: LocalUpdateNotesIndex | null;
+  backupPlan: BackupPlan | null;
+  backupResult: BackupCreateResponse | null;
+  restorePlan: RestorePlan | null;
+  recoveryPlan: RecoveryPlan | null;
+  localLogs: LocalLogListResponse | null;
+  diagnosticsBundlePreview: DiagnosticsBundlePreview | null;
+  diagnosticsBundleCreateResult: DiagnosticsBundleCreateResponse | null;
+  workspaces: ProjectWorkspace[];
+  currentWorkspaceId: string;
+  saves: SaveSummary[];
+  worldHealth: WorldHealthScore | null;
+  playtestReports: PlaytestReport[];
+  scenarioRegressionRuns: ScenarioRegressionRun[];
+  contentCoverage: ContentCoverageReport | null;
+  safeApiCacheStatuses: SafeApiCacheStatus[];
+  onNavigate: (mode: AppMode, toolId?: AuthoringToolId) => void;
+}) {
+  const items = useMemo(
+    () =>
+      buildProductReadinessItems({
+        status,
+        selectedProjectId,
+        selectedWorldId,
+        configSummary,
+        localConfigSummary,
+        localStudioConfig,
+        localUpdateNotes,
+        backupPlan,
+        backupResult,
+        restorePlan,
+        diagnosticsBundlePreview,
+        diagnosticsBundleCreateResult,
+        workspaces,
+        currentWorkspaceId,
+        saves,
+        worldHealth,
+        playtestReports,
+        scenarioRegressionRuns,
+        contentCoverage,
+        safeApiCacheStatuses
+      }),
+    [
+      status,
+      selectedProjectId,
+      selectedWorldId,
+      configSummary,
+      localConfigSummary,
+      localStudioConfig,
+      localUpdateNotes,
+      backupPlan,
+      backupResult,
+      restorePlan,
+      diagnosticsBundlePreview,
+      diagnosticsBundleCreateResult,
+      workspaces,
+      currentWorkspaceId,
+      saves,
+      worldHealth,
+      playtestReports,
+      scenarioRegressionRuns,
+      contentCoverage,
+      safeApiCacheStatuses
+    ]
+  );
+  const readyCount = items.filter((item) => item.status === "ready").length;
+  const warningCount = items.filter((item) => item.status === "warning").length;
+  const missingCount = items.filter((item) => item.status === "missing").length;
+  const disabledCount = items.filter((item) => item.status === "disabled").length;
+  const notCheckedCount = items.filter((item) => item.status === "not checked").length;
+
+  return (
+    <section className="studio-section product-readiness-dashboard" data-v37-product-readiness="safe-summary">
+      <div className="mod-detail-header">
+        <div>
+          <h3>Product Readiness Dashboard</h3>
+          <p className="muted">
+            Local complete product readiness across Project, Provider, studios, QA, backup, diagnostics, privacy, and docs. This panel uses safe summaries only.
+          </p>
+        </div>
+        <span className={`status-pill ${missingCount > 0 ? "error" : warningCount + disabledCount + notCheckedCount > 0 ? "warning" : "pass"}`}>
+          {readyCount}/{items.length} ready
+        </span>
+      </div>
+      <div className="studio-grid compact-dashboard-grid">
+        <DashboardCard title="Ready" value={String(readyCount)}>
+          <p>Local product conditions that are available now.</p>
+        </DashboardCard>
+        <DashboardCard title="Warnings" value={String(warningCount)}>
+          <p>Needs a local setup or preview step.</p>
+        </DashboardCard>
+        <DashboardCard title="Missing" value={String(missingCount)}>
+          <p>Missing local product prerequisites.</p>
+        </DashboardCard>
+        <DashboardCard title="Not checked / disabled" value={String(notCheckedCount + disabledCount)}>
+          <p>Review or enable only when needed.</p>
+        </DashboardCard>
+      </div>
+      <div className="product-readiness-list" role="list" aria-label="Product readiness items">
+        {items.map((item) => (
+          <article className={`product-readiness-item ${productReadinessTone(item.status)}`} key={item.id} role="listitem">
+            <div>
+              <div className="product-readiness-heading">
+                <h4>{item.label}</h4>
+                <span className={`status-pill ${productReadinessPillClass(item.status)}`}>
+                  {item.status}
+                </span>
+              </div>
+              <p>{redactReportText(item.safeSummary)}</p>
+              <p className="muted">Next action: {redactReportText(item.nextAction)}</p>
+            </div>
+            <button type="button" onClick={() => onNavigate(item.jumpMode, item.jumpTool)}>
+              {item.jumpLabel}
+            </button>
+          </article>
+        ))}
+      </div>
+      <LocalOnlyNotice>
+        Product readiness safe summaries never include API keys, transient keys, Authorization headers, raw env, hidden facts, NPC secrets, raw prompts, raw outputs, raw debug data, or raw state_deltas.
+      </LocalOnlyNotice>
+      <NovelCompleteWorkflowChecklist
+        selectedProjectId={selectedProjectId}
+        configSummary={configSummary}
+        localConfigSummary={localConfigSummary}
+        localStudioConfig={localStudioConfig}
+        safeApiCacheStatuses={safeApiCacheStatuses}
+        onNavigate={onNavigate}
+      />
+      <TavernCompleteWorkflowChecklist
+        selectedProjectId={selectedProjectId}
+        configSummary={configSummary}
+        localConfigSummary={localConfigSummary}
+        localStudioConfig={localStudioConfig}
+        safeApiCacheStatuses={safeApiCacheStatuses}
+        onNavigate={onNavigate}
+      />
+      <WorldCompleteWorkflowChecklist
+        status={status}
+        selectedProjectId={selectedProjectId}
+        selectedWorldId={selectedWorldId}
+        configSummary={configSummary}
+        localConfigSummary={localConfigSummary}
+        localStudioConfig={localStudioConfig}
+        worldHealth={worldHealth}
+        safeApiCacheStatuses={safeApiCacheStatuses}
+        onNavigate={onNavigate}
+      />
+      <CrossModeWorkflowClosureChecklist
+        selectedProjectId={selectedProjectId}
+        onNavigate={onNavigate}
+      />
+      <AuthoringModCompleteWorkflowChecklist
+        status={status}
+        configSummary={configSummary}
+        localConfigSummary={localConfigSummary}
+        onNavigate={onNavigate}
+      />
+      <QADebugReplayCompleteWorkflowChecklist
+        status={status}
+        selectedProjectId={selectedProjectId}
+        selectedWorldId={selectedWorldId}
+        saves={saves}
+        worldHealth={worldHealth}
+        playtestReports={playtestReports}
+        scenarioRegressionRuns={scenarioRegressionRuns}
+        contentCoverage={contentCoverage}
+        diagnosticsBundlePreview={diagnosticsBundlePreview}
+        backupPlan={backupPlan}
+        safeApiCacheStatuses={safeApiCacheStatuses}
+        onNavigate={onNavigate}
+      />
+      <BackupRestoreDiagnosticsCompleteWorkflowChecklist
+        backupPlan={backupPlan}
+        backupResult={backupResult}
+        restorePlan={restorePlan}
+        recoveryPlan={recoveryPlan}
+        localLogs={localLogs}
+        diagnosticsBundlePreview={diagnosticsBundlePreview}
+        diagnosticsBundleCreateResult={diagnosticsBundleCreateResult}
+        workspaces={workspaces}
+        currentWorkspaceId={currentWorkspaceId}
+        onNavigate={onNavigate}
+      />
+      <ExportCompleteWorkflowChecklist
+        selectedProjectId={selectedProjectId}
+        diagnosticsBundlePreview={diagnosticsBundlePreview}
+        diagnosticsBundleCreateResult={diagnosticsBundleCreateResult}
+        onNavigate={onNavigate}
+      />
+      <LocalPrivacySafetyCompleteReviewPanel
+        status={status}
+        configSummary={configSummary}
+        localConfigSummary={localConfigSummary}
+        localStudioConfig={localStudioConfig}
+        backupPlan={backupPlan}
+        diagnosticsBundlePreview={diagnosticsBundlePreview}
+        safeApiCacheStatuses={safeApiCacheStatuses}
+        onNavigate={onNavigate}
+      />
+      <ProductStateFinalPolishPanel
+        debugEnabled={status?.debug_api_enabled ?? false}
+        providerConfigured={Boolean(configSummary?.api_key_configured || configSummary?.provider_status === "configured")}
+        authoringEnabled={Boolean(status?.authoring_api_enabled ?? configSummary?.authoring_api_enabled ?? localConfigSummary?.authoring_api_enabled)}
+      />
+    </section>
+  );
+}
+
+function ProductStateFinalPolishPanel({
+  debugEnabled,
+  providerConfigured,
+  authoringEnabled
+}: {
+  debugEnabled: boolean;
+  providerConfigured: boolean;
+  authoringEnabled: boolean;
+}) {
+  const stateRows = [
+    {
+      surface: "项目首页",
+      empty: "尚未选择项目。下一步：打开或创建本地项目，也可以先查看 Demo 项目。",
+      error: "刷新后端健康状态和项目状态；错误会先脱敏，不显示 stack trace 或敏感路径。",
+      disabled: "需要先选择本地项目或工作区后，项目相关操作才会启用。"
+    },
+    {
+      surface: "写小说",
+      empty: "暂无稿件、大纲、章节或场景卡。下一步：创建稿件，或打开已有项目继续写作。",
+      error: "重试本地 Novel 摘要加载，或打开诊断查看脱敏预览；普通界面不会显示 stack trace。",
+      disabled: "LLM 辅助写作需要先配置模型服务并分配 Novel 模型；Novel 不会直接修改 World GameState。"
+    },
+    {
+      surface: "角色 RP",
+      empty: "暂无角色卡或 RP 会话。下一步：创建/导入本地角色卡，然后开始单角色或多 NPC 场景。",
+      error: "重试本地 Tavern 摘要加载；mature/private 与 NPC secret 细节仍会过滤。",
+      disabled: "Mature Module 默认关闭；需要先配置边界设置和模型服务后，相关 RP 控件才会启用。"
+    },
+    {
+      surface: "大世界",
+      empty: "暂无大世界会话或存档。下一步：开始大世界、继续存档，或先打开/创建项目。",
+      error: "查看脱敏后的后端错误摘要，然后重试本地行动、保存或读取请求。",
+      disabled: "加载期间行动会暂时禁用；Debug 面板需要 ENABLE_DEBUG_API，普通界面只显示 visible_state。"
+    },
+    {
+      surface: "创作 / Mod",
+      empty: "暂无本地 world/script/character package。下一步：选择本地包或创建安全草稿。",
+      error: "按 package、实体或编辑器查看验证错误；不打印原始文件、密钥或敏感路径。",
+      disabled: authoringEnabled ? "Safe Apply 会保持禁用，直到 validation、dry-run 和显式确认全部通过。" : "Authoring API 当前禁用；只有编辑本地包时才需要启用。"
+    },
+    {
+      surface: "模型服务",
+      empty: "尚未配置模型服务。下一步：创建 mock、local_stub、local_http 或真实 Provider 配置。",
+      error: "Provider 错误会脱敏；缺少密钥时只提示 api_key_env、secret_ref 或 local_secret_ref。",
+      disabled: providerConfigured ? "连接测试和模型读取必须由用户手动触发；不会后台自动连接真实 Provider。" : "缺少模型服务：请配置 api_key_env/secret_ref/local_secret_ref，不要保存明文 API Key。"
+    },
+    {
+      surface: "质量检查 / 调试",
+      empty: "暂无质量检查或回放结果。下一步：运行 Quality Gate、Playtest、Hidden Leak、Timeline 或 EventLog 检查。",
+      error: "QA 错误只显示安全摘要和修复建议，不显示 raw debug payload 或 hidden text。",
+      disabled: debugEnabled ? "raw debug 视图仍需要 DebugGate，并且 debug export 需要显式确认。" : "Debug 已禁用：需要 ENABLE_DEBUG_API 才能查看 StateDelta、Visible vs Debug 和 raw debug export。"
+    },
+    {
+      surface: "备份 / 恢复",
+      empty: "暂无备份 dry-run 或恢复预览。下一步：先运行备份 dry-run，或选择备份进行恢复预览。",
+      error: "备份和恢复失败只显示脱敏错误，敏感路径会被隐藏。",
+      disabled: "恢复 apply 会保持禁用，直到 dry-run 验证通过并完成显式确认。"
+    },
+    {
+      surface: "诊断",
+      empty: "暂无诊断预览。下一步：先在本地预览诊断包，再创建脱敏 bundle。",
+      error: "诊断错误会脱敏，并且不会上传。",
+      disabled: "Debug 诊断默认禁用；需要 ENABLE_DEBUG_API 和显式 debug 确认。"
+    },
+    {
+      surface: "设置",
+      empty: "暂无本地配置摘要。下一步：刷新设置，查看常规、隐私、Provider、导出、Debug、备份、诊断、Mature 和 UI 偏好。",
+      error: "设置错误只显示安全本地摘要；不渲染 raw env、stack trace 或敏感路径。",
+      disabled: "无账号、无云同步、无在线市场，也不暴露远程包下载设置。"
+    }
+  ];
+
+  return (
+    <SectionCard
+      title="产品错误 / 空状态 / 禁用状态最终收口"
+      description="v3.7 中文本地产品状态说明：空页面、本地错误和禁用 API 都要说明原因与下一步。"
+    >
+      <div className="state-polish-summary">
+        <StatusBadge label="空状态包含下一步" enabled />
+        <StatusBadge label="安全错误包含修复建议" enabled />
+        <StatusBadge label="禁用状态说明原因" enabled />
+        <StatusBadge label={debugEnabled ? "Debug 已启用" : "Debug 已禁用：需要 ENABLE_DEBUG_API"} enabled={debugEnabled} />
+        <StatusBadge label={providerConfigured ? "模型服务已配置" : "缺少模型服务：配置 api_key_env/secret_ref"} enabled={providerConfigured} />
+      </div>
+      <EmptyState
+        title="暂无状态数据说明"
+        detail="下面每个主要页面都会给出下一步本地操作，而不是留下空白页面或一屏 disabled。"
+      />
+      <DisabledState
+        title="禁用状态说明"
+        detail="禁用控件会说明本地原因，例如缺少项目、缺少模型服务密钥、API 未启用、需要 dry-run，或需要 ENABLE_DEBUG_API。"
+      />
+      <div className="product-state-grid" role="list" aria-label="中文产品错误空状态禁用状态覆盖">
+        {stateRows.map((row) => (
+          <article className="product-state-card" role="listitem" key={row.surface}>
+            <h4>{row.surface}</h4>
+            <div className="product-state-column">
+              <strong>空状态</strong>
+              <p>{row.empty}</p>
+            </div>
+            <div className="product-state-column">
+              <strong>错误状态</strong>
+              <p>{row.error}</p>
+            </div>
+            <div className="product-state-column">
+              <strong>禁用状态</strong>
+              <p>{row.disabled}</p>
+            </div>
+          </article>
+        ))}
+      </div>
+      <LocalOnlyNotice>
+        状态文案保持普通 UI 安全：不显示 API Key、Authorization header、raw env；不显示 stack trace、敏感本地路径、hidden facts、NPC secrets、debug memory、raw state_deltas；不上传、无账号、无云同步、无在线市场。
+      </LocalOnlyNotice>
+    </SectionCard>
+  );
+}
+
+function NovelCompleteWorkflowChecklist({
+  selectedProjectId,
+  configSummary,
+  localConfigSummary,
+  localStudioConfig,
+  safeApiCacheStatuses,
+  onNavigate
+}: {
+  selectedProjectId: string;
+  configSummary: StudioConfigSummary | null;
+  localConfigSummary: LocalConfigSummary | null;
+  localStudioConfig: LocalStudioConfigSummary | null;
+  safeApiCacheStatuses: SafeApiCacheStatus[];
+  onNavigate: (mode: AppMode, toolId?: AuthoringToolId) => void;
+}) {
+  const items = useMemo(
+    () =>
+      buildNovelWorkflowChecklistItems({
+        selectedProjectId,
+        configSummary,
+        localConfigSummary,
+        localStudioConfig,
+        safeApiCacheStatuses
+      }),
+    [selectedProjectId, configSummary, localConfigSummary, localStudioConfig, safeApiCacheStatuses]
+  );
+  const readyCount = items.filter((item) => item.status === "ready").length;
+  const warningCount = items.filter((item) => item.status === "warning").length;
+  const missingCount = items.filter((item) => item.status === "missing").length;
+
+  return (
+    <section className="studio-section novel-complete-workflow-checklist" data-v37-novel-workflow-check="safe-summary">
+      <div className="mod-detail-header">
+        <div>
+          <h3>Novel Complete Workflow Check</h3>
+          <p className="muted">
+            Local writing readiness for manuscript, outline, chapters, scenes, character arcs, foreshadowing, World import, quality, and safe export.
+          </p>
+        </div>
+        <span className={`status-pill ${missingCount > 0 ? "error" : warningCount > 0 ? "warning" : "pass"}`}>
+          {readyCount}/{items.length} ready
+        </span>
+      </div>
+      <div className="studio-grid compact-dashboard-grid">
+        <DashboardCard title="Ready" value={String(readyCount)}>
+          <p>Novel workflow surfaces available for the selected local project.</p>
+        </DashboardCard>
+        <DashboardCard title="Warnings" value={String(warningCount)}>
+          <p>Setup reminders such as missing Provider model assignment.</p>
+        </DashboardCard>
+        <DashboardCard title="Missing" value={String(missingCount)}>
+          <p>Items that need a local project before they can be used.</p>
+        </DashboardCard>
+      </div>
+      <div className="product-readiness-list" role="list" aria-label="Novel complete workflow checklist items">
+        {items.map((item) => (
+          <article className={`product-readiness-item ${productReadinessTone(item.status)}`} key={item.id} role="listitem">
+            <div>
+              <div className="product-readiness-heading">
+                <h4>{item.label}</h4>
+                <span className={`status-pill ${productReadinessPillClass(item.status)}`}>
+                  {item.status}
+                </span>
+              </div>
+              <p>{redactReportText(item.safeSummary)}</p>
+              <p className="muted">Next action: {redactReportText(item.nextAction)}</p>
+            </div>
+            <button type="button" onClick={() => onNavigate(item.jumpMode, item.jumpTool)}>
+              {item.jumpLabel}
+            </button>
+          </article>
+        ))}
+      </div>
+      <LocalOnlyNotice>
+        Novel readiness checks are observation-only: no online writing account, no cloud sync, no real provider call, no content generation, no World GameState mutation, and no hidden facts or raw state_deltas in normal UI.
+      </LocalOnlyNotice>
+    </section>
+  );
+}
+
+function buildNovelWorkflowChecklistItems({
+  selectedProjectId,
+  configSummary,
+  localConfigSummary,
+  localStudioConfig,
+  safeApiCacheStatuses
+}: {
+  selectedProjectId: string;
+  configSummary: StudioConfigSummary | null;
+  localConfigSummary: LocalConfigSummary | null;
+  localStudioConfig: LocalStudioConfigSummary | null;
+  safeApiCacheStatuses: SafeApiCacheStatus[];
+}): ProductReadinessItem[] {
+  const projectReady = Boolean(selectedProjectId);
+  const providerType = localConfigSummary?.provider_type ?? configSummary?.llm_provider ?? "unknown";
+  const providerProfileCount = localStudioConfig?.provider_profiles_count ?? 0;
+  const providerStatus = configSummary?.provider_status ?? "unknown";
+  const providerSafeForLocalUse =
+    providerProfileCount > 0 ||
+    ["mock", "local_stub"].includes(providerType) ||
+    providerStatus === "configured" ||
+    providerStatus === "connected";
+  const modelAssignmentSafeSummary = safeApiCacheStatuses.find(
+    (cacheStatus) =>
+      cacheStatus.key.includes("provider-model-list") ||
+      cacheStatus.key.includes("model-assignment") ||
+      cacheStatus.summary.toLowerCase().includes("model assignment")
+  );
+  const novelProviderAssigned = projectReady && Boolean(modelAssignmentSafeSummary || providerSafeForLocalUse);
+  const projectStatus: ProductReadinessStatus = projectReady ? "ready" : "missing";
+  const projectSafeSummary = projectReady
+    ? "Novel workspace can create or load local manuscript drafts for this project."
+    : "Select or create a local project before using the Novel workflow.";
+  const projectNextAction = projectReady ? "Open Novel Studio and continue local drafting." : "Create or open a project from Project Home.";
+
+  return [
+    {
+      id: "novel-manuscript",
+      label: "Manuscript exists or can be created",
+      status: projectStatus,
+      safeSummary: projectReady ? "Manuscript creation and local manuscript list are available." : projectSafeSummary,
+      nextAction: projectReady ? "Use Create Manuscript from Novel Studio if no draft exists yet." : projectNextAction,
+      jumpLabel: "Open Novel",
+      jumpMode: "project"
+    },
+    {
+      id: "novel-outline",
+      label: "Outline available",
+      status: projectStatus,
+      safeSummary: projectReady ? "Outline Tree Pro is available for local chapter and scene structure." : projectSafeSummary,
+      nextAction: projectReady ? "Open Outline in the Novel workspace." : projectNextAction,
+      jumpLabel: "Open Outline",
+      jumpMode: "project"
+    },
+    {
+      id: "novel-chapter-editor",
+      label: "Chapter editor available",
+      status: projectStatus,
+      safeSummary: projectReady ? "Chapter Editor Pro is available for local draft text and snapshots." : projectSafeSummary,
+      nextAction: projectReady ? "Create or select a chapter before drafting." : projectNextAction,
+      jumpLabel: "Open Chapters",
+      jumpMode: "project"
+    },
+    {
+      id: "novel-scene-cards",
+      label: "Scene cards available",
+      status: projectStatus,
+      safeSummary: projectReady ? "Scene Cards Board is available for local scene planning." : projectSafeSummary,
+      nextAction: projectReady ? "Add a scene from the selected chapter." : projectNextAction,
+      jumpLabel: "Open Scenes",
+      jumpMode: "project"
+    },
+    {
+      id: "novel-character-arcs",
+      label: "Character arcs available",
+      status: projectStatus,
+      safeSummary: projectReady ? "Character Arc Panel is available and uses Novel draft summaries only." : projectSafeSummary,
+      nextAction: projectReady ? "Review character arcs from the Novel structure tools." : projectNextAction,
+      jumpLabel: "Open Character Arcs",
+      jumpMode: "project"
+    },
+    {
+      id: "novel-plot-foreshadowing",
+      label: "Plot/Foreshadowing available",
+      status: projectStatus,
+      safeSummary: projectReady ? "Plot Thread and Foreshadowing Board is available for local planning." : projectSafeSummary,
+      nextAction: projectReady ? "Review plot and foreshadowing board from Novel Studio." : projectNextAction,
+      jumpLabel: "Open Plot",
+      jumpMode: "project"
+    },
+    {
+      id: "novel-world-bible",
+      label: "World Bible sidebar available",
+      status: projectStatus,
+      safeSummary: projectReady ? "World Bible sidebar shows safe references; hidden facts and NPC secrets are not rendered." : projectSafeSummary,
+      nextAction: projectReady ? "Open the World Bible sidebar and use safe public summaries only." : projectNextAction,
+      jumpLabel: "Open World Bible",
+      jumpMode: "project"
+    },
+    {
+      id: "novel-timeline-links",
+      label: "Timeline links available",
+      status: projectStatus,
+      safeSummary: projectReady ? "Timeline Link Panel is available for safe local references." : projectSafeSummary,
+      nextAction: projectReady ? "Link scenes to safe timeline summaries; do not expose raw EventLog or state_deltas." : projectNextAction,
+      jumpLabel: "Open Timeline Links",
+      jumpMode: "project"
+    },
+    {
+      id: "novel-provider-model",
+      label: "Provider model assigned for novel",
+      status: novelProviderAssigned ? "ready" : projectReady ? "warning" : "missing",
+      safeSummary: novelProviderAssigned
+        ? "Novel Provider Gateway route has safe local provider/model metadata; API key values are not rendered."
+        : "Missing provider warning: Novel drafting should use a mock/local_stub or env/secret_ref Provider Gateway route before model-assisted writing.",
+      nextAction: novelProviderAssigned
+        ? "Review Provider Model Assignment if routing changes."
+        : "Open Provider setup and assign a Novel draft or Novel rewrite model without storing a real key in the project.",
+      jumpLabel: "Open Provider Setup",
+      jumpMode: "prompt_lab"
+    },
+    {
+      id: "novel-world-import",
+      label: "World -> Novel import available",
+      status: projectStatus,
+      safeSummary: projectReady ? "World -> Novel import preview is available and keeps World/EventLog data read-only until explicit draft creation." : projectSafeSummary,
+      nextAction: projectReady ? "Preview World -> Novel source events before creating a Novel draft." : projectNextAction,
+      jumpLabel: "Open Import",
+      jumpMode: "project"
+    },
+    {
+      id: "novel-export",
+      label: "Novel export available",
+      status: projectStatus,
+      safeSummary: projectReady ? "Novel Export Wizard is available for local markdown/txt drafts." : projectSafeSummary,
+      nextAction: projectReady ? "Use safe export after reviewing default filters." : projectNextAction,
+      jumpLabel: "Open Export",
+      jumpMode: "project"
+    },
+    {
+      id: "novel-quality",
+      label: "Novel quality runnable",
+      status: projectStatus,
+      safeSummary: projectReady ? "Novel Quality Dashboard is available and reports safe issue summaries only." : projectSafeSummary,
+      nextAction: projectReady ? "Run or review Novel quality checks before export." : projectNextAction,
+      jumpLabel: "Open Quality",
+      jumpMode: "project"
+    },
+    {
+      id: "novel-local-only",
+      label: "No online writing requirement",
+      status: "ready",
+      safeSummary: "Novel workflow is local-first and does not require an account, cloud sync, online writing service, or telemetry.",
+      nextAction: "Keep drafts in the local project and configure providers only through Provider Gateway.",
+      jumpLabel: "Open Local Help",
+      jumpMode: "studio"
+    },
+    {
+      id: "novel-export-filters",
+      label: "Export filters secrets / hidden / mature/private",
+      status: "ready",
+      safeSummary: "Default Novel export filters API keys, provider secrets, hidden refs, mature/private content, debug data, raw prompts, and raw state_deltas.",
+      nextAction: "Keep safe export defaults enabled before sharing or archiving drafts.",
+      jumpLabel: "Open Export",
+      jumpMode: "project"
+    }
+  ];
+}
+
+function TavernCompleteWorkflowChecklist({
+  selectedProjectId,
+  configSummary,
+  localConfigSummary,
+  localStudioConfig,
+  safeApiCacheStatuses,
+  onNavigate
+}: {
+  selectedProjectId: string;
+  configSummary: StudioConfigSummary | null;
+  localConfigSummary: LocalConfigSummary | null;
+  localStudioConfig: LocalStudioConfigSummary | null;
+  safeApiCacheStatuses: SafeApiCacheStatus[];
+  onNavigate: (mode: AppMode, toolId?: AuthoringToolId) => void;
+}) {
+  const items = useMemo(
+    () =>
+      buildTavernWorkflowChecklistItems({
+        selectedProjectId,
+        configSummary,
+        localConfigSummary,
+        localStudioConfig,
+        safeApiCacheStatuses
+      }),
+    [selectedProjectId, configSummary, localConfigSummary, localStudioConfig, safeApiCacheStatuses]
+  );
+  const readyCount = items.filter((item) => item.status === "ready").length;
+  const warningCount = items.filter((item) => item.status === "warning").length;
+  const missingCount = items.filter((item) => item.status === "missing").length;
+
+  return (
+    <section className="studio-section tavern-complete-workflow-checklist" data-v37-tavern-workflow-check="safe-summary">
+      <div className="mod-detail-header">
+        <div>
+          <h3>Tavern Complete Workflow Check</h3>
+          <p className="muted">
+            Local RP readiness for character cards, chat, multi-NPC scenes, memory, emotion, relationship tone, voice, boundaries, Cross-Mode proposals, safety, export, and backup.
+          </p>
+        </div>
+        <span className={`status-pill ${missingCount > 0 ? "error" : warningCount > 0 ? "warning" : "pass"}`}>
+          {readyCount}/{items.length} ready
+        </span>
+      </div>
+      <div className="studio-grid compact-dashboard-grid">
+        <DashboardCard title="Ready" value={String(readyCount)}>
+          <p>Tavern RP workflow surfaces available for the selected local project.</p>
+        </DashboardCard>
+        <DashboardCard title="Warnings" value={String(warningCount)}>
+          <p>Setup reminders such as missing Tavern Provider model assignment.</p>
+        </DashboardCard>
+        <DashboardCard title="Missing" value={String(missingCount)}>
+          <p>Items that need a local project before they can be used.</p>
+        </DashboardCard>
+      </div>
+      <div className="product-readiness-list" role="list" aria-label="Tavern complete workflow checklist items">
+        {items.map((item) => (
+          <article className={`product-readiness-item ${productReadinessTone(item.status)}`} key={item.id} role="listitem">
+            <div>
+              <div className="product-readiness-heading">
+                <h4>{item.label}</h4>
+                <span className={`status-pill ${productReadinessPillClass(item.status)}`}>
+                  {item.status}
+                </span>
+              </div>
+              <p>{redactReportText(item.safeSummary)}</p>
+              <p className="muted">Next action: {redactReportText(item.nextAction)}</p>
+            </div>
+            <button type="button" onClick={() => onNavigate(item.jumpMode, item.jumpTool)}>
+              {item.jumpLabel}
+            </button>
+          </article>
+        ))}
+      </div>
+      <LocalOnlyNotice>
+        Tavern readiness checks are observation-only: no online RP, no multiplayer session, no real provider call, no content generation, no direct World GameState mutation, and no NPC secrets or mature memory in normal UI.
+      </LocalOnlyNotice>
+    </section>
+  );
+}
+
+function buildTavernWorkflowChecklistItems({
+  selectedProjectId,
+  configSummary,
+  localConfigSummary,
+  localStudioConfig,
+  safeApiCacheStatuses
+}: {
+  selectedProjectId: string;
+  configSummary: StudioConfigSummary | null;
+  localConfigSummary: LocalConfigSummary | null;
+  localStudioConfig: LocalStudioConfigSummary | null;
+  safeApiCacheStatuses: SafeApiCacheStatus[];
+}): ProductReadinessItem[] {
+  const projectReady = Boolean(selectedProjectId);
+  const providerType = localConfigSummary?.provider_type ?? configSummary?.llm_provider ?? "unknown";
+  const providerProfileCount = localStudioConfig?.provider_profiles_count ?? 0;
+  const providerStatus = configSummary?.provider_status ?? "unknown";
+  const providerSafeForLocalUse =
+    providerProfileCount > 0 ||
+    ["mock", "local_stub"].includes(providerType) ||
+    providerStatus === "configured" ||
+    providerStatus === "connected";
+  const modelAssignmentSafeSummary = safeApiCacheStatuses.find(
+    (cacheStatus) =>
+      cacheStatus.key.includes("provider-model-list") ||
+      cacheStatus.key.includes("model-assignment") ||
+      cacheStatus.summary.toLowerCase().includes("model assignment") ||
+      cacheStatus.summary.toLowerCase().includes("tavern")
+  );
+  const tavernProviderAssigned = projectReady && Boolean(modelAssignmentSafeSummary || providerSafeForLocalUse);
+  const projectStatus: ProductReadinessStatus = projectReady ? "ready" : "missing";
+  const projectSafeSummary = projectReady
+    ? "Tavern workspace can create or load local RP characters, sessions, and safety reports for this project."
+    : "Select or create a local project before using the Tavern workflow.";
+  const projectNextAction = projectReady ? "Open Tavern Studio and continue local RP setup." : "Create or open a project from Project Home.";
+
+  return [
+    {
+      id: "tavern-character-library",
+      label: "Character library available",
+      status: projectStatus,
+      safeSummary: projectReady ? "Character Card Library is available for local TavernCharacter drafts." : projectSafeSummary,
+      nextAction: projectReady ? "Import or create a local character card." : projectNextAction,
+      jumpLabel: "Open Tavern",
+      jumpMode: "project"
+    },
+    {
+      id: "tavern-character-editor",
+      label: "Tavern character editor available",
+      status: projectStatus,
+      safeSummary: projectReady ? "Tavern Character Editor is available for public fields, RP refs, voice refs, and boundary refs." : projectSafeSummary,
+      nextAction: projectReady ? "Select a character and review public RP fields." : projectNextAction,
+      jumpLabel: "Open Character Editor",
+      jumpMode: "project"
+    },
+    {
+      id: "tavern-rp-voice-profile",
+      label: "RP/Voice profile available",
+      status: projectStatus,
+      safeSummary: projectReady ? "RP profile and Character Voice Lab surfaces are available; private persona stays out of normal prompt/UI." : projectSafeSummary,
+      nextAction: projectReady ? "Review RP profile and voice profile status in Tavern Studio." : projectNextAction,
+      jumpLabel: "Open RP/Voice",
+      jumpMode: "project"
+    },
+    {
+      id: "tavern-single-chat",
+      label: "Single chat available",
+      status: projectStatus,
+      safeSummary: projectReady ? "Single Character Chat Pro is available for local Tavern messages and safe recovery drafts." : projectSafeSummary,
+      nextAction: projectReady ? "Create or select a Tavern session and character before chatting." : projectNextAction,
+      jumpLabel: "Open Chat",
+      jumpMode: "project"
+    },
+    {
+      id: "tavern-multi-npc",
+      label: "Multi-NPC scene available",
+      status: projectStatus,
+      safeSummary: projectReady ? "Multi-NPC Scene Pro is available and stores Tavern messages only, not World state." : projectSafeSummary,
+      nextAction: projectReady ? "Create a multi-NPC scene with local Tavern participants." : projectNextAction,
+      jumpLabel: "Open Multi-NPC",
+      jumpMode: "project"
+    },
+    {
+      id: "tavern-rp-memory",
+      label: "RP memory available",
+      status: projectStatus,
+      safeSummary: projectReady ? "RP Memory Panel is available; mature_only memory remains hidden unless explicitly opted in." : projectSafeSummary,
+      nextAction: projectReady ? "Review safe RP memory metadata and recovery summaries." : projectNextAction,
+      jumpLabel: "Open Memory",
+      jumpMode: "project"
+    },
+    {
+      id: "tavern-emotion-arc",
+      label: "Emotion arc available",
+      status: projectStatus,
+      safeSummary: projectReady ? "Emotion Arc Panel is available for safe local emotion summaries." : projectSafeSummary,
+      nextAction: projectReady ? "Review emotion arc summaries from Tavern Studio." : projectNextAction,
+      jumpLabel: "Open Emotion",
+      jumpMode: "project"
+    },
+    {
+      id: "tavern-relationship-tone",
+      label: "Relationship tone available",
+      status: projectStatus,
+      safeSummary: projectReady ? "Relationship Tone Panel is available and creates Tavern -> World proposals only." : projectSafeSummary,
+      nextAction: projectReady ? "Review relationship tone and proposal safety before any Cross-Mode apply." : projectNextAction,
+      jumpLabel: "Open Relationship",
+      jumpMode: "project"
+    },
+    {
+      id: "tavern-scene-mood",
+      label: "Scene mood available",
+      status: projectStatus,
+      safeSummary: projectReady ? "Scene Mood Preset UI is available and changes expression style only, not world facts." : projectSafeSummary,
+      nextAction: projectReady ? "Create or select local scene mood presets." : projectNextAction,
+      jumpLabel: "Open Scene Mood",
+      jumpMode: "project"
+    },
+    {
+      id: "tavern-boundary-settings",
+      label: "Boundary settings available",
+      status: projectStatus,
+      safeSummary: projectReady ? "Boundary settings are available for consent, safety, and fade-to-black defaults." : projectSafeSummary,
+      nextAction: projectReady ? "Review Boundary / Mature Settings before RP sessions." : projectNextAction,
+      jumpLabel: "Open Boundaries",
+      jumpMode: "project"
+    },
+    {
+      id: "tavern-mature-default-off",
+      label: "Mature module default-off",
+      status: "ready",
+      safeSummary: "Mature module is default-off; unknown age/minor blocks and consent boundaries remain enforced by local policy.",
+      nextAction: "Keep mature settings off unless explicitly configured and validated.",
+      jumpLabel: "Open Boundaries",
+      jumpMode: "project"
+    },
+    {
+      id: "tavern-provider-model",
+      label: "Provider model assigned for Tavern",
+      status: tavernProviderAssigned ? "ready" : projectReady ? "warning" : "missing",
+      safeSummary: tavernProviderAssigned
+        ? "Tavern Provider Gateway route has safe local provider/model metadata; API key values are not rendered."
+        : "Missing provider warning: Tavern reply and multi-NPC use cases should use mock/local_stub or env/secret_ref Provider Gateway routes.",
+      nextAction: tavernProviderAssigned
+        ? "Review Provider Model Assignment if Tavern routing changes."
+        : "Open Provider setup and assign tavern_reply or multi_npc_reply without storing a real key in the project.",
+      jumpLabel: "Open Provider Setup",
+      jumpMode: "prompt_lab"
+    },
+    {
+      id: "tavern-world-proposal",
+      label: "Tavern -> World proposal available",
+      status: projectStatus,
+      safeSummary: projectReady ? "Tavern -> World proposal review is available and does not directly modify active GameState." : projectSafeSummary,
+      nextAction: projectReady ? "Create a local proposal, validate it, dry-run, and require explicit confirm before apply." : projectNextAction,
+      jumpLabel: "Open Cross-Mode",
+      jumpMode: "project"
+    },
+    {
+      id: "tavern-novel-draft",
+      label: "Tavern -> Novel draft available",
+      status: projectStatus,
+      safeSummary: projectReady ? "Tavern -> Novel scene draft flow is available as filtered local draft material only." : projectSafeSummary,
+      nextAction: projectReady ? "Review Tavern-to-Novel draft summaries before adding them to Novel workspace." : projectNextAction,
+      jumpLabel: "Open Cross-Mode",
+      jumpMode: "project"
+    },
+    {
+      id: "tavern-rp-safety",
+      label: "RP Safety runnable",
+      status: projectStatus,
+      safeSummary: projectReady ? "RP Safety Dashboard can run local checks for hidden leaks, NPC knowledge, mature boundaries, export, and provider routing." : projectSafeSummary,
+      nextAction: projectReady ? "Run RP Safety Eval before export or Cross-Mode review." : projectNextAction,
+      jumpLabel: "Open RP Safety",
+      jumpMode: "project"
+    },
+    {
+      id: "tavern-export-backup",
+      label: "Tavern export/backup available",
+      status: projectStatus,
+      safeSummary: projectReady ? "Tavern Session Export / Backup UX is available with preview-first local export and no upload." : projectSafeSummary,
+      nextAction: projectReady ? "Preview export and keep default filters enabled before confirming local output." : projectNextAction,
+      jumpLabel: "Open Export",
+      jumpMode: "project"
+    },
+    {
+      id: "tavern-mature-private-filter",
+      label: "mature/private filtered by default",
+      status: "ready",
+      safeSummary: "Normal Tavern UI, prompts, export, backup, and diagnostics filter NPC secrets, private persona, mature/private memory, debug data, raw prompts, and raw state_deltas by default.",
+      nextAction: "Keep safe export and privacy defaults enabled for Tavern sessions.",
+      jumpLabel: "Open Privacy",
+      jumpMode: "studio"
+    }
+  ];
+}
+
+function WorldCompleteWorkflowChecklist({
+  status,
+  selectedProjectId,
+  selectedWorldId,
+  configSummary,
+  localConfigSummary,
+  localStudioConfig,
+  worldHealth,
+  safeApiCacheStatuses,
+  onNavigate
+}: {
+  status: StudioStatus | null;
+  selectedProjectId: string;
+  selectedWorldId: string;
+  configSummary: StudioConfigSummary | null;
+  localConfigSummary: LocalConfigSummary | null;
+  localStudioConfig: LocalStudioConfigSummary | null;
+  worldHealth: WorldHealthScore | null;
+  safeApiCacheStatuses: SafeApiCacheStatus[];
+  onNavigate: (mode: AppMode, toolId?: AuthoringToolId) => void;
+}) {
+  const items = useMemo(
+    () =>
+      buildWorldWorkflowChecklistItems({
+        status,
+        selectedProjectId,
+        selectedWorldId,
+        configSummary,
+        localConfigSummary,
+        localStudioConfig,
+        worldHealth,
+        safeApiCacheStatuses
+      }),
+    [
+      status,
+      selectedProjectId,
+      selectedWorldId,
+      configSummary,
+      localConfigSummary,
+      localStudioConfig,
+      worldHealth,
+      safeApiCacheStatuses
+    ]
+  );
+  const readyCount = items.filter((item) => item.status === "ready").length;
+  const warningCount = items.filter((item) => item.status === "warning").length;
+  const missingCount = items.filter((item) => item.status === "missing").length;
+
+  return (
+    <section className="studio-section world-complete-workflow-checklist" data-v37-world-workflow-check="safe-summary">
+      <div className="mod-detail-header">
+        <div>
+          <h3>World Complete Workflow Check</h3>
+          <p className="muted">
+            Local open-world readiness for start/play actions, suggested actions, visible-state panels, modules, save/load, Timeline/EventLog, Quality, Provider routing, and DebugGate.
+          </p>
+        </div>
+        <span className={`status-pill ${missingCount > 0 ? "error" : warningCount > 0 ? "warning" : "pass"}`}>
+          {readyCount}/{items.length} ready
+        </span>
+      </div>
+      <div className="studio-grid compact-dashboard-grid">
+        <DashboardCard title="Ready" value={String(readyCount)}>
+          <p>World workflow surfaces available for local play and inspection.</p>
+        </DashboardCard>
+        <DashboardCard title="Warnings" value={String(warningCount)}>
+          <p>Setup reminders such as missing World intent parser or narrator model assignment.</p>
+        </DashboardCard>
+        <DashboardCard title="Missing" value={String(missingCount)}>
+          <p>Items that need a local world or project before they can be used.</p>
+        </DashboardCard>
+      </div>
+      <div className="product-readiness-list" role="list" aria-label="World complete workflow checklist items">
+        {items.map((item) => (
+          <article className={`product-readiness-item ${productReadinessTone(item.status)}`} key={item.id} role="listitem">
+            <div>
+              <div className="product-readiness-heading">
+                <h4>{item.label}</h4>
+                <span className={`status-pill ${productReadinessPillClass(item.status)}`}>
+                  {item.status}
+                </span>
+              </div>
+              <p>{redactReportText(item.safeSummary)}</p>
+              <p className="muted">Next action: {redactReportText(item.nextAction)}</p>
+            </div>
+            <button type="button" onClick={() => onNavigate(item.jumpMode, item.jumpTool)}>
+              {item.jumpLabel}
+            </button>
+          </article>
+        ))}
+      </div>
+      <LocalOnlyNotice>
+        World readiness checks are observation-only. Normal play still goes through backend game actions, ActionRegistry, StateDelta, and EventLog; this checklist never calls a real provider, never lets the UI directly modify GameState, and never renders hidden facts or raw state_deltas in normal UI.
+      </LocalOnlyNotice>
+    </section>
+  );
+}
+
+function buildWorldWorkflowChecklistItems({
+  status,
+  selectedProjectId,
+  selectedWorldId,
+  configSummary,
+  localConfigSummary,
+  localStudioConfig,
+  worldHealth,
+  safeApiCacheStatuses
+}: {
+  status: StudioStatus | null;
+  selectedProjectId: string;
+  selectedWorldId: string;
+  configSummary: StudioConfigSummary | null;
+  localConfigSummary: LocalConfigSummary | null;
+  localStudioConfig: LocalStudioConfigSummary | null;
+  worldHealth: WorldHealthScore | null;
+  safeApiCacheStatuses: SafeApiCacheStatus[];
+}): ProductReadinessItem[] {
+  const projectReady = Boolean(selectedProjectId);
+  const worldAvailable = Boolean(selectedWorldId || status?.worlds_count);
+  const worldStatus: ProductReadinessStatus = worldAvailable ? "ready" : "missing";
+  const worldSafeSummary = worldAvailable
+    ? `${status?.worlds_count ?? 0} local world pack(s) visible; selected world ${selectedWorldId || "not selected"}.`
+    : "No local world is selected or visible to the Studio.";
+  const worldNextAction = worldAvailable ? "Open World Studio and start or load a local session." : "Select a local world pack before playing.";
+  const providerType = localConfigSummary?.provider_type ?? configSummary?.llm_provider ?? status?.llm_provider ?? "unknown";
+  const providerProfileCount = localStudioConfig?.provider_profiles_count ?? 0;
+  const providerStatus = configSummary?.provider_status ?? status?.local_model_provider_status ?? "unknown";
+  const providerSafeForLocalUse =
+    providerProfileCount > 0 ||
+    ["mock", "local_stub"].includes(providerType) ||
+    providerStatus === "configured" ||
+    providerStatus === "connected";
+  const modelAssignmentText = safeApiCacheStatuses
+    .filter((cacheStatus) => cacheStatus.key.includes("provider-model-list") || cacheStatus.key.includes("model-assignment"))
+    .map((cacheStatus) => `${cacheStatus.key} ${cacheStatus.summary}`.toLowerCase())
+    .join(" ");
+  const hasModelAssignmentSummary = Boolean(modelAssignmentText);
+  const worldIntentParserAssigned =
+    worldAvailable &&
+    (["mock", "local_stub"].includes(providerType) ||
+      modelAssignmentText.includes("world_intent_parse") ||
+      modelAssignmentText.includes("intent parser") ||
+      modelAssignmentText.includes("structured_json") ||
+      modelAssignmentText.includes("model assignment"));
+  const worldNarratorAssigned =
+    worldAvailable &&
+    (["mock", "local_stub"].includes(providerType) ||
+      modelAssignmentText.includes("world_narration") ||
+      modelAssignmentText.includes("narrator") ||
+      modelAssignmentText.includes("model assignment"));
+  const providerMissingStatus: ProductReadinessStatus = worldAvailable && providerSafeForLocalUse && !hasModelAssignmentSummary ? "warning" : worldAvailable ? "warning" : "missing";
+  const qualityStatus: ProductReadinessStatus = worldAvailable ? "ready" : projectReady ? "warning" : "missing";
+
+  return [
+    {
+      id: "world-available",
+      label: "World available",
+      status: worldStatus,
+      safeSummary: worldSafeSummary,
+      nextAction: worldNextAction,
+      jumpLabel: "Open World",
+      jumpMode: "play"
+    },
+    {
+      id: "world-start-game",
+      label: "Start game works",
+      status: worldStatus,
+      safeSummary: worldAvailable ? "Start game flow is available through backend Game API and WorldPlayMainView." : worldSafeSummary,
+      nextAction: worldAvailable ? "Use Start Game from World Studio; UI does not directly mutate GameState." : worldNextAction,
+      jumpLabel: "Start World",
+      jumpMode: "play"
+    },
+    {
+      id: "world-input-action",
+      label: "Input action available",
+      status: worldStatus,
+      safeSummary: worldAvailable ? "World Action Input is available and submits actions through backend APIs." : worldSafeSummary,
+      nextAction: worldAvailable ? "Enter actions through World Studio; world changes remain StateDelta plus EventLog." : worldNextAction,
+      jumpLabel: "Open Action Input",
+      jumpMode: "play"
+    },
+    {
+      id: "world-suggested-actions",
+      label: "Suggested actions available",
+      status: worldStatus,
+      safeSummary: worldAvailable ? "Suggested Action cards are available for visible, backend-handled actions." : worldSafeSummary,
+      nextAction: worldAvailable ? "Use suggested actions as shortcuts to normal backend game actions." : worldNextAction,
+      jumpLabel: "Open Suggested Actions",
+      jumpMode: "play"
+    },
+    {
+      id: "world-map-location",
+      label: "Map/location panel available",
+      status: worldStatus,
+      safeSummary: worldAvailable ? "Map / Location Panel uses visible_state location and visible exits only." : worldSafeSummary,
+      nextAction: worldAvailable ? "Inspect known routes and map summaries after starting a session." : worldNextAction,
+      jumpLabel: "Open Map",
+      jumpMode: "play"
+    },
+    {
+      id: "world-npc-panel",
+      label: "NPC panel available",
+      status: worldStatus,
+      safeSummary: worldAvailable ? "NPC / Relationship Panel uses visible NPC summaries and excludes NPC secrets." : worldSafeSummary,
+      nextAction: worldAvailable ? "Inspect visible NPCs and public relationship bands." : worldNextAction,
+      jumpLabel: "Open NPCs",
+      jumpMode: "play"
+    },
+    {
+      id: "world-quest-panel",
+      label: "Quest panel available",
+      status: worldStatus,
+      safeSummary: worldAvailable ? "Quest / Journal Panel shows known quests and player-visible objectives only." : worldSafeSummary,
+      nextAction: worldAvailable ? "Review known quest stages and visible objectives." : worldNextAction,
+      jumpLabel: "Open Quests",
+      jumpMode: "play"
+    },
+    {
+      id: "world-inventory-trade",
+      label: "Inventory/trade available",
+      status: worldStatus,
+      safeSummary: worldAvailable ? "Inventory / Trade UI shows visible inventory and trade summaries only." : worldSafeSummary,
+      nextAction: worldAvailable ? "Inspect visible inventory and use backend-handled item actions." : worldNextAction,
+      jumpLabel: "Open Inventory",
+      jumpMode: "play"
+    },
+    {
+      id: "world-advanced-modules",
+      label: "Advanced modules panels available",
+      status: worldStatus,
+      safeSummary: worldAvailable ? "Advanced module panels cover combat, economy, faction war, deduction, survival/travel, magic, hacking, crafting, and cultivation safe summaries." : worldSafeSummary,
+      nextAction: worldAvailable ? "Open module panels; module actions still go through ActionRegistry and backend rules." : worldNextAction,
+      jumpLabel: "Open Modules",
+      jumpMode: "play"
+    },
+    {
+      id: "world-save-load",
+      label: "Save/load available",
+      status: worldStatus,
+      safeSummary: worldAvailable ? "World Save / Load UX is available with safe save summaries and backend flows." : worldSafeSummary,
+      nextAction: worldAvailable ? "Create or load saves through backend APIs; destructive actions require confirmation." : worldNextAction,
+      jumpLabel: "Open Saves",
+      jumpMode: "play"
+    },
+    {
+      id: "world-timeline-eventlog",
+      label: "Timeline/EventLog available",
+      status: worldStatus,
+      safeSummary: worldAvailable ? "World Timeline / EventLog UI Pro is available with player-visible event summaries." : worldSafeSummary,
+      nextAction: worldAvailable ? "Review visible timeline summaries; raw state_deltas remain debug-gated." : worldNextAction,
+      jumpLabel: "Open Timeline",
+      jumpMode: "play"
+    },
+    {
+      id: "world-visible-state",
+      label: "Visible State Inspector available",
+      status: worldStatus,
+      safeSummary: worldAvailable ? "Visible State Inspector is available and is not raw GameState." : worldSafeSummary,
+      nextAction: worldAvailable ? "Inspect visible_state sections for player-safe facts, NPCs, quests, and inventory." : worldNextAction,
+      jumpLabel: "Open Visible State",
+      jumpMode: "play"
+    },
+    {
+      id: "world-quality",
+      label: "World Quality runnable",
+      status: qualityStatus,
+      safeSummary: worldAvailable
+        ? `World Quality / Playtest UI is available. Current safe health score: ${worldHealth?.overall_score ?? "not run"}.`
+        : "World Quality needs a local world/project context before it can run.",
+      nextAction: worldAvailable ? "Run local World Quality or Playtest checks before release." : worldNextAction,
+      jumpLabel: "Open Quality",
+      jumpMode: "studio"
+    },
+    {
+      id: "world-intent-parser-provider",
+      label: "Provider model assigned for intent parser",
+      status: worldIntentParserAssigned ? "ready" : providerMissingStatus,
+      safeSummary: worldIntentParserAssigned
+        ? "World intent parser route has safe local provider/model metadata through Provider Gateway."
+        : "Missing intent parser model warning: assign world_intent_parse or structured_json through Provider Model Assignment; no real key should be stored.",
+      nextAction: worldIntentParserAssigned ? "Review Provider Model Assignment if routing changes." : "Open Provider setup and assign a JSON-capable world_intent_parse model.",
+      jumpLabel: "Open Provider Setup",
+      jumpMode: "prompt_lab"
+    },
+    {
+      id: "world-narrator-provider",
+      label: "Provider model assigned for narrator",
+      status: worldNarratorAssigned ? "ready" : providerMissingStatus,
+      safeSummary: worldNarratorAssigned
+        ? "World narrator route has safe local provider/model metadata through Provider Gateway."
+        : "Missing narrator model warning: assign world_narration through Provider Model Assignment; narration cannot judge world rules.",
+      nextAction: worldNarratorAssigned ? "Review Provider Model Assignment if routing changes." : "Open Provider setup and assign a world_narration model.",
+      jumpLabel: "Open Provider Setup",
+      jumpMode: "prompt_lab"
+    },
+    {
+      id: "world-visible-state-boundary",
+      label: "normal UI uses visible_state",
+      status: "ready",
+      safeSummary: "Normal World UI uses visible_state and safe summaries; hidden facts, NPC secrets, debug memory, and raw state_deltas are excluded.",
+      nextAction: "Keep player-facing panels bound to visible_state and safe summaries.",
+      jumpLabel: "Open World",
+      jumpMode: "play"
+    },
+    {
+      id: "world-debug-gated",
+      label: "Debug gated",
+      status: "ready",
+      safeSummary: "Debug views require ENABLE_DEBUG_API / DebugGate. Raw EventLog details and StateDelta data stay out of normal World UI.",
+      nextAction: "Enable debug only for explicit local inspection; never expose raw debug in normal play.",
+      jumpLabel: "Open QA Dashboard",
+      jumpMode: "studio"
+    }
+  ];
+}
+
+function CrossModeWorkflowClosureChecklist({
+  selectedProjectId,
+  onNavigate
+}: {
+  selectedProjectId: string;
+  onNavigate: (mode: AppMode, toolId?: AuthoringToolId) => void;
+}) {
+  const items = useMemo(
+    () => buildCrossModeWorkflowClosureChecklistItems({ selectedProjectId }),
+    [selectedProjectId]
+  );
+  const readyCount = items.filter((item) => item.status === "ready").length;
+  const warningCount = items.filter((item) => item.status === "warning").length;
+  const missingCount = items.filter((item) => item.status === "missing").length;
+
+  return (
+    <section className="studio-section cross-mode-workflow-closure-checklist" data-v37-cross-mode-workflow-check="safe-summary">
+      <div className="mod-detail-header">
+        <div>
+          <h3>跨模式工作流闭环</h3>
+          <p className="muted">
+            Novel / Tavern / World 之间的草稿、提案、验证、Apply 审查、审计记录、冲突审查和安全过滤状态。这里只显示 safe summary。
+          </p>
+        </div>
+        <span className={`status-pill ${missingCount > 0 ? "error" : warningCount > 0 ? "warning" : "pass"}`}>
+          {readyCount}/{items.length} 项就绪
+        </span>
+      </div>
+      <div className="studio-grid compact-dashboard-grid">
+        <DashboardCard title="就绪" value={String(readyCount)}>
+          <p>当前本地项目可使用的跨模式交接入口。</p>
+        </DashboardCard>
+        <DashboardCard title="提醒" value={String(warningCount)}>
+          <p>需要选择项目、运行验证或补齐审查步骤的提示。</p>
+        </DashboardCard>
+        <DashboardCard title="缺项" value={String(missingCount)}>
+          <p>需要先打开或创建本地项目后才能使用的能力。</p>
+        </DashboardCard>
+      </div>
+      <div className="product-readiness-list" role="list" aria-label="跨模式工作流闭环清单">
+        {items.map((item) => (
+          <article className={`product-readiness-item ${productReadinessTone(item.status)}`} key={item.id} role="listitem">
+            <div>
+              <div className="product-readiness-heading">
+                <h4>{item.label}</h4>
+                <span className={`status-pill ${productReadinessPillClass(item.status)}`}>
+                  {item.status}
+                </span>
+              </div>
+              <p>{redactReportText(item.safeSummary)}</p>
+              <p className="muted">下一步：{redactReportText(item.nextAction)}</p>
+            </div>
+            <button type="button" onClick={() => onNavigate(item.jumpMode, item.jumpTool)}>
+              {item.jumpLabel}
+            </button>
+          </article>
+        ))}
+      </div>
+      <LocalOnlyNotice>
+        跨模式闭环检查只读：不会自动 apply、不会绕过 validation、不会云协作、不会调用真实 provider、不会让草稿直接修改 GameState，普通审查也不会显示 hidden details。
+      </LocalOnlyNotice>
+    </section>
+  );
+}
+
+function buildCrossModeWorkflowClosureChecklistItems({
+  selectedProjectId
+}: {
+  selectedProjectId: string;
+}): ProductReadinessItem[] {
+  const projectReady = Boolean(selectedProjectId);
+  const projectStatus: ProductReadinessStatus = projectReady ? "ready" : "missing";
+  const projectSafeSummary = projectReady
+    ? "Cross-Mode Bridge 可以读取这个项目的本地草稿、提案、验证报告、冲突、链接和审计记录。"
+    : "使用跨模式工作流前，请先选择或创建一个本地项目。";
+  const projectNextAction = projectReady ? "打开跨模式桥接，先查看草稿 / 提案的安全摘要。" : "从项目首页创建或打开项目。";
+
+  return [
+    {
+      id: "crossmode-novel-world",
+      label: "Novel → World 草稿 / 提案可用",
+      status: projectStatus,
+      safeSummary: projectReady ? "Novel → World 只创建草稿 / 提案；通过本地验证和显式确认前，不会成为 World 事实。" : projectSafeSummary,
+      nextAction: projectReady ? "创建 Novel → World 草稿，先验证，再进入 Apply 审查。" : projectNextAction,
+      jumpLabel: "打开跨模式",
+      jumpMode: "project"
+    },
+    {
+      id: "crossmode-world-novel",
+      label: "World → Novel 章节 / 场景草稿可用",
+      status: projectStatus,
+      safeSummary: projectReady ? "World → Novel 预览只从可见事件摘要生成章节 / 场景草稿。" : projectSafeSummary,
+      nextAction: projectReady ? "预览 World → Novel 来源事件；hidden/debug events 和 raw state_deltas 仍被排除。" : projectNextAction,
+      jumpLabel: "打开 World → Novel",
+      jumpMode: "project"
+    },
+    {
+      id: "crossmode-tavern-world",
+      label: "Tavern → World 提案可用",
+      status: projectStatus,
+      safeSummary: projectReady ? "Tavern → World 只能生成 proposal / Apply 计划审查，不会直接修改 active GameState。" : projectSafeSummary,
+      nextAction: projectReady ? "先验证 proposal，再生成 Apply 计划，并保持显式确认。" : projectNextAction,
+      jumpLabel: "打开 Tavern → World",
+      jumpMode: "project"
+    },
+    {
+      id: "crossmode-tavern-novel",
+      label: "Tavern → Novel 场景草稿可用",
+      status: projectStatus,
+      safeSummary: projectReady ? "Tavern → Novel 只把过滤后的 RP 场景摘要变成 Novel 草稿素材。" : projectSafeSummary,
+      nextAction: projectReady ? "先审查 Tavern 场景安全摘要，再加入 Novel 草稿。" : projectNextAction,
+      jumpLabel: "打开 Tavern → Novel",
+      jumpMode: "project"
+    },
+    {
+      id: "crossmode-worldnpc-tavern",
+      label: "World NPC → Tavern 角色草稿可用",
+      status: projectStatus,
+      safeSummary: projectReady ? "World NPC → Tavern 适配器可用；player_safe 模式会排除 NPC secrets 和未知事实。" : projectSafeSummary,
+      nextAction: projectReady ? "先预览 World NPC 适配结果，再创建 Tavern 草稿。" : projectNextAction,
+      jumpLabel: "打开 World NPC → Tavern",
+      jumpMode: "project"
+    },
+    {
+      id: "crossmode-validation",
+      label: "CrossMode 本地验证可用",
+      status: projectStatus,
+      safeSummary: projectReady ? "CrossMode validation 会本地检查草稿、链接、可见性、冲突和 proposal readiness。" : projectSafeSummary,
+      nextAction: projectReady ? "任何 Apply 审查前都先运行跨模式验证。" : projectNextAction,
+      jumpLabel: "运行验证",
+      jumpMode: "project"
+    },
+    {
+      id: "crossmode-apply-confirm",
+      label: "Apply 必须显式确认",
+      status: "ready",
+      safeSummary: "Cross-Mode apply 仍受 validation / dry-run / explicit confirm 保护；清单 UI 不会应用 proposal。",
+      nextAction: "所有 apply 路径都必须经过后端验证、dry-run 和可见确认对话框。",
+      jumpLabel: "打开 Apply 审查",
+      jumpMode: "project"
+    },
+    {
+      id: "crossmode-audit",
+      label: "CrossMode 审计记录可用",
+      status: projectStatus,
+      safeSummary: projectReady ? "CrossMode audit trail 只显示本地审计记录的安全动作 / 结果摘要。" : projectSafeSummary,
+      nextAction: projectReady ? "确认操作后刷新跨模式桥接，并查看审计记录。" : projectNextAction,
+      jumpLabel: "打开审计",
+      jumpMode: "project"
+    },
+    {
+      id: "crossmode-conflicts",
+      label: "冲突审查可用",
+      status: projectStatus,
+      safeSummary: projectReady ? "CrossMode Conflict Review 可审查 stale link、broken link、hidden target risk 和 proposal validation 问题。" : projectSafeSummary,
+      nextAction: projectReady ? "检测冲突并查看 safe summary；普通视图不暴露 hidden target details。" : projectNextAction,
+      jumpLabel: "打开冲突审查",
+      jumpMode: "project"
+    },
+    {
+      id: "crossmode-hidden-filter",
+      label: "默认过滤 hidden / mature / private",
+      status: "ready",
+      safeSummary: "普通 Cross-Mode UI 默认过滤 hidden facts、NPC secrets、mature/private content、debug memory、raw prompts 和 raw state_deltas。",
+      nextAction: "普通报告只使用 safe summaries；debug-gated 视图只能在明确启用时使用。",
+      jumpLabel: "打开隐私",
+      jumpMode: "studio"
+    },
+    {
+      id: "crossmode-no-direct-gamestate",
+      label: "草稿不会直接修改 GameState",
+      status: "ready",
+      safeSummary: "Cross-Mode 草稿和提案不是权威事实，不能直接写入 active GameState。",
+      nextAction: "Novel / Tavern 的交接保持为 draft / proposal，直到 World Engine 验证并显式确认 apply。",
+      jumpLabel: "打开跨模式",
+      jumpMode: "project"
+    }
+  ];
+}
+
+function AuthoringModCompleteWorkflowChecklist({
+  status,
+  configSummary,
+  localConfigSummary,
+  onNavigate
+}: {
+  status: StudioStatus | null;
+  configSummary: StudioConfigSummary | null;
+  localConfigSummary: LocalConfigSummary | null;
+  onNavigate: (mode: AppMode, toolId?: AuthoringToolId) => void;
+}) {
+  const items = useMemo(
+    () => buildAuthoringModWorkflowChecklistItems({ status, configSummary, localConfigSummary }),
+    [status, configSummary, localConfigSummary]
+  );
+  const readyCount = items.filter((item) => item.status === "ready").length;
+  const warningCount = items.filter((item) => item.status === "warning").length;
+  const disabledCount = items.filter((item) => item.status === "disabled").length;
+
+  return (
+    <section className="studio-section authoring-mod-complete-workflow-checklist" data-v37-authoring-mod-workflow-check="safe-summary">
+      <div className="mod-detail-header">
+        <div>
+          <h3>Authoring / Mod Complete Workflow Check</h3>
+          <p className="muted">
+            Local authoring readiness for pack editors, declarative mods, permissions, compatibility, certification, validation, dry-run, safe apply, and audit.
+          </p>
+        </div>
+        <span className={`status-pill ${disabledCount > 0 ? "warning" : warningCount > 0 ? "warning" : "pass"}`}>
+          {readyCount}/{items.length} ready
+        </span>
+      </div>
+      <div className="studio-grid compact-dashboard-grid">
+        <DashboardCard title="Ready" value={String(readyCount)}>
+          <p>Authoring and Mod workflow surfaces available as safe local summaries.</p>
+        </DashboardCard>
+        <DashboardCard title="Warnings" value={String(warningCount)}>
+          <p>Items that need local validation, review, or setup before use.</p>
+        </DashboardCard>
+        <DashboardCard title="Disabled" value={String(disabledCount)}>
+          <p>Authoring API gated off; editors stay disabled instead of writing files.</p>
+        </DashboardCard>
+      </div>
+      <div className="product-readiness-list" role="list" aria-label="Authoring and Mod complete workflow checklist items">
+        {items.map((item) => (
+          <article className={`product-readiness-item ${productReadinessTone(item.status)}`} key={item.id} role="listitem">
+            <div>
+              <div className="product-readiness-heading">
+                <h4>{item.label}</h4>
+                <span className={`status-pill ${productReadinessPillClass(item.status)}`}>
+                  {item.status}
+                </span>
+              </div>
+              <p>{redactReportText(item.safeSummary)}</p>
+              <p className="muted">Next action: {redactReportText(item.nextAction)}</p>
+            </div>
+            <button type="button" onClick={() => onNavigate(item.jumpMode, item.jumpTool)}>
+              {item.jumpLabel}
+            </button>
+          </article>
+        ))}
+      </div>
+      <LocalOnlyNotice>
+        Authoring / Mod workflow checks are read-only: no package execution, no upload, no online marketplace, no remote download, no automatic apply, and no active GameState mutation. Safe Apply still requires validation, dry-run, explicit confirm, and audit.
+      </LocalOnlyNotice>
+    </section>
+  );
+}
+
+function buildAuthoringModWorkflowChecklistItems({
+  status,
+  configSummary,
+  localConfigSummary
+}: {
+  status: StudioStatus | null;
+  configSummary: StudioConfigSummary | null;
+  localConfigSummary: LocalConfigSummary | null;
+}): ProductReadinessItem[] {
+  const authoringEnabled = Boolean(status?.authoring_api_enabled ?? configSummary?.authoring_api_enabled ?? localConfigSummary?.authoring_api_enabled);
+  const editorStatus: ProductReadinessStatus = authoringEnabled ? "ready" : "disabled";
+  const editorSafeSummary = authoringEnabled
+    ? "Authoring / Mod Studio is available for local drafts, candidates, proposals, safe summaries, validation, dry-run, explicit confirm, and audit."
+    : "Authoring API is disabled; editor surfaces remain unavailable instead of writing project or content-pack files.";
+  const editorNextAction = authoringEnabled
+    ? "Open the relevant Authoring / Mod panel and run validation before any dry-run or safe apply."
+    : "Enable the local Authoring API only when authoring is needed, then reopen Authoring / Mod Studio.";
+
+  return [
+    {
+      id: "authoring-world-pack-editor",
+      label: "World Pack Editor available",
+      status: editorStatus,
+      safeSummary: authoringEnabled ? "World Pack Editor Pro is available for metadata, locations, NPCs, items, quests, facts, factions, rumors, and relationship drafts." : editorSafeSummary,
+      nextAction: authoringEnabled ? "Open World Pack Editor Pro and validate world-pack candidates before dry-run." : editorNextAction,
+      jumpLabel: "Open World Pack",
+      jumpMode: "authoring",
+      jumpTool: "world_pack_wizard"
+    },
+    {
+      id: "authoring-script-pack-editor",
+      label: "Script Pack Editor available",
+      status: editorStatus,
+      safeSummary: authoringEnabled ? "Script Pack Editor Pro is available for local scenarios, templates, package drafts, and quality-check metadata." : editorSafeSummary,
+      nextAction: authoringEnabled ? "Open Script Pack Editor Pro and keep build/export paths validation-gated." : editorNextAction,
+      jumpLabel: "Open Script Pack",
+      jumpMode: "authoring",
+      jumpTool: "template_wizard"
+    },
+    {
+      id: "authoring-character-pack-editor",
+      label: "Character Pack Editor available",
+      status: editorStatus,
+      safeSummary: authoringEnabled ? "Character Pack Editor Pro is available for CharacterProfile, TavernCharacter, RPProfile, VoiceProfile, and World NPC draft material." : editorSafeSummary,
+      nextAction: authoringEnabled ? "Open Character Pack Editor Pro and review player-visible fields before export." : editorNextAction,
+      jumpLabel: "Open Character Pack",
+      jumpMode: "authoring",
+      jumpTool: "rp_characters"
+    },
+    {
+      id: "authoring-visual-editors",
+      label: "Quest/Location/NPC/Item/Rumor editors available",
+      status: editorStatus,
+      safeSummary: authoringEnabled ? "Quest, Location/Map, NPC/Faction/Relationship, Item/Economy/Trade, and Rumor/Crime/Consequence authoring panels are available for local draft review." : editorSafeSummary,
+      nextAction: authoringEnabled ? "Open the affected visual editor and keep hidden facts authoring-only until rules reveal them." : editorNextAction,
+      jumpLabel: "Open Quest Editor",
+      jumpMode: "authoring",
+      jumpTool: "quests"
+    },
+    {
+      id: "authoring-action-mod-editor",
+      label: "Action Mod Editor available",
+      status: editorStatus,
+      safeSummary: authoringEnabled ? "Action Mod Editor is available for declarative DSL actions, local test harness previews, and StateDelta proposal summaries." : editorSafeSummary,
+      nextAction: authoringEnabled ? "Open Action Mod Editor and keep actions routed through ActionRegistry validation." : editorNextAction,
+      jumpLabel: "Open Action Mods",
+      jumpMode: "authoring",
+      jumpTool: "action_mods"
+    },
+    {
+      id: "authoring-rule-module-contract",
+      label: "Rule Module Contract UI available",
+      status: editorStatus,
+      safeSummary: authoringEnabled ? "Rule Module Contract UI is available for manifest, permission, state schema, compatibility, and migration review without running module code." : editorSafeSummary,
+      nextAction: authoringEnabled ? "Review rule modules as contract-only packages before any local enablement path." : editorNextAction,
+      jumpLabel: "Open Rule Modules",
+      jumpMode: "authoring",
+      jumpTool: "advanced_modules"
+    },
+    {
+      id: "authoring-module-browser",
+      label: "Module Browser available",
+      status: editorStatus,
+      safeSummary: authoringEnabled ? "Module Browser Pro can scan local package metadata with pagination, filters, safe summaries, and no remote download." : editorSafeSummary,
+      nextAction: authoringEnabled ? "Open Module Browser Pro and inspect local package metadata before validation." : editorNextAction,
+      jumpLabel: "Open Modules",
+      jumpMode: "authoring",
+      jumpTool: "advanced_modules"
+    },
+    {
+      id: "authoring-permission-dashboard",
+      label: "Permission Dashboard available",
+      status: editorStatus,
+      safeSummary: authoringEnabled ? "Permission Dashboard Pro groups package permissions by risk and keeps dangerous permissions blocked from frontend enablement." : editorSafeSummary,
+      nextAction: authoringEnabled ? "Review permission risk before compatibility, certification, or import preview." : editorNextAction,
+      jumpLabel: "Open Permissions",
+      jumpMode: "authoring",
+      jumpTool: "advanced_modules"
+    },
+    {
+      id: "authoring-compatibility-matrix",
+      label: "Compatibility Matrix available",
+      status: editorStatus,
+      safeSummary: authoringEnabled ? "Compatibility Matrix UI Pro reviews local manifest compatibility without executing, enabling, disabling, downloading, or auto-resolving packages." : editorSafeSummary,
+      nextAction: authoringEnabled ? "Open Compatibility Matrix before safe apply or import confirmation." : editorNextAction,
+      jumpLabel: "Open Compatibility",
+      jumpMode: "authoring",
+      jumpTool: "advanced_modules"
+    },
+    {
+      id: "authoring-certification",
+      label: "Certification available",
+      status: editorStatus,
+      safeSummary: authoringEnabled ? "Extension Certification UI Pro is available as local advisory certification, not upload, online certification, or an absolute safety guarantee." : editorSafeSummary,
+      nextAction: authoringEnabled ? "Run local certification checks after validation and before publishing locally." : editorNextAction,
+      jumpLabel: "Open Certification",
+      jumpMode: "authoring",
+      jumpTool: "advanced_modules"
+    },
+    {
+      id: "authoring-import-export-wizard",
+      label: "Import/Export Wizard available",
+      status: editorStatus,
+      safeSummary: authoringEnabled ? "Import / Export Wizard Pro is available with manifest preview, permission review, compatibility review, quality gate status, dry-run preview, and confirm import." : editorSafeSummary,
+      nextAction: authoringEnabled ? "Preview import/export locally and keep secrets, executable payloads, zip slip, and databases blocked." : editorNextAction,
+      jumpLabel: "Open Import / Export",
+      jumpMode: "authoring",
+      jumpTool: "advanced_modules"
+    },
+    {
+      id: "authoring-mod-quality-gate",
+      label: "Mod Quality Gate available",
+      status: editorStatus,
+      safeSummary: authoringEnabled ? "Mod Quality Gate UI Pro is available for local blockers, warnings, certification level, permission risk, and safe report summaries." : editorSafeSummary,
+      nextAction: authoringEnabled ? "Run Mod Quality Gate before any local import/apply/publish path." : editorNextAction,
+      jumpLabel: "Open Quality Gate",
+      jumpMode: "authoring",
+      jumpTool: "advanced_modules"
+    },
+    {
+      id: "authoring-validation-dashboard",
+      label: "Validation Dashboard available",
+      status: editorStatus,
+      safeSummary: authoringEnabled ? "Authoring Validation Dashboard is available for world, script, character, mod, import, export, and safe-apply issue summaries." : editorSafeSummary,
+      nextAction: authoringEnabled ? "Run validation and resolve blockers before diff preview, dry-run, or safe apply." : editorNextAction,
+      jumpLabel: "Open Validation",
+      jumpMode: "authoring",
+      jumpTool: "validation"
+    },
+    {
+      id: "authoring-diff-preview-dry-run",
+      label: "Diff/Preview/Dry-Run available",
+      status: editorStatus,
+      safeSummary: authoringEnabled ? "Diff, preview, and dry-run UX is available as safe summary review and does not show hidden facts, raw state_deltas, or secrets." : editorSafeSummary,
+      nextAction: authoringEnabled ? "Review diff/preview output before any confirmed local write path." : editorNextAction,
+      jumpLabel: "Open Preview",
+      jumpMode: "authoring",
+      jumpTool: "validation"
+    },
+    {
+      id: "authoring-safe-apply",
+      label: "Safe Apply available",
+      status: editorStatus,
+      safeSummary: authoringEnabled ? "Safe Apply / Publish-to-Local is available only after validation, quality gate review, diff preview, dry-run, explicit confirm, and audit record creation." : editorSafeSummary,
+      nextAction: authoringEnabled ? "Keep Safe Apply blocked until validation, dry-run, and explicit confirmation are complete." : editorNextAction,
+      jumpLabel: "Open Safe Apply",
+      jumpMode: "authoring",
+      jumpTool: "validation"
+    },
+    {
+      id: "authoring-audit-trail",
+      label: "Authoring audit trail available",
+      status: editorStatus,
+      safeSummary: authoringEnabled ? "Authoring Audit Trail UI can show local safe summaries for authoring and mod actions without exposing raw state_deltas, package secrets, or EventLog mutation." : editorSafeSummary,
+      nextAction: authoringEnabled ? "Inspect audit summaries after validation, import/export, certification, or confirmed safe apply." : editorNextAction,
+      jumpLabel: "Open Audit Trail",
+      jumpMode: "authoring",
+      jumpTool: "advanced_modules"
+    },
+    {
+      id: "authoring-no-arbitrary-code",
+      label: "no arbitrary code execution",
+      status: "ready",
+      safeSummary: "Authoring / Mod Studio remains declarative and local-only: packages are reviewed as metadata, Action Mods use structured DSL, and Rule Modules are contract-only.",
+      nextAction: "Keep package review on manifests, permissions, compatibility, and quality gates; do not add executable plugin paths.",
+      jumpLabel: "Open Module Browser",
+      jumpMode: "authoring",
+      jumpTool: "advanced_modules"
+    },
+    {
+      id: "authoring-no-active-gamestate",
+      label: "no direct active GameState mutation",
+      status: "ready",
+      safeSummary: "Authoring drafts, package candidates, dry-runs, imports, exports, and Safe Apply previews do not directly mutate active GameState.",
+      nextAction: "Keep runtime world changes behind backend game actions, StateDelta, EventLog, validation, dry-run, and explicit confirm.",
+      jumpLabel: "Open Safe Apply",
+      jumpMode: "authoring",
+      jumpTool: "validation"
+    }
+  ];
+}
+
+function QADebugReplayCompleteWorkflowChecklist({
+  status,
+  selectedProjectId,
+  selectedWorldId,
+  saves,
+  worldHealth,
+  playtestReports,
+  scenarioRegressionRuns,
+  contentCoverage,
+  diagnosticsBundlePreview,
+  backupPlan,
+  safeApiCacheStatuses,
+  onNavigate
+}: {
+  status: StudioStatus | null;
+  selectedProjectId: string;
+  selectedWorldId: string;
+  saves: SaveSummary[];
+  worldHealth: WorldHealthScore | null;
+  playtestReports: PlaytestReport[];
+  scenarioRegressionRuns: ScenarioRegressionRun[];
+  contentCoverage: ContentCoverageReport | null;
+  diagnosticsBundlePreview: DiagnosticsBundlePreview | null;
+  backupPlan: BackupPlan | null;
+  safeApiCacheStatuses: SafeApiCacheStatus[];
+  onNavigate: (mode: AppMode, toolId?: AuthoringToolId) => void;
+}) {
+  const items = useMemo(
+    () =>
+      buildQADebugReplayWorkflowChecklistItems({
+        status,
+        selectedProjectId,
+        selectedWorldId,
+        saves,
+        worldHealth,
+        playtestReports,
+        scenarioRegressionRuns,
+        contentCoverage,
+        diagnosticsBundlePreview,
+        backupPlan,
+        safeApiCacheStatuses
+      }),
+    [
+      status,
+      selectedProjectId,
+      selectedWorldId,
+      saves,
+      worldHealth,
+      playtestReports,
+      scenarioRegressionRuns,
+      contentCoverage,
+      diagnosticsBundlePreview,
+      backupPlan,
+      safeApiCacheStatuses
+    ]
+  );
+  const readyCount = items.filter((item) => item.status === "ready").length;
+  const warningCount = items.filter((item) => item.status === "warning").length;
+  const disabledCount = items.filter((item) => item.status === "disabled").length;
+  const notCheckedCount = items.filter((item) => item.status === "not checked").length;
+
+  return (
+    <section className="studio-section qa-debug-replay-complete-workflow-checklist" data-v37-qa-debug-workflow-check="safe-summary">
+      <div className="mod-detail-header">
+        <div>
+          <h3>QA / Debug / Replay Complete Workflow Check</h3>
+          <p className="muted">
+            Local issue-diagnosis readiness across Quality Gate, Replay, EventLog, StateDelta, Hidden Leak, Playtest, Diagnostics, and Safe Debug Export.
+          </p>
+        </div>
+        <span className={`status-pill ${warningCount + disabledCount + notCheckedCount > 0 ? "warning" : "pass"}`}>
+          {readyCount}/{items.length} ready
+        </span>
+      </div>
+      <div className="studio-grid compact-dashboard-grid">
+        <DashboardCard title="Ready" value={String(readyCount)}>
+          <p>QA, Debug, and Replay surfaces available as safe local summaries.</p>
+        </DashboardCard>
+        <DashboardCard title="Warnings" value={String(warningCount)}>
+          <p>Run local reports or select a project/world to improve readiness.</p>
+        </DashboardCard>
+        <DashboardCard title="Disabled / not checked" value={String(disabledCount + notCheckedCount)}>
+          <p>Debug-only views stay gated or require an explicit local check.</p>
+        </DashboardCard>
+      </div>
+      <div className="product-readiness-list" role="list" aria-label="QA Debug Replay complete workflow checklist items">
+        {items.map((item) => (
+          <article className={`product-readiness-item ${productReadinessTone(item.status)}`} key={item.id} role="listitem">
+            <div>
+              <div className="product-readiness-heading">
+                <h4>{item.label}</h4>
+                <span className={`status-pill ${productReadinessPillClass(item.status)}`}>
+                  {item.status}
+                </span>
+              </div>
+              <p>{redactReportText(item.safeSummary)}</p>
+              <p className="muted">Next action: {redactReportText(item.nextAction)}</p>
+            </div>
+            <button type="button" onClick={() => onNavigate(item.jumpMode, item.jumpTool)}>
+              {item.jumpLabel}
+            </button>
+          </article>
+        ))}
+      </div>
+      <LocalOnlyNotice>
+        QA / Debug / Replay workflow checks are observation-only: Debug UI cannot mutate GameState, Replay does not write EventLog or state, diagnostics are not uploaded, raw state_deltas remain debug-gated, and normal reports never print hidden text or secrets.
+      </LocalOnlyNotice>
+    </section>
+  );
+}
+
+function buildQADebugReplayWorkflowChecklistItems({
+  status,
+  selectedProjectId,
+  selectedWorldId,
+  saves,
+  worldHealth,
+  playtestReports,
+  scenarioRegressionRuns,
+  contentCoverage,
+  diagnosticsBundlePreview,
+  backupPlan,
+  safeApiCacheStatuses
+}: {
+  status: StudioStatus | null;
+  selectedProjectId: string;
+  selectedWorldId: string;
+  saves: SaveSummary[];
+  worldHealth: WorldHealthScore | null;
+  playtestReports: PlaytestReport[];
+  scenarioRegressionRuns: ScenarioRegressionRun[];
+  contentCoverage: ContentCoverageReport | null;
+  diagnosticsBundlePreview: DiagnosticsBundlePreview | null;
+  backupPlan: BackupPlan | null;
+  safeApiCacheStatuses: SafeApiCacheStatus[];
+}): ProductReadinessItem[] {
+  const debugEnabled = Boolean(status?.debug_api_enabled);
+  const worldReady = Boolean(selectedWorldId || status?.worlds_count);
+  const replayReady = Boolean(worldReady || saves.length);
+  const qualityChecked = Boolean(worldHealth || contentCoverage || playtestReports.length || scenarioRegressionRuns.length || status?.playtest_summary.available);
+  const diagnosticsRedacted = Boolean(
+    diagnosticsBundlePreview &&
+      !diagnosticsBundlePreview.manifest.contains_secrets &&
+      !diagnosticsBundlePreview.manifest.contains_hidden_debug_mature_private
+  );
+  const timelineCache = safeApiCacheStatuses.find((cacheStatus) => cacheStatus.scope === "timeline" || cacheStatus.key.includes("timeline"));
+  const eventLogCache = safeApiCacheStatuses.find((cacheStatus) => cacheStatus.scope === "eventlog" || cacheStatus.key.includes("eventlog"));
+  const noReportStatus: ProductReadinessStatus = qualityChecked ? "ready" : "not checked";
+  const replayStatus: ProductReadinessStatus = replayReady ? "ready" : "warning";
+
+  return [
+    {
+      id: "qa-unified-quality",
+      label: "Unified Quality Dashboard available",
+      status: noReportStatus,
+      safeSummary: qualityChecked ? "Unified Quality Gate Dashboard can show project, world, novel, tavern, cross-mode, provider, mods, modules, RP/mature, and backup/diagnostics safe rows." : "Unified Quality Dashboard is available, but no local quality report has been run in this session.",
+      nextAction: qualityChecked ? "Review blockers and warnings by category." : "Run local Quality Gate or content coverage; reports stay safe-summary only.",
+      jumpLabel: "Open Quality",
+      jumpMode: "studio"
+    },
+    {
+      id: "qa-timeline-replay",
+      label: "Timeline Replay available",
+      status: replayStatus,
+      safeSummary: replayReady ? `Timeline Replay UI Pro is available for ${timelineCache ? "cached" : "local"} visible replay summaries and turn/event filters.` : "Select a world, session, or save before replaying local timeline summaries.",
+      nextAction: replayReady ? "Use visible replay view; raw deltas stay debug-gated." : "Start/load a world session or select a local save.",
+      jumpLabel: "Open Replay",
+      jumpMode: "studio"
+    },
+    {
+      id: "qa-eventlog-viewer",
+      label: "EventLog Viewer available",
+      status: replayStatus,
+      safeSummary: replayReady ? `EventLog Viewer Pro is available for safe event summaries, filters, and linked StateDelta counts${eventLogCache ? " with cached safe summaries." : "."}` : "Select a session or save before reviewing EventLog summaries.",
+      nextAction: replayReady ? "Inspect event safe summaries and keep raw JSON behind DebugGate." : "Start/load a session or choose a save.",
+      jumpLabel: "Open EventLog",
+      jumpMode: "studio"
+    },
+    {
+      id: "qa-statedelta-debug-gated",
+      label: "StateDelta Viewer debug-gated",
+      status: "ready",
+      safeSummary: "StateDelta Viewer Pro is debug-sensitive and remains inside DebugGate; debug disabled state is explicit and normal UI does not render raw deltas.",
+      nextAction: "Enable debug only for local inspection, never for normal player or QA reports.",
+      jumpLabel: "Open StateDelta",
+      jumpMode: "studio"
+    },
+    {
+      id: "qa-visible-debug-compare",
+      label: "Visible vs Debug Compare available",
+      status: debugEnabled ? "ready" : "disabled",
+      safeSummary: debugEnabled ? "Visible vs Debug State Compare is available behind ENABLE_DEBUG_API and returns redacted section summaries." : "Debug disabled state is clear: Visible vs Debug Compare remains unavailable until ENABLE_DEBUG_API is enabled.",
+      nextAction: debugEnabled ? "Compare visible_state with redacted debug summaries; do not expose hidden text full content." : "Enable debug locally only when explicit boundary inspection is required.",
+      jumpLabel: "Open Compare",
+      jumpMode: "studio"
+    },
+    {
+      id: "qa-hidden-leak-report",
+      label: "Hidden Leak Report available",
+      status: noReportStatus,
+      safeSummary: qualityChecked ? "Hidden Leak Report UI Pro can summarize UI, prompt, export, diagnostics, backup, logs, and debug leak risks without printing hidden text." : "Hidden Leak Report is available, but no local leak report has been loaded in this session.",
+      nextAction: qualityChecked ? "Review leak findings by safe source/target metadata." : "Run local hidden-leak checks or Quality Gate.",
+      jumpLabel: "Open Hidden Leak",
+      jumpMode: "studio"
+    },
+    {
+      id: "qa-playtest-dashboard",
+      label: "Playtest Dashboard available",
+      status: playtestReports.length || status?.playtest_summary.available ? "ready" : "not checked",
+      safeSummary: playtestReports.length ? `${playtestReports.length} local playtest report(s) are loaded with safe failed-step and coverage summaries.` : "Playtest Dashboard Pro is available, but no playtest report is loaded.",
+      nextAction: "Run local playtests with fake/local providers only; do not upload reports.",
+      jumpLabel: "Open Playtests",
+      jumpMode: "studio"
+    },
+    {
+      id: "qa-module-stress",
+      label: "Module Stress available",
+      status: "ready",
+      safeSummary: "Module Playtest / Stress UI Pro is available for declared module rules, compatibility stress, namespace conflicts, migration warnings, hidden leak warnings, and quality gate summaries.",
+      nextAction: "Run module stress locally; no package code execution and no real provider calls.",
+      jumpLabel: "Open Module Stress",
+      jumpMode: "authoring",
+      jumpTool: "advanced_modules"
+    },
+    {
+      id: "qa-save-migration-visualizer",
+      label: "Save Migration Visualizer available",
+      status: saves.length ? "ready" : "warning",
+      safeSummary: saves.length ? `${saves.length} save summary row(s) are available for migration status, dry-run plan, and destructive-change blockers.` : "Save Migration Visualizer is available, but no local save is selected.",
+      nextAction: saves.length ? "Run migration dry-run before any confirmed backend migration flow." : "Create or load a save before visualizing migration plans.",
+      jumpLabel: "Open Migration",
+      jumpMode: "studio"
+    },
+    {
+      id: "qa-diagnostics-review",
+      label: "Diagnostics Review available",
+      status: diagnosticsRedacted ? "ready" : diagnosticsBundlePreview ? "warning" : "not checked",
+      safeSummary: diagnosticsRedacted ? "Diagnostics Bundle Review UI has a redacted preview that excludes secrets and hidden/debug/mature/private payloads." : diagnosticsBundlePreview ? "Diagnostics preview is loaded but needs review for redaction warnings." : "Diagnostics Review UI is available; no preview has been run in this session.",
+      nextAction: diagnosticsRedacted ? "Create diagnostics only after reviewing exclusions." : "Run diagnostics preview; diagnostics stay local and are not uploaded.",
+      jumpLabel: "Open Diagnostics",
+      jumpMode: "studio"
+    },
+    {
+      id: "qa-safe-debug-export",
+      label: "Safe Debug Export available",
+      status: debugEnabled ? "ready" : "disabled",
+      safeSummary: debugEnabled ? "Safe Debug Export Wizard is available only after explicit debug scope selection, redaction policy review, and explicit confirm for raw exports." : "Debug export is disabled while ENABLE_DEBUG_API is false; safe diagnostics remain available without raw debug payloads.",
+      nextAction: debugEnabled ? "Preview debug export locally and keep raw exports confirm-gated." : "Keep debug export off unless explicit local debug evidence is required.",
+      jumpLabel: "Open Debug Export",
+      jumpMode: "studio"
+    },
+    {
+      id: "qa-debug-no-gamestate-mutation",
+      label: "Debug UI cannot mutate GameState",
+      status: "ready",
+      safeSummary: "Debug, Replay, EventLog, StateDelta, Visible vs Debug Compare, diagnostics preview, and workflow checklists are observation-only and cannot apply StateDelta or modify GameState.",
+      nextAction: "Keep all state-changing actions behind normal backend game, migration, restore, or safe apply confirm flows.",
+      jumpLabel: "Open Debug",
+      jumpMode: "studio"
+    },
+    {
+      id: "qa-raw-deltas-debug-gated",
+      label: "raw state_deltas debug-gated",
+      status: "ready",
+      safeSummary: "Normal QA views show safe event summaries and StateDelta counts only; raw state_deltas are available only in DebugGate when debug is explicitly enabled.",
+      nextAction: "Keep raw delta rendering out of normal UI, search indexes, reports, exports, backups, and diagnostics.",
+      jumpLabel: "Open EventLog",
+      jumpMode: "studio"
+    },
+    {
+      id: "qa-no-hidden-normal",
+      label: "no hidden text in normal reports",
+      status: "ready",
+      safeSummary: `Normal QA reports redact hidden text, NPC secrets, debug memory, raw prompts, raw outputs, provider secrets, mature/private content, and backup diagnostics markers${backupPlan ? " after backup preview review." : "."}`,
+      nextAction: "Use safe summaries for normal reports and DebugGate only for explicit local debug review.",
+      jumpLabel: "Open Privacy",
+      jumpMode: "studio"
+    }
+  ];
+}
+
+function BackupRestoreDiagnosticsCompleteWorkflowChecklist({
+  backupPlan,
+  backupResult,
+  restorePlan,
+  recoveryPlan,
+  localLogs,
+  diagnosticsBundlePreview,
+  diagnosticsBundleCreateResult,
+  workspaces,
+  currentWorkspaceId,
+  onNavigate
+}: {
+  backupPlan: BackupPlan | null;
+  backupResult: BackupCreateResponse | null;
+  restorePlan: RestorePlan | null;
+  recoveryPlan: RecoveryPlan | null;
+  localLogs: LocalLogListResponse | null;
+  diagnosticsBundlePreview: DiagnosticsBundlePreview | null;
+  diagnosticsBundleCreateResult: DiagnosticsBundleCreateResponse | null;
+  workspaces: ProjectWorkspace[];
+  currentWorkspaceId: string;
+  onNavigate: (mode: AppMode, toolId?: AuthoringToolId) => void;
+}) {
+  const items = useMemo(
+    () =>
+      buildBackupRestoreDiagnosticsWorkflowChecklistItems({
+        backupPlan,
+        backupResult,
+        restorePlan,
+        recoveryPlan,
+        localLogs,
+        diagnosticsBundlePreview,
+        diagnosticsBundleCreateResult,
+        workspaces,
+        currentWorkspaceId
+      }),
+    [
+      backupPlan,
+      backupResult,
+      restorePlan,
+      recoveryPlan,
+      localLogs,
+      diagnosticsBundlePreview,
+      diagnosticsBundleCreateResult,
+      workspaces,
+      currentWorkspaceId
+    ]
+  );
+  const readyCount = items.filter((item) => item.status === "ready").length;
+  const warningCount = items.filter((item) => item.status === "warning").length;
+  const notCheckedCount = items.filter((item) => item.status === "not checked").length;
+
+  return (
+    <section className="studio-section backup-diagnostics-complete-workflow-checklist" data-v37-backup-diagnostics-workflow-check="safe-summary">
+      <div className="mod-detail-header">
+        <div>
+          <h3>备份 / 恢复 / 诊断完整流程检查</h3>
+          <p className="muted">
+            检查本地数据保护流程：备份、恢复、诊断、日志、安全路径、错误恢复、过滤、确认和“不上传”边界。
+          </p>
+        </div>
+        <span className={`status-pill ${warningCount + notCheckedCount > 0 ? "warning" : "pass"}`}>
+          {readyCount}/{items.length} 已就绪
+        </span>
+      </div>
+      <div className="studio-grid compact-dashboard-grid">
+        <DashboardCard title="已就绪" value={String(readyCount)}>
+          <p>本地保护和恢复入口可用，并只显示安全摘要。</p>
+        </DashboardCard>
+        <DashboardCard title="警告" value={String(warningCount)}>
+          <p>任何写入流程前，请先运行本地 dry-run 或预览。</p>
+        </DashboardCard>
+        <DashboardCard title="未检查" value={String(notCheckedCount)}>
+          <p>本次会话尚未载入预览、日志或恢复数据。</p>
+        </DashboardCard>
+      </div>
+      <div className="product-readiness-list" role="list" aria-label="备份恢复诊断完整流程检查项">
+        {items.map((item) => (
+          <article className={`product-readiness-item ${productReadinessTone(item.status)}`} key={item.id} role="listitem">
+            <div>
+              <div className="product-readiness-heading">
+                <h4>{item.label}</h4>
+                <span className={`status-pill ${productReadinessPillClass(item.status)}`}>
+                  {item.status}
+                </span>
+              </div>
+              <p>{redactReportText(item.safeSummary)}</p>
+              <p className="muted">下一步：{redactReportText(item.nextAction)}</p>
+            </div>
+            <button type="button" onClick={() => onNavigate(item.jumpMode, item.jumpTool)}>
+              {item.jumpLabel}
+            </button>
+          </article>
+        ))}
+      </div>
+      <LocalOnlyNotice>
+        备份 / 恢复 / 诊断检查在此处只读且仅本地执行：不做云备份、不上传、不显示 secrets、默认不包含 mature/private/debug、不在未确认时覆盖项目，也不修改 GameState。
+      </LocalOnlyNotice>
+    </section>
+  );
+}
+
+function buildBackupRestoreDiagnosticsWorkflowChecklistItems({
+  backupPlan,
+  backupResult,
+  restorePlan,
+  recoveryPlan,
+  localLogs,
+  diagnosticsBundlePreview,
+  diagnosticsBundleCreateResult,
+  workspaces,
+  currentWorkspaceId
+}: {
+  backupPlan: BackupPlan | null;
+  backupResult: BackupCreateResponse | null;
+  restorePlan: RestorePlan | null;
+  recoveryPlan: RecoveryPlan | null;
+  localLogs: LocalLogListResponse | null;
+  diagnosticsBundlePreview: DiagnosticsBundlePreview | null;
+  diagnosticsBundleCreateResult: DiagnosticsBundleCreateResponse | null;
+  workspaces: ProjectWorkspace[];
+  currentWorkspaceId: string;
+}): ProductReadinessItem[] {
+  const currentWorkspace = workspaces.find((workspace) => workspace.workspace_id === currentWorkspaceId) ?? null;
+  const safePathLoaded = Boolean(currentWorkspace?.path_redacted || workspaces.some((workspace) => workspace.path_redacted));
+  const backupDryRunSafe = Boolean(backupPlan && backupPlan.local_only && backupPlan.dry_run && backupPlan.blockers.length === 0);
+  const backupSecretDefaultsSafe = backupPlan
+    ? backupPlan.local_only && listIncludesSafetyTokens(backupPlan.excluded_items, BACKUP_DEFAULT_EXCLUSION_TOKENS)
+    : true;
+  const restoreDryRunSafe = Boolean(restorePlan && restorePlan.local_only && restorePlan.dry_run);
+  const diagnosticsPreviewSafe = Boolean(diagnosticsBundlePreview && diagnosticsBundlePreview.local_only && !diagnosticsBundlePreview.writes_file);
+  const diagnosticsRedacted = Boolean(
+    diagnosticsBundlePreview &&
+      diagnosticsBundlePreview.manifest.local_only &&
+      !diagnosticsBundlePreview.manifest.contains_secrets &&
+      !diagnosticsBundlePreview.manifest.contains_hidden_debug_mature_private
+  );
+  const diagnosticsCreatedLocal = Boolean(diagnosticsBundleCreateResult?.created && diagnosticsBundleCreateResult.local_only);
+  const localLogsRedacted = Boolean(
+    localLogs &&
+      localLogs.local_only &&
+      localLogs.logs.every((entry) => entry.redacted || !containsSensitiveLogMarker(entry.message))
+  );
+  const recoveryReady = Boolean(recoveryPlan?.local_only && recoveryPlan.dry_run);
+
+  return [
+    {
+      id: "backup-available",
+      label: "备份可用",
+      status: "ready",
+      safeSummary: "备份 / 恢复向导可用；所有创建流程都先 dry-run，并显示默认排除摘要。",
+      nextAction: "打开备份 / 恢复，并在创建任何备份前运行本地 dry-run。",
+      jumpLabel: "打开备份",
+      jumpMode: "studio"
+    },
+    {
+      id: "backup-dry-run",
+      label: "备份 dry-run 可用",
+      status: backupDryRunSafe ? "ready" : backupPlan ? "warning" : "not checked",
+      safeSummary: backupDryRunSafe ? `备份 dry-run ${backupPlan?.plan_id ?? "preview"} 仅本地执行，且没有阻塞项。` : backupPlan ? "备份 dry-run 已载入，但创建前需要复核警告 / 阻塞项。" : "本次会话尚未运行备份 dry-run。",
+      nextAction: backupDryRunSafe ? "复核排除项，然后只在显式确认后创建备份。" : "运行备份 dry-run 预览并处理阻塞项。",
+      jumpLabel: "打开备份 dry-run",
+      jumpMode: "studio"
+    },
+    {
+      id: "backup-excludes-secrets",
+      label: "备份默认排除敏感内容",
+      status: backupSecretDefaultsSafe ? "ready" : "warning",
+      safeSummary: backupSecretDefaultsSafe ? "备份策略默认不包含 .env、API key、provider secrets、raw env、数据库、logs/cache、build outputs、debug raw data 和 mature/private。" : "创建备份前需要复核排除列表。",
+      nextAction: "保持默认排除开启，并在确认创建前复核 dry-run excluded_items。",
+      jumpLabel: "打开备份策略",
+      jumpMode: "studio"
+    },
+    {
+      id: "restore-dry-run",
+      label: "恢复 dry-run 可用",
+      status: restoreDryRunSafe ? "ready" : restorePlan ? "warning" : "not checked",
+      safeSummary: restoreDryRunSafe ? "恢复 dry-run 预览已可用，且没有覆盖任何项目文件。" : restorePlan ? "恢复计划已载入，但需要复核阻塞项 / 冲突。" : "本次会话尚未运行恢复 dry-run。",
+      nextAction: "任何恢复 apply 前，都必须先运行恢复 dry-run 预览。",
+      jumpLabel: "打开恢复",
+      jumpMode: "studio"
+    },
+    {
+      id: "restore-confirm-required",
+      label: "恢复 apply 需要确认",
+      status: "ready",
+      safeSummary: "恢复 apply 仍由后端确认并受显式确认门禁保护；普通 checklist 和预览 UI 不会覆盖项目文件。",
+      nextAction: "保持恢复 apply 必须经过 dry-run、阻塞项检查、路径安全检查和显式确认。",
+      jumpLabel: "打开恢复策略",
+      jumpMode: "studio"
+    },
+    {
+      id: "diagnostics-preview",
+      label: "诊断包预览可用",
+      status: diagnosticsPreviewSafe ? "ready" : diagnosticsBundlePreview ? "warning" : "not checked",
+      safeSummary: diagnosticsPreviewSafe ? "诊断包预览仅本地、仅预览，不写入文件。" : diagnosticsBundlePreview ? "诊断包预览已载入，但需要复核脱敏 / 写入状态。" : "本次会话尚未运行诊断包预览。",
+      nextAction: "创建任何本地诊断包前，先运行诊断包预览。",
+      jumpLabel: "打开诊断预览",
+      jumpMode: "studio"
+    },
+    {
+      id: "diagnostics-export",
+      label: "诊断包导出可用",
+      status: diagnosticsCreatedLocal || diagnosticsBundlePreview ? "ready" : "not checked",
+      safeSummary: diagnosticsCreatedLocal ? "诊断包已在预览后本地创建；没有上传。" : diagnosticsBundlePreview ? "诊断包创建入口可用，请先复核安全预览。" : "诊断包导出可用，但尚未载入预览 / 创建结果。",
+      nextAction: "只在复核包含内容、排除内容和脱敏状态后创建诊断包。",
+      jumpLabel: "打开诊断导出",
+      jumpMode: "studio"
+    },
+    {
+      id: "diagnostics-excludes-sensitive",
+      label: "诊断包默认排除敏感内容",
+      status: diagnosticsRedacted ? "ready" : diagnosticsBundlePreview ? "warning" : "ready",
+      safeSummary: diagnosticsRedacted ? "诊断包预览显示普通诊断包不含 secrets，也不含 hidden/debug/mature/private 负载。" : "诊断包默认不包含 API key、provider secrets、raw env、raw prompt/output、hidden facts、NPC secrets、debug memory、raw state_deltas、mature/private 和数据库文件。",
+      nextAction: "保持普通诊断包脱敏；raw debug 导出需要 ENABLE_DEBUG_API 和显式确认。",
+      jumpLabel: "打开诊断策略",
+      jumpMode: "studio"
+    },
+    {
+      id: "logs-redacted",
+      label: "日志查看器会脱敏 secrets",
+      status: localLogsRedacted ? "ready" : localLogs ? "warning" : "not checked",
+      safeSummary: localLogsRedacted ? `已载入 ${localLogs?.logs.length ?? 0} 条本地日志，未发现未脱敏 secret 标记。` : localLogs ? "本地日志已载入，但需要复核脱敏状态。" : "本地日志查看器可用；本次会话尚未载入日志。",
+      nextAction: "刷新本地日志查看器；raw logs 和 secrets 显示前会先脱敏。",
+      jumpLabel: "打开日志",
+      jumpMode: "studio"
+    },
+    {
+      id: "error-recovery",
+      label: "错误恢复可用",
+      status: recoveryReady ? "ready" : recoveryPlan ? "warning" : "not checked",
+      safeSummary: recoveryReady ? `错误恢复 dry-run 计划 ${recoveryPlan?.plan_id ?? "preview"} 仅本地执行，且非破坏性。` : recoveryPlan ? "错误恢复计划已载入，但需要复核阻塞项。" : "错误恢复向导可用；尚未载入恢复 dry-run。",
+      nextAction: "运行恢复 dry-run；破坏性恢复仍保持阻止 / 手动确认。",
+      jumpLabel: "打开恢复",
+      jumpMode: "studio"
+    },
+    {
+      id: "safe-path-summary",
+      label: "安全路径摘要可用",
+      status: safePathLoaded ? "ready" : "warning",
+      safeSummary: safePathLoaded ? "已为当前 / 最近本地工作区提供安全路径摘要；普通 UI 不显示敏感完整路径。" : "尚未载入工作区安全路径摘要。",
+      nextAction: "使用项目选择器或最近项目载入脱敏路径摘要。",
+      jumpLabel: "打开项目选择器",
+      jumpMode: "project"
+    },
+    {
+      id: "no-cloud-backup",
+      label: "没有云备份",
+      status: "ready",
+      safeSummary: "备份和恢复仅本地执行；v3.7 不新增云备份、账号存储、云同步、远程支持或在线诊断。",
+      nextAction: "保持备份目标为本地路径，并默认被 git/package/export 排除。",
+      jumpLabel: "打开本地策略",
+      jumpMode: "studio"
+    },
+    {
+      id: "no-upload",
+      label: "不会上传",
+      status: "ready",
+      safeSummary: "诊断、日志、备份预览、恢复预览和恢复报告都不会从本地产品流程上传。",
+      nextAction: "如果要手动分享诊断包，请先复核本地 bundle 内容。",
+      jumpLabel: "打开诊断",
+      jumpMode: "studio"
+    }
+  ];
+}
+
+const BACKUP_DEFAULT_EXCLUSION_TOKENS = [
+  "env",
+  "api key",
+  "provider secret",
+  "raw env",
+  "database",
+  "log",
+  "cache",
+  "build",
+  "debug",
+  "mature",
+  "private"
+];
+
+function listIncludesSafetyTokens(items: string[], tokens: string[]): boolean {
+  const safeList = items.map((item) => item.toLowerCase()).join(" ");
+  return tokens.every((token) => safeList.includes(token));
+}
+
+function containsSensitiveLogMarker(message: string): boolean {
+  return /(sk-[A-Za-z0-9_-]{8,}|api[_\s-]?key|authorization|bearer\s+[A-Za-z0-9._-]+|secret|raw env|database_url)/i.test(message);
+}
+
+function ExportCompleteWorkflowChecklist({
+  selectedProjectId,
+  diagnosticsBundlePreview,
+  diagnosticsBundleCreateResult,
+  onNavigate
+}: {
+  selectedProjectId: string;
+  diagnosticsBundlePreview: DiagnosticsBundlePreview | null;
+  diagnosticsBundleCreateResult: DiagnosticsBundleCreateResponse | null;
+  onNavigate: (mode: AppMode, toolId?: AuthoringToolId) => void;
+}) {
+  const items = useMemo(
+    () =>
+      buildExportWorkflowChecklistItems({
+        selectedProjectId,
+        diagnosticsBundlePreview,
+        diagnosticsBundleCreateResult
+      }),
+    [selectedProjectId, diagnosticsBundlePreview, diagnosticsBundleCreateResult]
+  );
+  const readyCount = items.filter((item) => item.status === "ready").length;
+  const warningCount = items.filter((item) => item.status === "warning").length;
+  const notCheckedCount = items.filter((item) => item.status === "not checked").length;
+
+  return (
+    <section className="studio-section export-complete-workflow-checklist" data-v37-export-workflow-check="safe-summary">
+      <div className="mod-detail-header">
+        <div>
+          <h3>Export Complete Workflow Check</h3>
+          <p className="muted">
+            Local export readiness across Novel, Tavern, World archive, Authoring / Mod packages, Diagnostics, preview, filtering, confirmation, and no-upload boundaries.
+          </p>
+        </div>
+        <span className={`status-pill ${warningCount + notCheckedCount > 0 ? "warning" : "pass"}`}>
+          {readyCount}/{items.length} ready
+        </span>
+      </div>
+      <div className="studio-grid compact-dashboard-grid">
+        <DashboardCard title="Ready" value={String(readyCount)}>
+          <p>Export surfaces available with safe local summaries.</p>
+        </DashboardCard>
+        <DashboardCard title="Warnings" value={String(warningCount)}>
+          <p>Needs a selected project or export preview review.</p>
+        </DashboardCard>
+        <DashboardCard title="Not checked" value={String(notCheckedCount)}>
+          <p>Preview or diagnostics result has not been loaded in this session.</p>
+        </DashboardCard>
+      </div>
+      <div className="product-readiness-list" role="list" aria-label="Export complete workflow checklist items">
+        {items.map((item) => (
+          <article className={`product-readiness-item ${productReadinessTone(item.status)}`} key={item.id} role="listitem">
+            <div>
+              <div className="product-readiness-heading">
+                <h4>{item.label}</h4>
+                <span className={`status-pill ${productReadinessPillClass(item.status)}`}>
+                  {item.status}
+                </span>
+              </div>
+              <p>{redactReportText(item.safeSummary)}</p>
+              <p className="muted">Next action: {redactReportText(item.nextAction)}</p>
+            </div>
+            <button type="button" onClick={() => onNavigate(item.jumpMode, item.jumpTool)}>
+              {item.jumpLabel}
+            </button>
+          </article>
+        ))}
+      </div>
+      <LocalOnlyNotice>
+        Export checks are local-only and read-only in this dashboard: no online publishing, no cloud sync, no upload, no default debug export, no mature/private export by default, no secret export, and no real provider call.
+      </LocalOnlyNotice>
+    </section>
+  );
+}
+
+function buildExportWorkflowChecklistItems({
+  selectedProjectId,
+  diagnosticsBundlePreview,
+  diagnosticsBundleCreateResult
+}: {
+  selectedProjectId: string;
+  diagnosticsBundlePreview: DiagnosticsBundlePreview | null;
+  diagnosticsBundleCreateResult: DiagnosticsBundleCreateResponse | null;
+}): ProductReadinessItem[] {
+  const projectReady = Boolean(selectedProjectId);
+  const projectStatus: ProductReadinessStatus = projectReady ? "ready" : "warning";
+  const projectSafeSummary = projectReady
+    ? "A local project is selected for export workflow checks."
+    : "Select or create a local project before running project-scoped exports.";
+  const projectNextAction = projectReady ? "Review export preview and filtering defaults before confirmed local export." : "Open Project Home and select a local project.";
+  const diagnosticsPreviewSafe = Boolean(
+    diagnosticsBundlePreview &&
+      diagnosticsBundlePreview.local_only &&
+      !diagnosticsBundlePreview.writes_file &&
+      diagnosticsBundlePreview.manifest.local_only &&
+      !diagnosticsBundlePreview.manifest.contains_secrets &&
+      !diagnosticsBundlePreview.manifest.contains_hidden_debug_mature_private
+  );
+  const diagnosticsExportReady = Boolean(diagnosticsBundlePreview || diagnosticsBundleCreateResult?.created);
+  const exportFilteringSafe = diagnosticsBundlePreview
+    ? diagnosticsPreviewSafe
+    : true;
+
+  return [
+    {
+      id: "novel-export-available",
+      label: "Novel export available",
+      status: projectStatus,
+      safeSummary: projectReady
+        ? "Novel Export Wizard is available for local markdown/txt draft export with default filtering for authoring notes, hidden refs, mature/private content, debug data, provider secrets, API keys, and raw state_deltas."
+        : projectSafeSummary,
+      nextAction: projectReady ? "Open Novel Studio, review draft filters, then export only after explicit confirmation." : projectNextAction,
+      jumpLabel: "Open Novel Export",
+      jumpMode: "project"
+    },
+    {
+      id: "tavern-export-available",
+      label: "Tavern export available",
+      status: projectStatus,
+      safeSummary: projectReady
+        ? "Tavern session export is available with preview-first local JSON-safe or transcript export and default filtering for API keys, hidden facts, NPC secrets, mature/private memory, debug data, raw prompts, and raw state_deltas."
+        : projectSafeSummary,
+      nextAction: projectReady ? "Open Tavern Studio and generate an export preview before confirmed local export." : projectNextAction,
+      jumpLabel: "Open Tavern Export",
+      jumpMode: "project"
+    },
+    {
+      id: "mod-package-export-available",
+      label: "Mod/package export available",
+      status: "ready",
+      safeSummary: "Authoring / Mod Studio exposes local world archive, script package, character pack, NPC pack, and mod/package export surfaces through validation, safe manifest previews, and no package execution.",
+      nextAction: "Open Authoring / Mod Studio, validate the package, review safe export preview, and keep executable payloads and secrets excluded.",
+      jumpLabel: "Open Package Export",
+      jumpMode: "authoring"
+    },
+    {
+      id: "diagnostics-export-available",
+      label: "Diagnostics export available",
+      status: diagnosticsExportReady ? "ready" : "not checked",
+      safeSummary: diagnosticsBundleCreateResult?.created
+        ? "Diagnostics bundle was created locally after preview; no upload was performed."
+        : diagnosticsBundlePreview
+          ? "Diagnostics export/create surface is available after safe preview review."
+          : "Diagnostics export is available, but no diagnostics preview/create result is loaded in this session.",
+      nextAction: "Run diagnostics preview and review included/excluded sections before creating a local bundle.",
+      jumpLabel: "Open Diagnostics Export",
+      jumpMode: "studio"
+    },
+    {
+      id: "export-preview-available",
+      label: "export preview available",
+      status: projectReady || diagnosticsBundlePreview ? "ready" : "not checked",
+      safeSummary: projectReady || diagnosticsBundlePreview
+        ? "Export preview paths are available through Tavern preview, Authoring / Mod safe manifest previews, diagnostics preview, and world/archive validation summaries; previews do not upload or publish."
+        : "Export preview paths have not been checked because no local project is selected.",
+      nextAction: "Preview each export before create/export and treat preview as read-only.",
+      jumpLabel: "Open Export Preview",
+      jumpMode: projectReady ? "project" : "studio"
+    },
+    {
+      id: "filtering-summary-visible",
+      label: "filtering summary visible",
+      status: "ready",
+      safeSummary: "Filtering summaries are visible in Novel export confirmation copy, Tavern filtering_policy rows, Authoring / Mod safe manifest previews, diagnostics included/excluded sections, and backup/export safety notices.",
+      nextAction: "Review filtering summary before sharing local files outside the app.",
+      jumpLabel: "Open Filtering Summary",
+      jumpMode: "studio"
+    },
+    {
+      id: "secrets-excluded",
+      label: "secrets excluded",
+      status: exportFilteringSafe ? "ready" : "warning",
+      safeSummary: exportFilteringSafe
+        ? "Export defaults exclude API keys, provider secrets, Authorization headers, raw env, secret_ref values, transient keys, database secrets, and key-like strings from normal export surfaces."
+        : "Diagnostics preview indicates export filtering needs review before bundle creation.",
+      nextAction: "Keep safe export defaults enabled and do not add plaintext keys to packages, profiles, exports, or diagnostics.",
+      jumpLabel: "Open Privacy Export Policy",
+      jumpMode: "studio"
+    },
+    {
+      id: "hidden-refs-excluded",
+      label: "hidden refs excluded",
+      status: exportFilteringSafe ? "ready" : "warning",
+      safeSummary: exportFilteringSafe
+        ? "Normal exports filter hidden refs, hidden facts, NPC secrets, debug memory, raw prompts, raw outputs, and raw state_deltas unless an explicitly gated debug workflow is used."
+        : "Preview reports hidden/debug/private payload risk; review before export.",
+      nextAction: "Use player-visible summaries or safe authoring summaries instead of raw hidden/debug payloads.",
+      jumpLabel: "Open Hidden Leak Review",
+      jumpMode: "studio"
+    },
+    {
+      id: "mature-private-excluded-default",
+      label: "mature/private excluded by default",
+      status: "ready",
+      safeSummary: "Mature/private content remains opt-in, disabled by default for normal exports, and excluded from diagnostics and backups unless a future explicit safe policy says otherwise.",
+      nextAction: "Keep Mature Module and private-memory export controls off for normal export profiles.",
+      jumpLabel: "Open Privacy Defaults",
+      jumpMode: "studio"
+    },
+    {
+      id: "debug-excluded-default",
+      label: "debug excluded by default",
+      status: "ready",
+      safeSummary: "Debug payloads, raw state_deltas, raw debug reports, debug memory, and raw diagnostic details are excluded by default; Safe Debug Export requires ENABLE_DEBUG_API and explicit confirmation.",
+      nextAction: "Use normal safe summaries unless a local debug export is explicitly required.",
+      jumpLabel: "Open Safe Debug Export",
+      jumpMode: "studio"
+    },
+    {
+      id: "export-confirm-required",
+      label: "export confirm required",
+      status: "ready",
+      safeSummary: "Novel export, Tavern export create, diagnostics create, restore/export-adjacent writes, and raw debug export paths remain explicit-confirm gated; the readiness checklist never creates files.",
+      nextAction: "Keep export create/write paths behind preview, filtering review, and explicit confirmation.",
+      jumpLabel: "Open Confirm Policy",
+      jumpMode: "studio"
+    },
+    {
+      id: "no-upload",
+      label: "no upload",
+      status: "ready",
+      safeSummary: "Exports are local files or local safe summaries only; v3.7 does not add online publishing, cloud sync, remote upload, online marketplace, or real provider calls for export checks.",
+      nextAction: "Review local export contents before manually sharing outside the app.",
+      jumpLabel: "Open Local Export Policy",
+      jumpMode: "studio"
+    }
+  ];
+}
+
+function LocalPrivacySafetyCompleteReviewPanel({
+  status,
+  configSummary,
+  localConfigSummary,
+  localStudioConfig,
+  backupPlan,
+  diagnosticsBundlePreview,
+  safeApiCacheStatuses,
+  onNavigate
+}: {
+  status: StudioStatus | null;
+  configSummary: StudioConfigSummary | null;
+  localConfigSummary: LocalConfigSummary | null;
+  localStudioConfig: LocalStudioConfigSummary | null;
+  backupPlan: BackupPlan | null;
+  diagnosticsBundlePreview: DiagnosticsBundlePreview | null;
+  safeApiCacheStatuses: SafeApiCacheStatus[];
+  onNavigate: (mode: AppMode, toolId?: AuthoringToolId) => void;
+}) {
+  const items = useMemo(
+    () =>
+      buildLocalPrivacySafetyReviewItems({
+        status,
+        configSummary,
+        localConfigSummary,
+        localStudioConfig,
+        backupPlan,
+        diagnosticsBundlePreview,
+        safeApiCacheStatuses
+      }),
+    [status, configSummary, localConfigSummary, localStudioConfig, backupPlan, diagnosticsBundlePreview, safeApiCacheStatuses]
+  );
+  const readyCount = items.filter((item) => item.status === "ready").length;
+  const warningCount = items.filter((item) => item.status === "warning").length;
+  const disabledCount = items.filter((item) => item.status === "disabled").length;
+  const notCheckedCount = items.filter((item) => item.status === "not checked").length;
+
+  return (
+    <section className="studio-section local-privacy-safety-complete-review" data-v37-privacy-safety-review="safe-summary">
+      <div className="mod-detail-header">
+        <div>
+          <h3>Local Privacy / Safety Complete Review UI</h3>
+          <p className="muted">
+            Product-level local safety review for API keys, transient keys, Provider profiles, visibility, hidden data, debug gating, mature/private defaults, export, backup, diagnostics, mods, and no-online boundaries.
+          </p>
+        </div>
+        <span className={`status-pill ${warningCount + disabledCount + notCheckedCount > 0 ? "warning" : "pass"}`}>
+          {readyCount}/{items.length} ready
+        </span>
+      </div>
+      <div className="studio-grid compact-dashboard-grid">
+        <DashboardCard title="Ready" value={String(readyCount)}>
+          <p>Privacy and safety boundaries confirmed by local safe summaries.</p>
+        </DashboardCard>
+        <DashboardCard title="Warnings" value={String(warningCount)}>
+          <p>Missing or unreviewed safety configuration that needs attention.</p>
+        </DashboardCard>
+        <DashboardCard title="Disabled / not checked" value={String(disabledCount + notCheckedCount)}>
+          <p>Optional gated surfaces or summaries that have not been loaded.</p>
+        </DashboardCard>
+      </div>
+      <div className="product-readiness-list" role="list" aria-label="Local privacy safety complete review items">
+        {items.map((item) => (
+          <article className={`product-readiness-item ${productReadinessTone(item.status)}`} key={item.id} role="listitem">
+            <div>
+              <div className="product-readiness-heading">
+                <h4>{item.label}</h4>
+                <span className={`status-pill ${productReadinessPillClass(item.status)}`}>
+                  {item.status}
+                </span>
+              </div>
+              <p>{redactReportText(item.safeSummary)}</p>
+              <p className="muted">Next action: {redactReportText(item.nextAction)}</p>
+            </div>
+            <button type="button" onClick={() => onNavigate(item.jumpMode, item.jumpTool)}>
+              {item.jumpLabel}
+            </button>
+          </article>
+        ))}
+      </div>
+      <LocalOnlyNotice>
+        Privacy / Safety review is read-only and safe-summary only: no API key display, no transient key display, no hidden content text, no NPC secrets, no raw state_deltas, no upload, no auto-fix, and no GameState mutation.
+      </LocalOnlyNotice>
+    </section>
+  );
+}
+
+function buildLocalPrivacySafetyReviewItems({
+  status,
+  configSummary,
+  localConfigSummary,
+  localStudioConfig,
+  backupPlan,
+  diagnosticsBundlePreview,
+  safeApiCacheStatuses
+}: {
+  status: StudioStatus | null;
+  configSummary: StudioConfigSummary | null;
+  localConfigSummary: LocalConfigSummary | null;
+  localStudioConfig: LocalStudioConfigSummary | null;
+  backupPlan: BackupPlan | null;
+  diagnosticsBundlePreview: DiagnosticsBundlePreview | null;
+  safeApiCacheStatuses: SafeApiCacheStatus[];
+}): ProductReadinessItem[] {
+  const configLoaded = Boolean(localConfigSummary || configSummary || localStudioConfig || status);
+  const configWarnings = localConfigSummary?.issues.filter((issue) => issue.severity !== "info") ?? [];
+  const configErrors = configWarnings.filter((issue) => issue.severity === "error");
+  const apiKeyConfigured = Boolean(localConfigSummary?.api_key_configured ?? configSummary?.api_key_configured);
+  const providerProfilesCount = localStudioConfig?.provider_profiles_count ?? 0;
+  const providerSecretsCount = localStudioConfig?.provider_secrets_configured_count ?? 0;
+  const providerProfileSafe = providerProfilesCount === 0 || providerSecretsCount <= providerProfilesCount;
+  const debugEnabled = Boolean(status?.debug_api_enabled ?? localConfigSummary?.debug_api_enabled ?? configSummary?.debug_api_enabled);
+  const authoringEnabled = Boolean(status?.authoring_api_enabled ?? localConfigSummary?.authoring_api_enabled ?? configSummary?.authoring_api_enabled);
+  const backupFilteringSafe = backupPlan
+    ? backupPlan.local_only && listIncludesSafetyTokens(backupPlan.excluded_items, BACKUP_DEFAULT_EXCLUSION_TOKENS)
+    : false;
+  const diagnosticsFilteringSafe = Boolean(
+    diagnosticsBundlePreview &&
+      diagnosticsBundlePreview.local_only &&
+      diagnosticsBundlePreview.manifest.local_only &&
+      !diagnosticsBundlePreview.manifest.contains_secrets &&
+      !diagnosticsBundlePreview.manifest.contains_hidden_debug_mature_private
+  );
+  const providerCacheSafe = safeApiCacheStatuses.some(
+    (cacheStatus) =>
+      cacheStatus.key.includes("provider") &&
+      !containsSensitiveLogMarker(`${cacheStatus.summary} ${cacheStatus.safeError ?? ""}`)
+  );
+  const safetyConfigStatus: ProductReadinessStatus = configLoaded ? (configErrors.length ? "warning" : "ready") : "not checked";
+
+  return [
+    {
+      id: "api-key-safety",
+      label: "API key safety",
+      status: safetyConfigStatus,
+      safeSummary: configLoaded
+        ? `API key values are not rendered. Config reports api_key_configured=${String(apiKeyConfigured)} using env/secret resolver metadata only; safety config warnings=${configWarnings.length}.`
+        : "Local privacy configuration has not been loaded, so API key safety is not checked in this session.",
+      nextAction: configLoaded ? "Keep API key values in environment variables or local secret resolver references only." : "Open Settings / Privacy to refresh local safe config summary.",
+      jumpLabel: "Open API Key Safety",
+      jumpMode: "studio"
+    },
+    {
+      id: "transient-key-safety",
+      label: "transient key safety",
+      status: configLoaded ? "ready" : "not checked",
+      safeSummary: "One-time provider test/fetch keys are accepted only for that local request and are not persisted, cached, logged, exported, backed up, or shown in frontend state.",
+      nextAction: "Use transient keys only in one-time connection flows; prefer api_key_env or secret_ref for ProviderProfile metadata.",
+      jumpLabel: "Open Provider Safety",
+      jumpMode: "prompt_lab"
+    },
+    {
+      id: "provider-profile-safety",
+      label: "ProviderProfile safety",
+      status: providerProfileSafe ? (providerProfilesCount > 0 || configLoaded ? "ready" : "not checked") : "warning",
+      safeSummary: providerProfileSafe
+        ? `${providerProfilesCount} ProviderProfile safe metadata row(s) and ${providerSecretsCount} configured secret reference(s) are tracked without plaintext key values.`
+        : "ProviderProfile metadata needs review because configured secret references exceed profile count.",
+      nextAction: "Keep ProviderProfile limited to api_key_env or secret_ref and avoid plaintext key fields.",
+      jumpLabel: "Open Provider Profiles",
+      jumpMode: "prompt_lab"
+    },
+    {
+      id: "visible-state-safety",
+      label: "visible_state safety",
+      status: "ready",
+      safeSummary: "Normal World UI uses visible_state and safe summaries for player-facing sections; raw GameState and debug-only fields remain outside normal UI.",
+      nextAction: "Keep normal UI data sourced from visible_state and player-safe summaries.",
+      jumpLabel: "Open World Safety",
+      jumpMode: "play"
+    },
+    {
+      id: "hidden-facts-safety",
+      label: "hidden facts safety",
+      status: "ready",
+      safeSummary: "Hidden Leak and Quality views summarize hidden leak risk without printing hidden facts full text in normal reports.",
+      nextAction: "Use Hidden Leak Report for safe findings and keep hidden text out of normal prompts, exports, diagnostics, and UI labels.",
+      jumpLabel: "Open Hidden Leak",
+      jumpMode: "studio"
+    },
+    {
+      id: "npc-secrets-safety",
+      label: "NPC secrets safety",
+      status: "ready",
+      safeSummary: "NPC secrets and npc_knowledge stay out of normal Novel/Tavern/World UI; Tavern and Cross-Mode reviews use player-safe summaries.",
+      nextAction: "Review RP Safety and Cross-Mode validation before exporting or applying proposals.",
+      jumpLabel: "Open RP Safety",
+      jumpMode: "project"
+    },
+    {
+      id: "debug-data-gating",
+      label: "debug data gating",
+      status: debugEnabled ? "ready" : "disabled",
+      safeSummary: debugEnabled
+        ? "Debug API is enabled, but StateDelta, raw debug details, Visible vs Debug Compare, and Safe Debug Export remain DebugGate/confirm controlled."
+        : "Debug API is disabled; raw state_deltas and raw debug details are unavailable in normal UI.",
+      nextAction: debugEnabled ? "Use debug views only for local inspection and keep raw export behind explicit confirm." : "Enable debug only for deliberate local debugging.",
+      jumpLabel: "Open Debug Gating",
+      jumpMode: "studio"
+    },
+    {
+      id: "mature-private-default-off",
+      label: "mature/private default-off",
+      status: "ready",
+      safeSummary: "Mature Module and mature/private export remain opt-in/default-off; normal prompts, diagnostics, backups, and exports exclude mature/private content by default.",
+      nextAction: "Keep mature/private controls disabled unless an explicit local adult-safe policy is selected.",
+      jumpLabel: "Open Mature Defaults",
+      jumpMode: "project"
+    },
+    {
+      id: "export-filtering",
+      label: "export filtering",
+      status: "ready",
+      safeSummary: "Novel, Tavern, World archive, Authoring/Mod, Diagnostics, and Safe Debug Export surfaces expose preview/filtering summaries and default to excluding secrets, hidden refs, mature/private content, and debug data.",
+      nextAction: "Review Export Complete Workflow Check before creating local artifacts.",
+      jumpLabel: "Open Export Review",
+      jumpMode: "studio"
+    },
+    {
+      id: "backup-filtering",
+      label: "backup filtering",
+      status: backupPlan ? (backupFilteringSafe ? "ready" : "warning") : "not checked",
+      safeSummary: backupFilteringSafe
+        ? "Backup dry-run excludes secrets, .env, raw env, databases, logs/cache, build outputs, debug-only data, and mature/private content by default."
+        : backupPlan
+          ? "Backup dry-run is loaded but exclusion policy needs review before create."
+          : "Backup filtering has not been previewed in this session.",
+      nextAction: "Run Backup Dry-Run Preview and review excluded_items before confirmed backup create.",
+      jumpLabel: "Open Backup Filtering",
+      jumpMode: "studio"
+    },
+    {
+      id: "diagnostics-filtering",
+      label: "diagnostics filtering",
+      status: diagnosticsBundlePreview ? (diagnosticsFilteringSafe ? "ready" : "warning") : "not checked",
+      safeSummary: diagnosticsFilteringSafe
+        ? "Diagnostics preview is local-only and reports no secrets or hidden/debug/mature/private payload in the normal bundle."
+        : diagnosticsBundlePreview
+          ? "Diagnostics preview is loaded but needs redaction review."
+          : "Diagnostics filtering has not been previewed in this session.",
+      nextAction: "Preview diagnostics before creating a local bundle; raw debug export requires debug gate and explicit confirm.",
+      jumpLabel: "Open Diagnostics Filtering",
+      jumpMode: "studio"
+    },
+    {
+      id: "mod-permission-safety",
+      label: "mod permission safety",
+      status: authoringEnabled ? "ready" : "disabled",
+      safeSummary: authoringEnabled
+        ? "Mod Permission Dashboard, Module Browser, Compatibility Matrix, Certification, and Mod Quality Gate are available as local safe summaries; packages are not executed and arbitrary code plugins remain disallowed."
+        : "Authoring/Mod API is disabled; package permission review is unavailable instead of executing packages.",
+      nextAction: "Run Mod Permission Dashboard and Quality Gate before import/export or Safe Apply.",
+      jumpLabel: "Open Mod Permission Safety",
+      jumpMode: "authoring"
+    },
+    {
+      id: "no-account-cloud-marketplace",
+      label: "no account/cloud/marketplace status",
+      status: providerCacheSafe || configLoaded ? "ready" : "not checked",
+      safeSummary: "v3.7 remains local-first: no account system, no cloud sync, no online marketplace, no remote package auto-download, no online diagnostics upload, and no API resale service.",
+      nextAction: "Use local project files, local providers or user-configured provider endpoints, and local package review only.",
+      jumpLabel: "Open Local-First Status",
+      jumpMode: "studio"
+    }
+  ];
+}
+
+function buildProductReadinessItems({
+  status,
+  selectedProjectId,
+  selectedWorldId,
+  configSummary,
+  localConfigSummary,
+  localStudioConfig,
+  localUpdateNotes,
+  backupPlan,
+  backupResult,
+  restorePlan,
+  diagnosticsBundlePreview,
+  diagnosticsBundleCreateResult,
+  workspaces,
+  currentWorkspaceId,
+  saves,
+  worldHealth,
+  playtestReports,
+  scenarioRegressionRuns,
+  contentCoverage,
+  safeApiCacheStatuses
+}: {
+  status: StudioStatus | null;
+  selectedProjectId: string;
+  selectedWorldId: string;
+  configSummary: StudioConfigSummary | null;
+  localConfigSummary: LocalConfigSummary | null;
+  localStudioConfig: LocalStudioConfigSummary | null;
+  localUpdateNotes: LocalUpdateNotesIndex | null;
+  backupPlan: BackupPlan | null;
+  backupResult: BackupCreateResponse | null;
+  restorePlan: RestorePlan | null;
+  diagnosticsBundlePreview: DiagnosticsBundlePreview | null;
+  diagnosticsBundleCreateResult: DiagnosticsBundleCreateResponse | null;
+  workspaces: ProjectWorkspace[];
+  currentWorkspaceId: string;
+  saves: SaveSummary[];
+  worldHealth: WorldHealthScore | null;
+  playtestReports: PlaytestReport[];
+  scenarioRegressionRuns: ScenarioRegressionRun[];
+  contentCoverage: ContentCoverageReport | null;
+  safeApiCacheStatuses: SafeApiCacheStatus[];
+}): ProductReadinessItem[] {
+  const currentWorkspace = workspaces.find((workspace) => workspace.workspace_id === currentWorkspaceId) ?? null;
+  const projectLoaded = Boolean(selectedProjectId || currentWorkspace);
+  const workspaceReady = currentWorkspace?.safe_status === "ok";
+  const providerType = localConfigSummary?.provider_type ?? configSummary?.llm_provider ?? status?.llm_provider ?? "unknown";
+  const providerProfileCount = localStudioConfig?.provider_profiles_count ?? 0;
+  const providerStatus = configSummary?.provider_status ?? status?.local_model_provider_status ?? "unknown";
+  const providerSafeForLocalUse = providerProfileCount > 0 || ["mock", "local_stub"].includes(providerType) || providerStatus === "configured" || providerStatus === "connected";
+  const providerModelCache = safeApiCacheStatuses.find((cacheStatus) => cacheStatus.key.includes("provider-model-list"));
+  const qualityAvailable = Boolean(worldHealth || contentCoverage || playtestReports.length || scenarioRegressionRuns.length || status?.playtest_summary.available);
+  const authoringEnabled = Boolean(status?.authoring_api_enabled ?? configSummary?.authoring_api_enabled ?? localConfigSummary?.authoring_api_enabled);
+  const diagnosticsPreviewSafe = Boolean(
+    diagnosticsBundlePreview &&
+      !diagnosticsBundlePreview.manifest.contains_secrets &&
+      !diagnosticsBundlePreview.manifest.contains_hidden_debug_mature_private
+  );
+  const backupPreviewReady = Boolean(backupResult?.created || (backupPlan && backupPlan.blockers.length === 0));
+  const restorePreviewReady = Boolean(restorePlan && restorePlan.backup_valid && restorePlan.blockers.length === 0);
+  const privacyIssueErrors = localConfigSummary?.issues.filter((issue) => issue.severity === "error") ?? [];
+  const docsReady = Boolean(localUpdateNotes?.release_notes.length);
+
+  return [
+    {
+      id: "project-status",
+      label: "Project status",
+      status: projectLoaded && (workspaceReady || selectedProjectId) ? "ready" : workspaces.length ? "warning" : "missing",
+      safeSummary: projectLoaded
+        ? `Project selected with ${saves.length} safe save summary row(s).`
+        : "No local project or workspace is selected.",
+      nextAction: projectLoaded ? "Continue from the selected local project." : "Create or open a local project from Project Home.",
+      jumpLabel: "Open Project Home",
+      jumpMode: "project"
+    },
+    {
+      id: "provider-setup",
+      label: "Provider setup status",
+      status: providerSafeForLocalUse ? "ready" : "warning",
+      safeSummary: providerSafeForLocalUse
+        ? `${providerType} provider path is available through safe local metadata.`
+        : "Missing provider setup warning: no provider profile or mock/local_stub setup has been confirmed.",
+      nextAction: providerSafeForLocalUse ? "Review provider connectivity if needed." : "Open Provider setup and configure mock, local_stub, local_http, or a safe env/secret_ref profile.",
+      jumpLabel: "Open Provider Setup",
+      jumpMode: "prompt_lab"
+    },
+    {
+      id: "model-assignment",
+      label: "Model assignment status",
+      status: providerModelCache ? "ready" : providerSafeForLocalUse ? "warning" : "not checked",
+      safeSummary: providerModelCache
+        ? providerModelCache.summary
+        : "Model assignment and model discovery safe summaries have not been checked in this session.",
+      nextAction: "Open Provider Connectivity, fetch/sync models with a fake or configured local provider path, then validate assignments by mode.",
+      jumpLabel: "Open Model Assignment",
+      jumpMode: "prompt_lab"
+    },
+    {
+      id: "novel-readiness",
+      label: "Novel readiness",
+      status: selectedProjectId ? "ready" : "warning",
+      safeSummary: selectedProjectId
+        ? "Novel Studio entry is available for manuscripts, chapters, scenes, quality, and safe export."
+        : "Novel Studio needs a selected local project before drafts can be loaded.",
+      nextAction: selectedProjectId ? "Open Novel workflow from Project Home." : "Select or create a local project first.",
+      jumpLabel: "Open Novel",
+      jumpMode: "project"
+    },
+    {
+      id: "tavern-readiness",
+      label: "Tavern readiness",
+      status: selectedProjectId ? "ready" : "warning",
+      safeSummary: selectedProjectId
+        ? "Tavern Studio entry is available for characters, sessions, boundaries, safety, export, and Cross-Mode review."
+        : "Tavern Studio needs a selected local project before RP sessions can be loaded.",
+      nextAction: selectedProjectId ? "Open Tavern workflow from Project Home." : "Select or create a local project first.",
+      jumpLabel: "Open Tavern",
+      jumpMode: "project"
+    },
+    {
+      id: "world-readiness",
+      label: "World readiness",
+      status: status?.worlds_count || selectedWorldId ? "ready" : "missing",
+      safeSummary: status?.worlds_count
+        ? `${status.worlds_count} local world pack(s) are visible to the Studio.`
+        : `Selected local world: ${selectedWorldId || "none"}.`,
+      nextAction: "Open World Studio and use backend action APIs for play.",
+      jumpLabel: "Open World",
+      jumpMode: "play"
+    },
+    {
+      id: "cross-mode-readiness",
+      label: "跨模式就绪状态",
+      status: selectedProjectId ? "ready" : "warning",
+      safeSummary: selectedProjectId
+        ? "跨模式桥接可用于草稿 / 提案审查、验证、冲突审查、安全 Apply 计划和审计记录。"
+        : "加载跨模式草稿和提案前，需要先选择一个本地项目。",
+      nextAction: selectedProjectId ? "从项目首页打开跨模式桥接。" : "先选择或创建一个本地项目。",
+      jumpLabel: "打开跨模式",
+      jumpMode: "project"
+    },
+    {
+      id: "authoring-mod-readiness",
+      label: "Authoring / Mod readiness",
+      status: authoringEnabled ? "ready" : "disabled",
+      safeSummary: authoringEnabled
+        ? "Authoring and Mod UI entries are available for safe drafts, validation, dry-run, and local package review."
+        : "Authoring API is disabled; content editors stay unavailable instead of writing files.",
+      nextAction: "Open Authoring / Mod Studio to validate packages before any safe apply.",
+      jumpLabel: "Open Authoring",
+      jumpMode: "authoring"
+    },
+    {
+      id: "qa-debug-replay-readiness",
+      label: "QA / Debug / Replay readiness",
+      status: qualityAvailable ? (status?.debug_api_enabled ? "ready" : "warning") : "not checked",
+      safeSummary: qualityAvailable
+        ? `Quality signals loaded. Debug API is ${status?.debug_api_enabled ? "enabled" : "disabled"}; raw debug details remain gated.`
+        : "Quality, playtest, hidden leak, timeline, and replay summaries have not been checked yet.",
+      nextAction: status?.debug_api_enabled ? "Review QA and Replay from the local dashboard." : "Run Quality Gate; enable debug only when raw debug inspection is explicitly needed.",
+      jumpLabel: "Open QA Dashboard",
+      jumpMode: "studio"
+    },
+    {
+      id: "backup-restore-readiness",
+      label: "Backup / Restore readiness",
+      status: backupPreviewReady ? "ready" : "warning",
+      safeSummary: backupPreviewReady
+        ? `Backup preview/result ready. Restore dry-run is ${restorePreviewReady ? "valid" : "not checked"}.`
+        : "Missing backup config warning: run a backup dry-run before relying on local restore/export readiness.",
+      nextAction: backupPreviewReady ? "Review backup exclusions before confirmed create/restore." : "Run Backup Dry-Run Preview from the local dashboard.",
+      jumpLabel: "Open Backup",
+      jumpMode: "studio"
+    },
+    {
+      id: "export-diagnostics-readiness",
+      label: "Export / Diagnostics readiness",
+      status: diagnosticsPreviewSafe || diagnosticsBundleCreateResult?.created ? "ready" : "warning",
+      safeSummary: diagnosticsPreviewSafe || diagnosticsBundleCreateResult?.created
+        ? "Diagnostics preview/create safe summary is available and reports no secrets or hidden/debug/mature/private payload."
+        : "Diagnostics and export previews have not been checked in this session.",
+      nextAction: "Preview diagnostics and use safe export profiles before creating local bundles.",
+      jumpLabel: "Open Diagnostics",
+      jumpMode: "studio"
+    },
+    {
+      id: "privacy-secrets-readiness",
+      label: "Privacy / secrets readiness",
+      status: localConfigSummary?.local_only && privacyIssueErrors.length === 0 ? "ready" : localConfigSummary ? "warning" : "not checked",
+      safeSummary: localConfigSummary
+        ? `Local-only=${String(localConfigSummary.local_only)}. Secret/privacy config errors: ${privacyIssueErrors.length}. API key values are not rendered.`
+        : "Local privacy summary has not been loaded.",
+      nextAction: "Open Settings / Privacy and keep api_key_env or secret_ref boundaries.",
+      jumpLabel: "Open Privacy",
+      jumpMode: "studio"
+    },
+    {
+      id: "documentation-guide-readiness",
+      label: "Documentation / guide readiness",
+      status: docsReady ? "ready" : "not checked",
+      safeSummary: docsReady
+        ? `${localUpdateNotes?.release_notes.length ?? 0} local release note / guide item(s) are available.`
+        : "Offline guide and release-note summaries are not loaded in this session.",
+      nextAction: "Refresh local update notes and use the offline guide for product workflow steps.",
+      jumpLabel: "Open Local Help",
+      jumpMode: "studio"
+    }
+  ];
+}
+
+function productReadinessPillClass(status: ProductReadinessStatus): "pass" | "warning" | "error" {
+  if (status === "ready") {
+    return "pass";
+  }
+  if (status === "missing") {
+    return "error";
+  }
+  return "warning";
+}
+
+function productReadinessTone(status: ProductReadinessStatus): string {
+  if (status === "ready") {
+    return "ready";
+  }
+  if (status === "missing") {
+    return "missing";
+  }
+  if (status === "disabled") {
+    return "disabled";
+  }
+  if (status === "not checked") {
+    return "not-checked";
+  }
+  return "warning";
 }
 
 function NarrativeQualityDashboard({
@@ -6748,24 +10033,36 @@ function SettingsPrivacyPanel({
     <section className="studio-section privacy-panel">
       <div className="authoring-pane-header">
         <div>
-          <h3>{promptLabOnly ? "Prompt Profiles / Experiments" : "Settings / Local Privacy"}</h3>
+          <h3>{promptLabOnly ? "Prompt Profiles / Experiments / 提示词实验" : "Settings / Local Privacy / 设置与本地隐私"}</h3>
           <p className="muted">
             {promptLabOnly
-              ? "Prompt profiles and experiment controls. Reports stay redacted and are never applied automatically."
-              : "Safe configuration summary without API keys, raw env, or full local paths."}
+              ? "提示词 profiles 与实验控制。报告保持脱敏，并且不会自动 apply。"
+              : "仅显示安全配置摘要，不显示 API Key、raw env 或完整本地路径。"}
           </p>
         </div>
-        <StatusBadge label={summary?.local_only ? "Local only" : "Unavailable"} enabled={Boolean(summary?.local_only)} />
+        <StatusBadge label={summary?.local_only ? "本地模式 / Local only" : "不可用 / Unavailable"} enabled={Boolean(summary?.local_only)} />
       </div>
       <ErrorPanel message={error} compact />
       {summary ? (
         <>
           {!promptLabOnly && (
             <section className="studio-section">
-              <h4>Settings / Preferences Sections</h4>
+              <h4>Settings / Preferences Sections / 设置与偏好分区</h4>
               <div className="mode-landing-grid">
-                {["General", "Local Privacy", "Providers", "Export", "Debug", "Backup / Restore", "Diagnostics", "Mature Module", "UI Preferences", "Keyboard Shortcuts", "Quality Gate"].map((section) => (
-                  <FeatureCard key={section} title={section} detail="Local desktop preference summary; no account, cloud sync, online marketplace, raw env, or API key values." />
+                {[
+                  ["General", "通用"],
+                  ["Local Privacy", "本地隐私"],
+                  ["Providers", "模型服务"],
+                  ["Export", "导出"],
+                  ["Debug", "调试"],
+                  ["Backup / Restore", "备份恢复"],
+                  ["Diagnostics", "诊断"],
+                  ["Mature Module", "Mature 模块"],
+                  ["UI Preferences", "界面偏好"],
+                  ["Keyboard Shortcuts", "键盘快捷键"],
+                  ["Quality Gate", "质量检查"]
+                ].map(([section, cnSection]) => (
+                  <FeatureCard key={section} title={`${section} / ${cnSection}`} detail="本地桌面偏好摘要；不包含账号、云同步、在线市场、raw env 或 API Key 值。" />
                 ))}
               </div>
             </section>
@@ -8499,7 +11796,7 @@ function buildProviderConnectivityRow(
 
 function providerConnectivityStatus(profile: ProviderProfileSummary, status: Record<string, unknown> | undefined, matrixRows: ModelCapabilityMatrixRow[]): ProviderConnectivityStatus {
   if (!profile.enabled) return "unconfigured";
-  if (profile.provider_type !== "mock" && profile.provider_type !== "local_stub" && !profile.api_key_env && !profile.secret_ref) return "missing_secret";
+  if (profile.provider_type !== "mock" && profile.provider_type !== "local_stub" && !profile.api_key_env && !profile.secret_ref && !profile.local_secret_ref) return "missing_secret";
   if (profile.provider_type !== "mock" && profile.provider_type !== "local_stub" && profile.base_url_configured === false && profile.provider_type !== "openai") return "invalid_base_url";
   const safeStatus = providerStatusString(status, "status");
   if (safeStatus && PROVIDER_CONNECTIVITY_STATUSES.includes(safeStatus as ProviderConnectivityStatus)) {
@@ -8528,7 +11825,7 @@ function providerStatusNumber(status: Record<string, unknown> | undefined, key: 
 function providerConnectivityWarnings(profile: ProviderProfileSummary, matrixRows: ModelCapabilityMatrixRow[]): string[] {
   const warnings: string[] = [];
   if (!profile.enabled) warnings.push("Provider profile is disabled.");
-  if (profile.provider_type !== "mock" && profile.provider_type !== "local_stub" && !profile.api_key_env && !profile.secret_ref) warnings.push("Missing secret reference or api_key_env.");
+  if (profile.provider_type !== "mock" && profile.provider_type !== "local_stub" && !profile.api_key_env && !profile.secret_ref && !profile.local_secret_ref) warnings.push("Missing secret reference or api_key_env.");
   if (profile.model_profiles.length === 0 && matrixRows.length === 0) warnings.push("No local model metadata loaded.");
   if (profile.provider_notes) warnings.push(redactReportText(profile.provider_notes));
   return warnings;
@@ -8681,7 +11978,15 @@ function SectionCard({
   );
 }
 
-function ErrorPanel({ message, compact = false }: { message: string; compact?: boolean }) {
+function ErrorPanel({
+  message,
+  compact = false,
+  suggestion = "建议：重试本地操作，检查后端健康状态，或打开诊断查看脱敏预览。"
+}: {
+  message: string;
+  compact?: boolean;
+  suggestion?: string;
+}) {
   if (!message) {
     return null;
   }
@@ -8690,28 +11995,62 @@ function ErrorPanel({ message, compact = false }: { message: string; compact?: b
       className={`error-panel ${compact ? "compact" : ""}`}
       role="alert"
       aria-live="assertive"
-      aria-label="Request failed"
+      aria-label="请求失败"
     >
-      <strong>Request failed</strong>
+      <strong>请求失败</strong>
       <p>{sanitizeDisplayError(message)}</p>
+      <p className="muted">{suggestion}</p>
+      <span className="sr-only">Request failed. Suggested fix: retry the local action, check backend health, or open Diagnostics for a redacted preview.</span>
     </div>
   );
 }
 
+function localizeStateText(value?: string): string | undefined {
+  if (!value) {
+    return value;
+  }
+  const text = value.trim();
+  const mappings: Array<[RegExp, string]> = [
+    [/^(No|Missing) project\b|project selected|select(ed)? project|open project|create project/i, "尚未选择项目。下一步：打开或创建本地项目。"],
+    [/provider.*missing|missing.*provider|missing secret|api_key_env|secret_ref|Provider 未配置/i, "缺少模型服务配置。下一步：配置模型服务，使用 api_key_env、secret_ref 或 local_secret_ref；不要保存明文 API Key。"],
+    [/model assignment|missing model|no model|models? assigned/i, "缺少模型分配。下一步：为 Novel、Tavern、World、Cross-Mode 和 Quality 分配模型。"],
+    [/no manuscript|manuscript|chapter|scene card|outline/i, "暂无稿件、章节或场景。下一步：创建稿件或打开已有项目继续写作。"],
+    [/no character|character card|session|messages?|rp memory/i, "暂无角色或会话。下一步：创建/导入角色卡，然后开始本地 RP。"],
+    [/no save|save\/load|world session|visible_state/i, "暂无存档或大世界会话。下一步：开始大世界或读取本地存档。"],
+    [/debug disabled|ENABLE_DEBUG_API|DebugGate|raw debug/i, "Debug 已禁用。下一步：需要 ENABLE_DEBUG_API 才能查看调试视图；普通 UI 不显示 raw state_deltas。"],
+    [/diagnostics|diagnostic bundle/i, "暂无诊断预览。下一步：先本地预览诊断包，再创建脱敏 bundle。"],
+    [/backup|restore|dry-run/i, "暂无备份或恢复预览。下一步：先运行 dry-run，再进行显式确认。"],
+    [/authoring|mod|package/i, "暂无创作包或 Mod 草稿。下一步：选择本地包或创建安全草稿。"],
+    [/No data|Empty|Unavailable|Disabled|Blocked/i, "暂无可显示内容。下一步：检查项目、模型服务或对应本地功能是否已启用。"]
+  ];
+  for (const [pattern, replacement] of mappings) {
+    if (pattern.test(text)) {
+      return replacement;
+    }
+  }
+  return value;
+}
+
 function EmptyState({ title, detail }: { title: string; detail?: string }) {
+  const localizedTitle = localizeStateText(title) ?? title;
+  const localizedDetail = localizeStateText(detail) ?? "下一步：返回首页，打开/创建项目，或配置模型服务。";
+  const displayTitle = /^(No|Empty|Missing|Unavailable)\b/i.test(title) ? `${CN_COPY.state.empty}：${localizedTitle}` : localizedTitle;
   return (
     <div className="empty-state" role="status" aria-live="polite" aria-label={safeAriaText(title)}>
-      <strong>{title}</strong>
-      {detail && <p>{detail}</p>}
+      <strong>{displayTitle}</strong>
+      <p>{localizedDetail}</p>
     </div>
   );
 }
 
 function DisabledState({ title, detail }: { title: string; detail: string }) {
+  const localizedTitle = localizeStateText(title) ?? title;
+  const localizedDetail = localizeStateText(detail) ?? detail;
+  const displayTitle = /disabled|unavailable|blocked|gated/i.test(title) ? `${CN_COPY.state.disabled}：${localizedTitle}` : localizedTitle;
   return (
     <div className="disabled-state" role="status" aria-disabled="true" aria-label={safeAriaText(title)}>
-      <strong>{title}</strong>
-      <p>{detail}</p>
+      <strong>{displayTitle}</strong>
+      <p>原因：{localizedDetail}</p>
     </div>
   );
 }
@@ -9043,11 +12382,9 @@ function modulePermissionReason(permission: string, requested: boolean, dangerou
 function SecretSafeNotice({ compact = false }: { compact?: boolean }) {
   return (
     <div className={`secret-safe-notice ${compact ? "compact" : ""}`}>
-      <strong>Secret-safe UI</strong>
+      <strong>{CN_COPY.safety.secretSafeUi}</strong>
       <p>
-        API keys are not stored in project files. Provider secrets stay behind env or local secret
-        resolver references, and normal export filters secrets, mature/private content, debug memory,
-        and raw state deltas.
+        {CN_COPY.safety.secretSafeDetail}
       </p>
     </div>
   );
@@ -9057,6 +12394,10 @@ function UnifiedNavigation({
   mode,
   requestedTool,
   hasProject,
+  providerConfigured,
+  qualityChecked,
+  backupReady,
+  diagnosticsReady,
   debugEnabled,
   debugOpen,
   onNavigate,
@@ -9065,76 +12406,142 @@ function UnifiedNavigation({
   mode: AppMode;
   requestedTool: AuthoringToolId | null;
   hasProject: boolean;
+  providerConfigured: boolean;
+  qualityChecked: boolean;
+  backupReady: boolean;
+  diagnosticsReady: boolean;
   debugEnabled: boolean;
   debugOpen: boolean;
   onNavigate: (mode: AppMode, toolId?: AuthoringToolId) => void;
   onToggleDebug: () => void;
 }) {
   const items: {
+    id: string;
     label: string;
+    cnLabel?: string;
     targetMode: AppMode;
     toolId?: AuthoringToolId;
     active: boolean;
     disabled?: boolean;
     reason?: string;
+    cnReason?: string;
     badge?: string;
+    cnBadge?: string;
   }[] = [
-    { label: "Project Home", targetMode: "project", active: mode === "project" },
-    { label: "Novel", targetMode: "project", active: mode === "project", badge: hasProject ? "Project Shell" : "Setup" },
-    { label: "Tavern", targetMode: "project", active: mode === "project", badge: hasProject ? "Project Shell" : "Setup" },
-    { label: "World", targetMode: "play", active: mode === "play" },
-    { label: "Cross-Mode", targetMode: "project", active: mode === "project", badge: "Review" },
     {
-      label: "Script / Mods",
+      id: "project",
+      label: "Project",
+      cnLabel: `${CN_COPY.nav.home} / ${CN_COPY.nav.project}`,
+      targetMode: "project",
+      active: mode === "project",
+      badge: hasProject ? "Ready" : "Open/Create",
+      cnBadge: hasProject ? CN_COPY.nav.ready : CN_COPY.nav.createOpenProject,
+      reason: hasProject ? "Open Project Home and local lifecycle checklists." : "Create or open a local project first.",
+      cnReason: hasProject ? "打开本地项目首页与生命周期检查。" : "先创建或打开一个本地项目。"
+    },
+    { id: "novel", label: "Novel", cnLabel: CN_COPY.nav.novel, targetMode: "project", active: false, badge: hasProject ? "Workflow" : "Needs project", cnBadge: hasProject ? "工作流" : "需要项目", reason: hasProject ? "Open Novel workflow from Project Home." : "Create/Open Project first, then open Novel Studio.", cnReason: hasProject ? "从项目首页进入小说写作工作流。" : "先打开/创建项目，再进入 Novel Studio。" },
+    { id: "tavern", label: "Tavern", cnLabel: CN_COPY.nav.tavern, targetMode: "project", active: false, badge: hasProject ? "Workflow" : "Needs project", cnBadge: hasProject ? "工作流" : "需要项目", reason: hasProject ? "Open Tavern workflow from Project Home." : "Create/Open Project first, then open Tavern Studio.", cnReason: hasProject ? "从项目首页进入 Tavern RP 工作流。" : "先打开/创建项目，再进入 Tavern Studio。" },
+    { id: "world", label: "World", cnLabel: CN_COPY.nav.world, targetMode: "play", active: mode === "play", badge: "Play", cnBadge: "游玩", reason: "Open World Studio; actions go through backend APIs, StateDelta, and EventLog.", cnReason: "进入 World Studio；行动仍通过后端 API、StateDelta 和 EventLog。" },
+    { id: "cross-mode", label: "Cross-Mode", cnLabel: CN_COPY.nav.crossMode, targetMode: "project", active: false, badge: "Review", cnBadge: "审查", reason: "Review draft/proposal/validation/apply workflows from Project Home.", cnReason: "在项目首页审查 draft / proposal / validation / apply 闭环。" },
+    {
+      id: "authoring",
+      label: "Authoring / Mods",
+      cnLabel: CN_COPY.nav.authoring,
       targetMode: "authoring",
       toolId: "advanced_modules",
       active: mode === "authoring" && (requestedTool === "advanced_modules" || requestedTool === "action_mods"),
-      badge: "Local"
+      badge: "Local",
+      cnBadge: "本地",
+      reason: "Open Authoring / Mod Studio for local package validation, permissions, compatibility, and dry-run.",
+      cnReason: "打开本地创作 / Mod 工具，进行验证、权限、兼容性和 dry-run。"
     },
-    { label: "Providers", targetMode: "prompt_lab", active: mode === "prompt_lab" },
-    { label: "Quality", targetMode: "studio", active: mode === "studio", badge: "Gate" },
+    { id: "provider", label: "Provider", cnLabel: CN_COPY.nav.provider, targetMode: "prompt_lab", active: mode === "prompt_lab", badge: providerConfigured ? "Configured" : "Setup", cnBadge: providerConfigured ? "已配置" : CN_COPY.nav.setup, reason: providerConfigured ? "Open Provider Connectivity and Model Assignment." : "Next action: configure a local Provider profile or local_stub.", cnReason: providerConfigured ? "打开模型连接与模型分配。" : "下一步：配置本地 Provider profile 或 local_stub。" },
+    { id: "qa", label: "QA / Quality", cnLabel: CN_COPY.nav.quality, targetMode: "studio", active: mode === "studio", badge: qualityChecked ? "Checked" : "Run gate", cnBadge: qualityChecked ? "已检查" : "运行检查", reason: qualityChecked ? "Open QA, Quality Gate, Debug / Replay, and local test dashboards." : "Next action: run Quality Gate from the local Studio dashboard.", cnReason: qualityChecked ? "打开 QA、Quality Gate、Debug / Replay 与本地测试面板。" : "下一步：从本地 Studio 运行 Quality Gate。" },
     {
+      id: "settings",
       label: "Settings",
+      cnLabel: CN_COPY.nav.settings,
       targetMode: "studio",
-      active: mode === "studio",
-      badge: "Privacy"
-    }
+      active: false,
+      badge: "Local",
+      cnBadge: "本地",
+      reason: "Open local settings for privacy, Provider metadata, accessibility, debug, backup, and diagnostics.",
+      cnReason: "打开本地设置：隐私、Provider 元数据、可访问性、Debug、备份和诊断。"
+    },
+    { id: "backup", label: "Backup", cnLabel: CN_COPY.nav.backup, targetMode: "studio", active: false, badge: backupReady ? "Previewed" : "Dry-run", cnBadge: backupReady ? "已预览" : "Dry-run", reason: backupReady ? "Backup preview is loaded; create still requires explicit confirmation." : "Next action: run a backup dry-run before creating a backup.", cnReason: backupReady ? "备份预览已载入；创建仍需要显式确认。" : "下一步：先运行备份 dry-run。" },
+    { id: "diagnostics", label: "Diagnostics", cnLabel: CN_COPY.nav.diagnostics, targetMode: "studio", active: false, badge: diagnosticsReady ? "Previewed" : "Preview", cnBadge: diagnosticsReady ? "已预览" : "预览", reason: diagnosticsReady ? "Diagnostics preview is loaded and redacted." : "Next action: preview diagnostics locally before creating a bundle.", cnReason: diagnosticsReady ? "诊断预览已载入并脱敏。" : "下一步：先本地预览诊断包。" },
+    { id: "export", label: "Export", cnLabel: "Export / 导出", targetMode: "studio", active: false, badge: "Preview", cnBadge: "预览", reason: "Open local export preview. No upload or online publishing is started.", cnReason: "打开本地导出预览；不会上传或在线发布。" }
   ];
+  const itemById = new Map(items.map((item) => [item.id, item]));
+  const renderNavItem = (itemId: string) => {
+    const item = itemById.get(itemId);
+    if (!item) return null;
+    return (
+      <button
+        key={`${item.id}-${item.toolId ?? item.targetMode}`}
+        type="button"
+        className={`nav-item ${item.active ? "active" : ""} ${item.disabled ? "disabled" : ""}`}
+        onClick={() => onNavigate(item.targetMode, item.toolId)}
+        disabled={item.disabled}
+        title={item.cnReason ?? item.reason}
+        aria-label={safeAriaText(`打开 ${item.cnLabel ?? item.label}${item.cnBadge ?? item.badge ? ` (${item.cnBadge ?? item.badge})` : ""}`)}
+        aria-current={item.active ? "page" : undefined}
+      >
+        <span>{item.cnLabel ?? item.label}</span>
+        {(item.cnBadge ?? item.badge) && <span className="nav-badge">{item.cnBadge ?? item.badge}</span>}
+        {(item.cnReason ?? item.reason) && <span className="sr-only">{item.cnReason ?? item.reason}</span>}
+      </button>
+    );
+  };
+  const mainEntryIds = hasProject ? ["project", "novel", "tavern", "world"] : ["project", "provider"];
+  const commonSettingIds = hasProject ? ["provider", "settings", "backup"] : [];
+  const advancedToolIds = ["cross-mode", "authoring", "qa", "diagnostics", "export"];
 
   return (
-    <nav className="unified-navigation" aria-label="Local studio navigation">
+    <nav className="unified-navigation" aria-label="Local studio navigation / 本地工作室导航">
       <LocalOnlyBadge />
-      <div className="nav-group">
-        {items.map((item) => (
-          <button
-            key={`${item.label}-${item.toolId ?? item.targetMode}`}
-            type="button"
-            className={`nav-item ${item.active ? "active" : ""} ${item.disabled ? "disabled" : ""}`}
-            onClick={() => onNavigate(item.targetMode, item.toolId)}
-            disabled={item.disabled}
-            title={item.reason}
-            aria-label={safeAriaText(`Open ${item.label}${item.badge ? ` (${item.badge})` : ""}`)}
-            aria-current={item.active ? "page" : undefined}
-          >
-            <span>{item.label}</span>
-            {item.badge && <span className="nav-badge">{item.badge}</span>}
-          </button>
-        ))}
-        <button
-          type="button"
-          className={`nav-item debug-gated ${debugOpen ? "active" : ""}`}
-          onClick={onToggleDebug}
-          title={debugEnabled ? "Debug API enabled" : "Debug API disabled by ENABLE_DEBUG_API"}
-          aria-label={debugOpen ? "Hide Debug / Replay panel" : "Open Debug / Replay panel"}
-          aria-expanded={debugOpen}
-          aria-controls="debug-panel"
-          aria-current={debugOpen ? "page" : undefined}
-        >
-          <span>Debug / Replay</span>
-          <span className="nav-badge">{debugEnabled ? "Enabled" : "Gated"}</span>
-        </button>
+      <div className="product-nav-status" aria-label="Current local product status / 当前本地产品状态">
+        <StatusBadge label={hasProject ? CN_COPY.nav.projectReady : CN_COPY.nav.createOpenProject} enabled={hasProject} />
+        <StatusBadge label={providerConfigured ? CN_COPY.nav.providerConfigured : CN_COPY.nav.providerNeeded} enabled={providerConfigured} />
+        <StatusBadge label={qualityChecked ? CN_COPY.nav.qualityChecked : CN_COPY.nav.runQualityGate} enabled={qualityChecked} />
+        <span className="sr-only">Create/Open Project Provider setup needed Run Quality Gate Gated</span>
       </div>
-      <p className="muted nav-note">No account, no cloud sync, no online marketplace.</p>
+      {!hasProject && (
+        <p className="muted nav-note">尚未选择项目：只需要先打开/创建项目，或配置模型服务。</p>
+      )}
+      <div className="nav-section-title">{hasProject ? "主要入口" : "开始使用"}</div>
+      <div className="nav-group compact" data-testid="v37-main-nav">
+        {mainEntryIds.map(renderNavItem)}
+      </div>
+      {commonSettingIds.length > 0 && (
+        <>
+          <div className="nav-section-title">常用设置</div>
+          <div className="nav-group compact" data-testid="v37-common-settings-nav">
+            {commonSettingIds.map(renderNavItem)}
+          </div>
+        </>
+      )}
+      <details className="advanced-tools-foldout" data-testid="v37-advanced-tools-nav" open={false}>
+        <summary>{CN_COPY.nav.advancedTools}</summary>
+        <p className="muted">Cross-Mode、创作 / Mod、Quality Gate、Debug / Replay、Diagnostics 与 Export 是高级工具，默认折叠。</p>
+        <div className="nav-group compact">
+          {advancedToolIds.map(renderNavItem)}
+          <button
+            type="button"
+            className={`nav-item debug-gated ${debugOpen ? "active" : ""}`}
+            onClick={onToggleDebug}
+            title={debugEnabled ? "Debug API enabled" : "Debug API disabled by ENABLE_DEBUG_API"}
+            aria-label={debugOpen ? "Hide Debug / Replay panel" : "Open Debug / Replay panel"}
+            aria-expanded={debugOpen}
+            aria-controls="debug-panel"
+            aria-current={debugOpen ? "page" : undefined}
+          >
+            <span>Debug / Replay</span><span aria-hidden="true"> / 调试回放</span>
+            <span className="nav-badge">{debugEnabled ? CN_COPY.nav.enabled : CN_COPY.nav.gated}</span>
+          </button>
+        </div>
+      </details>
+      <p className="muted nav-note">{CN_COPY.nav.localNote}</p>
     </nav>
   );
 }
@@ -9143,25 +12550,31 @@ function LocalStatusBar({
   projectLoaded,
   backendStatus,
   providerStatus,
+  modelAssignmentStatus,
   qualityStatus,
   debugEnabled,
+  backupDiagnosticsStatus,
   apiKeyConfigured
 }: {
   projectLoaded: boolean;
   backendStatus: string;
   providerStatus: string;
+  modelAssignmentStatus: string;
   qualityStatus: string;
   debugEnabled: boolean;
+  backupDiagnosticsStatus: string;
   apiKeyConfigured?: boolean;
 }) {
   return (
     <section className="local-status-bar" aria-label="Local status">
-      <StatusBadge label={projectLoaded ? "Project loaded" : "No project"} enabled={projectLoaded} />
-      <StatusBadge label={`Backend ${backendStatus}`} enabled={backendStatus === "ok" || backendStatus === "available"} />
-      <StatusBadge label={providerStatus ? `Provider ${providerStatus}` : "Provider missing"} enabled={Boolean(providerStatus && providerStatus !== "missing")} />
-      <StatusBadge label={`Quality ${qualityStatus}`} enabled={qualityStatus !== "not run"} />
-      <StatusBadge label={debugEnabled ? "Debug enabled" : "Debug disabled"} enabled={debugEnabled} />
-      <StatusBadge label="Local-only" enabled />
+      <StatusBadge label={`Backend health: ${backendStatus}`} enabled={backendStatus === "ok" || backendStatus === "available"} />
+      <StatusBadge label={projectLoaded ? "Project loaded" : "Project not loaded"} enabled={projectLoaded} />
+      <StatusBadge label={providerStatus ? `Provider status: ${providerStatus}` : "Provider status: missing"} enabled={Boolean(providerStatus && !["missing", "unconfigured", "unknown"].includes(providerStatus))} />
+      <StatusBadge label={`Model assignment: ${modelAssignmentStatus}`} enabled={modelAssignmentStatus !== "not checked" && modelAssignmentStatus !== "missing"} />
+      <StatusBadge label={`Quality status: ${qualityStatus}`} enabled={qualityStatus !== "not run"} />
+      <StatusBadge label={debugEnabled ? "Debug status: enabled" : "Debug status: gated"} enabled={debugEnabled} />
+      <StatusBadge label={`Backup / diagnostics: ${backupDiagnosticsStatus}`} enabled={backupDiagnosticsStatus !== "not checked"} />
+      <StatusBadge label="Local-only health" enabled />
       <StatusBadge label={apiKeyConfigured ? "Secret ref configured" : "No key in project"} enabled />
     </section>
   );
@@ -9204,6 +12617,7 @@ function LocalLauncherStatusPanel({
         <SafeSummaryCard title="SQLite / Database" value={status?.database_configured ? "configured" : "missing"} detail="Connection string is never displayed." />
         <SafeSummaryCard title="Workspace" value={status?.current_workspace?.safe_status ?? "not selected"} detail={status?.current_workspace?.path_redacted ?? "Safe path summary unavailable"} />
         <SafeSummaryCard title="Logs" value="redacted" detail="Local logs are read as safe summaries from ignored log directories." />
+        <SafeSummaryCard title="Desktop Packaging" value="safe docs" detail="Packaging docs keep .env, databases, logs, caches, node_modules, frontend/dist, desktop outputs, backups, diagnostics, and crash reports out of bundles by default." />
         <SafeSummaryCard title="Provider profiles" value={String(status?.provider_profiles_count ?? 0)} detail={`${status?.provider_secrets_configured_count ?? 0} secret reference(s) configured; values hidden.`} />
         <SafeSummaryCard title="Debug" value={status?.debug_enabled ? "enabled" : "disabled"} detail="Debug views remain gated by ENABLE_DEBUG_API." />
         <SafeSummaryCard title="Quality API" value={status?.quality_api_enabled ? "available" : "not available"} detail="Quality reports are local safe summaries." />
@@ -9240,10 +12654,317 @@ function LocalLauncherStatusPanel({
   );
 }
 
+function buildHomeLlmRuntimeStatus(
+  selectedProjectId: string,
+  configSummary: StudioConfigSummary | null,
+  safeApiCacheStatuses: SafeApiCacheStatus[],
+  modelAssignmentChecked: boolean
+): HomeLlmRuntimeStatus {
+  const providerType = (configSummary?.llm_provider ?? "unknown").trim().toLowerCase();
+  const providerStatus = (configSummary?.provider_status ?? "").trim().toLowerCase();
+  const providerModelCache = readSafeApiCache<ReturnType<typeof buildProviderModelListSafeCacheSummary>>(providerModelListCacheKey(selectedProjectId));
+  const safeProviderTypes = providerModelCache?.value.provider_types.map((type) => type.trim().toLowerCase()).filter(Boolean) ?? [];
+  const providerTypeSet = safeProviderTypes.length ? safeProviderTypes : [providerType];
+  const hasRealProviderType = providerTypeSet.some((type) => type !== "mock" && type !== "local_stub" && type !== "unknown");
+  const mockOrStub = providerTypeSet.every((type) => type === "mock" || type === "local_stub");
+  const providerConfigured = Boolean(
+    configSummary?.api_key_configured ||
+    providerStatus === "configured" ||
+    providerStatus === "ready" ||
+    mockOrStub ||
+    providerType === "local_http" ||
+    (providerModelCache?.value.provider_count ?? 0) > 0
+  );
+  const providerCacheText = safeApiCacheStatuses
+    .filter((status) => status.scope === "provider")
+    .map((status) => `${status.key} ${status.label} ${status.summary} ${status.safeError ?? ""}`)
+    .join(" ")
+    .toLowerCase();
+  const hasConnectedCache = /\bconnected\b|连接成功/.test(providerCacheText);
+  const hasMissingSecretCache = /missing_secret|missing secret|缺少 api key|缺少密钥/.test(providerCacheText);
+  const hasAuthFailedCache = /auth_failed|认证失败|authentication/.test(providerCacheText);
+  const hasFailedCache = /failed|失败|timeout|超时/.test(providerCacheText);
+  const providerConnection = mockOrStub
+    ? "使用 mock/local_stub"
+    : !providerConfigured
+      ? "provider 未连接"
+      : hasConnectedCache
+        ? "provider connected / 连接成功"
+        : hasMissingSecretCache
+          ? "缺少 API key（安全提示）"
+          : hasAuthFailedCache
+            ? "认证失败（已脱敏）"
+            : hasFailedCache
+              ? "连接失败（已脱敏）"
+              : "已配置，等待手动 Test Connection";
+  const usesRealLlm = mockOrStub && !hasRealProviderType
+    ? "否，当前使用 mock/local_stub"
+    : providerConfigured || hasRealProviderType
+      ? "是，已配置真实/本地 LLM；仅手动触发连接"
+      : "未启用，等待配置模型服务";
+  const modelAssignment = modelAssignmentChecked ? "模型已配置" : "模型缺失";
+  const modeReadinessText = mockOrStub
+    ? "使用 mock/local_stub"
+    : !modelAssignmentChecked
+      ? "模型缺失"
+      : hasConnectedCache
+        ? "模型已配置"
+        : "provider 未连接";
+
+  return {
+    statusKind: (providerConfigured || hasRealProviderType) && (mockOrStub || modelAssignmentChecked) ? "ready" : providerConfigured ? "warning" : "missing",
+    usesRealLlm,
+    providerConnection,
+    modelAssignment,
+    detail: "首页只读取安全配置摘要和 Provider 状态缓存；不会自动调用真实 provider，不显示 API key、Authorization header 或 raw provider error。",
+    modeReadiness: {
+      novel: modeReadinessText,
+      tavern: modeReadinessText,
+      world: modeReadinessText
+    }
+  };
+}
+
+function ChinesePlayableHomePanel({
+  selectedProjectId,
+  recentProjects,
+  workspaceTemplates,
+  configSummary,
+  safeApiCacheStatuses,
+  providerConfigured,
+  modelAssignmentChecked,
+  qualityChecked,
+  debugEnabled,
+  recentSaveCount,
+  worldsCount,
+  onNavigate,
+  onOpenRecentProject,
+  onOpenDemoProject
+}: {
+  selectedProjectId: string;
+  recentProjects: RecentProjectEntry[];
+  workspaceTemplates: WorkspaceTemplate[];
+  configSummary: StudioConfigSummary | null;
+  safeApiCacheStatuses: SafeApiCacheStatus[];
+  providerConfigured: boolean;
+  modelAssignmentChecked: boolean;
+  qualityChecked: boolean;
+  debugEnabled: boolean;
+  recentSaveCount: number;
+  worldsCount: number;
+  onNavigate: (mode: AppMode, toolId?: AuthoringToolId) => void;
+  onOpenRecentProject: (workspaceId: string) => void;
+  onOpenDemoProject: () => void;
+}) {
+  const hasProject = Boolean(selectedProjectId);
+  const demoProjectPath = "examples/demo_local_narrative_project";
+  const demoWorkspaceLoaded = /demo_local_narrative_project/i.test(selectedProjectId);
+  const demoTemplate = workspaceTemplates.find((template) => template.starter_world || template.template_id === "campaign_project" || /demo|starter|world/i.test(`${template.name} ${template.description}`)) ?? workspaceTemplates[0] ?? null;
+  const llmRuntimeStatus = buildHomeLlmRuntimeStatus(selectedProjectId, configSummary, safeApiCacheStatuses, modelAssignmentChecked);
+  const nextStepValue = !hasProject
+    ? CN_COPY.home.noProjectNext
+    : !providerConfigured
+      ? CN_COPY.home.providerNext
+      : !modelAssignmentChecked
+        ? CN_COPY.home.modelAssignmentNext
+        : CN_COPY.home.withProjectNext;
+  return (
+    <section className="cn-playable-home" data-testid="v37-cn-playable-home" aria-labelledby="cn-playable-home-title">
+      <div className="cn-playable-hero">
+        <div>
+          <p className="eyebrow">{CN_COPY.home.eyebrow}</p>
+          <h2 id="cn-playable-home-title">{hasProject ? CN_COPY.home.title : CN_COPY.home.noProjectTitle}</h2>
+          <p className="muted">{hasProject ? CN_COPY.home.projectDetail : CN_COPY.home.noProjectDetail}</p>
+        </div>
+        <div className="cn-safety-pills" aria-label="本地优先安全摘要">
+          <span>{CN_COPY.safety.noAccount}</span>
+          <span>{CN_COPY.safety.noCloudSync}</span>
+          <span>{CN_COPY.safety.apiKeysStayLocal}</span>
+          <span>{CN_COPY.safety.noUpload}</span>
+        </div>
+      </div>
+
+      <div className="cn-primary-actions" aria-label="核心入口">
+        {hasProject && (
+          <button type="button" onClick={() => onNavigate("project")} data-testid="cn-continue-project">
+            {CN_COPY.home.continueProject}
+          </button>
+        )}
+        {!hasProject && (
+          <>
+            <button type="button" onClick={() => onNavigate("project")} data-testid="cn-open-project">
+              {CN_COPY.home.openProject}
+            </button>
+            <button type="button" onClick={() => onNavigate("project")} data-testid="cn-create-project">
+              {CN_COPY.home.createProject}
+            </button>
+          </>
+        )}
+        <button type="button" onClick={() => onNavigate("prompt_lab")} data-testid="cn-configure-provider">
+          {CN_COPY.home.configureProvider}
+        </button>
+        {hasProject && (
+          <>
+            <button type="button" onClick={() => onNavigate("play")} data-testid="cn-continue-world">
+              {CN_COPY.home.continueWorld}
+            </button>
+            <button type="button" onClick={() => onNavigate("play")} data-testid="cn-start-world">
+              {CN_COPY.home.startWorld}
+            </button>
+          </>
+        )}
+        {providerConfigured && !modelAssignmentChecked && (
+          <button type="button" onClick={() => onNavigate("prompt_lab")} data-testid="cn-assign-models">
+            {CN_COPY.home.assignModels}
+          </button>
+        )}
+        <button type="button" onClick={() => onNavigate("studio")} data-testid="cn-open-tour">
+          {CN_COPY.home.viewTour}
+        </button>
+      </div>
+
+      <section className="cn-llm-runtime-status" data-testid="v37-runtime-llm-status" aria-label="模型服务运行状态">
+        <div className="section-heading-row">
+          <div>
+            <h3>{CN_COPY.home.llmRuntimeStatus}</h3>
+            <p className="muted">{CN_COPY.home.manualConnectionOnly}</p>
+          </div>
+          <StatusBadge label={llmRuntimeStatus.statusKind === "ready" ? "可用" : "需要检查"} enabled={llmRuntimeStatus.statusKind === "ready"} />
+        </div>
+        <div className="safe-summary-grid" data-testid="v37-home-model-service-status">
+          <SafeSummaryCard title={CN_COPY.home.realLlmStatus} value={llmRuntimeStatus.usesRealLlm} detail="测试 / CI 使用 fake provider；真实连接只允许用户手动触发。" />
+          <SafeSummaryCard title={CN_COPY.home.connectionStatus} value={llmRuntimeStatus.providerConnection} detail="连接失败只显示中文安全提示和 safe error type，不显示 raw provider error。" />
+          <SafeSummaryCard title={CN_COPY.home.modelAssignmentStatus} value={llmRuntimeStatus.modelAssignment} detail="Novel、Tavern、World、Cross-Mode、Quality 的模型分配从安全摘要读取。" />
+          <SafeSummaryCard title={CN_COPY.home.modeLlmReadiness} value="入口状态" detail={llmRuntimeStatus.detail} />
+        </div>
+        <div className="chip-list" data-testid="v37-mode-llm-status">
+          <span>Novel：{llmRuntimeStatus.modeReadiness.novel}</span>
+          <span>Tavern：{llmRuntimeStatus.modeReadiness.tavern}</span>
+          <span>World：{llmRuntimeStatus.modeReadiness.world}</span>
+        </div>
+      </section>
+
+      <div className="cn-project-entry-panel" data-testid="v37-project-entry-panel" aria-label="本地项目入口">
+        <div className="cn-project-entry-header">
+          <div>
+            <h3>本地项目入口</h3>
+            <p className="muted">{hasProject ? "项目已打开，可继续创作或游玩。" : "没有项目时，先打开/创建项目或试用 Demo 项目。"}</p>
+          </div>
+          <StatusBadge label={hasProject ? "项目已打开" : "等待项目"} enabled={hasProject} />
+        </div>
+        <div className="cn-project-entry-actions">
+          <button type="button" onClick={() => onNavigate("project")} data-testid="cn-project-open-cta">打开项目</button>
+          <button type="button" onClick={() => onNavigate("project")} data-testid="cn-project-create-cta">创建项目</button>
+          <button type="button" onClick={() => onNavigate("prompt_lab")} data-testid="cn-project-provider-cta">配置模型服务</button>
+          <button type="button" onClick={onOpenDemoProject} data-testid="cn-demo-project-entry">体验 Demo 项目</button>
+        </div>
+        <section className="cn-recent-projects" aria-label="最近项目">
+          <div className="section-heading-row">
+            <h4>最近项目</h4>
+            <span className="muted">只显示 safe path summary，不显示完整敏感路径。</span>
+          </div>
+          {recentProjects.length ? (
+            <ul className="compact-list">
+              {recentProjects.slice(0, 4).map((project) => (
+                <li key={project.workspace_id} className="cn-recent-project-row">
+                  <span>
+                    <strong>{redactReportText(project.display_name)}</strong>
+                    <span className="muted"> - <SafePathSummary value={project.path_redacted} /></span>
+                    <span className="muted"> - {project.safe_status}</span>
+                  </span>
+                  <button type="button" onClick={() => onOpenRecentProject(project.workspace_id)}>
+                    打开
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <EmptyState title="暂无最近项目" detail="打开或创建本地项目后，这里会显示脱敏的最近项目摘要。" />
+          )}
+        </section>
+        <section className="cn-demo-project-card" data-testid="v37-demo-project-entry" aria-label="Demo 项目一键体验入口">
+          <div className="section-heading-row">
+            <div>
+              <h4>Demo 项目一键体验</h4>
+              <p className="muted">路径：{demoProjectPath}。使用 fake/local_stub provider，不需要真实 API key，不上传、不包含 mature/private。</p>
+            </div>
+            <StatusBadge label={demoWorkspaceLoaded ? "已打开 Demo" : "可一键打开"} enabled />
+          </div>
+          <div className="button-row">
+            <button type="button" onClick={onOpenDemoProject} data-testid="cn-open-demo-project">体验 Demo 项目</button>
+            <button type="button" onClick={() => onNavigate("project")} data-testid="cn-demo-try-novel">试写小说</button>
+            <button type="button" onClick={() => onNavigate("project")} data-testid="cn-demo-try-tavern">试角色 RP</button>
+            <button type="button" onClick={() => onNavigate("play")} data-testid="cn-demo-try-world">试大世界游玩</button>
+          </div>
+          <p className="muted">
+            Demo 包含 Novel、Tavern、World、Cross-Mode、Quality 和 Provider fake/local_stub 安全配置。打开 Demo 只添加本地工作区引用，不覆盖用户项目、不写真实 key、不调用真实 provider。
+          </p>
+          <SafeSummaryCard
+            title="Demo 模板摘要"
+            value={demoTemplate ? "可体验" : "模板未载入"}
+            detail={demoTemplate ? `${demoTemplate.name}：${demoTemplate.description}` : "即使模板列表未载入，也可直接打开 examples/demo_local_narrative_project。"}
+          />
+        </section>
+      </div>
+
+      <div className="cn-mode-entry-grid" aria-label="Novel Tavern World main entries">
+        <button type="button" className="cn-mode-entry" onClick={() => onNavigate("project")} data-testid="cn-open-novel">
+          <strong>{CN_COPY.home.openNovel}</strong>
+          <span className="cn-mode-llm-badge">{llmRuntimeStatus.modeReadiness.novel}</span>
+          <span>Novel Studio：大纲、章节、场景与导出。</span>
+        </button>
+        <button type="button" className="cn-mode-entry" onClick={() => onNavigate("project")} data-testid="cn-open-tavern">
+          <strong>{CN_COPY.home.openTavern}</strong>
+          <span className="cn-mode-llm-badge">{llmRuntimeStatus.modeReadiness.tavern}</span>
+          <span>Tavern RP：角色卡、会话、记忆与边界设置。</span>
+        </button>
+        <button type="button" className="cn-mode-entry" onClick={() => onNavigate("play")} data-testid="cn-open-world">
+          <strong>{hasProject && recentSaveCount > 0 ? CN_COPY.home.continueWorld : CN_COPY.home.openWorld}</strong>
+          <span className="cn-mode-llm-badge">{llmRuntimeStatus.modeReadiness.world}</span>
+          <span>{hasProject ? "通过后端行动进入大世界，世界变化仍走 StateDelta / EventLog。" : "创建/打开项目后即可开始大世界游玩。"}</span>
+        </button>
+      </div>
+
+      <div className="cn-home-summary-grid">
+        <SafeSummaryCard
+          title={CN_COPY.home.projectStatus}
+          value={hasProject ? CN_COPY.home.readyToPlay : CN_COPY.home.needsProject}
+          detail={hasProject ? `${CN_COPY.home.selectedProject}: ${selectedProjectId}` : CN_COPY.home.noProject}
+        />
+        <SafeSummaryCard
+          title={CN_COPY.home.providerStatus}
+          value={!providerConfigured ? CN_COPY.home.providerMissing : modelAssignmentChecked ? CN_COPY.home.providerReady : CN_COPY.home.modelAssignmentMissing}
+          detail={!providerConfigured ? "可使用 api_key_env、secret_ref 或 local_stub；界面不显示 API Key。" : modelAssignmentChecked ? "Provider / model safe summary 已可用；可以继续测试连接、读取模型列表和分配模型。" : "Provider 已配置；下一步为 Novel / Tavern / World / Cross-Mode / Quality 分配模型。"}
+        />
+        <SafeSummaryCard
+          title={CN_COPY.home.nextStep}
+          value={nextStepValue}
+          detail={`World packs: ${worldsCount}; Debug / Replay: ${debugEnabled ? "已启用" : "默认隐藏 / 受 ENABLE_DEBUG_API 控制"}.`}
+        />
+        <div data-testid="v37-home-quality-status">
+          <SafeSummaryCard
+            title="质量状态"
+            value={qualityChecked ? "已运行 / 有摘要" : "未运行"}
+            detail="首页只显示简短 Quality 状态；完整 Quality Gate、Hidden Leak Report 和 Playtest 结果收纳在高级工具。"
+          />
+        </div>
+        <SafeSummaryCard
+          title={CN_COPY.home.localSafety}
+          value={CN_COPY.safety.worldBoundaryProtected}
+          detail="normal UI 不显示 hidden facts、NPC secrets、debug memory 或原始状态变更明细。"
+        />
+      </div>
+    </section>
+  );
+}
+
 function ProjectHomeRedesignPanel({
   status,
   selectedProjectId,
   configSummary,
+  safeApiCacheStatuses,
+  backupPlan,
+  diagnosticsBundlePreview,
   worldHealth,
   recentSaves,
   validationSummaries,
@@ -9252,6 +12973,9 @@ function ProjectHomeRedesignPanel({
   status: StudioStatus | null;
   selectedProjectId: string;
   configSummary: StudioConfigSummary | null;
+  safeApiCacheStatuses: SafeApiCacheStatus[];
+  backupPlan: BackupPlan | null;
+  diagnosticsBundlePreview: DiagnosticsBundlePreview | null;
   worldHealth: WorldHealthScore | null;
   recentSaves: SaveSummary[];
   validationSummaries: { world_id: string; ok: boolean; error_count?: number; warning_count?: number }[];
@@ -9259,43 +12983,98 @@ function ProjectHomeRedesignPanel({
 }) {
   const providerConfigured = Boolean(configSummary?.api_key_configured || configSummary?.provider_status === "configured");
   const qualityStatus = worldHealth ? "available" : "not run";
+  const backendHealthy = status?.backend_status === "ok" || status?.backend_status === "available";
+  const modelAssignmentChecked = safeApiCacheStatuses.some((cacheStatus) => cacheStatus.key.includes("provider-model-list"));
+  const backupDiagnosticsChecked = Boolean(backupPlan || diagnosticsBundlePreview);
+  const healthItems = [
+    {
+      title: "Backend health",
+      value: backendHealthy ? "available" : "unavailable",
+      detail: `Safe backend status: ${status?.backend_status ?? "unavailable"}.`
+    },
+    {
+      title: "Project loaded",
+      value: selectedProjectId ? "loaded" : "not loaded",
+      detail: selectedProjectId ? "Current project id is shown as a safe local summary." : "Create or open a local project."
+    },
+    {
+      title: "Provider status",
+      value: providerConfigured ? "configured" : "missing",
+      detail: providerConfigured ? "Provider uses safe backend metadata; key values are hidden." : "Missing provider warning: configure local_stub, mock, or env/secret_ref profile."
+    },
+    {
+      title: "Model assignment status",
+      value: modelAssignmentChecked ? "checked" : "not checked",
+      detail: modelAssignmentChecked ? "Provider model list / assignment safe cache exists." : "Open Provider Models to fetch, sync, or manually assign models."
+    },
+    {
+      title: "Quality status",
+      value: qualityStatus,
+      detail: worldHealth ? "World health summary is loaded." : "Run Quality Gate to refresh local readiness."
+    },
+    {
+      title: "Debug status",
+      value: status?.debug_api_enabled ? "enabled" : "gated",
+      detail: "Debug / Replay remains gated by ENABLE_DEBUG_API and safe UI boundaries."
+    },
+    {
+      title: "Backup / diagnostics status",
+      value: diagnosticsBundlePreview ? "diagnostics previewed" : backupPlan ? "backup previewed" : "not checked",
+      detail: backupDiagnosticsChecked ? "Local preview is available with secret/debug exclusions." : "Run backup dry-run or diagnostics preview before release/export work."
+    }
+  ];
+  const healthReadyCount = healthItems.filter((item) => !["missing", "not loaded", "not checked", "unavailable"].includes(item.value)).length;
   return (
     <SectionCard
-      title="Project Home"
-      description="A local-first overview for project status, mode entry, providers, quality, and privacy."
+      title="本地项目首页 / Project Home"
+      description="本地优先概览：项目状态、写作/RP/大世界入口、Provider、质量检查和隐私边界。"
     >
       <div className="project-home-hero">
         <div>
-          <p className="eyebrow">Local UI / UX Foundation</p>
-          <h3>{selectedProjectId || "Local Narrative Project"}</h3>
+          <p className="eyebrow">中文本地产品体验</p>
+          <h3>{selectedProjectId || "本地叙事项目"}</h3>
           <p className="muted">
-            AI Narrative Studio stays local-first: no account, No cloud sync, and No online marketplace.
+            AI Narrative Studio 保持本地优先：无需账号、不使用云同步、无在线市场。
           </p>
         </div>
         <LocalOnlyBadge />
       </div>
+      <section className="product-health-summary" aria-label="Product health safe summary">
+        <div className="product-readiness-heading">
+          <h4>整体健康摘要</h4>
+          <span className={`status-pill ${healthReadyCount === healthItems.length ? "pass" : backendHealthy ? "warning" : "error"}`}>
+            {healthReadyCount}/{healthItems.length} 项正常
+          </span>
+        </div>
+        <p className="muted">安全健康摘要覆盖后端、项目、Provider、模型分配、Quality、Debug、备份和诊断；不显示 raw env、API Key、敏感路径、hidden facts 或 raw debug data。</p>
+        <div className="safe-summary-grid">
+          {healthItems.map((item) => (
+            <SafeSummaryCard key={item.title} title={item.title} value={item.value} detail={item.detail} />
+          ))}
+        </div>
+      </section>
       <div className="mode-landing-grid">
-        <ModeCard title="Novel" detail="Manuscripts, outlines, chapters, scenes, exports, and World to Novel drafts." onOpen={() => onNavigate("project")} status={<ValidationStatusBadge status="not_run" />} />
-        <ModeCard title="Tavern" detail="Characters, sessions, RP memory, multi-NPC scenes, mood, voice, and safety settings." onOpen={() => onNavigate("project")} status={<RiskBadge level="safe" />} />
-        <ModeCard title="World" detail="Continue local play, inspect visible state, saves, quests, inventory, and replay." onOpen={() => onNavigate("play")} status={<StatusBadge label={status?.worlds_count ? "Worlds available" : "No world loaded"} enabled={Boolean(status?.worlds_count)} />} />
-        <ModeCard title="Script / Mods" detail="Local packages, permissions, compatibility, certification, and quality gates." onOpen={() => onNavigate("authoring", "advanced_modules")} status={<RiskBadge level="unknown" />} />
-        <ModeCard title="Providers" detail="Configure provider profiles by env or secret reference only. No plaintext key field." onOpen={() => onNavigate("prompt_lab")} status={<StatusBadge label={providerConfigured ? "Configured" : "Missing"} enabled={providerConfigured} />} />
-        <ModeCard title="Quality" detail="World health, narrative evals, playtests, compatibility, and release confidence." onOpen={() => onNavigate("studio")} status={<ValidationStatusBadge status={worldHealth ? "passed" : "not_run"} />} />
-        <ModeCard title="Debug / Replay" detail="Timeline and diagnostics remain gated by ENABLE_DEBUG_API." onOpen={() => onNavigate("play")} status={<StatusBadge label={status?.debug_api_enabled ? "Debug enabled" : "Debug gated"} enabled={status?.debug_api_enabled} />} />
-        <ModeCard title="Settings" detail="Local privacy, provider, export, debug, mature module, UI, and quality preferences." onOpen={() => onNavigate("studio")} status={<LocalOnlyBadge />} />
+        <ModeCard title="Novel / 写小说" detail="手稿、大纲、章节、场景、导出，以及 World → Novel 草稿。" onOpen={() => onNavigate("project")} status={<ValidationStatusBadge status="not_run" />} />
+        <ModeCard title="Tavern RP / 角色 RP" detail="角色卡、会话、RP memory、多 NPC 场景、氛围、Voice 与边界设置。" onOpen={() => onNavigate("project")} status={<RiskBadge level="safe" />} />
+        <ModeCard title="World / 大世界" detail="继续本地游玩，查看 visible_state、存档、任务、背包和回放。" onOpen={() => onNavigate("play")} status={<StatusBadge label={status?.worlds_count ? "Worlds available / 世界可用" : "No world loaded / 未载入世界"} enabled={Boolean(status?.worlds_count)} />} />
+        <ModeCard title="Script / Mods / 创作工具" detail="本地包、权限、兼容性、认证与质量检查。" onOpen={() => onNavigate("authoring", "advanced_modules")} status={<RiskBadge level="unknown" />} />
+        <ModeCard title="Providers / 模型服务" detail="仅通过环境变量或 secret 引用配置 Provider；不提供明文 key 字段。" onOpen={() => onNavigate("prompt_lab")} status={<StatusBadge label={providerConfigured ? "Configured / 已配置" : "Missing / 待配置"} enabled={providerConfigured} />} />
+        <ModeCard title="Quality Gate / 质量检查" detail="世界健康、叙事评估、playtest、兼容性与发布信心。" onOpen={() => onNavigate("studio")} status={<ValidationStatusBadge status={worldHealth ? "passed" : "not_run"} />} />
+        <ModeCard title="Debug / Replay / 调试回放" detail="Timeline 和诊断仍受 ENABLE_DEBUG_API 控制。" onOpen={() => onNavigate("play")} status={<StatusBadge label={status?.debug_api_enabled ? "Debug enabled / 已启用" : "Debug gated / 受控"} enabled={status?.debug_api_enabled} />} />
+        <ModeCard title="Settings / 设置" detail="本地隐私、Provider、导出、Debug、Mature Module、UI 与质量偏好。" onOpen={() => onNavigate("studio")} status={<LocalOnlyBadge />} />
       </div>
       <div className="safe-summary-grid">
         <SafeSummaryCard title="Recent activity" value={recentSaves.length ? `${recentSaves.length} recent saves` : "No recent saves"} detail="Shown as safe save summaries only." />
         <SafeSummaryCard title="Validation" value={validationSummaries.length ? `${validationSummaries.length} worlds checked` : "Not run"} detail={validationSummaries.some((item) => !item.ok) ? "Some worlds need review." : "No blocker summary available."} />
-        <SafeSummaryCard title="Privacy summary" value="Secrets filtered" detail="API key not stored in project; export filters secrets; cloud sync disabled / not implemented." />
+        <SafeSummaryCard title="隐私摘要" value="密钥已过滤" detail="API Key 不保存到项目；导出会过滤密钥；云同步未启用/未实现。" />
       </div>
       <div className="quick-actions">
-        <button type="button" onClick={() => onNavigate("project")}>Open Novel</button>
-        <button type="button" onClick={() => onNavigate("project")}>Open Tavern</button>
-        <button type="button" onClick={() => onNavigate("play")}>Open World</button>
-        <button type="button" onClick={() => onNavigate("studio")}>Run Quality Gate</button>
-        <button type="button" onClick={() => onNavigate("studio")}>Open Settings</button>
-        <button type="button" onClick={() => onNavigate("prompt_lab")}>Open Providers</button>
+        <button type="button" onClick={() => onNavigate("project")}>写小说 / Open Novel</button>
+        <button type="button" onClick={() => onNavigate("project")}>角色 RP / Open Tavern</button>
+        <button type="button" onClick={() => onNavigate("play")}>大世界游玩 / Open World</button>
+        <button type="button" onClick={() => onNavigate("studio")}>运行 Quality Gate</button>
+        <button type="button" onClick={() => onNavigate("studio")}>打开设置</button>
+        <button type="button" onClick={() => onNavigate("prompt_lab")}>配置 Provider</button>
       </div>
       <SecretSafeNotice />
     </SectionCard>
@@ -9304,77 +13083,349 @@ function ProjectHomeRedesignPanel({
 
 function LocalHelpOnboardingPanel() {
   return (
-    <SectionCard title="Offline Help Center / Local Help / Onboarding" description="Short guide to the local-first workflow. Content is bundled locally and does not load remote docs.">
+    <SectionCard title="离线帮助中心" description="中文本地可游玩完整产品指南；内容随应用打包，不加载远程文档。">
       <div className="mode-landing-grid">
-        <FeatureCard title="Getting Started" detail="Create or open a local project, choose a mode, and run Quality Gate before release." />
-        <FeatureCard title="What is AI Narrative Studio" detail="A local writing, Tavern RP, and World Studio workspace sharing one fact boundary." />
-        <FeatureCard title="Local-first workflow" detail="No account, no cloud sync, no online marketplace, and API keys stay local." />
-        <FeatureCard title="Project Picker" detail="Open recent local projects with redacted path summaries; no cloud project registry." />
-        <FeatureCard title="Novel / Tavern / World modes" detail="Draft prose, roleplay safely, and play the world without letting UI bypass rules." />
-        <FeatureCard title="Cross-Mode proposals" detail="Drafts and proposals are reviewed before becoming world changes." />
-        <FeatureCard title="Provider setup" detail="Use api_key_env or secret_ref; never paste plaintext API keys into the frontend." />
-        <FeatureCard title="Mods and permissions" detail="Local packages are validated, never executed as arbitrary code." />
-        <FeatureCard title="Quality Gate" detail="Run deterministic checks for leaks, migration, compatibility, and release readiness." />
-        <FeatureCard title="Backup / Restore" detail="Dry-run first; .env, API keys, logs/cache/build outputs, debug and mature/private content are excluded by default." />
-        <FeatureCard title="Diagnostics / Logs" detail="Local diagnostics and logs are redacted and never uploaded." />
-        <FeatureCard title="Privacy and secrets" detail="Exports and diagnostics default to filtered safe summaries." />
-        <FeatureCard title="Desktop Packaging" detail="Packaging excludes .env, databases, logs/cache, node_modules, frontend/dist, desktop build outputs, backups, crash reports, and diagnostics bundles." />
-        <FeatureCard title="Mature Module default off" detail="Mature/private content stays disabled and excluded unless explicit local policy allows it." />
+        <FeatureCard title="产品手册" detail="使用 docs/PRODUCT_GUIDE.md 离线了解中文本地完整工作流。" />
+        <FeatureCard title="快速开始" detail="打开/创建项目，选择写小说、角色 RP 或大世界游玩；需要真实 LLM 时再配置模型服务。" />
+        <FeatureCard title="这是什么" detail="本地写作、角色 RP 与大世界游玩工作区，共用 World Engine 与可见性边界。" />
+        <FeatureCard title="本地优先" detail="无需账号、不使用云同步、无在线市场、不上传项目，API Key 只通过本地安全引用读取。" />
+        <FeatureCard title="打开 / 创建项目" detail="打开最近项目只显示脱敏路径摘要；也可以一键体验 Demo 项目。" />
+        <FeatureCard title="配置真实 LLM / 中转站 / 本地模型" detail="通过 Provider Gateway 配置 OpenAI-compatible、Relay、local_http、custom、mock 或 local_stub。" />
+        <FeatureCard title="读取模型列表" detail="手动 Test Connection / Fetch Models；不支持模型列表时可手动添加 model_id。" />
+        <FeatureCard title="分配模型" detail="为 Novel、Tavern、World、Cross-Mode 和 Quality 分配安全 ModelProfile。" />
+        <FeatureCard title="写小说" detail="本地撰写稿件、大纲、章节、场景、角色弧线，支持安全导出和 World-to-Novel 导入。" />
+        <FeatureCard title="角色 RP" detail="使用本地角色卡、会话、记忆、Voice/Tone、边界设置和 proposal review 进行 RP。" />
+        <FeatureCard title="大世界游玩" detail="通过后端行动游玩；World 变化仍由 StateDelta/EventLog 支撑，normal UI 使用 visible_state。" />
+        <FeatureCard title="Cross-Mode" detail="Novel / Tavern / World 之间使用 draft、proposal、validation 和明确 apply，不自动同步。" />
+        <FeatureCard title="创作 / Mod" detail="编辑本地包、验证、dry-run、审查权限；Mod 默认声明式，不支持任意代码插件。" />
+        <FeatureCard title="质量检查" detail="运行本地确定性检查，覆盖 hidden leak、迁移、兼容性和发布就绪度。" />
+        <FeatureCard title="调试 / 回放" detail="Timeline、EventLog、StateDelta 与 debug export 保持 gated、只读和显式确认。" />
+        <FeatureCard title="备份 / 恢复" detail="先 dry-run；默认排除 .env、API Key、logs/cache/build outputs、debug 和 mature/private 内容。" />
+        <FeatureCard title="诊断 / 导出" detail="先预览本地导出与诊断内容；默认过滤密钥和敏感细节，并且不上传。" />
+        <FeatureCard title="API Key 安全" detail="ProviderProfile 只保存 api_key_env、secret_ref 或 local_secret_ref；不保存明文 Key。" />
+        <FeatureCard title="Mature Module 默认关闭" detail="mature/private 内容保持关闭并默认排除，除非显式本地策略允许。" />
+        <FeatureCard title="不支持内容" detail="不支持账号、云同步、在线市场、远程包下载、在线平台或任意代码插件。" />
+        <FeatureCard title="常见问题" detail="检查后端健康、Provider 状态、模型分配、Quality blocker、DebugGate 和导出过滤摘要。" />
       </div>
     </SectionCard>
   );
 }
 
+const COMPLETE_PRODUCT_TOUR_STEPS: {
+  title: string;
+  detail: string;
+  nextAction: string;
+  jumpLabel: string;
+  jumpMode: AppMode;
+  jumpTool?: AuthoringToolId;
+}[] = [
+  {
+    title: "Welcome: local-first",
+    detail: "AI Narrative Studio is a local Novel, Tavern RP, and World workspace. No account, cloud sync, online marketplace, remote package download, telemetry, or online onboarding is required.",
+    nextAction: "Review the local-first boundary, then open or create a project.",
+    jumpLabel: "Start with Project Home",
+    jumpMode: "project"
+  },
+  {
+    title: "Create/Open Project",
+    detail: "Use Project Home, Project Picker, or Recent Projects to open local data. Path details are safe summaries and project selection does not modify active GameState.",
+    nextAction: "Create or select a local project/workspace.",
+    jumpLabel: "Open Project Home",
+    jumpMode: "project"
+  },
+  {
+    title: "Configure Provider",
+    detail: "Provider setup is local configuration only. Use mock/local_stub, local_http, OpenAI-compatible, relay-style, or custom profiles with api_key_env or secret_ref only.",
+    nextAction: "Open Provider Setup. Do not paste plaintext API keys into the frontend.",
+    jumpLabel: "Open Provider Setup",
+    jumpMode: "prompt_lab"
+  },
+  {
+    title: "Test Connection / Fetch Models",
+    detail: "Connection tests and model discovery use safe Provider Gateway paths. Tests must use fake/local providers; this tour never calls a real provider.",
+    nextAction: "Run a local connection test and fetch/sync safe ModelProfile metadata when ready.",
+    jumpLabel: "Open Connectivity",
+    jumpMode: "prompt_lab"
+  },
+  {
+    title: "Assign Models by Mode",
+    detail: "Assign models for Novel, Tavern, World, Cross-Mode, Quality, and summary use cases. Capability warnings are metadata checks, not world authority.",
+    nextAction: "Validate model assignments without storing secrets or changing Provider Gateway semantics.",
+    jumpLabel: "Open Model Assignment",
+    jumpMode: "prompt_lab"
+  },
+  {
+    title: "Open Novel Studio",
+    detail: "Novel Studio supports manuscripts, chapters, scenes, search, quality, World-to-Novel import, and safe export. Novel drafts do not directly modify GameState.",
+    nextAction: "Open Novel from Project Home and start a local manuscript or chapter draft.",
+    jumpLabel: "Open Novel",
+    jumpMode: "project"
+  },
+  {
+    title: "Open Tavern Studio",
+    detail: "Tavern Studio supports character cards, sessions, multi-NPC RP, memory, voice/tone, boundaries, safety, export, and Cross-Mode review.",
+    nextAction: "Open Tavern from Project Home. Mature/private content remains excluded by default.",
+    jumpLabel: "Open Tavern",
+    jumpMode: "project"
+  },
+  {
+    title: "Open World Studio",
+    detail: "World Studio is the authoritative play surface. Actions go through backend APIs, StateDelta, and EventLog; normal UI uses visible_state.",
+    nextAction: "Start or load a local world session and play through backend action APIs.",
+    jumpLabel: "Open World",
+    jumpMode: "play"
+  },
+  {
+    title: "Cross-Mode overview",
+    detail: "Novel, Tavern, and World share drafts/proposals/reviews. Cross-Mode changes require validation and confirmed apply flows before affecting World state.",
+    nextAction: "Review Cross-Mode drafts, conflicts, links, and audit records from Project Home.",
+    jumpLabel: "Open Cross-Mode",
+    jumpMode: "project"
+  },
+  {
+    title: "Authoring / Mod overview",
+    detail: "Authoring and Mod tools create local drafts and packages. Mods are declarative by default; arbitrary code plugins are not enabled.",
+    nextAction: "Open Authoring / Mod Studio and validate before dry-run or safe apply.",
+    jumpLabel: "Open Authoring",
+    jumpMode: "authoring",
+    jumpTool: "project_dashboard"
+  },
+  {
+    title: "Quality / Debug / Replay overview",
+    detail: "Quality Gate, playtests, hidden leak checks, Timeline Replay, EventLog, StateDelta, and debug exports are local. Raw debug data remains DebugGate controlled.",
+    nextAction: "Run local quality checks. Enable debug only when explicitly needed.",
+    jumpLabel: "Open QA Dashboard",
+    jumpMode: "studio"
+  },
+  {
+    title: "Backup / Restore / Diagnostics overview",
+    detail: "Backup, restore, diagnostics, logs, and debug export are local and preview-first. Secrets, raw env, debug, mature/private, databases, logs, caches, and build outputs are excluded by default.",
+    nextAction: "Run backup dry-run and diagnostics preview before creating local bundles.",
+    jumpLabel: "Open Backup / Diagnostics",
+    jumpMode: "studio"
+  },
+  {
+    title: "Privacy / secrets overview",
+    detail: "API keys, transient keys, Authorization headers, raw prompts, raw outputs, hidden facts, NPC secrets, raw state_deltas, and provider secrets must not enter normal UI, logs, diagnostics, backup, export, or project files.",
+    nextAction: "Review Settings / Privacy and finish the tour.",
+    jumpLabel: "Open Privacy",
+    jumpMode: "studio"
+  }
+];
+
+const COMPLETE_PRODUCT_TOUR_CN: Record<string, { title: string; detail: string; nextAction: string; jumpLabel: string }> = {
+  "Welcome: local-first": {
+    title: "欢迎：本地优先",
+    detail: "AI Narrative Studio 是本地 Novel、Tavern RP 和 World 工作区。无需账号、不使用云同步、无在线市场、无远程包自动下载、无遥测或在线 onboarding。",
+    nextAction: "先了解本地优先边界，然后打开或创建项目。",
+    jumpLabel: "从项目首页开始"
+  },
+  "Create/Open Project": {
+    title: "创建 / 打开项目",
+    detail: "使用项目首页、项目选择器或最近项目打开本地数据。路径只显示安全摘要，选择项目不会修改 active GameState。",
+    nextAction: "创建或选择一个本地项目/工作区。",
+    jumpLabel: "打开项目首页"
+  },
+  "Configure Provider": {
+    title: "配置 Provider / 模型服务",
+    detail: "Provider 设置只是本地配置。可以使用 mock/local_stub、local_http、OpenAI-compatible、relay-style 或 custom profile，并且只使用 api_key_env 或 secret_ref。",
+    nextAction: "打开 Provider 设置。不要把明文 API Key 粘贴到普通前端界面。",
+    jumpLabel: "打开 Provider 设置"
+  },
+  "Test Connection / Fetch Models": {
+    title: "测试连接 / 读取模型",
+    detail: "连接测试和模型发现走安全 Provider Gateway。测试使用 fake/local providers；向导本身不会调用真实 provider。",
+    nextAction: "准备好后，手动运行本地连接测试并读取/同步安全 ModelProfile 元数据。",
+    jumpLabel: "打开连接状态"
+  },
+  "Assign Models by Mode": {
+    title: "按模式分配模型",
+    detail: "为 Novel、Tavern、World、Cross-Mode、Quality 和 summary use case 分配模型。能力警告是元数据检查，不代表模型拥有世界裁判权。",
+    nextAction: "验证模型分配，不保存密钥，也不改变 Provider Gateway 语义。",
+    jumpLabel: "打开模型分配"
+  },
+  "Open Novel Studio": {
+    title: "打开 Novel Studio / 写小说",
+    detail: "Novel Studio 支持手稿、章节、场景、搜索、质量检查、World-to-Novel 导入和安全导出。Novel 草稿不会直接修改 GameState。",
+    nextAction: "从项目首页打开 Novel，开始本地手稿或章节草稿。",
+    jumpLabel: "写小说"
+  },
+  "Open Tavern Studio": {
+    title: "打开 Tavern Studio / 角色 RP",
+    detail: "Tavern Studio 支持角色卡、会话、多 NPC RP、记忆、Voice/Tone、边界、安全、导出和 Cross-Mode review。",
+    nextAction: "从项目首页打开 Tavern。mature/private 内容默认排除。",
+    jumpLabel: "角色 RP"
+  },
+  "Open World Studio": {
+    title: "打开 World Studio / 大世界游玩",
+    detail: "World Studio 是权威游玩界面。行动通过后端 API、StateDelta 和 EventLog；normal UI 使用 visible_state。",
+    nextAction: "开始或载入本地世界会话，通过后端行动 API 游玩。",
+    jumpLabel: "进入大世界"
+  },
+  "Cross-Mode overview": {
+    title: "Cross-Mode / 跨模式概览",
+    detail: "Novel、Tavern 和 World 共享 draft/proposal/review。Cross-Mode 变化需要 validation 与明确 apply 流程后才会影响 World state。",
+    nextAction: "在项目首页审查跨模式草稿、冲突、链接和审计记录。",
+    jumpLabel: "打开 Cross-Mode"
+  },
+  "Authoring / Mod overview": {
+    title: "Authoring / Mod / 高级创作",
+    detail: "Authoring 与 Mod 工具创建本地草稿和包。Mods 默认声明式；任意代码插件未启用。",
+    nextAction: "打开 Authoring / Mod Studio，在 dry-run 或 safe apply 前先验证。",
+    jumpLabel: "打开 Authoring"
+  },
+  "Quality / Debug / Replay overview": {
+    title: "Quality / Debug / Replay / 质量与调试",
+    detail: "Quality Gate、playtests、hidden leak checks、Timeline Replay、EventLog、StateDelta 和 debug export 都是本地能力。raw debug data 仍受 DebugGate 控制。",
+    nextAction: "运行本地质量检查；只在明确需要时启用 Debug。",
+    jumpLabel: "打开 QA Dashboard"
+  },
+  "Backup / Restore / Diagnostics overview": {
+    title: "Backup / Restore / Diagnostics / 备份恢复与诊断",
+    detail: "备份、恢复、诊断、日志和 debug export 都是本地、预览优先。默认排除密钥、raw env、debug、mature/private、数据库、日志、缓存和构建输出。",
+    nextAction: "创建本地 bundle 前，先运行 backup dry-run 和 diagnostics preview。",
+    jumpLabel: "打开备份 / 诊断"
+  },
+  "Privacy / secrets overview": {
+    title: "隐私 / 密钥概览",
+    detail: "API Key、transient key、Authorization header、raw prompts、raw outputs、hidden facts、NPC secrets、raw state_deltas 和 provider secrets 不应进入 normal UI、logs、diagnostics、backup、export 或 project files。",
+    nextAction: "检查 Settings / Privacy，然后完成向导。",
+    jumpLabel: "打开隐私设置"
+  }
+};
+
+const PLAYABLE_PRODUCT_TOUR_STEPS: {
+  title: string;
+  detail: string;
+  nextAction: string;
+  jumpLabel: string;
+  jumpMode: AppMode;
+  jumpTool?: AuthoringToolId;
+}[] = [
+  {
+    title: "欢迎：本地优先",
+    detail: "这是本地 AI 叙事工作室：无需账号、不使用云同步、不上传项目。LLM 只是语言层，世界事实仍由本地 World Engine 管理。",
+    nextAction: "了解本地优先边界，然后打开或创建项目。",
+    jumpLabel: "打开项目首页",
+    jumpMode: "project"
+  },
+  {
+    title: "创建或打开项目",
+    detail: "项目数据保存在本机。选择项目后，就可以写小说、Tavern RP 或进入大世界游玩。",
+    nextAction: "打开已有项目，或创建一个新的本地项目。",
+    jumpLabel: "打开 / 创建项目",
+    jumpMode: "project"
+  },
+  {
+    title: "配置模型服务",
+    detail: "可以使用 Provider、relay-style、local_http、custom、mock 或 local_stub。API Key 只通过 api_key_env、secret_ref 或本地 secret 引用读取。",
+    nextAction: "打开模型服务设置；不要把明文 API Key 保存到项目文件。",
+    jumpLabel: "配置模型服务",
+    jumpMode: "prompt_lab"
+  },
+  {
+    title: "测试连接并读取模型",
+    detail: "真实连接只由用户手动触发。读取模型列表只保存安全 ModelProfile 元数据，不保存 raw provider response 或密钥。",
+    nextAction: "手动测试连接，并读取或同步模型列表。",
+    jumpLabel: "测试连接 / 读取模型",
+    jumpMode: "prompt_lab"
+  },
+  {
+    title: "按模式分配模型",
+    detail: "为 Novel、Tavern、World intent parser、World narrator、Cross-Mode 和 Quality 分配模型。结构化任务会显示 JSON 能力警告。",
+    nextAction: "完成模型分配，确认 structured_json / world_intent_parse 的能力提示。",
+    jumpLabel: "分配模型",
+    jumpMode: "prompt_lab"
+  },
+  {
+    title: "选择开始方式：写小说 / RP / 大世界",
+    detail: "你可以从 Novel 写小说，从 Tavern 进行角色 RP，或进入 World 开始本地大世界游玩。所有世界变化仍走 StateDelta / EventLog。",
+    nextAction: "选择一个入口开始体验。",
+    jumpLabel: "进入大世界",
+    jumpMode: "play"
+  },
+  {
+    title: "本地备份与隐私说明",
+    detail: "备份、诊断和导出默认过滤 API Key、hidden facts、debug data、mature/private 内容、logs/cache/build outputs，并且不会上传。",
+    nextAction: "需要时先预览备份或诊断，再显式确认写入。",
+    jumpLabel: "查看备份 / 诊断",
+    jumpMode: "studio"
+  }
+];
+
 function FirstRunOnboardingFlow({
   hasProject,
   onOpenProjectHome,
   onOpenProviderSetup,
+  onNavigate,
   onSkip,
   onComplete
 }: {
   hasProject: boolean;
   onOpenProjectHome: () => void;
   onOpenProviderSetup: () => void;
+  onNavigate: (mode: AppMode, toolId?: AuthoringToolId) => void;
   onSkip: () => void;
   onComplete: () => void;
 }) {
   const [step, setStep] = useState<number>(0);
-  const steps = [
-    "Welcome / local-first explanation",
-    "Create or open project",
-    "Configure provider profile or skip",
-    "Privacy/secrets explanation",
-    "Open Project Home",
-  ];
+  const stepTitleRef = useRef<HTMLHeadingElement | null>(null);
+  useStepTitleFocus(String(step), stepTitleRef);
+  const currentStep = PLAYABLE_PRODUCT_TOUR_STEPS[step] ?? PLAYABLE_PRODUCT_TOUR_STEPS[0];
   return (
-    <SectionCard title="First-Run Onboarding" description="A local-only startup guide. No account needed, no cloud sync, and Provider setup can be skipped.">
+    <SectionCard title={CN_COPY.tour.title} description={CN_COPY.tour.description}>
       <div className="safe-summary-grid">
-        <SafeSummaryCard title="No account needed" value="local" detail="The app runs against local backend APIs." />
-        <SafeSummaryCard title="No cloud sync" value="disabled" detail="Projects are not uploaded or synchronized." />
-        <SafeSummaryCard title="API keys stay local" value="secret ref only" detail="Use api_key_env or secret_ref in Provider Setup." />
-        <SafeSummaryCard title="World boundary" value="protected" detail="Onboarding never modifies GameState." />
+        <SafeSummaryCard title={`${CN_COPY.tour.noAccount} / No account needed`} value="local / 本地" detail="应用使用本地后端 API，不需要账号。" />
+        <SafeSummaryCard title={`${CN_COPY.tour.noCloud} / No cloud sync`} value="disabled / 已禁用" detail="项目不会上传或同步。" />
+        <SafeSummaryCard title={`${CN_COPY.tour.noMarketplace} / No online marketplace`} value="not included / 未包含" detail="使用本地 packages 和 samples，不启动远程包下载器。" />
+        <SafeSummaryCard title={`${CN_COPY.tour.apiKeysLocal} / API keys stay local`} value="secret ref only" detail="Provider 设置使用 api_key_env 或 secret_ref；向导不会索要明文 key。" />
+        <SafeSummaryCard title={`${CN_COPY.tour.worldBoundary} / World boundary`} value="protected / 受保护" detail="Onboarding never modifies GameState." />
       </div>
-      <ol className="compact-list">
-        {steps.map((label, index) => (
-          <li key={label}>
-            <strong>{index === step ? "Current: " : ""}{label}</strong>
-          </li>
-        ))}
-      </ol>
-      {step === 0 && <p>Welcome to AI Narrative Studio. This is a local-first Novel, Tavern RP, and World Studio workspace.</p>}
-      {step === 1 && <p>{hasProject ? "A local project/workspace is already selected." : "Open Project Picker to create or select a local project. Paths are shown as safe summaries."}</p>}
-      {step === 2 && <p>Provider setup is optional. You can skip it and use mock/local_stub. Do not paste plaintext API keys into the frontend.</p>}
-      {step === 3 && <p>Exports, backups, diagnostics, and logs filter secrets, hidden/debug data, and mature/private content by default.</p>}
-      {step === 4 && <p>Open Project Home when you are ready. You can revisit local help from the dashboard.</p>}
+      <span className="sr-only">Provider setup can be skipped. The tour never asks for a plaintext key.</span>
+      <div className="tour-progress" aria-label="Complete product tour progress">
+        <span className="status-pill warning">{CN_COPY.tour.step} {step + 1} / {PLAYABLE_PRODUCT_TOUR_STEPS.length}</span>
+        <span className="muted">{hasProject ? CN_COPY.tour.detectedProject : CN_COPY.tour.noProject}</span>
+      </div>
+      <section className="product-tour-step-panel current-step-card" data-testid="v37-tour-current-step" aria-label={safeAriaText(currentStep.title)}>
+        <h3 ref={stepTitleRef} tabIndex={-1}>{currentStep.title}</h3>
+        <p>{currentStep.detail}</p>
+        <p className="muted">{CN_COPY.tour.nextAction}: {currentStep.nextAction}</p>
+      </section>
       <div className="quick-actions">
-        <button type="button" onClick={() => setStep(Math.max(0, step - 1))} disabled={step === 0}>Back</button>
-        <button type="button" onClick={() => setStep(Math.min(steps.length - 1, step + 1))} disabled={step === steps.length - 1}>Next</button>
-        <button type="button" onClick={onOpenProjectHome}>Open Project Home</button>
-        <button type="button" onClick={onOpenProviderSetup}>Provider Setup Wizard</button>
-        <button type="button" onClick={onSkip}>Skip onboarding</button>
-        <button type="button" onClick={onComplete}>Finish</button>
+        <button type="button" onClick={() => setStep(Math.max(0, step - 1))} disabled={step === 0}>{CN_COPY.tour.back}</button>
+        <button type="button" onClick={() => setStep(Math.min(PLAYABLE_PRODUCT_TOUR_STEPS.length - 1, step + 1))} disabled={step === PLAYABLE_PRODUCT_TOUR_STEPS.length - 1}>{CN_COPY.tour.next}</button>
+        <button type="button" onClick={() => onNavigate(currentStep.jumpMode, currentStep.jumpTool)}>{currentStep.jumpLabel}</button>
+        <button type="button" onClick={onOpenProjectHome}>{CN_COPY.tour.openProjectHome}</button>
+        <button type="button" onClick={onOpenProviderSetup}>{CN_COPY.tour.providerSetup}</button>
+        <button type="button" onClick={onSkip}>{CN_COPY.tour.skip}</button>
+        <button type="button" onClick={onComplete}>{CN_COPY.tour.finish}</button>
       </div>
-      <p className="muted">Onboarding state is stored locally as completed/skipped only; it contains no secrets, raw env, project paths, or provider credentials.</p>
+      <details className="tour-all-steps" data-testid="v37-tour-all-steps" open={false}>
+        <summary>{CN_COPY.tour.viewAllSteps}</summary>
+        <ol className="compact-list product-tour-steps">
+          {PLAYABLE_PRODUCT_TOUR_STEPS.map((tourStep, index) => (
+            <li key={tourStep.title}>
+              <button
+                type="button"
+                className={index === step ? "active" : ""}
+                onClick={() => setStep(index)}
+                aria-current={index === step ? "step" : undefined}
+              >
+                {index + 1}. {tourStep.title}
+              </button>
+            </li>
+          ))}
+        </ol>
+        <details className="tour-legacy-steps" open={false}>
+          <summary>查看完整功能清单 / View all legacy checklist steps</summary>
+          <ol className="compact-list product-tour-steps">
+            {COMPLETE_PRODUCT_TOUR_STEPS.map((tourStep, index) => (
+              <li key={tourStep.title}>{index + 1}. {COMPLETE_PRODUCT_TOUR_CN[tourStep.title]?.title ?? tourStep.title}</li>
+            ))}
+          </ol>
+        </details>
+      </details>
+      <p className="muted">{CN_COPY.tour.localStorageNote} Tour state is stored locally as completed/skipped only.</p>
     </SectionCard>
   );
 }
@@ -9453,13 +13504,13 @@ function DiagnosticsExportPanel({
     },
     recent_safe_errors: safeErrors.map((item) => sanitizeDisplayError(item)).slice(0, 5),
     filters: [
-      "API key",
-      ".env",
-      "provider secrets",
-      "hidden facts",
-      "mature/private content",
-      "debug memory",
-      "raw state_deltas"
+      "不包含 API key",
+      "不包含 .env",
+      "不包含 provider secrets",
+      "不包含 hidden facts",
+      "不包含 mature/private",
+      "不包含 debug raw data",
+      "不包含 raw state_deltas"
     ],
     debug_export: includeDebug && confirmedDebug && debugAllowed ? "explicitly_requested" : "excluded"
   };
@@ -9479,10 +13530,11 @@ function DiagnosticsExportPanel({
 
   return (
     <SectionCard
-      title="Diagnostics Export"
-      description="Local-only safe JSON preview. Nothing is uploaded."
+      title="诊断导出"
+      description="仅本地生成安全 JSON 预览；不会上传。"
     >
       <SecretSafeNotice compact />
+      <p className="sr-only">API key 不保存到项目；导出会过滤 secrets；不使用云同步。</p>
       <FilterToolbar>
         <label>
           <input
@@ -9493,7 +13545,7 @@ function DiagnosticsExportPanel({
               setConfirmedDebug(false);
             }}
           />
-          Include debug export metadata
+          包含 Debug 导出元数据
         </label>
         {includeDebug && (
           <label>
@@ -9503,19 +13555,19 @@ function DiagnosticsExportPanel({
               disabled={!debugAllowed}
               onChange={(event) => setConfirmedDebug(event.target.checked)}
             />
-            I understand debug export requires ENABLE_DEBUG_API and explicit confirmation.
+            我理解 Debug 导出需要 ENABLE_DEBUG_API，并且必须显式确认。
           </label>
         )}
         {!debugAllowed && includeDebug && (
           <DisabledState
-            title="Debug export gated"
-            detail="ENABLE_DEBUG_API is disabled, so diagnostics remain normal safe summaries only."
+            title="Debug 导出受保护"
+            detail="当前 ENABLE_DEBUG_API 未开启，因此诊断包只包含普通安全摘要。"
           />
         )}
       </FilterToolbar>
       <SafeJSON value={diagnostics} />
       <button type="button" onClick={downloadDiagnostics} disabled={includeDebug && (!debugAllowed || !confirmedDebug)}>
-        Export local diagnostics JSON
+        导出本地诊断 JSON
       </button>
     </SectionCard>
   );
@@ -9533,12 +13585,12 @@ function LocalLongOperationProgress({
   const activeStepIndex = LOCAL_OPERATION_PROGRESS_STEPS.indexOf(progress.step);
   const normalizedExclusions = Array.from(new Set([...(excludedItems ?? []), ...LOCAL_OPERATION_DEFAULT_EXCLUSIONS]));
   const longRunningDetail = progress.status === "running"
-    ? "Long-running status: operation is in progress. Keep this local page open for the latest safe status."
+    ? "长任务状态：本地操作正在进行。请保持页面打开，以便查看最新安全状态。"
     : progress.status === "failed"
-      ? "Long-running status: failed safely before completion. Review the redacted error and retry after fixing blockers."
+      ? "长任务状态：操作已在完成前安全失败。请查看脱敏错误并修复阻塞项后重试。"
       : progress.status === "done"
-        ? "Long-running status: completed locally. Review the safe summary before any confirm-gated follow-up."
-        : "Long-running status: idle. Start a preview or dry-run before writing local files.";
+        ? "长任务状态：已在本地完成。任何需要确认的后续写入前，请先复核安全摘要。"
+        : "长任务状态：空闲。写入本地文件前，请先运行预览或 dry-run。";
 
   return (
     <section className="feature-card" data-v36-progress-steps="backup-restore-diagnostics">
@@ -9561,31 +13613,31 @@ function LocalLongOperationProgress({
           return (
             <FeatureCard
               key={step}
-              title={step}
-              detail={step === "writing" ? "Writes only after explicit confirm where required." : "Safe local operation step."}
+              title={LOCAL_OPERATION_PROGRESS_STEP_LABELS[step]}
+              detail={step === "writing" ? "需要写入时仍必须显式确认。" : "本地安全操作步骤。"}
               status={<ValidationStatusBadge status={stepStatus} />}
             />
           );
         })}
       </div>
       <div className="safe-summary-grid">
-        <SafeSummaryCard title="Cancel" value="cannot cancel safely" detail="The current backend APIs do not expose a cancellable operation handle; retry only after the current request finishes or fails." />
-        <SafeSummaryCard title="Upload" value="never" detail="Backup, restore preview, diagnostics, and debug export flows stay local-only." />
-        <SafeSummaryCard title="Confirm" value="required for writes" detail="Backup create, restore apply, and raw debug export remain explicit-confirm flows." />
+        <SafeSummaryCard title="取消" value="当前不可安全取消" detail="当前后端接口没有可取消的操作句柄；请等待请求完成或失败后再重试。" />
+        <SafeSummaryCard title="上传" value="不会上传" detail="备份、恢复预览、诊断包和 Debug 导出都只在本地运行。" />
+        <SafeSummaryCard title="确认" value="写入前必须确认" detail="创建备份、应用恢复和 raw Debug 导出仍需要显式确认。" />
       </div>
       <p className="muted">{longRunningDetail}</p>
       {progress.status === "running" && (
         <LoadingSkeletonPanel
-          title={`${title} progressive operation`}
-          detail="Safe summary and exclusions remain visible while the long-running local operation advances. No secrets, raw env, hidden/debug, or mature/private content is rendered."
-          summaryItems={LOCAL_OPERATION_PROGRESS_STEPS.map((step) => step)}
+          title={`${title} 进度`}
+          detail="长时间本地操作进行时，会持续显示安全摘要和排除项；不会渲染 secrets、raw env、hidden/debug 或 mature/private 内容。"
+          summaryItems={LOCAL_OPERATION_PROGRESS_STEPS.map((step) => LOCAL_OPERATION_PROGRESS_STEP_LABELS[step])}
           rows={3}
         />
       )}
       <div data-v36-progress-excluded-summary="default">
-        <h4>Excluded summary</h4>
+        <h4>默认排除摘要</h4>
         <ItemList
-          emptyText="No exclusions listed."
+          emptyText="暂无排除项。"
           items={normalizedExclusions.map((item) => <span key={item}>{item}</span>)}
         />
       </div>
@@ -9620,19 +13672,19 @@ function DiagnosticsBundlePanel({
   const canCreate = !includeDebug || (debugEnabled && confirmedDebug);
 
   return (
-    <SectionCard title="Diagnostics Bundle Review UI" description="Diagnostics Bundle UI preview before writing it. Default bundle excludes secrets, hidden/debug, mature/private, databases, raw logs, and raw state. Nothing is uploaded.">
+    <SectionCard title="诊断包预览" description="写入诊断包前先本地预览。默认不包含 API key、.env、provider secrets、debug raw data、mature/private、数据库、raw logs 或 raw state；不会上传。">
       <div className="section-heading-row">
         <div>
-          <h4>Diagnostics Preview</h4>
-          <p className="muted">Review included sections, excluded sections, redaction status, and debug bundle gating before creating a local zip.</p>
+          <h4>诊断包预览</h4>
+          <p className="muted">创建本地诊断包前，请先查看包含内容、默认排除项、脱敏状态和 Debug 包门禁。</p>
         </div>
         <div className="button-row">
-          <button type="button" onClick={() => onPreview(includeDebug, confirmedDebug)}>Preview Bundle</button>
-          <button type="button" onClick={() => onCreate(includeDebug, confirmedDebug)} disabled={!canCreate}>Create Diagnostics Bundle</button>
+          <button type="button" onClick={() => onPreview(includeDebug, confirmedDebug)}>预览诊断包</button>
+          <button type="button" onClick={() => onCreate(includeDebug, confirmedDebug)} disabled={!canCreate}>创建本地诊断包</button>
         </div>
       </div>
       <LocalLongOperationProgress
-        title="Diagnostics progress"
+        title="诊断包进度"
         progress={progress}
         excludedItems={DIAGNOSTICS_EXCLUDED_SECTIONS}
       />
@@ -9646,7 +13698,7 @@ function DiagnosticsBundlePanel({
               setConfirmedDebug(false);
             }}
           />
-          Request debug bundle metadata
+          请求 Debug 包元数据
         </label>
         {includeDebug && (
           <label>
@@ -9656,55 +13708,55 @@ function DiagnosticsBundlePanel({
               disabled={!debugEnabled}
               onChange={(event) => setConfirmedDebug(event.target.checked)}
             />
-            I confirm debug bundle export. It requires ENABLE_DEBUG_API and may include internal state summaries.
+            我确认导出 Debug 包。该操作需要 ENABLE_DEBUG_API，且可能包含内部状态摘要。
           </label>
         )}
       </FilterToolbar>
       {includeDebug && !debugEnabled && (
-        <DisabledState title="Debug bundle gated" detail="ENABLE_DEBUG_API is disabled, so diagnostics creation remains normal safe summaries only." />
+        <DisabledState title="Debug 包受保护" detail="当前 ENABLE_DEBUG_API 未开启，因此诊断包仍只包含普通安全摘要。" />
       )}
       <ErrorPanel message={error} compact />
       {preview ? (
         <>
           <div className="safe-summary-grid">
-            <SafeSummaryCard title="Bundle" value={preview.manifest.bundle_id} detail={preview.writes_file ? "writes file" : "preview only"} />
-            <SafeSummaryCard title="Redaction" value={preview.manifest.contains_secrets ? "blocked" : "applied"} detail={preview.manifest.redaction_policy} />
-            <SafeSummaryCard title="Debug/private" value={preview.manifest.contains_hidden_debug_mature_private ? "blocked" : "excluded"} detail={preview.manifest.debug_bundle ? "debug explicitly confirmed" : "normal safe bundle"} />
-            <SafeSummaryCard title="Recent redacted errors" value={String(recentErrorCount)} detail="Safe summaries only." />
-            <SafeSummaryCard title="Redacted logs" value={String(redactedLogCount)} detail="Raw logs with secrets are never shown here." />
-            <SafeSummaryCard title="Upload" value="never" detail="Diagnostics bundle review is local-only." />
+            <SafeSummaryCard title="诊断包" value={preview.manifest.bundle_id} detail={preview.writes_file ? "将写入本地文件" : "仅预览，不写入"} />
+            <SafeSummaryCard title="脱敏" value={preview.manifest.contains_secrets ? "已阻止" : "已应用"} detail={preview.manifest.redaction_policy} />
+            <SafeSummaryCard title="Debug / private" value={preview.manifest.contains_hidden_debug_mature_private ? "已阻止" : "默认排除"} detail={preview.manifest.debug_bundle ? "Debug 已显式确认" : "普通安全诊断包"} />
+            <SafeSummaryCard title="近期脱敏错误" value={String(recentErrorCount)} detail="只显示安全摘要。" />
+            <SafeSummaryCard title="脱敏日志" value={String(redactedLogCount)} detail="这里不会显示包含 secrets 的 raw logs。" />
+            <SafeSummaryCard title="上传" value="不会上传" detail="诊断包预览和创建都只在本地进行。" />
           </div>
           <div className="grid two-column">
             <div>
-              <h4>Included sections</h4>
-              <ItemList emptyText="No included sections." items={includedSections.map((section) => <span key={section}>{section}</span>)} />
+              <h4>包含内容</h4>
+              <ItemList emptyText="暂无包含内容。" items={includedSections.map((section) => <span key={section}>{section}</span>)} />
             </div>
             <div>
-              <h4>Excluded sections</h4>
-              <ItemList emptyText="No exclusions listed." items={excludedSections.map((section) => <span key={section}>{section}</span>)} />
+              <h4>默认排除内容</h4>
+              <ItemList emptyText="暂无排除内容。" items={excludedSections.map((section) => <span key={section}>{section}</span>)} />
             </div>
           </div>
           <details>
-            <summary>Safe payload preview</summary>
+            <summary>安全负载预览</summary>
             <SafeJSON value={buildDiagnosticsSafePayloadPreview(preview.safe_payload)} />
           </details>
-          <ItemList emptyText="No diagnostics warnings." items={preview.warnings.map((warning) => <span key={warning}>{sanitizeDisplayError(warning)}</span>)} />
+          <ItemList emptyText="暂无诊断警告。" items={preview.warnings.map((warning) => <span key={warning}>{sanitizeDisplayError(warning)}</span>)} />
           {createResult && (
             <SuccessPanel
               compact
-              message={`Diagnostics bundle created locally: ${createResult.bundle_path_summary ?? createResult.manifest.bundle_id}. No upload was performed.`}
+              message={`诊断包已在本地创建：${createResult.bundle_path_summary ?? createResult.manifest.bundle_id}。没有上传。`}
             />
           )}
         </>
       ) : (
         <>
           <LoadingSkeletonPanel
-            title="Diagnostics preview staged loading"
-            detail="Included/excluded summary appears before any safe payload preview. Secrets, raw logs, hidden/debug, and mature/private content stay excluded."
-            summaryItems={["included sections", "excluded sections", "redaction", "warnings"]}
+            title="诊断包预览加载中"
+            detail="先显示包含 / 排除摘要，再显示安全负载预览。Secrets、raw logs、hidden/debug 和 mature/private 内容保持排除。"
+            summaryItems={["包含内容", "默认排除内容", "脱敏状态", "警告"]}
             rows={3}
           />
-          <EmptyState title="No diagnostics bundle preview." detail="Preview creates a safe manifest without writing files." />
+          <EmptyState title="尚无诊断包预览。" detail="预览只生成安全 manifest，不写入文件，也不会上传。" />
         </>
       )}
     </SectionCard>
@@ -9712,27 +13764,27 @@ function DiagnosticsBundlePanel({
 }
 
 const DIAGNOSTICS_INCLUDED_SECTIONS = [
-  "app summary",
-  "project safe summary",
-  "provider safe summary",
-  "quality summary",
-  "module status",
-  "recent redacted errors",
-  "redacted logs"
+  "应用安全摘要",
+  "项目安全摘要",
+  "Provider 安全摘要",
+  "质量检查摘要",
+  "模块状态",
+  "近期脱敏错误",
+  "脱敏日志"
 ];
 
 const DIAGNOSTICS_EXCLUDED_SECTIONS = [
-  ".env",
-  "API key",
-  "provider secrets",
-  "raw env",
-  "raw prompt/output",
-  "hidden facts",
-  "NPC secrets",
-  "debug memory",
-  "raw state_deltas",
-  "mature/private",
-  "database files"
+  "不包含 .env",
+  "不包含 API key",
+  "不包含 provider secrets",
+  "不包含 raw env",
+  "不包含 raw prompt/output",
+  "不包含 hidden facts",
+  "不包含 NPC secrets",
+  "不包含 debug raw data",
+  "不包含 raw state_deltas",
+  "不包含 mature/private",
+  "不包含 database files"
 ];
 
 function normalizeDiagnosticsSections(sections: string[] | undefined, fallback: string[]): string[] {
@@ -10111,58 +14163,58 @@ function BackupRestoreWizardPanel({
   const [backupPath, setBackupPath] = useState<string>("backups/latest.zip");
   const [targetProjectId, setTargetProjectId] = useState<string>("restored_project");
   return (
-    <SectionCard title="Backup / Restore Wizard" description="Local backup and restore are dry-run first. Secrets, .env, logs/cache/build outputs, debug-only data, and mature/private content are excluded by default.">
+    <SectionCard title="备份 / 恢复向导" description="本地备份和恢复都先 dry-run。默认不包含 API key、.env、provider secrets、debug raw data、mature/private、logs/cache/build outputs。不会上传。">
       <ErrorPanel message={error} compact />
       <div className="quick-actions">
-        <button type="button" onClick={onDryRun}>Backup Dry-Run Preview</button>
-        <button type="button" onClick={onCreate} disabled={!plan || plan.blockers.length > 0}>Explicit Confirm Create Backup</button>
+        <button type="button" onClick={onDryRun}>备份 dry-run 预览</button>
+        <button type="button" onClick={onCreate} disabled={!plan || plan.blockers.length > 0}>确认创建本地备份</button>
       </div>
       <LocalLongOperationProgress
-        title="Backup / restore progress"
+        title="备份 / 恢复进度"
         progress={progress}
         excludedItems={LOCAL_OPERATION_DEFAULT_EXCLUSIONS}
       />
       <div className="safe-summary-grid">
-        <SafeSummaryCard title="Backup policy" value="dry-run first" detail="Create is disabled until a backup dry-run preview exists and has no blockers." />
-        <SafeSummaryCard title="Default exclusions" value="safe" detail=".env, API keys, provider secrets, databases, logs/cache, build outputs, debug-only data, and mature/private content." />
-        <SafeSummaryCard title="Restore policy" value="dry-run first" detail="Restore apply requires zip/path/executable/secret blockers to be clear and explicit confirmation." />
+        <SafeSummaryCard title="备份规则" value="先 dry-run" detail="没有备份 dry-run 预览，或仍有阻塞项时，不能创建备份。" />
+        <SafeSummaryCard title="默认排除" value="安全" detail="不包含 API key、.env、provider secrets、数据库、logs/cache、build outputs、debug raw data 和 mature/private。" />
+        <SafeSummaryCard title="恢复规则" value="先 dry-run" detail="恢复应用前必须确认 zip/path/executable/secret 阻塞项已清除，并显式确认。" />
       </div>
       {plan ? (
         <div className="safe-summary-grid">
-          <SafeSummaryCard title="Plan" value={plan.plan_id} detail={plan.dry_run ? "dry-run only" : "apply"} />
-          <SafeSummaryCard title="Would write" value={String(plan.would_write_files.length)} detail={plan.would_write_files.join(", ")} />
-          <SafeSummaryCard title="Excluded" value={String(plan.excluded_items.length)} detail={plan.excluded_items.join(", ")} />
-          <SafeSummaryCard title="Blockers" value={String(plan.blockers.length)} detail={plan.blockers.join(", ") || "none"} />
+          <SafeSummaryCard title="计划" value={plan.plan_id} detail={plan.dry_run ? "仅 dry-run" : "准备写入"} />
+          <SafeSummaryCard title="将写入" value={String(plan.would_write_files.length)} detail={plan.would_write_files.join(", ")} />
+          <SafeSummaryCard title="已排除" value={String(plan.excluded_items.length)} detail={plan.excluded_items.join(", ")} />
+          <SafeSummaryCard title="阻塞项" value={String(plan.blockers.length)} detail={plan.blockers.join(", ") || "无"} />
         </div>
       ) : (
         <>
           <LoadingSkeletonPanel
-            title="Backup preview staged loading"
-            detail="Filtering and exclusion summary appears before write plans. Secrets, databases, logs/cache, build outputs, debug, and mature/private content remain excluded."
-            summaryItems={["scanning", "filtering", "validating", "manifest preview"]}
+            title="备份预览加载中"
+            detail="先显示过滤和排除摘要，再显示写入计划。Secrets、数据库、logs/cache、build outputs、debug raw data 和 mature/private 保持排除。"
+            summaryItems={["扫描", "过滤", "校验", "manifest 预览"]}
             rows={3}
           />
-          <EmptyState title="No backup dry-run yet." detail="Run dry-run before creating a local backup." />
+          <EmptyState title="尚未运行备份 dry-run。" detail="创建本地备份前，请先运行 dry-run 预览。" />
         </>
       )}
-      {result && <SuccessPanel message={`Backup created: ${result.backup_path_summary ?? result.manifest.manifest_id}`} compact />}
+      {result && <SuccessPanel message={`本地备份已创建：${result.backup_path_summary ?? result.manifest.manifest_id}`} compact />}
       <div className="template-grid">
         <label>
-          Backup file for restore dry-run
+          用于恢复 dry-run 的备份文件
           <input value={backupPath} onChange={(event) => setBackupPath(event.target.value)} />
         </label>
         <label>
-          Target project id
+          目标项目 ID
           <input value={targetProjectId} onChange={(event) => setTargetProjectId(event.target.value)} />
         </label>
       </div>
-      <button type="button" onClick={() => onRestoreDryRun(backupPath, targetProjectId)}>Restore Dry-Run Preview</button>
+      <button type="button" onClick={() => onRestoreDryRun(backupPath, targetProjectId)}>恢复 dry-run 预览</button>
       {restorePlan && (
         <div className="safe-summary-grid">
-          <SafeSummaryCard title="Restore valid" value={restorePlan.backup_valid ? "yes" : "no"} detail={restorePlan.target_project_id} />
-          <SafeSummaryCard title="Conflicts" value={String(restorePlan.conflicts.length)} detail={restorePlan.conflicts.join(", ") || "none"} />
-          <SafeSummaryCard title="Blockers" value={String(restorePlan.blockers.length)} detail={restorePlan.blockers.join(", ") || "none"} />
-          <SafeSummaryCard title="Confirm restore" value="manual required" detail="This UI only previews restore safety; overwrite/apply remains confirm-gated." />
+          <SafeSummaryCard title="恢复有效" value={restorePlan.backup_valid ? "是" : "否"} detail={restorePlan.target_project_id} />
+          <SafeSummaryCard title="冲突" value={String(restorePlan.conflicts.length)} detail={restorePlan.conflicts.join(", ") || "无"} />
+          <SafeSummaryCard title="阻塞项" value={String(restorePlan.blockers.length)} detail={restorePlan.blockers.join(", ") || "无"} />
+          <SafeSummaryCard title="确认恢复" value="必须手动确认" detail="此 UI 只预览恢复安全性；覆盖 / apply 仍必须经过确认门禁。" />
         </div>
       )}
     </SectionCard>
@@ -10183,10 +14235,10 @@ function ErrorRecoveryWizardPanel({
   onDryRun: () => void;
 }) {
   return (
-    <SectionCard title="Error Recovery Wizard" description="Local recovery suggestions are dry-run first. Destructive recovery is blocked/manual-only.">
+    <SectionCard title="错误恢复向导" description="本地恢复建议先 dry-run。破坏性恢复默认阻止，只能手动确认。">
       <div className="quick-actions">
-        <button type="button" onClick={onRefresh}>Refresh Issues</button>
-        <button type="button" onClick={onDryRun}>Dry-Run Recovery</button>
+        <button type="button" onClick={onRefresh}>刷新问题</button>
+        <button type="button" onClick={onDryRun}>恢复 dry-run</button>
       </div>
       <ErrorPanel message={error} compact />
       {issues.length ? (
@@ -10203,14 +14255,14 @@ function ErrorRecoveryWizardPanel({
           ))}
         </div>
       ) : (
-        <EmptyState title="No recovery issues." detail="Refresh to detect local recovery suggestions." />
+        <EmptyState title="暂无恢复问题。" detail="刷新后可查看本地恢复建议。" />
       )}
-      {plan && <p className="muted">Plan {plan.plan_id}: {plan.actions.length} suggested action(s), {plan.blockers.length} blocker(s).</p>}
+      {plan && <p className="muted">计划 {plan.plan_id}：{plan.actions.length} 个建议操作，{plan.blockers.length} 个阻塞项。</p>}
       <div className="safe-summary-grid">
-        <SafeSummaryCard title="Restart backend/frontend" value="manual safe action" detail="Use the local launcher scripts; recovery UI does not run destructive shell commands." />
-        <SafeSummaryCard title="Reload project summary" value="safe" detail="Refreshes local safe summaries without reading arbitrary files." />
-        <SafeSummaryCard title="Restore from backup" value="dry-run required" detail="Use Backup / Restore Wizard before any confirmed restore." />
-        <SafeSummaryCard title="Open diagnostics preview" value="local-only" detail="Diagnostics preview is redacted and does not write or upload by default." />
+        <SafeSummaryCard title="重启后端 / 前端" value="手动安全操作" detail="请使用本地启动脚本；恢复 UI 不运行破坏性 shell 命令。" />
+        <SafeSummaryCard title="重新载入项目摘要" value="安全" detail="只刷新本地安全摘要，不读取任意文件。" />
+        <SafeSummaryCard title="从备份恢复" value="需要 dry-run" detail="任何确认恢复前，都应先使用备份 / 恢复向导。" />
+        <SafeSummaryCard title="打开诊断预览" value="仅本地" detail="诊断预览已脱敏，默认不会写入或上传。" />
       </div>
     </SectionCard>
   );
@@ -10238,44 +14290,44 @@ function LocalLogViewerPanel({
   ));
   const redactedCount = entries.filter((entry) => entry.redacted).length;
   return (
-    <SectionCard title="Local Log Viewer" description="Shows redacted local log summaries from the allowed logs directory only. API keys, Authorization headers, raw env, DB URLs, hidden facts, mature/private content, and raw state_deltas are redacted.">
+    <SectionCard title="本地日志查看器" description="只显示允许日志目录中的脱敏本地日志摘要。API key、Authorization header、raw env、DB URL、hidden facts、mature/private 和 raw state_deltas 都会脱敏。">
       <div className="section-heading-row">
         <div>
-          <h4>Safe Logs</h4>
-          <p className="muted">Debug logs are gated by ENABLE_DEBUG_API: {debugEnabled ? "enabled" : "disabled"}.</p>
+          <h4>安全日志</h4>
+          <p className="muted">Debug 日志受 ENABLE_DEBUG_API 控制：{debugEnabled ? "已开启" : "未开启"}。</p>
         </div>
-        <button type="button" onClick={onRefresh}>Refresh Logs</button>
+        <button type="button" onClick={onRefresh}>刷新日志</button>
       </div>
       <ErrorPanel message={error} compact />
       {logs?.warnings.length ? <p className="muted">{logs.warnings.join(", ")}</p> : null}
       <div className="template-grid">
         <label>
-          Level filter
+          日志级别
           <select value={levelFilter} onChange={(event) => setLevelFilter(event.target.value)}>
-            <option value="all">all</option>
+            <option value="all">全部</option>
             {levels.map((level) => <option key={level} value={level}>{level}</option>)}
           </select>
         </label>
         <label>
-          Component filter
+          组件筛选
           <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}>
-            <option value="all">all</option>
+            <option value="all">全部</option>
             {categories.map((category) => <option key={category} value={category}>{category}</option>)}
           </select>
         </label>
-        <SafeSummaryCard title="Redacted entries" value={String(redactedCount)} detail="Copy safe summary only; raw log lines and secrets are not exposed." />
+        <SafeSummaryCard title="已脱敏条目" value={String(redactedCount)} detail="只复制安全摘要；不暴露 raw log lines 或 secrets。" />
       </div>
       {filteredEntries.length ? (
         <ul className="compact-list">
           {filteredEntries.slice(0, 20).map((entry, index) => (
             <li key={`${entry.source}-${index}`}>
               <strong>{entry.level}</strong> {entry.category} / {entry.source}: {entry.message}
-              {entry.redacted && <span className="badge">redacted</span>}
+              {entry.redacted && <span className="badge">已脱敏</span>}
             </li>
           ))}
         </ul>
       ) : (
-        <EmptyState title="No local logs." detail="Launcher logs live under ignored logs/ and are redacted before display." />
+        <EmptyState title="暂无本地日志。" detail="启动器日志位于已忽略的 logs/ 目录，显示前会先脱敏。" />
       )}
     </SectionCard>
   );
@@ -10977,30 +15029,55 @@ function WorldStudioLanding({
   sessionId,
   selectedSaveId,
   saves,
-  debugEnabled
+  debugEnabled,
+  providerConfigured,
+  onStart,
+  onContinue,
+  onOpenProvider
 }: {
   visibleState: VisibleState | null;
   sessionId: string;
   selectedSaveId: string;
   saves: SaveSummary[];
   debugEnabled: boolean;
+  providerConfigured: boolean;
+  onStart: () => void;
+  onContinue: () => void;
+  onOpenProvider: () => void;
 }) {
   return (
-    <section className="world-landing">
+    <section className="world-landing" data-testid="v37-world-cn-home">
       <PageHeader
-        eyebrow="World Studio"
-        title="Local World Entry"
-        description="Normal view uses visible state only. World changes still go through backend rules, StateDelta, and EventLog."
+        eyebrow="World Studio / 大世界"
+        title="本地大世界入口"
+        description="普通视图只使用 visible_state。世界变化仍走后端规则、StateDelta 和 EventLog；LLM 只做输入解析与叙事渲染。"
       />
+      <div className="button-row" data-testid="v37-world-cn-start-continue">
+        <button type="button" onClick={onContinue} disabled={!sessionId && !selectedSaveId}>
+          继续大世界
+        </button>
+        <button type="button" onClick={onStart}>
+          开始大世界
+        </button>
+        {!providerConfigured && (
+          <button type="button" onClick={onOpenProvider} data-testid="v37-world-cn-provider-warning">
+            配置模型服务
+          </button>
+        )}
+      </div>
+      {!providerConfigured && (
+        <p className="muted">Provider 未配置：可先本地游玩 mock/local_stub，使用真实 LLM 前请配置模型服务并分配 World 输入解析 / 叙事渲染模型。</p>
+      )}
       <div className="safe-summary-grid">
-        <SafeSummaryCard title="Active session" value={sessionId ? "Started" : "No active session"} detail={selectedSaveId ? `Loaded save ${selectedSaveId}` : "Start or load a local save."} />
-        <SafeSummaryCard title="Visible location" value={visibleState?.location.name ?? "Unknown"} detail="Hidden locations and NPC secrets are excluded." />
-        <SafeSummaryCard title="Visible NPCs" value={String(visibleState?.visible_npcs.length ?? 0)} detail="Only player-visible NPC summaries are shown." />
-        <SafeSummaryCard title="Quests" value={String(visibleState?.quests.length ?? 0)} detail="Normal view excludes hidden quest facts." />
-        <SafeSummaryCard title="Inventory" value={String(visibleState?.inventory.length ?? 0)} detail="Visible inventory summary only." />
-        <SafeSummaryCard title="Advanced modules" value="Status safe" detail="Combat/economy/faction module details stay backend-authoritative." />
-        <SafeSummaryCard title="Timeline replay" value={debugEnabled ? "Debug enabled" : "Debug gated"} detail="Raw debug data requires ENABLE_DEBUG_API." />
-        <SafeSummaryCard title="Saves" value={String(saves.length)} detail="Save/load remains local." />
+        <SafeSummaryCard title="当前会话" value={sessionId ? "已开始" : "未开始"} detail={selectedSaveId ? `选中存档 ${selectedSaveId}` : "可开始新会话或读取本地存档。"} />
+        <SafeSummaryCard title="模型服务" value={providerConfigured ? "已配置" : "待配置"} detail="World intent parser 需要 JSON/结构化能力；World narrator 只渲染后端确认结果。" />
+        <SafeSummaryCard title="可见地点" value={visibleState?.location.name ?? "未知"} detail="隐藏地点和 NPC secrets 不显示。" />
+        <SafeSummaryCard title="可见 NPC" value={String(visibleState?.visible_npcs.length ?? 0)} detail="只显示玩家可见 NPC 摘要。" />
+        <SafeSummaryCard title="任务" value={String(visibleState?.quests.length ?? 0)} detail="普通视图排除隐藏任务事实。" />
+        <SafeSummaryCard title="背包" value={String(visibleState?.inventory.length ?? 0)} detail="仅显示可见背包摘要。" />
+        <SafeSummaryCard title="高级模块" value="安全摘要" detail="战斗、经济、势力模块结果以后端规则为准。" />
+        <SafeSummaryCard title="Timeline / Debug" value={debugEnabled ? "Debug 已启用" : "DebugGate 已关闭"} detail="raw debug data 需要 ENABLE_DEBUG_API。" />
+        <SafeSummaryCard title="本地存档" value={String(saves.length)} detail="保存 / 读取保持本地。" />
       </div>
     </section>
   );
@@ -12052,26 +16129,26 @@ function CrossModeDashboardPanel({
   return (
     <section className="cross-mode-dashboard">
       <div className="safe-summary-grid">
-        <SafeSummaryCard title="Draft count" value={String(drafts.length)} detail="Drafts are not world facts." />
-        <SafeSummaryCard title="Proposal count" value={String(drafts.filter((draft) => draft.artifact_type.includes("proposal")).length)} detail="Apply requires validation." />
-        <SafeSummaryCard title="Pending review" value={String(pendingReview)} detail="Review rows show safe summaries only." />
-        <SafeSummaryCard title="Conflict count" value={String(conflictCount)} detail="Conflicts do not auto-apply." />
-        <SafeSummaryCard title="Recent audit" value={String(audit.length)} detail="Audit entries are safe summaries." />
-        <SafeSummaryCard title="Timeline" value={String(timeline.length)} detail="Normal dashboard excludes raw state deltas." />
+        <SafeSummaryCard title="草稿数量" value={String(drafts.length)} detail="草稿不是 World 事实。" />
+        <SafeSummaryCard title="提案数量" value={String(drafts.filter((draft) => draft.artifact_type.includes("proposal")).length)} detail="Apply 前必须先验证。" />
+        <SafeSummaryCard title="待审查" value={String(pendingReview)} detail="审查列表只显示安全摘要。" />
+        <SafeSummaryCard title="冲突数量" value={String(conflictCount)} detail="冲突不会自动应用。" />
+        <SafeSummaryCard title="最近审计" value={String(audit.length)} detail="审计记录只显示 safe summary。" />
+        <SafeSummaryCard title="时间线" value={String(timeline.length)} detail="普通面板不显示 raw state_deltas。" />
       </div>
       <div className="mode-landing-grid">
-        {["Novel to World", "World to Novel", "Tavern to World", "World to Tavern", "Tavern to Novel", "Novel to Tavern"].map((direction) => (
+        {["Novel → World", "World → Novel", "Tavern → World", "World NPC → Tavern", "Tavern → Novel", "Novel → Tavern"].map((direction) => (
           <FeatureCard
             key={direction}
             title={direction}
-            detail="Draft/proposal lane. Validation and confirmation required before apply."
+            detail="草稿 / 提案通道。Apply 前必须先验证、dry-run，并显式确认。"
             status={<ValidationStatusBadge status={conflictCount ? "warning" : "not_run"} />}
           />
         ))}
       </div>
       {links && (
         <p className="muted">
-          Link review: broken {links.broken_links.length}, hidden risk {links.hidden_target_risks.length}, duplicate {links.duplicate_links.length}.
+          链接审查：broken {links.broken_links.length}，hidden 风险 {links.hidden_target_risks.length}，duplicate {links.duplicate_links.length}。
         </p>
       )}
       <CrossModeConflictReviewPro
@@ -12081,7 +16158,7 @@ function CrossModeDashboardPanel({
         onMarkReviewed={(conflictId) => setReviewedConflictIds((current) => current.includes(conflictId) ? current : [...current, conflictId])}
         onCreateFixDraft={(conflict) => setFixDrafts((current) => ({
           ...current,
-          [conflict.conflictId]: `Fix draft for ${conflict.category}: ${conflict.suggestedAction}. This local draft does not apply automatically.`
+          [conflict.conflictId]: `修复草稿：${crossModeConflictCategoryLabel(conflict.category)}。建议：${conflict.suggestedAction}。这个本地草稿不会自动 apply。`
         }))}
         onJumpToRef={(ref) => {
           const target = document.querySelector(`[data-cross-mode-ref="${CSS.escape(ref)}"]`);
@@ -12126,20 +16203,20 @@ function CrossModeConflictReviewPro({
     <section className="studio-section cross-mode-conflict-review">
       <div className="authoring-pane-header">
         <div>
-          <h4>CrossMode Conflict Review Pro</h4>
-          <p className="muted">Review Novel/Tavern/World conflicts, stale links, broken links, hidden target risks, and proposal validation issues. Fix drafts are local review notes only.</p>
+          <h4>跨模式冲突审查</h4>
+          <p className="muted">审查 Novel / Tavern / World 之间的身份、时间线、关系、可见性、断链、过期链接和 proposal validation 问题。修复草稿只是本地审查笔记，不会自动应用。</p>
         </div>
-        <StatusBadge label={rows.length ? `${rows.length} conflict(s)` : "No conflicts"} enabled={rows.length === 0} />
+        <StatusBadge label={rows.length ? `${rows.length} 个冲突` : "暂无冲突"} enabled={rows.length === 0} />
       </div>
       {rows.length === 0 ? (
-        <EmptyState title="No CrossMode conflicts." detail="Run Cross-Mode validation or conflict detection to refresh Novel/Tavern/World link health." />
+        <EmptyState title="暂无跨模式冲突。" detail="运行跨模式验证或冲突检测后，可刷新 Novel / Tavern / World 链接健康状态。" />
       ) : (
         <div className="stack">
           {allGroups.map((group) => (
             <section className="tool-card" key={group.category}>
-              <h5>{group.category}</h5>
+              <h5>{crossModeConflictCategoryLabel(group.category)}</h5>
               {group.rows.length === 0 ? (
-                <p className="muted">No {group.category} conflicts.</p>
+                <p className="muted">暂无{crossModeConflictCategoryLabel(group.category)}冲突。</p>
               ) : (
                 <div className="safe-preview-list">
                   {group.rows.map((conflict) => {
@@ -12148,25 +16225,25 @@ function CrossModeConflictReviewPro({
                       <article className="diff-summary" key={conflict.conflictId}>
                         <div className="authoring-pane-header">
                           <div>
-                            <strong>{conflict.severity}: {conflict.conflictId}</strong>
+                            <strong>{crossModeSeverityLabel(conflict.severity)}：{conflict.conflictId}</strong>
                             <p>{sanitizeDisplayError(conflict.safeSummary)}</p>
                           </div>
-                          <StatusBadge label={reviewed ? "reviewed" : conflict.status} enabled={reviewed} />
+                          <StatusBadge label={reviewed ? "已审查" : crossModeReviewStatusLabel(conflict.status)} enabled={reviewed} />
                         </div>
                         <dl className="metadata-list">
-                          <dt>Affected refs</dt>
+                          <dt>受影响引用</dt>
                           <dd>
                             {conflict.affectedRefs.length
                               ? conflict.affectedRefs.map((ref) => <button key={ref} type="button" onClick={() => onJumpToRef(ref)}>{sanitizeDisplayError(ref)}</button>)
-                              : "Safe refs unavailable"}
+                              : "暂无可显示的安全引用"}
                           </dd>
-                          <dt>Suggested action</dt>
+                          <dt>建议操作</dt>
                           <dd>{conflict.suggestedAction}</dd>
                         </dl>
                         <div className="button-row">
-                          <button type="button" onClick={() => onMarkReviewed(conflict.conflictId)}>Mark reviewed</button>
-                          <button type="button" onClick={() => onCreateFixDraft(conflict)}>Create fix draft</button>
-                          {conflict.affectedRefs[0] && <button type="button" onClick={() => onJumpToRef(conflict.affectedRefs[0])}>Jump to source/target</button>}
+                          <button type="button" onClick={() => onMarkReviewed(conflict.conflictId)}>标记已审查</button>
+                          <button type="button" onClick={() => onCreateFixDraft(conflict)}>创建修复草稿</button>
+                          {conflict.affectedRefs[0] && <button type="button" onClick={() => onJumpToRef(conflict.affectedRefs[0])}>跳转到来源 / 目标</button>}
                         </div>
                         {fixDrafts[conflict.conflictId] && <p className="muted">{fixDrafts[conflict.conflictId]}</p>}
                       </article>
@@ -12178,7 +16255,7 @@ function CrossModeConflictReviewPro({
           ))}
         </div>
       )}
-      <p className="muted">Hidden target details, hidden facts, NPC secrets, raw state_deltas, and API keys are not displayed. Review and fix drafts do not bypass CrossMode validation.</p>
+      <p className="muted">不会显示 hidden target details、hidden facts、NPC secrets、raw state_deltas 或 API Key。审查与修复草稿不会绕过 CrossMode validation。</p>
     </section>
   );
 }
@@ -12189,18 +16266,18 @@ function buildCrossModeConflictRows(conflicts: CrossModeConflictReport | null, l
     category: crossModeConflictCategory(conflict.conflict_type),
     severity: conflict.severity,
     affectedRefs: (conflict.affected_refs ?? []).map((ref) => sanitizeDisplayError(ref)),
-    safeSummary: sanitizeDisplayError(conflict.safe_summary || "CrossMode conflict requires review."),
+    safeSummary: sanitizeDisplayError(conflict.safe_summary || "跨模式冲突需要审查。"),
     status: conflict.status,
     suggestedAction: crossModeSuggestedAction(conflict.conflict_type)
   }));
   for (const linkId of links?.broken_links ?? []) {
-    rows.push({ conflictId: `broken_${linkId}`, category: "broken link", severity: "error", affectedRefs: [linkId], safeSummary: "CrossMode link points to a missing source or target.", status: "open", suggestedAction: "Repair missing source/target refs and rerun CrossMode validation." });
+    rows.push({ conflictId: `broken_${linkId}`, category: "broken link", severity: "error", affectedRefs: [linkId], safeSummary: "跨模式链接指向缺失的来源或目标。", status: "open", suggestedAction: "修复缺失的 source / target 引用，并重新运行 CrossMode validation。" });
   }
   for (const linkId of links?.stale_links ?? []) {
-    rows.push({ conflictId: `stale_${linkId}`, category: "stale link", severity: "warning", affectedRefs: [linkId], safeSummary: "CrossMode link is deprecated or stale.", status: "open", suggestedAction: "Refresh the link target or archive the stale link after review." });
+    rows.push({ conflictId: `stale_${linkId}`, category: "stale link", severity: "warning", affectedRefs: [linkId], safeSummary: "跨模式链接已过期或需要刷新。", status: "open", suggestedAction: "审查后刷新链接目标，或归档 stale link。" });
   }
   for (const linkId of links?.hidden_target_risks ?? []) {
-    rows.push({ conflictId: `hidden_${linkId}`, category: "fact visibility", severity: "error", affectedRefs: [linkId], safeSummary: "Hidden target risk detected; details are redacted in normal UI.", status: "open", suggestedAction: "Review in authoring/debug-safe context and keep hidden details out of normal cross-mode views." });
+    rows.push({ conflictId: `hidden_${linkId}`, category: "fact visibility", severity: "error", affectedRefs: [linkId], safeSummary: "检测到 hidden target 风险；普通 UI 已隐藏细节。", status: "open", suggestedAction: "在 authoring / debug-safe 上下文审查，并保持普通跨模式视图不显示 hidden details。" });
   }
   const seen = new Set<string>();
   return rows.filter((row) => {
@@ -12224,13 +16301,133 @@ function crossModeConflictCategory(conflictType: string): string {
 
 function crossModeSuggestedAction(conflictType: string): string {
   const category = crossModeConflictCategory(conflictType);
-  if (category === "character identity") return "Compare Novel/Tavern/World character refs and create a safe identity mapping draft.";
-  if (category === "timeline order") return "Review timeline order and create a reorder proposal; do not rewrite EventLog.";
-  if (category === "relationship") return "Review relationship refs and create a proposal for validation.";
-  if (category === "fact visibility") return "Keep hidden target details redacted and rerun visibility validation before apply.";
-  if (category === "stale link") return "Refresh or archive the stale CrossModeLink after validation.";
-  if (category === "broken link") return "Repair missing source/target refs and rerun CrossMode validation.";
-  return "Create a fix draft, validate it, and require explicit apply confirmation.";
+  if (category === "character identity") return "比对 Novel / Tavern / World 的角色引用，创建安全的身份映射草稿。";
+  if (category === "timeline order") return "审查时间线顺序并创建 reorder proposal；不要重写 EventLog。";
+  if (category === "relationship") return "审查关系引用，创建 proposal 后再验证。";
+  if (category === "fact visibility") return "继续隐藏 hidden target details，并在 apply 前重新运行可见性验证。";
+  if (category === "stale link") return "验证后刷新或归档 stale CrossModeLink。";
+  if (category === "broken link") return "修复缺失的 source / target 引用，并重新运行 CrossMode validation。";
+  return "创建修复草稿，先验证，再要求显式 apply 确认。";
+}
+
+function crossModeConflictCategoryLabel(category: string): string {
+  switch (category) {
+    case "character identity":
+      return "角色身份";
+    case "timeline order":
+      return "时间线顺序";
+    case "relationship":
+      return "关系引用";
+    case "fact visibility":
+      return "事实可见性";
+    case "stale link":
+      return "过期链接";
+    case "broken link":
+      return "断链";
+    case "proposal validation":
+      return "提案验证";
+    default:
+      return "其他";
+  }
+}
+
+function crossModeSeverityLabel(severity: string): string {
+  if (severity === "blocker") return "阻塞";
+  if (severity === "error") return "错误";
+  if (severity === "warning") return "警告";
+  if (severity === "info") return "信息";
+  return severity || "未知";
+}
+
+function crossModeReviewStatusLabel(status: string): string {
+  if (status === "open") return "待审查";
+  if (status === "reviewed") return "已审查";
+  if (status === "ignored") return "已忽略";
+  if (status === "fixed") return "已修复";
+  return status || "待审查";
+}
+
+type ModeProviderUiStatus = {
+  configured: boolean;
+  assigned: boolean;
+  currentModel: string;
+  safeSummary: string;
+  warning: string;
+};
+
+type NovelProviderUiStatus = ModeProviderUiStatus;
+type TavernProviderUiStatus = ModeProviderUiStatus;
+
+function buildNovelProviderUiStatus(
+  providers: ProviderProfileSummary[],
+  assignments: ProjectProviderModelAssignmentSummary | null
+): NovelProviderUiStatus {
+  if (providers.length === 0) {
+    return {
+      configured: false,
+      assigned: false,
+      currentModel: "未配置",
+      safeSummary: "尚未配置模型服务；Novel 可先本地写作，使用真实 LLM 前请配置 Provider / 模型服务。",
+      warning: "请先配置模型服务。"
+    };
+  }
+  const novelRule = assignments?.rules.find((rule) => rule.enabled && ["novel_draft", "novel_rewrite", "cheap_summary"].includes(rule.use_case));
+  if (!novelRule) {
+    return {
+      configured: true,
+      assigned: false,
+      currentModel: "未分配 Novel 模型",
+      safeSummary: "已找到 Provider 安全摘要，但 Novel 草稿/改写/摘要模型尚未分配。",
+      warning: "请为 Novel 分配模型。"
+    };
+  }
+  const provider = providers.find((item) => item.provider_profile_id === novelRule.primary_provider_id);
+  const model = provider?.model_profiles.find((item) => item.model_id === novelRule.primary_model_id);
+  const providerLabel = provider?.display_name || novelRule.primary_provider_id;
+  const modelLabel = model?.display_name || novelRule.primary_model_id;
+  return {
+    configured: true,
+    assigned: true,
+    currentModel: `${providerLabel} / ${modelLabel}`,
+    safeSummary: `当前 Novel 模型：${providerLabel} / ${modelLabel}。API Key 不会显示在前端。`,
+    warning: ""
+  };
+}
+
+function buildTavernProviderUiStatus(
+  providers: ProviderProfileSummary[],
+  assignments: ProjectProviderModelAssignmentSummary | null
+): TavernProviderUiStatus {
+  if (providers.length === 0) {
+    return {
+      configured: false,
+      assigned: false,
+      currentModel: "未配置",
+      safeSummary: "尚未配置模型服务；Tavern 可以先本地整理角色和会话，使用真实 LLM 回复前请配置 Provider / 模型服务。",
+      warning: "请先配置模型服务。"
+    };
+  }
+  const tavernRule = assignments?.rules.find((rule) => rule.enabled && ["tavern_reply", "multi_npc_reply"].includes(rule.use_case));
+  if (!tavernRule) {
+    return {
+      configured: true,
+      assigned: false,
+      currentModel: "未分配 Tavern 模型",
+      safeSummary: "已找到 Provider 安全摘要，但 Tavern 回复 / 多 NPC 场景模型尚未分配。",
+      warning: "请为 Tavern RP 分配模型。"
+    };
+  }
+  const provider = providers.find((item) => item.provider_profile_id === tavernRule.primary_provider_id);
+  const model = provider?.model_profiles.find((item) => item.model_id === tavernRule.primary_model_id);
+  const providerLabel = provider?.display_name || tavernRule.primary_provider_id;
+  const modelLabel = model?.display_name || tavernRule.primary_model_id;
+  return {
+    configured: true,
+    assigned: true,
+    currentModel: `${providerLabel} / ${modelLabel}`,
+    safeSummary: `当前 Tavern 模型：${providerLabel} / ${modelLabel}。API Key 不会显示在前端；NPC secrets 和 mature/private memory 不进入普通 RP 上下文。`,
+    warning: ""
+  };
 }
 
 function ProjectShell({
@@ -12242,7 +16439,8 @@ function ProjectShell({
   onRefresh,
   onSelect,
   onCreate,
-  onValidate
+  onValidate,
+  onOpenProviderSetup
 }: {
   projects: NarrativeProjectSummary[];
   selectedProjectId: string;
@@ -12253,6 +16451,7 @@ function ProjectShell({
   onSelect: (projectId: string) => void;
   onCreate: (projectId: string, name: string, root: string) => void;
   onValidate: (projectId: string) => void;
+  onOpenProviderSetup: () => void;
 }) {
   const [projectId, setProjectId] = useState("local_project");
   const [name, setName] = useState("Local Narrative Project");
@@ -12278,12 +16477,16 @@ function ProjectShell({
   const [novelSnapshotMessage, setNovelSnapshotMessage] = useState("");
   const [writingSession, setWritingSession] = useState<WritingSessionState | null>(null);
   const [novelPreferences, setNovelPreferences] = useState<NovelPreferences | null>(null);
+  const [novelProviderStatus, setNovelProviderStatus] = useState<NovelProviderUiStatus>(() => buildNovelProviderUiStatus([], null));
+  const [novelLlmLoading, setNovelLlmLoading] = useState(false);
+  const [novelQualityReport, setNovelQualityReport] = useState<NovelQualityReport | null>(null);
   const [tavernCharacters, setTavernCharacters] = useState<TavernCharacter[]>([]);
   const [tavernSessions, setTavernSessions] = useState<TavernSession[]>([]);
   const [tavernMessages, setTavernMessages] = useState<TavernMessage[]>([]);
   const [tavernScenePresets, setTavernScenePresets] = useState<TavernScenePreset[]>([]);
   const [multiNPCScenes, setMultiNPCScenes] = useState<MultiNPCSceneSummary[]>([]);
   const [tavernPreferences, setTavernPreferences] = useState<TavernPreferences | null>(null);
+  const [tavernProviderStatus, setTavernProviderStatus] = useState<TavernProviderUiStatus>(() => buildTavernProviderUiStatus([], null));
   const [tavernRecoveryRecords, setTavernRecoveryRecords] = useState<TavernSessionRecoveryRecord[]>([]);
   const [tavernExportPreview, setTavernExportPreview] = useState<TavernSessionExportPreview | null>(null);
   const [rpSafetyDashboard, setRpSafetyDashboard] = useState<RPSafetyDashboardReport | null>(null);
@@ -12345,7 +16548,20 @@ function ProjectShell({
   const tavern = modeStatuses.find((status) => status.mode === "tavern");
   const selectedChapter = useMemo(() => novelChapters.find((chapter) => chapter.chapter_id === selectedChapterId) ?? null, [novelChapters, selectedChapterId]);
   const selectedChapterScenes = useMemo(() => novelScenes.filter((scene) => !selectedChapterId || scene.chapter_id === selectedChapterId), [novelScenes, selectedChapterId]);
-  const novelQualityIssues = useMemo(() => buildNovelQualityIssues(novelChapters, novelScenes), [novelChapters, novelScenes]);
+  const novelQualityIssues = useMemo(() => [
+    ...buildNovelQualityIssues(novelChapters, novelScenes),
+    ...(novelQualityReport?.issues ?? []).map((issue) => ({
+      severity: issue.severity,
+      code: issue.code,
+      category: "backend-quality",
+      ref_type: issue.ref_type ?? "",
+      ref_id: issue.ref_id ?? "",
+      affected_label: issue.ref_id ?? "manuscript",
+      message: issue.message,
+      safe_detail: issue.safe_detail ?? issue.message,
+      suggested_action: "按提示修订稿件后重新运行 Novel Quality。"
+    }))
+  ], [novelChapters, novelScenes, novelQualityReport]);
   const debouncedChapterDraftText = useDebouncedValue(chapterDraftText, 260);
   const chapterCurrentWordCount = useMemo(() => countWordsFast(debouncedChapterDraftText), [debouncedChapterDraftText]);
   const chapterWordCountPending = chapterDraftText !== debouncedChapterDraftText;
@@ -12385,6 +16601,14 @@ function ProjectShell({
       ]);
       setWritingSession(session.session);
       setNovelPreferences(preferences);
+      const [providersResult, assignmentsResult] = await Promise.allSettled([
+        fetchProjectProviders(selectedProjectId),
+        fetchProjectProviderModelAssignments(selectedProjectId)
+      ]);
+      setNovelProviderStatus(buildNovelProviderUiStatus(
+        providersResult.status === "fulfilled" ? providersResult.value.providers : [],
+        assignmentsResult.status === "fulfilled" ? assignmentsResult.value : null
+      ));
     } catch (err) {
       setNovelError(toErrorMessage(err));
     } finally {
@@ -12413,11 +16637,13 @@ function ProjectShell({
       setTavernSessions(sessions.sessions);
       setTavernScenePresets(presets.scene_presets);
       setMultiNPCScenes(multiScenes.scenes);
-      const [preferences, recovery, safety, npcs] = await Promise.allSettled([
+      const [preferences, recovery, safety, npcs, providersResult, assignmentsResult] = await Promise.allSettled([
         fetchTavernPreferences(selectedProjectId),
         fetchTavernRecoveryRecords(selectedProjectId),
         fetchRPSafetyDashboard(selectedProjectId),
-        fetchWorldNpcSafeSummaries(selectedProjectId)
+        fetchWorldNpcSafeSummaries(selectedProjectId),
+        fetchProjectProviders(selectedProjectId),
+        fetchProjectProviderModelAssignments(selectedProjectId)
       ]);
       if (preferences.status === "fulfilled") setTavernPreferences(preferences.value);
       if (recovery.status === "fulfilled") setTavernRecoveryRecords(recovery.value.records);
@@ -12426,6 +16652,10 @@ function ProjectShell({
         setWorldNpcSummaries(npcs.value.npcs);
         setSelectedWorldNpcId((current) => current || npcs.value.npcs[0]?.npc_id || "");
       }
+      setTavernProviderStatus(buildTavernProviderUiStatus(
+        providersResult.status === "fulfilled" ? providersResult.value.providers : [],
+        assignmentsResult.status === "fulfilled" ? assignmentsResult.value : null
+      ));
       const firstCharacter = characters.characters[0]?.tavern_character_id ?? "";
       const firstSession = sessions.sessions[0]?.session_id ?? "";
       setSelectedTavernCharacterId((current) => current || firstCharacter);
@@ -12620,7 +16850,7 @@ function ProjectShell({
     setNovelMessage("");
     try {
       const manuscript = await createNovelManuscript(selectedProjectId, { manuscript_id: newManuscriptId, title: newManuscriptTitle });
-      setNovelMessage("Manuscript created. It is a Novel draft container, not World state.");
+      setNovelMessage("稿件已创建。它只是 Novel 草稿容器，不会修改 World 状态。");
       setSelectedManuscriptId(manuscript.manuscript_id);
       await loadNovelData();
     } catch (err) {
@@ -12639,7 +16869,7 @@ function ProjectShell({
         title: newChapterTitle,
         order_index: novelChapters.length
       });
-      setNovelMessage("Chapter draft created. It does not modify GameState.");
+      setNovelMessage("章节草稿已创建，不会修改 GameState。");
       setSelectedChapterId(chapter.chapter_id);
       await loadNovelData();
     } catch (err) {
@@ -12656,10 +16886,37 @@ function ProjectShell({
     try {
       await updateNovelChapter(selectedProjectId, selectedChapterId, { draft_text: chapterDraftText });
       setChapterDraftSavedText(chapterDraftText);
-      setNovelMessage("Chapter draft saved locally.");
+      setNovelMessage("章节草稿已本地保存。");
       await loadNovelData();
     } catch (err) {
       setNovelError(toErrorMessage(err));
+    }
+  }
+
+  async function handleNovelLlmAction(action: NovelLlmAction) {
+    if (!selectedProjectId || !selectedChapterId) {
+      return;
+    }
+    setNovelError("");
+    setNovelMessage("");
+    setNovelLlmLoading(true);
+    try {
+      const result = await generateNovelLlmDraft(selectedProjectId, {
+        action,
+        manuscript_id: selectedManuscriptId || novelManuscripts[0]?.manuscript_id,
+        chapter_id: selectedChapterId,
+        text: chapterDraftText
+      });
+      if (action === "summary") {
+        setNovelMessage(`章节摘要已生成：${result.safe_summary || result.generated_text} 当前模型：${result.current_model || novelProviderStatus.currentModel}`);
+      } else {
+        setChapterDraftText(result.generated_text);
+        setNovelMessage(`${action === "rewrite" ? "改写" : "草稿"}已通过 ProviderGateway 生成，尚未保存。当前模型：${result.current_model || novelProviderStatus.currentModel}`);
+      }
+    } catch (err) {
+      setNovelError(toErrorMessage(err));
+    } finally {
+      setNovelLlmLoading(false);
     }
   }
 
@@ -12670,8 +16927,8 @@ function ProjectShell({
     setNovelError("");
     setNovelMessage("");
     try {
-      await createNovelScene(selectedProjectId, { scene_id: `scene_${novelScenes.length + 1}`, chapter_id: selectedChapterId, title: "New Scene" });
-      setNovelMessage("Scene draft created.");
+      await createNovelScene(selectedProjectId, { scene_id: `scene_${novelScenes.length + 1}`, chapter_id: selectedChapterId, title: "新场景" });
+      setNovelMessage("场景草稿已创建。");
       await loadNovelData();
     } catch (err) {
       setNovelError(toErrorMessage(err));
@@ -12683,14 +16940,14 @@ function ProjectShell({
     if (!manuscriptId) {
       return;
     }
-    if (!confirmDangerousAction("Export this Novel draft locally? Default filtering excludes authoring notes, hidden refs, mature/private content, debug data, raw state_deltas, provider secrets, and API keys.")) {
+    if (!confirmDangerousAction("确认导出本地 Novel 草稿？默认过滤 authoring notes、hidden refs、mature/private、debug data、raw state_deltas、provider secrets 和 API Key。")) {
       return;
     }
     setNovelError("");
     setNovelMessage("");
     try {
       const result = await exportNovelManuscript(selectedProjectId, { manuscript_id: manuscriptId, format });
-      setNovelMessage(`Novel ${format} export created with ${result.chapters_exported.length} chapter(s).`);
+      setNovelMessage(`Novel ${format} 导出已创建，共 ${result.chapters_exported.length} 个章节。`);
     } catch (err) {
       setNovelError(toErrorMessage(err));
     }
@@ -12710,7 +16967,7 @@ function ProjectShell({
       });
       const snapshots = await fetchNovelDraftSnapshots(selectedProjectId, selectedChapterId);
       setNovelSnapshots(snapshots.snapshots);
-      setNovelSnapshotMessage("Draft snapshot created locally. Hidden context and API keys are not stored.");
+      setNovelSnapshotMessage("草稿快照已本地创建。不会存储 hidden context 或 API Key。");
     } catch (err) {
       setNovelError(toErrorMessage(err));
     }
@@ -12740,7 +16997,7 @@ function ProjectShell({
         local_goal_words: 500
       });
       setWritingSession(session);
-      setNovelMessage("Writing session started locally. No telemetry is uploaded.");
+      setNovelMessage("本地写作会话已开始，不上传 telemetry。");
     } catch (err) {
       setNovelError(toErrorMessage(err));
     }
@@ -12754,7 +17011,7 @@ function ProjectShell({
     try {
       const ended = await endNovelWritingSession(selectedProjectId, writingSession.session_id);
       setWritingSession(ended);
-      setNovelMessage("Writing session ended locally.");
+      setNovelMessage("本地写作会话已结束。");
     } catch (err) {
       setNovelError(toErrorMessage(err));
     }
@@ -12793,7 +17050,28 @@ function ProjectShell({
         default_prompt_profile_id: novelPreferences?.default_prompt_profile_id ?? null
       });
       setNovelPreferences(saved);
-      setNovelMessage("Novel preferences saved locally without secrets.");
+      setNovelMessage("Novel 偏好已本地保存，不包含 secrets。");
+    } catch (err) {
+      setNovelError(toErrorMessage(err));
+    }
+  }
+
+  async function handleRunNovelQuality() {
+    const manuscriptId = selectedManuscriptId || novelManuscripts[0]?.manuscript_id;
+    if (!selectedProjectId || !manuscriptId) {
+      setNovelMessage("请先创建或打开稿件，再运行 Novel Quality。");
+      return;
+    }
+    setNovelError("");
+    setNovelMessage("");
+    try {
+      const report = await runNovelQuality(selectedProjectId, {
+        case_id: "novel_cn_workflow",
+        manuscript_id: manuscriptId,
+        chapter_ids: novelChapters.map((chapter) => chapter.chapter_id)
+      });
+      setNovelQualityReport(report);
+      setNovelMessage(`Novel Quality 已完成：${report.status}，发现 ${report.issues.length} 项安全摘要问题。`);
     } catch (err) {
       setNovelError(toErrorMessage(err));
     }
@@ -12806,10 +17084,10 @@ function ProjectShell({
       const character = await createTavernCharacter(selectedProjectId, {
         tavern_character_id: newTavernCharacterId,
         display_name: newTavernCharacterName,
-        description: "Project-local Tavern character draft."
+        description: "本地 Tavern 角色草稿。"
       });
       setSelectedTavernCharacterId(character.tavern_character_id);
-      setTavernMessage("Tavern character draft created. It does not modify World NPCs.");
+      setTavernMessage("Tavern 角色草稿已创建，不会修改 World NPC。");
       await loadTavernData();
     } catch (err) {
       setTavernError(toErrorMessage(err));
@@ -12822,7 +17100,7 @@ function ProjectShell({
     try {
       const result = await importTavernCharacterCard(selectedProjectId, tavernCardRaw);
       setSelectedTavernCharacterId(result.tavern_character.tavern_character_id);
-      setTavernMessage(`Character card imported as a Tavern draft. ${result.warnings?.length ?? 0} warning(s).`);
+      setTavernMessage(`角色卡已导入为 Tavern 草稿，包含 ${result.warnings?.length ?? 0} 条安全提示。`);
       await loadTavernData();
     } catch (err) {
       setTavernError(toErrorMessage(err));
@@ -12839,7 +17117,7 @@ function ProjectShell({
         character_ids: selectedTavernCharacterId ? [selectedTavernCharacterId] : []
       });
       setSelectedTavernSessionId(session.session_id);
-      setTavernMessage("Tavern session created. RP output remains project-local.");
+      setTavernMessage("Tavern RP 会话已创建。RP 输出仅保存在本地项目。");
       await loadTavernData();
     } catch (err) {
       setTavernError(toErrorMessage(err));
@@ -12861,7 +17139,7 @@ function ProjectShell({
         turn_order: participantIds
       });
       setSelectedMultiNPCSceneId(scene.scene_id);
-      setTavernMessage("Multi-NPC scene created. It stores Tavern messages only and does not modify World GameState.");
+      setTavernMessage("多 NPC 场景已创建。它只保存 Tavern 消息，不修改 World GameState。");
       await loadTavernData();
     } catch (err) {
       setTavernError(toErrorMessage(err));
@@ -12876,7 +17154,7 @@ function ProjectShell({
     setTavernMessage("");
     try {
       const result = await generateTavernMultiNPCReply(selectedProjectId, selectedMultiNPCSceneId);
-      setTavernMessage(`Generated safe local reply for ${result.message.speaker_id ?? "next speaker"}. World GameState unchanged.`);
+      setTavernMessage(`已为 ${result.message.speaker_id ?? "下一位角色"} 生成安全回复。当前模型：${tavernProviderStatus.currentModel}。World GameState 未改变。`);
       const scenes = await fetchTavernMultiNPCScenes(selectedProjectId);
       setMultiNPCScenes(scenes.scenes);
     } catch (err) {
@@ -12897,7 +17175,7 @@ function ProjectShell({
       });
       setChatInput("");
       setChatSafetyNotes(response.safety_notes ?? []);
-      setTavernMessage("Generated Tavern reply saved as a Tavern message only.");
+      setTavernMessage(`Tavern 回复已通过 ProviderGateway 生成并仅保存为 Tavern message。当前模型：${tavernProviderStatus.currentModel}。`);
       const messages = await fetchTavernMessages(selectedProjectId, selectedTavernSessionId);
       setTavernMessages(messages.messages);
     } catch (err) {
@@ -12912,10 +17190,10 @@ function ProjectShell({
       await createTavernScenePreset(selectedProjectId, {
         preset_id: newScenePresetId,
         name: newScenePresetName,
-        description: "Style-only Tavern scene mood preset.",
+        description: "仅影响表达风格的 Tavern 场景氛围预设。",
         mood_tags: ["quiet", "local"]
       });
-      setTavernMessage("Scene mood preset created. It affects style only.");
+      setTavernMessage("场景氛围预设已创建，只影响表达风格。");
       await loadTavernData();
     } catch (err) {
       setTavernError(toErrorMessage(err));
@@ -13011,14 +17289,14 @@ function ProjectShell({
 
   async function handleAdaptWorldNpc(apply = false) {
     if (!selectedWorldNpcId) return;
-    if (apply && !confirmDangerousAction("Create Tavern draft from this World NPC? This does not modify the World NPC or GameState.")) {
+    if (apply && !confirmDangerousAction("确认从这个 World NPC 创建 Tavern 角色草稿？这不会修改 World NPC 或 GameState。")) {
       return;
     }
     setTavernError("");
     try {
       const result = await adaptWorldNpcToTavern(selectedProjectId, { npc_id: selectedWorldNpcId, mode: worldNpcMode, apply });
       setWorldNpcAdapterPreview(result);
-      setTavernMessage(apply ? "World NPC adapted into a Tavern draft. World NPC unchanged." : "World NPC to Tavern preview generated safely.");
+      setTavernMessage(apply ? "已从 World NPC 创建 Tavern 草稿；World NPC 保持不变。" : "World NPC → Tavern 安全预览已生成。");
       if (apply) await loadTavernData();
     } catch (err) {
       setTavernError(toErrorMessage(err));
@@ -13034,7 +17312,7 @@ function ProjectShell({
         draft_type: crossModeDraftType,
         proposed_content: { source_ref: crossModeSourceRef, note: "UI review draft; not applied to World." }
       });
-      setCrossModeMessage(`Cross-mode draft ${draft.artifact_id} created. It does not modify World state.`);
+      setCrossModeMessage(`跨模式草稿 ${draft.artifact_id} 已创建；不会修改 World 状态。`);
       await loadCrossModeData();
     } catch (err) {
       setCrossModeError(toErrorMessage(err));
@@ -13046,7 +17324,7 @@ function ProjectShell({
     setCrossModeMessage("");
     try {
       const draft = await validateNovelToWorldDraft(selectedProjectId, draftId);
-      setCrossModeMessage(`Draft ${draft.artifact_id} validation status: ${draft.validation_status ?? "checked"}.`);
+      setCrossModeMessage(`草稿 ${draft.artifact_id} 验证状态：${draft.validation_status ?? "checked"}。`);
       await loadCrossModeData();
     } catch (err) {
       setCrossModeError(toErrorMessage(err));
@@ -13062,7 +17340,7 @@ function ProjectShell({
         source_event_ids: ["event_preview"]
       });
       setWorldToNovelPreview(preview);
-      setCrossModeMessage("World to Novel preview created. It did not write EventLog or GameState.");
+      setCrossModeMessage("World → Novel 草稿预览已创建；未写入 EventLog 或 GameState。");
       await loadCrossModeData();
     } catch (err) {
       setCrossModeError(toErrorMessage(err));
@@ -13074,7 +17352,7 @@ function ProjectShell({
     setCrossModeMessage("");
     try {
       const report = await validateCrossMode(selectedProjectId);
-      setCrossModeMessage(`Cross-mode validation ${report.ok ? "passed" : "failed"}: ${String(report.summary?.errors ?? 0)} error(s), ${String(report.summary?.warnings ?? 0)} warning(s).`);
+      setCrossModeMessage(`跨模式验证${report.ok ? "通过" : "未通过"}：${String(report.summary?.errors ?? 0)} 个错误，${String(report.summary?.warnings ?? 0)} 个警告。`);
     } catch (err) {
       setCrossModeError(toErrorMessage(err));
     }
@@ -13085,7 +17363,7 @@ function ProjectShell({
     setCrossModeMessage("");
     try {
       const plan = await buildTavernApplyPlan(selectedProjectId, tavernProposalId);
-      setCrossModeMessage(`Apply plan ${String(plan.apply_plan_id ?? "")} created for review. Confirmation is still required.`);
+      setCrossModeMessage(`Apply 计划 ${String(plan.apply_plan_id ?? "")} 已创建用于审查；仍需要显式确认。`);
       await loadCrossModeData();
     } catch (err) {
       setCrossModeError(toErrorMessage(err));
@@ -13109,18 +17387,18 @@ function ProjectShell({
   return (
     <div className="studio-page">
       <PageHeader
-        eyebrow="v2.1 Unified Narrative Project Layer"
-        title="NarrativeProject Shell"
-        description="Local project container for Novel drafts, Tavern proposals, World play, scripts, providers, and quality reports."
-        actions={<button type="button" onClick={onRefresh}>Refresh</button>}
+        eyebrow="v3.7 中文本地项目"
+        title="本地项目工作台"
+        description="在本地管理小说稿件、Tavern RP、大世界游玩、模型服务和安全导出。"
+        actions={<button type="button" onClick={onRefresh}>刷新</button>}
       />
       <ErrorPanel message={error} />
       <SuccessPanel message={message} />
       <section className="card-grid">
         <div className="tool-card">
-          <h3>Projects</h3>
+          <h3>项目</h3>
           {projects.length === 0 ? (
-            <EmptyState title="No NarrativeProject found." detail="Create a local project shell. This does not modify active GameState." />
+            <EmptyState title="还没有本地项目。" detail="创建或打开一个本地项目后即可写小说、RP 或进入大世界。" />
           ) : (
             <select value={selectedProjectId} onChange={(event) => onSelect(event.target.value)}>
               {projects.map((project) => (
@@ -13133,39 +17411,39 @@ function ProjectShell({
               {selected.project_id} · {selected.schema_version ?? "schema"} · {selected.safe_status ?? "ok"}
             </p>
           )}
-          <button type="button" disabled={!selectedProjectId} onClick={() => onValidate(selectedProjectId)}>Validate Project</button>
+          <button type="button" disabled={!selectedProjectId} onClick={() => onValidate(selectedProjectId)}>检查项目</button>
         </div>
         <div className="tool-card">
-          <h3>Create Project</h3>
+          <h3>创建项目</h3>
           <label>
-            Project id
+            项目 ID
             <input value={projectId} onChange={(event) => setProjectId(event.target.value)} />
           </label>
           <label>
-            Name
+            项目名称
             <input value={name} onChange={(event) => setName(event.target.value)} />
           </label>
           <label>
-            Local root
+            本地目录
             <input value={root} onChange={(event) => setRoot(event.target.value)} />
           </label>
-          <button type="button" onClick={() => onCreate(projectId, name, root)}>Create</button>
+          <button type="button" onClick={() => onCreate(projectId, name, root)}>创建项目</button>
         </div>
       </section>
       <section className="card-grid">
-        <ProjectModeCard title="Novel" status={novel} message="Novel Studio MVP coming in v2.2; local manuscripts, chapters, scenes, and safe export are now available." />
-        <ProjectModeCard title="Tavern" status={tavern} message="Tavern Studio MVP coming in v2.3" />
+        <ProjectModeCard title="写小说" status={novel} message="Novel Studio 可创建稿件、写章节、导出 Markdown/TXT，并通过模型服务生成草稿。" />
+        <ProjectModeCard title="角色 RP" status={tavern} message="Tavern Studio 可管理角色卡、本地会话和安全 RP。" />
         {modeStatuses.filter((status) => !["novel", "tavern"].includes(status.mode)).map((status) => (
           <ProjectModeCard key={status.mode} title={status.mode} status={status} message="Project mode entry is routed through the v2.1 Mode Router." />
         ))}
       </section>
       <section className="mode-landing-grid">
         <ModeLandingPage
-          title="Novel Studio"
-          localStatus="Project-local drafts"
-          features={["Manuscripts", "Outlines", "Chapters", "Scenes", "Character arcs", "Plot threads", "Foreshadowing", "Exports", "World to Novel imports"]}
-          warnings={["Hidden World facts are not displayed in normal Novel UI.", "Drafts do not modify GameState."]}
-          actions={["Create manuscript", "Open outline", "Open chapter editor", "Run novel quality", "Export draft"]}
+          title="写小说 / Novel Studio"
+          localStatus="本地稿件"
+          features={["稿件", "大纲", "章节", "场景", "人物弧线", "伏笔", "导出", "World 导入草稿"]}
+          warnings={["normal UI 不显示 hidden facts。", "Novel 草稿不会直接修改 World GameState。"]}
+          actions={["创建稿件", "打开大纲", "写章节", "运行 Novel Quality", "导出草稿"]}
         />
         <ModeLandingPage
           title="Tavern Studio"
@@ -13175,46 +17453,53 @@ function ProjectShell({
           actions={["Import character card", "Create session", "Open chat", "Open multi-NPC scene", "Open RP safety settings"]}
         />
         <ModeLandingPage
-          title="Cross-Mode Bridge"
-          localStatus="Proposal and validation flow"
-          features={["Novel to World", "World to Novel", "Tavern to World", "World to Tavern", "Tavern to Novel", "Novel to Tavern"]}
-          warnings={["Apply requires validation and confirmation.", "Raw state deltas are not shown in normal review."]}
-          actions={["Review drafts", "Validate bridge", "Inspect conflicts", "Open audit"]}
+          title="Cross-Mode / 跨模式桥接"
+          localStatus="草稿、提案、验证与确认流程"
+          features={["Novel → World", "World → Novel", "Tavern → World", "World NPC → Tavern", "Tavern → Novel", "Novel → Tavern"]}
+          warnings={["Apply 必须先验证并显式确认。", "普通审查不显示 raw state_deltas、hidden/mature/private。"]}
+          actions={["审查草稿", "运行跨模式验证", "检查冲突", "查看审计"]}
         />
       </section>
       <section className="tool-card">
-        <h3>Novel Studio UI Pro</h3>
-        <p className="muted">Novel drafts remain project-local and never write World GameState. Hidden facts, raw env, API keys, private notes, raw prompts, and raw state_deltas are not shown in normal Novel UI.</p>
+        <h3>写小说 / Novel Studio</h3>
+        <p className="muted">稿件、章节、场景和导出都保存在本地。Novel 不直接修改 World GameState，normal UI 不显示 hidden facts、API Key、私密备注、raw prompts 或 raw state_deltas。</p>
+        <div className="notice-panel">
+          <strong>当前模型</strong>
+          <p>{novelProviderStatus.safeSummary}</p>
+          {novelProviderStatus.warning && (
+            <button type="button" onClick={onOpenProviderSetup}>配置模型服务</button>
+          )}
+        </div>
         <ErrorPanel message={novelError} compact />
         <SuccessPanel message={novelMessage} compact />
         <SuccessPanel message={novelSnapshotMessage} compact />
         {novelLoading && (
           <LoadingSkeletonPanel
-            title="Novel dashboard loading"
-            detail="Manuscript summary renders before chapter, scene, snapshot, and quality lists. Hidden world facts and private notes are not included."
-            summaryItems={["manuscripts", "chapters", "scenes", "snapshots", "quality"]}
+            title="正在加载 Novel 工作区"
+            detail="先显示稿件摘要，再加载章节、场景、快照和质量检查列表。不会加载 hidden facts 或私密备注。"
+            summaryItems={["稿件", "章节", "场景", "快照", "质量检查"]}
             rows={4}
           />
         )}
         <div className="form-grid">
           <label>
-            Manuscript id
+            稿件 ID
             <input value={newManuscriptId} onChange={(event) => setNewManuscriptId(event.target.value)} />
           </label>
           <label>
-            Manuscript title
+            稿件标题
             <input value={newManuscriptTitle} onChange={(event) => setNewManuscriptTitle(event.target.value)} />
           </label>
-          <button type="button" disabled={!selectedProjectId} onClick={handleCreateManuscript}>Create Manuscript</button>
-          <button type="button" disabled={!selectedManuscriptId} onClick={handleStartWritingSession}>Start Writing Session</button>
-          <button type="button" disabled={!writingSession || Boolean(writingSession.ended_at)} onClick={handleEndWritingSession}>End Session</button>
-          <button type="button" disabled={!selectedProjectId} onClick={handleSaveNovelPreferences}>Save Novel Preferences</button>
+          <button type="button" disabled={!selectedProjectId} onClick={handleCreateManuscript}>创建稿件</button>
+          <button type="button" disabled={!selectedManuscriptId} onClick={handleStartWritingSession}>开始写作</button>
+          <button type="button" disabled={!writingSession || Boolean(writingSession.ended_at)} onClick={handleEndWritingSession}>结束写作</button>
+          <button type="button" disabled={!selectedProjectId} onClick={handleSaveNovelPreferences}>保存写作偏好</button>
         </div>
         <NovelWorkspaceShell
           navigation={(
             <div className="stack">
-              <strong>Novel Workspace</strong>
-              {["Manuscript", "Outline", "Chapters", "Scenes", "Characters", "Plot", "Foreshadowing", "Timeline", "World Bible", "Search", "Export", "Quality"].map((item) => (
+              <strong>Novel 工作区</strong>
+              {["稿件", "大纲", "章节", "场景", "人物", "剧情线", "伏笔", "时间线", "世界资料", "搜索", "导出", "质量检查"].map((item) => (
                 <span key={item}>{item}</span>
               ))}
             </div>
@@ -13223,7 +17508,7 @@ function ProjectShell({
             <div className="stack">
               <ManuscriptDashboard manuscripts={novelManuscripts} chapters={novelChapters} scenes={novelScenes} />
               {novelManuscripts.length === 0 ? (
-                <EmptyState title="No manuscripts yet." detail="Create a manuscript to begin outlining and drafting." />
+                <EmptyState title="还没有稿件。" detail="创建稿件后即可写章节、整理大纲并导出 Markdown/TXT。" />
               ) : (
                 <div className="novel-card-list">
                   {novelManuscripts.map((manuscript) => (
@@ -13255,10 +17540,10 @@ function ProjectShell({
               <div className="card-grid">
                 <div>
                   <NovelToolbar
-                    title="Chapters"
-                    actions={<><input value={newChapterTitle} onChange={(event) => setNewChapterTitle(event.target.value)} /><button type="button" disabled={!selectedManuscriptId} onClick={handleCreateChapter}>Add Chapter</button></>}
+                    title="章节"
+                    actions={<><input aria-label="新章节标题" value={newChapterTitle} onChange={(event) => setNewChapterTitle(event.target.value)} /><button type="button" disabled={!selectedManuscriptId} onClick={handleCreateChapter}>添加章节</button></>}
                   />
-                  {novelChapters.length === 0 ? <EmptyState title="No chapters" /> : (
+                  {novelChapters.length === 0 ? <EmptyState title="还没有章节" detail="添加章节后即可开始写作。" /> : (
                     <ChapterListPro
                       chapters={novelChapters}
                       selectedChapterId={selectedChapterId}
@@ -13268,27 +17553,34 @@ function ProjectShell({
                 </div>
                 <ChapterEditorPro>
                   <NovelToolbar
-                    title="Chapter Editor Pro"
-                    meta={selectedChapter ? <><span className="muted">{selectedChapter.title}</span> <WordCountBadge count={chapterCurrentWordCount} /> {chapterWordCountPending ? <span className="muted">counting...</span> : null} <DraftSaveStatus dirty={chapterDraftText !== chapterDraftSavedText} /></> : <span className="muted">Select a chapter</span>}
-                    actions={<><button type="button" disabled={!selectedChapter} onClick={handleSaveChapterDraft}>Save Draft</button><button type="button" disabled={!selectedChapter} onClick={handleCreateScene}>Add Scene</button><button type="button" disabled={!selectedChapter} onClick={handleCreateSnapshot}>Create Snapshot</button></>}
+                    title="章节编辑器"
+                    meta={selectedChapter ? <><span className="muted">{selectedChapter.title}</span> <WordCountBadge count={chapterCurrentWordCount} /> {chapterWordCountPending ? <span className="muted">统计中...</span> : null} <DraftSaveStatus dirty={chapterDraftText !== chapterDraftSavedText} /></> : <span className="muted">请选择章节</span>}
+                    actions={<><button type="button" disabled={!selectedChapter} onClick={handleSaveChapterDraft}>保存草稿</button><button type="button" disabled={!selectedChapter} onClick={handleCreateScene}>添加场景</button><button type="button" disabled={!selectedChapter} onClick={handleCreateSnapshot}>创建快照</button></>}
                   />
                   {selectedChapter ? (
               <div className="stack">
                 <textarea value={chapterDraftText} onChange={(event) => setChapterDraftText(event.target.value)} rows={8} />
-                <LinkedRefList title="Linked scenes" refs={selectedChapter.scene_refs ?? []} />
-                <LinkedRefList title="Linked characters" refs={selectedChapter.linked_character_ids ?? []} />
-                <LinkedRefList title="Linked timeline events" refs={selectedChapter.linked_timeline_event_ids ?? []} />
+                <div className="button-row" data-testid="v37-novel-cn-llm-actions">
+                  <span className="muted">使用真实 LLM 前确认当前模型：{novelProviderStatus.currentModel}</span>
+                  <button type="button" disabled={!selectedChapter || novelLlmLoading} onClick={() => void handleNovelLlmAction("draft")}>LLM 生成草稿</button>
+                  <button type="button" disabled={!selectedChapter || novelLlmLoading || !chapterDraftText.trim()} onClick={() => void handleNovelLlmAction("rewrite")}>LLM 改写</button>
+                  <button type="button" disabled={!selectedChapter || novelLlmLoading || !chapterDraftText.trim()} onClick={() => void handleNovelLlmAction("summary")}>LLM 摘要</button>
+                  {novelProviderStatus.warning ? <button type="button" onClick={onOpenProviderSetup}>配置模型服务</button> : null}
+                </div>
+                <LinkedRefList title="关联场景" refs={selectedChapter.scene_refs ?? []} />
+                <LinkedRefList title="关联人物" refs={selectedChapter.linked_character_ids ?? []} />
+                <LinkedRefList title="关联时间线事件" refs={selectedChapter.linked_timeline_event_ids ?? []} />
                 <DraftVersionPanel snapshots={novelSnapshots} onCompare={(snapshotId: string) => void handleCompareSnapshot(snapshotId)} />
               </div>
             ) : (
-              <EmptyState title="Select a chapter." />
+              <EmptyState title="请选择章节。" detail="选择章节后可以写作、生成、改写、摘要和导出。" />
             )}
                 </ChapterEditorPro>
               </div>
               <SceneCardsBoard scenes={selectedChapterScenes} />
               <div className="mode-landing-grid">
-                <NovelSafeSummaryPanel title="Structure Tools">
-                  <p>Outline editor, character arcs, plot threads, foreshadowing, timeline links, and quality checks remain local Novel drafts.</p>
+                <NovelSafeSummaryPanel title="结构工具">
+                  <p>大纲、人物弧线、剧情线、伏笔、时间线链接和质量检查都保存在本地 Novel 草稿中。</p>
                 </NovelSafeSummaryPanel>
                 <OutlineTreePro
                   chapters={novelChapters}
@@ -13307,59 +17599,67 @@ function ProjectShell({
                 <WorldBibleSidebar chapters={novelChapters} scenes={novelScenes} />
               </div>
               <div className="mode-landing-grid">
-                <NovelPromptProviderPanel promptProfileId={selectedChapter?.prompt_profile_id ?? novelPreferences?.default_prompt_profile_id} providerSummary="Provider Gateway safe route; no API key shown." />
+                <NovelPromptProviderPanel promptProfileId={selectedChapter?.prompt_profile_id ?? novelPreferences?.default_prompt_profile_id} providerSummary={novelProviderStatus.safeSummary} currentModel={novelProviderStatus.currentModel} missingProvider={!novelProviderStatus.configured || !novelProviderStatus.assigned} onConfigureProvider={onOpenProviderSetup} />
                 <NovelExportWizard onExportMarkdown={() => void handleExport("markdown")} onExportTxt={() => void handleExport("txt")} />
-                <NovelQualityDashboard issues={novelQualityIssues} />
-                <WorldToNovelImportPanel preview={worldToNovelPreview} />
+                <NovelQualityDashboard issues={novelQualityIssues} onRun={() => void handleRunNovelQuality()} />
+                <WorldToNovelImportPanel preview={worldToNovelPreview} onPreview={() => void handlePreviewWorldToNovel()} />
                 <WritingSessionDashboard session={writingSession} currentWordCount={chapterCurrentWordCount} />
-                <NovelSafeSummaryPanel title="Novel Local Preferences">
-                  <p>Default export: {novelPreferences?.default_export_format ?? "markdown"}. Preferences are local and contain no secrets.</p>
+                <NovelSafeSummaryPanel title="Novel 本地偏好">
+                  <p>默认导出：{novelPreferences?.default_export_format ?? "markdown"}。偏好设置仅保存在本地，不包含 secrets。</p>
                 </NovelSafeSummaryPanel>
-                <NovelSafeSummaryPanel title="Novel Recovery / Unsaved Draft UX">
-                  <p>Unsaved draft state is visible. Recovery drafts exclude provider prompts, hidden context, debug memory, and API keys.</p>
+                <NovelSafeSummaryPanel title="草稿恢复 / 未保存提示">
+                  <p>未保存状态会清晰显示。恢复草稿会排除 provider prompts、hidden context、debug memory 和 API Key。</p>
                 </NovelSafeSummaryPanel>
-                <OutlineNodeView node={{ node_id: "sample", node_type: "beat", title: "Safe outline node", summary: "Local outline nodes never become World facts automatically.", status: "draft" }} />
+                <OutlineNodeView node={{ node_id: "sample", node_type: "beat", title: "安全大纲节点", summary: "本地大纲节点不会自动成为 World facts。", status: "draft" }} />
               </div>
             </div>
           )}
           context={(
             <div className="stack">
-              <NovelSafeSummaryPanel title="Safe Context Sidebar">
-                <p>World Bible, character, timeline, quality, and prompt context tabs show safe summaries only.</p>
+              <NovelSafeSummaryPanel title="安全上下文侧栏">
+                <p>世界资料、人物、时间线、质量检查和 prompt context 只显示 safe summaries。</p>
               </NovelSafeSummaryPanel>
-              <LinkedRefList title="Cross-mode drafts" refs={crossModeDrafts.map((draft) => draft.artifact_id)} />
-              <LinkedRefList title="World to Novel source events" refs={worldToNovelPreview ? ((worldToNovelPreview.source_event_ids as string[] | undefined) ?? []) : []} />
+              <LinkedRefList title="Cross-Mode 草稿" refs={crossModeDrafts.map((draft) => draft.artifact_id)} />
+              <LinkedRefList title="World 导入 Novel 的来源事件" refs={worldToNovelPreview ? ((worldToNovelPreview.source_event_ids as string[] | undefined) ?? []) : []} />
             </div>
           )}
           status={(
             <div className="button-row">
-              <span>local-only</span>
-              <span>save status: {chapterDraftText !== chapterDraftSavedText ? "unsaved draft" : "saved locally"}</span>
-              <span>provider status: Provider Gateway safe route</span>
-              <span>Novel draft / authoring mode</span>
-              <span>{writingSession && !writingSession.ended_at ? `session words ${writingSession.word_count_current - writingSession.word_count_start}` : "no active writing session"}</span>
-              <span>Novel UI does not directly modify GameState</span>
+              <span>本地优先</span>
+              <span>保存状态：{chapterDraftText !== chapterDraftSavedText ? "草稿未保存" : "已本地保存"}</span>
+              <span>模型服务：{novelProviderStatus.currentModel}</span>
+              <span>Novel 草稿 / 创作模式</span>
+              <span>{writingSession && !writingSession.ended_at ? `本次写作 ${writingSession.word_count_current - writingSession.word_count_start} 字` : "没有进行中的写作会话"}</span>
+              <span>Novel UI 不直接修改 GameState</span>
             </div>
           )}
         />
       </section>
       <section className="tool-card">
-        <h3>Tavern Studio UI Pro</h3>
-        <p className="muted">Tavern data is local RP material: sessions, messages, memory, and proposals. It never writes World GameState, EventLog, raw env, API keys, hidden facts, or raw state_deltas.</p>
+        <h3>Tavern / 角色 RP 工作室</h3>
+        <p className="muted">Tavern 用于本地角色 RP、单人聊天、多 NPC 场景、记忆摘要和跨模式草稿。它不会直接写入 World GameState、EventLog、API Key、hidden facts 或 raw state_deltas。</p>
+        <div className="notice-panel" data-testid="v37-tavern-cn-provider-status">
+          <strong>模型服务状态</strong>
+          <p>{tavernProviderStatus.safeSummary}</p>
+          <div className="button-row">
+            <span>当前模型：{tavernProviderStatus.currentModel}</span>
+            {tavernProviderStatus.warning ? <button type="button" onClick={onOpenProviderSetup}>配置模型服务</button> : null}
+          </div>
+        </div>
         <ErrorPanel message={tavernError} compact />
         <SuccessPanel message={tavernMessage} compact />
         {tavernLoading && (
           <LoadingSkeletonPanel
-            title="Tavern dashboard loading"
-            detail="Session and character summaries render before long message and memory lists. Mature/private and hidden context remain excluded."
-            summaryItems={["characters", "sessions", "messages", "RP memory", "safety"]}
+            title="Tavern 工作区加载中"
+            detail="先显示角色和会话摘要，再加载长消息列表和 RP 记忆。mature/private 与 hidden context 默认排除。"
+            summaryItems={["角色", "会话", "消息", "RP 记忆", "安全检查"]}
             rows={4}
           />
         )}
         <TavernWorkspaceShell
           navigation={(
             <div className="stack">
-              <TavernToolbar title="Characters / Sessions" meta={<p className="muted">Local RP workspace navigation: Characters, Sessions, Multi-NPC Scenes, Memory, Voice, Boundaries, Safety, Export, Cross-Mode.</p>} />
+              <TavernToolbar title="角色与会话" meta={<p className="muted">本地 RP 工作区：角色、会话、多 NPC 场景、记忆、Voice、边界、RP Safety、导出和 Cross-Mode。</p>} />
               <CharacterCardLibrary characters={tavernCharacters} selectedCharacterId={selectedTavernCharacterId} onSelect={setSelectedTavernCharacterId} />
               <TavernSessionListPro
                 sessions={tavernSessions}
@@ -13375,19 +17675,22 @@ function ProjectShell({
                 character={tavernCharacters.find((character) => character.tavern_character_id === selectedTavernCharacterId) ?? null}
                 messages={tavernMessages}
                 input={chatInput}
-                providerStatus="Provider Gateway safe route; API key not shown"
+                providerStatus={tavernProviderStatus.safeSummary}
+                currentModel={tavernProviderStatus.currentModel}
+                providerMissing={Boolean(tavernProviderStatus.warning)}
                 memoryHints={tavernRecoveryRecords.slice(0, 3).map((record) => record.safe_draft_text)}
                 safetyNotes={chatSafetyNotes}
                 onInputChange={setChatInput}
                 onSend={handleSendTavernMessage}
                 onRecoveryDraft={handleCreateTavernRecoveryDraft}
+                onConfigureProvider={onOpenProviderSetup}
               />
-              <MultiNPCScenePro scenes={multiNPCScenes} selectedSceneId={selectedMultiNPCSceneId} onSelect={setSelectedMultiNPCSceneId} onGenerateNext={handleGenerateMultiNPCReply} />
+              <MultiNPCScenePro scenes={multiNPCScenes} selectedSceneId={selectedMultiNPCSceneId} currentModel={tavernProviderStatus.currentModel} providerMissing={Boolean(tavernProviderStatus.warning)} onConfigureProvider={onOpenProviderSetup} onSelect={setSelectedMultiNPCSceneId} onGenerateNext={handleGenerateMultiNPCReply} />
             </div>
           )}
           context={(
             <div className="stack">
-              <TavernPromptProviderPanel promptProfileId={tavernPreferences?.default_prompt_profile_id} providerProfileId={tavernPreferences?.default_provider_profile_id} modelId="safe summary only" />
+              <TavernPromptProviderPanel promptProfileId={tavernPreferences?.default_prompt_profile_id} providerProfileId={tavernPreferences?.default_provider_profile_id} modelId={tavernProviderStatus.currentModel} providerSummary={tavernProviderStatus.safeSummary} missingProvider={Boolean(tavernProviderStatus.warning)} onConfigureProvider={onOpenProviderSetup} />
               <RPMemoryPanel sessions={tavernSessions} recoveryRecords={tavernRecoveryRecords} matureVisible={Boolean(tavernPreferences?.mature_module_visible)} />
               <EmotionArcPanel messages={tavernMessages} />
               <RelationshipTonePanel characters={tavernCharacters} sessions={tavernSessions} onPropose={() => void handleBuildTavernApplyPlan()} />
@@ -13400,64 +17703,64 @@ function ProjectShell({
           )}
           status={(
             <div className="button-row">
-              <span>local-only</span>
-              <span>provider safe summary; API key not shown</span>
-              <span>Mature Module is disabled by default</span>
-              <span>Tavern UI does not modify World GameState</span>
+              <span>本地优先</span>
+              <span>模型服务安全摘要；API Key 不显示</span>
+              <span>Mature Module is disabled by default / Mature 默认关闭</span>
+              <span>Tavern UI does not modify World GameState / Tavern 不直接修改 World GameState</span>
             </div>
           )}
         />
         <div className="mode-landing-grid">
-          <TavernSafeSummaryPanel title="Character Card Library">
-            <p>Local character cards can be imported as drafts. Embedded scripts are not executed and remote character downloads are not offered.</p>
+          <TavernSafeSummaryPanel title="角色卡库">
+            <p>本地角色卡可导入为草稿。内嵌脚本不会执行，也不提供远程角色下载。</p>
           </TavernSafeSummaryPanel>
           <TavernCharacterEditor character={tavernCharacters.find((character) => character.tavern_character_id === selectedTavernCharacterId) ?? null} />
-          <TavernSafeSummaryPanel title="World NPC to Tavern Character UX Pro">
-            <p>Player-safe mode excludes NPC secrets and unknown facts. Apply to Tavern creates a Tavern draft only.</p>
+          <TavernSafeSummaryPanel title="World NPC 转 Tavern 角色">
+            <p>player_safe 模式会排除 NPC secrets 和未知事实。应用到 Tavern 只创建角色草稿，不修改 World。</p>
             <div className="form-grid">
               <select value={selectedWorldNpcId} onChange={(event) => setSelectedWorldNpcId(event.target.value)}>
-                <option value="">Select safe world NPC</option>
+                <option value="">选择安全 World NPC</option>
                 {worldNpcSummaries.map((npc) => <option key={npc.npc_id} value={npc.npc_id}>{npc.display_name}</option>)}
               </select>
               <select value={worldNpcMode} onChange={(event) => setWorldNpcMode(event.target.value as "player_safe" | "authoring")}>
                 <option value="player_safe">player_safe</option>
                 <option value="authoring">authoring-only</option>
               </select>
-              <button type="button" disabled={!selectedWorldNpcId} onClick={() => void handleAdaptWorldNpc(false)}>Preview</button>
-              <button type="button" disabled={!selectedWorldNpcId} onClick={() => void handleAdaptWorldNpc(true)}>Apply to Tavern Draft</button>
+              <button type="button" disabled={!selectedWorldNpcId} onClick={() => void handleAdaptWorldNpc(false)}>预览</button>
+              <button type="button" disabled={!selectedWorldNpcId} onClick={() => void handleAdaptWorldNpc(true)}>创建 Tavern 草稿</button>
             </div>
             {worldNpcAdapterPreview && <pre className="safe-json-preview">{JSON.stringify(worldNpcAdapterPreview, null, 2)}</pre>}
           </TavernSafeSummaryPanel>
-          <TavernSafeSummaryPanel title="RP Safety Dashboard">
-            <p>Overall status: {rpSafetyDashboard?.overall_status ?? "not_run"}. Safe issue rows only; hidden/mature/private text is not printed.</p>
-            <button type="button" disabled={!selectedProjectId} onClick={handleRunRPSafety}>Run RP Safety Eval</button>
+          <TavernSafeSummaryPanel title="RP Safety / 安全检查">
+            <p>当前状态：{rpSafetyDashboard?.overall_status ?? "not_run"}。只显示安全摘要，不打印 hidden/mature/private 原文。</p>
+            <button type="button" disabled={!selectedProjectId} onClick={handleRunRPSafety}>运行 RP Safety</button>
           </TavernSafeSummaryPanel>
-          <TavernSafeSummaryPanel title="Tavern Session Export / Backup UX">
-            <p>JSON safe export and Markdown transcript preview exclude API keys, hidden facts, NPC secrets, mature/private memory, debug data, raw prompts, and raw state_deltas.</p>
+          <TavernSafeSummaryPanel title="Tavern 导出 / 备份">
+            <p>JSON 安全导出和 Markdown 记录预览会排除 API Key、hidden facts、NPC secrets、mature/private memory、debug data、raw prompts 和 raw state_deltas。</p>
             <div className="button-row">
-              <button type="button" disabled={!selectedProjectId} onClick={handlePreviewTavernExport}>Preview Export</button>
-              <button type="button" disabled={!selectedProjectId} onClick={handleCreateTavernExport}>Confirm Export</button>
+              <button type="button" disabled={!selectedProjectId} onClick={handlePreviewTavernExport}>预览导出</button>
+              <button type="button" disabled={!selectedProjectId} onClick={handleCreateTavernExport}>确认导出</button>
             </div>
             {tavernExportPreview && <p className="muted">{tavernExportPreview.session_count} session(s), {tavernExportPreview.message_count} safe message(s). {tavernExportPreview.filtering_policy.join("; ")}</p>}
           </TavernSafeSummaryPanel>
-          <TavernSafeSummaryPanel title="Tavern Local Preferences">
-            <p>Default character/session, panel visibility, prompt/provider profile IDs, and scene mood are saved locally. Mature module visible is default off.</p>
-            <button type="button" disabled={!selectedProjectId} onClick={handleSaveTavernPreferences}>Save Tavern Preferences</button>
+          <TavernSafeSummaryPanel title="Tavern 本地偏好">
+            <p>默认角色/会话、面板可见性、Prompt/Provider Profile 和场景氛围只保存在本地。mature 默认关闭。</p>
+            <button type="button" disabled={!selectedProjectId} onClick={handleSaveTavernPreferences}>保存 Tavern 偏好</button>
           </TavernSafeSummaryPanel>
-          <TavernSafeSummaryPanel title="Tavern Recovery / Unsaved Session UX">
-            <p>{tavernRecoveryRecords.length} safe recovery draft(s). Recovery drafts exclude prompt context, hidden facts, NPC secrets, mature/private content, debug memory, and API keys.</p>
+          <TavernSafeSummaryPanel title="Tavern 草稿恢复">
+            <p>{tavernRecoveryRecords.length} 条安全恢复草稿。恢复草稿会排除 prompt context、hidden facts、NPC secrets、mature/private content、debug memory 和 API Key。</p>
           </TavernSafeSummaryPanel>
         </div>
         <div className="card-grid">
           <div>
-            <h4>Characters</h4>
+            <h4>角色</h4>
             <div className="form-grid">
               <input value={newTavernCharacterId} onChange={(event) => setNewTavernCharacterId(event.target.value)} />
               <input value={newTavernCharacterName} onChange={(event) => setNewTavernCharacterName(event.target.value)} />
-              <button type="button" disabled={!selectedProjectId} onClick={handleCreateTavernCharacter}>Create Character</button>
+              <button type="button" disabled={!selectedProjectId} onClick={handleCreateTavernCharacter}>创建角色</button>
             </div>
             <ItemList
-              emptyText="No Tavern characters"
+              emptyText="还没有 Tavern 角色"
               items={tavernCharacters.map((character) => (
                 <button
                   key={character.tavern_character_id}
@@ -13471,17 +17774,17 @@ function ProjectShell({
             />
           </div>
           <div>
-            <h4>Import Character Card</h4>
+            <h4>导入角色卡</h4>
             <textarea value={tavernCardRaw} onChange={(event) => setTavernCardRaw(event.target.value)} rows={6} />
-            <button type="button" disabled={!selectedProjectId} onClick={handleImportTavernCard}>Import Draft</button>
-            <p className="muted">Creator notes and prompt-like fields are treated as untrusted authoring material.</p>
+            <button type="button" disabled={!selectedProjectId} onClick={handleImportTavernCard}>导入为草稿</button>
+            <p className="muted">Creator notes 与 prompt-like 字段会被视为不可信创作素材。</p>
           </div>
           <div>
-            <h4>Sessions</h4>
+            <h4>RP 会话</h4>
             <div className="form-grid">
               <input value={newTavernSessionId} onChange={(event) => setNewTavernSessionId(event.target.value)} />
               <input value={newTavernSessionTitle} onChange={(event) => setNewTavernSessionTitle(event.target.value)} />
-              <button type="button" disabled={!selectedProjectId} onClick={handleCreateTavernSession}>Create Session</button>
+              <button type="button" disabled={!selectedProjectId} onClick={handleCreateTavernSession}>开始单角色 RP</button>
             </div>
             <TavernSessionListPro
               sessions={tavernSessions}
@@ -13492,76 +17795,81 @@ function ProjectShell({
         </div>
         <div className="card-grid">
           <div>
-            <h4>Single Character Chat</h4>
+            <h4>单角色 RP</h4>
             <label>
-              Character
+              角色
               <select value={selectedTavernCharacterId} onChange={(event) => setSelectedTavernCharacterId(event.target.value)}>
-                <option value="">Select character</option>
+                <option value="">选择角色</option>
                 {tavernCharacters.map((character) => (
                   <option key={character.tavern_character_id} value={character.tavern_character_id}>{character.display_name}</option>
                 ))}
               </select>
             </label>
             <label>
-              User message
+              你的消息
               <textarea value={chatInput} onChange={(event) => setChatInput(event.target.value)} rows={4} />
             </label>
-            <button type="button" disabled={!selectedTavernSessionId || !selectedTavernCharacterId || !chatInput.trim()} onClick={handleSendTavernMessage}>Send</button>
+            <div className="button-row" data-testid="v37-tavern-cn-chat-actions">
+              <span className="muted">使用真实 LLM 前确认当前模型：{tavernProviderStatus.currentModel}</span>
+              <button type="button" disabled={!selectedTavernSessionId || !selectedTavernCharacterId || !chatInput.trim()} onClick={handleSendTavernMessage}>发送 RP / 生成回复</button>
+              {tavernProviderStatus.warning ? <button type="button" onClick={onOpenProviderSetup}>配置模型服务</button> : null}
+            </div>
             {chatSafetyNotes.length > 0 && (
               <details>
-                <summary>Safety notes</summary>
-                <ItemList emptyText="No notes" items={chatSafetyNotes.map((note) => <span key={note}>{note}</span>)} />
+                <summary>安全提示</summary>
+                <ItemList emptyText="没有提示" items={chatSafetyNotes.map((note) => <span key={note}>{note}</span>)} />
               </details>
             )}
           </div>
           <div>
-            <h4>Messages</h4>
+            <h4>消息</h4>
             <TavernMessageListPro messages={tavernMessages} />
           </div>
           <div>
-            <h4>Scene Mood Presets</h4>
+            <h4>场景氛围</h4>
             <div className="form-grid">
               <input value={newScenePresetId} onChange={(event) => setNewScenePresetId(event.target.value)} />
               <input value={newScenePresetName} onChange={(event) => setNewScenePresetName(event.target.value)} />
-              <button type="button" disabled={!selectedProjectId} onClick={handleCreateScenePreset}>Create Preset</button>
+              <button type="button" disabled={!selectedProjectId} onClick={handleCreateScenePreset}>创建氛围预设</button>
             </div>
             <ItemList
-              emptyText="No scene presets"
+              emptyText="还没有场景氛围预设"
               items={tavernScenePresets.map((preset) => (
                 <span key={preset.preset_id}>{preset.name} · {(preset.mood_tags ?? []).join(", ") || "style-only"}</span>
               ))}
             />
           </div>
           <div>
-            <h4>Multi-NPC Scene Pro</h4>
-            <p className="muted">Multi-character scenes store Tavern messages only. They do not modify World GameState, EventLog, hidden facts, NPC secrets, or provider secrets.</p>
+            <h4>多 NPC 场景</h4>
+            <p className="muted">多角色场景只保存 Tavern 消息，不修改 World GameState、EventLog、hidden facts、NPC secrets 或 provider secrets。</p>
             <div className="form-grid">
               <input value={newMultiNPCSceneId} onChange={(event) => setNewMultiNPCSceneId(event.target.value)} />
               <input value={newMultiNPCSceneTitle} onChange={(event) => setNewMultiNPCSceneTitle(event.target.value)} />
-              <button type="button" disabled={!selectedProjectId || tavernCharacters.length < 2} onClick={handleCreateMultiNPCScene}>Create Scene</button>
+              <button type="button" disabled={!selectedProjectId || tavernCharacters.length < 2} onClick={handleCreateMultiNPCScene}>开始多 NPC 场景</button>
             </div>
             <label>
-              Scene
+              场景
               <select value={selectedMultiNPCSceneId} onChange={(event) => setSelectedMultiNPCSceneId(event.target.value)}>
-                <option value="">Select scene</option>
+                <option value="">选择场景</option>
                 {multiNPCScenes.map((scene) => (
                   <option key={scene.scene_id} value={scene.scene_id}>{scene.title}</option>
                 ))}
               </select>
             </label>
-            <button type="button" disabled={!selectedProjectId || !selectedMultiNPCSceneId} onClick={handleGenerateMultiNPCReply}>Generate Next Reply</button>
-            <MultiNPCScenePro scenes={multiNPCScenes} selectedSceneId={selectedMultiNPCSceneId} onSelect={setSelectedMultiNPCSceneId} onGenerateNext={handleGenerateMultiNPCReply} />
+            <button type="button" disabled={!selectedProjectId || !selectedMultiNPCSceneId} onClick={handleGenerateMultiNPCReply}>生成下一条回复</button>
+            <MultiNPCScenePro scenes={multiNPCScenes} selectedSceneId={selectedMultiNPCSceneId} currentModel={tavernProviderStatus.currentModel} providerMissing={Boolean(tavernProviderStatus.warning)} onConfigureProvider={onOpenProviderSetup} onSelect={setSelectedMultiNPCSceneId} onGenerateNext={handleGenerateMultiNPCReply} />
           </div>
         </div>
         <div className="card-grid">
-          <ProjectModeCard title="Lorebook / World Info" message="Safe lore context filters hidden facts, unknown NPC facts, authoring notes, and debug data." />
-          <ProjectModeCard title="Relationship Tone" message="Relationship tone affects expression only; World relationship changes require proposal and validation." />
-          <ProjectModeCard title="Multi-Character Scene" message="Multi-NPC Scene Pro uses safe per-speaker context and writes Tavern messages only." />
+          <ProjectModeCard title="Lorebook / World Info" message="安全 lore context 会过滤 hidden facts、未知 NPC facts、authoring notes 和 debug data。" />
+          <ProjectModeCard title="关系语气" message="关系语气只影响表达。World 关系变化必须走 proposal 和 validation。" />
+          <ProjectModeCard title="多角色场景" message="Multi-NPC Scene 使用每个角色的安全上下文，只写 Tavern messages。" />
         </div>
       </section>
       <section className="tool-card">
-        <h3>Cross-Mode Bridge</h3>
-        <p className="muted">Cross-mode artifacts are drafts, proposals, reviews, validation reports, or audit records. Apply to World requires backend validation and explicit confirmation.</p>
+        <h3>跨模式桥接 / Cross-Mode Bridge</h3>
+        <p className="muted">跨模式产物分为草稿（draft）、提案（proposal）、审查（review）、验证报告（validation report）和审计记录（audit record）。任何写入 World 的 Apply 都必须经过后端 validation / dry-run / explicit confirm。</p>
+        <p className="muted">支持 World → Novel、Tavern → Novel、Tavern → World、Novel → World、World NPC → Tavern。普通视图默认过滤 hidden / mature / private、NPC secrets、debug memory 和 raw state_deltas。</p>
         <CrossModeDashboardPanel
           drafts={crossModeDrafts}
           timeline={crossModeTimeline}
@@ -13573,77 +17881,77 @@ function ProjectShell({
         <SuccessPanel message={crossModeMessage} compact />
         <div className="card-grid">
           <div>
-            <h4>Novel → World Review</h4>
+            <h4>Novel → World 草稿 / 提案审查</h4>
             <label>
-              Source ref
+              来源引用
               <input value={crossModeSourceRef} onChange={(event) => setCrossModeSourceRef(event.target.value)} />
             </label>
             <label>
-              Draft type
+              草稿类型
               <select value={crossModeDraftType} onChange={(event) => setCrossModeDraftType(event.target.value)}>
-                <option value="npc_draft">NPC</option>
-                <option value="location_draft">Location</option>
-                <option value="quest_draft">Quest</option>
-                <option value="fact_draft">Fact</option>
-                <option value="item_draft">Item</option>
-                <option value="faction_draft">Faction</option>
-                <option value="timeline_event_draft">Timeline Event</option>
+                <option value="npc_draft">NPC 草稿</option>
+                <option value="location_draft">地点草稿</option>
+                <option value="quest_draft">任务草稿</option>
+                <option value="fact_draft">事实草稿</option>
+                <option value="item_draft">物品草稿</option>
+                <option value="faction_draft">势力草稿</option>
+                <option value="timeline_event_draft">时间线事件草稿</option>
               </select>
             </label>
-            <button type="button" disabled={!selectedProjectId} onClick={handleCreateCrossModeDraft}>Generate Draft</button>
-            <p className="muted">Review only. This does not write content packs or GameState.</p>
+            <button type="button" disabled={!selectedProjectId} onClick={handleCreateCrossModeDraft}>生成草稿</button>
+            <p className="muted">只用于审查：不会写入 content packs，也不会修改 GameState。Novel → World 必须走 proposal / validation / explicit apply。</p>
           </div>
           <div>
-            <h4>World → Novel</h4>
-            <button type="button" disabled={!selectedProjectId} onClick={handlePreviewWorldToNovel}>Preview Chapter Draft</button>
+            <h4>World → Novel 章节草稿</h4>
+            <button type="button" disabled={!selectedProjectId} onClick={handlePreviewWorldToNovel}>预览章节草稿</button>
             {worldToNovelPreview && (
               <div className="safe-preview-list">
-                <p><strong>Suggested title:</strong> {String(worldToNovelPreview.suggested_title ?? "Draft preview")}</p>
-                <p><strong>Excluded hidden/debug events:</strong> {String(worldToNovelPreview.hidden_events_excluded_count ?? 0)}</p>
-                <p><strong>Source events:</strong> {((worldToNovelPreview.source_event_ids as string[] | undefined) ?? []).join(", ") || "none"}</p>
-                <p className="muted">Preview is safe-summary only and does not modify World EventLog or GameState.</p>
+                <p><strong>建议标题：</strong> {String(worldToNovelPreview.suggested_title ?? "草稿预览")}</p>
+                <p><strong>已排除 hidden/debug events：</strong> {String(worldToNovelPreview.hidden_events_excluded_count ?? 0)}</p>
+                <p><strong>来源事件：</strong> {((worldToNovelPreview.source_event_ids as string[] | undefined) ?? []).join(", ") || "无"}</p>
+                <p className="muted">预览只显示 safe summary，不会修改 World EventLog 或 GameState。</p>
               </div>
             )}
-            <p className="muted">Preview excludes raw state_deltas and hidden/debug events.</p>
+            <p className="muted">预览会排除 raw state_deltas 和 hidden/debug events。</p>
           </div>
           <div>
-            <h4>Tavern → World Apply Review</h4>
+            <h4>Tavern → World Apply 计划审查</h4>
             <label>
-              Proposal id
+              提案 ID
               <input value={tavernProposalId} onChange={(event) => setTavernProposalId(event.target.value)} />
             </label>
-            <button type="button" disabled={!selectedProjectId || !tavernProposalId.trim()} onClick={handleBuildTavernApplyPlan}>Build Apply Plan</button>
-            <p className="muted">Apply plans require explicit confirmation; the UI does not mutate World state directly.</p>
+            <button type="button" disabled={!selectedProjectId || !tavernProposalId.trim()} onClick={handleBuildTavernApplyPlan}>生成 Apply 计划</button>
+            <p className="muted">Apply 计划必须显式确认；UI 不会直接修改 World state。Tavern → World 仍是 proposal / validation / dry-run / explicit confirm。</p>
           </div>
         </div>
         <div className="card-grid">
           <div>
-            <h4>Drafts</h4>
+            <h4>草稿列表</h4>
             <ItemList
-              emptyText="No cross-mode drafts"
+              emptyText="暂无跨模式草稿"
               items={crossModeDrafts.map((draft) => (
                 <div key={draft.artifact_id} className="stack" data-cross-mode-ref={`cross_mode:draft:${draft.artifact_id}`}>
                   <span>{draft.artifact_type} · {draft.validation_status ?? draft.status}</span>
-                  <small>{draft.source_refs.join(", ") || "no source"} → {draft.target_refs.join(", ") || "no target"}</small>
-                  <button type="button" onClick={() => void handleValidateCrossModeDraft(draft.artifact_id)}>Validate</button>
+                  <small>{draft.source_refs.join(", ") || "无来源"} → {draft.target_refs.join(", ") || "无目标"}</small>
+                  <button type="button" onClick={() => void handleValidateCrossModeDraft(draft.artifact_id)}>验证</button>
                 </div>
               ))}
             />
           </div>
           <div>
-            <h4>Timeline</h4>
+            <h4>跨模式时间线</h4>
             <ItemList
-              emptyText="No timeline entries"
+              emptyText="暂无时间线条目"
               items={crossModeTimeline.map((entry) => (
                 <span key={entry.entry_id} data-cross-mode-ref={entry.source_ref}>{entry.source_mode}: {entry.title} · {entry.visibility}</span>
               ))}
             />
           </div>
           <div>
-            <h4>Links</h4>
+            <h4>链接审查</h4>
             {crossModeLinks ? (
               <ItemList
-                emptyText="No link issues"
+                emptyText="暂无链接问题"
                 items={[
                   <span key="broken">Broken: {crossModeLinks.broken_links.length}</span>,
                   <span key="hidden">Hidden risk: {crossModeLinks.hidden_target_risks.length}</span>,
@@ -13651,32 +17959,32 @@ function ProjectShell({
                 ]}
               />
             ) : (
-              <EmptyState title="No link review loaded." />
+              <EmptyState title="尚未加载链接审查。" />
             )}
           </div>
           <div>
-            <h4>Conflicts</h4>
+            <h4>冲突</h4>
             <ItemList
-              emptyText="No conflicts"
+              emptyText="暂无冲突"
               items={(crossModeConflicts?.conflicts ?? []).map((conflict) => (
                 <span key={conflict.conflict_id}>{conflict.severity}: {conflict.conflict_type}</span>
               ))}
             />
           </div>
           <div>
-            <h4>Audit</h4>
+            <h4>审计记录</h4>
             <ItemList
-              emptyText="No audit records"
+              emptyText="暂无审计记录"
               items={crossModeAudit.slice(-5).map((record) => (
                 <span key={record.audit_id}>{record.action_type} · {record.result}</span>
               ))}
             />
           </div>
           <div>
-            <h4>Validation</h4>
-            <button type="button" disabled={!selectedProjectId} onClick={handleValidateCrossMode}>Run Cross-Mode Validation</button>
-            <button type="button" disabled={!selectedProjectId} onClick={() => void loadCrossModeData()}>Refresh Bridge</button>
-            <p className="muted">Normal reports do not show hidden facts, NPC secrets, debug memory, raw env, API keys, or raw state_deltas.</p>
+            <h4>验证</h4>
+            <button type="button" disabled={!selectedProjectId} onClick={handleValidateCrossMode}>运行跨模式验证</button>
+            <button type="button" disabled={!selectedProjectId} onClick={() => void loadCrossModeData()}>刷新桥接数据</button>
+            <p className="muted">普通报告不显示 hidden facts、NPC secrets、debug memory、raw env、API Key 或 raw state_deltas。</p>
           </div>
         </div>
       </section>
@@ -13972,39 +18280,38 @@ function SaveBrowser({
   return (
     <section className="tool-section player-zone">
       <PageHeader
-        eyebrow="Player saves"
-        title="Save Browser"
-        description="Local save/load and migration controls. Summaries omit hidden facts and raw GameState."
+        eyebrow="本地存档"
+        title="存档浏览器"
+        description="本地保存 / 读取 / 迁移控制。摘要不包含 hidden facts 或 raw GameState。"
       />
       <div className="save-browser-actions">
         <button type="button" onClick={onSave} disabled={isLoading}>
-          Save
+          保存
         </button>
         <button type="button" onClick={onLoad} disabled={!selectedSaveId || isLoading}>
-          Load
+          读取
         </button>
         <button type="button" onClick={() => onDelete(selectedSaveId)} disabled={!selectedSaveId || isLoading}>
-          Delete
+          删除
         </button>
         <button type="button" onClick={onRefresh} disabled={isLoading}>
-          Refresh
+          刷新
         </button>
         <button type="button" onClick={() => onExportSave(selectedSaveId)} disabled={!selectedSaveId || isLoading}>
-          Export Bundle
+          导出 Bundle
         </button>
       </div>
       <p className="muted">
-        Import uses the local authoring import API or CLI with a zip bundle. It never reads API
-        keys, .env files, or raw hidden state from the player UI.
+        导入使用本地 authoring import API 或 CLI 读取 zip bundle。玩家界面不会读取 API keys、.env files 或 raw hidden state。
       </p>
       <label>
-        World filter
+        世界筛选
         <select
           value={saveWorldFilter}
           onChange={(event) => onFilterWorld(event.target.value)}
           disabled={isLoading}
         >
-          <option value="">All worlds</option>
+          <option value="">全部世界</option>
           {worldOptions.map((worldId) => (
             <option key={worldId} value={worldId}>
               {worldId}
@@ -14013,7 +18320,7 @@ function SaveBrowser({
         </select>
       </label>
       <div className="save-list">
-        {saves.length === 0 && <EmptyState title="No saves." detail="Create a local save before loading or migrating." />}
+        {saves.length === 0 && <EmptyState title="还没有存档" detail="先开始大世界并创建本地存档，再进行读取或迁移。" />}
         {saves.map((save) => (
           <button
             type="button"
@@ -14024,7 +18331,7 @@ function SaveBrowser({
             <strong>{save.world_name || save.world_id}</strong>
             <span>{save.current_location_name}</span>
             <span>{save.formatted_time}</span>
-            <span>Turn {save.turn}</span>
+            <span>回合 {save.turn}</span>
             <span className="muted">{save.updated_at}</span>
           </button>
         ))}

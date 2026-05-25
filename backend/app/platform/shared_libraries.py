@@ -246,6 +246,7 @@ class ProjectProviderProfile(LibraryModel):
     base_url_ref: str | None = None
     base_url: str | None = None
     api_key_env: str | None = None
+    local_secret_ref: str | None = None
     model_profiles: list[dict[str, Any]] = Field(default_factory=list)
     capabilities: list[str] = Field(default_factory=list)
     allowed_modes: list[Literal["novel", "tavern", "world", "quality", "authoring"]] = Field(default_factory=list)
@@ -263,6 +264,17 @@ class ProjectProviderProfile(LibraryModel):
             raise ValueError("Provider profile api_key_env must be a safe environment variable name")
         return value
 
+    @field_validator("local_secret_ref")
+    @classmethod
+    def validate_local_secret_ref(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        if re.search(r"sk-[A-Za-z0-9_-]{8,}", value) or "PRIVATE KEY" in value or "authorization" in value.lower():
+            raise ValueError("Provider profile local_secret_ref must be a reference, not a secret value")
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:-]*(?:/[A-Za-z0-9][A-Za-z0-9_.:-]*){0,7}", value):
+            raise ValueError("Provider profile local_secret_ref must be a safe local reference")
+        return value
+
     @model_validator(mode="before")
     @classmethod
     def reject_raw_key(cls, data: Any) -> Any:
@@ -270,7 +282,7 @@ class ProjectProviderProfile(LibraryModel):
             for key, value in data.items():
                 if str(key).lower() in {"api_key", "llm_api_key", "openai_api_key"}:
                     raise ValueError("Provider profile must not contain raw API key")
-                if str(key).lower() == "api_key_env":
+                if str(key).lower() in {"api_key_env", "local_secret_ref"}:
                     continue
                 if isinstance(value, str) and contains_secret_text(value):
                     raise ValueError("Provider profile must not contain secrets")

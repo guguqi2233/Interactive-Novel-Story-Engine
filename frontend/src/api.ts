@@ -2817,6 +2817,55 @@ export type ProjectProviderModelAssignmentSummary = ProviderRoutingSummary & {
   fallback_chains: Record<string, string[]>;
 };
 
+export type ProductWorkflowCheckStatus = "ready" | "warning" | "missing" | "disabled" | "not_checked";
+
+export type ProductWorkflowCheckItem = {
+  id: string;
+  label: string;
+  status: ProductWorkflowCheckStatus;
+  safe_summary: string;
+  next_action: string;
+  jump_target: string;
+};
+
+export type ProductWorkflowCheckReport = {
+  local_only: boolean;
+  project_id: string;
+  overall_status: ProductWorkflowCheckStatus;
+  ready_count: number;
+  warning_count: number;
+  missing_count: number;
+  disabled_count: number;
+  not_checked_count: number;
+  privacy_boundaries_pass: boolean;
+  items: ProductWorkflowCheckItem[];
+  warnings: string[];
+  generated_at: string;
+};
+
+export type ProviderSetupChecklistStatus = "pass" | "warning" | "missing";
+
+export type ProviderSetupChecklistItem = {
+  id: string;
+  label: string;
+  status: ProviderSetupChecklistStatus;
+  safe_summary: string;
+  next_action: string;
+  jump_target: string;
+};
+
+export type ProviderSetupChecklistReport = {
+  local_only: boolean;
+  project_id: string;
+  overall_status: ProviderSetupChecklistStatus;
+  pass_count: number;
+  warning_count: number;
+  missing_count: number;
+  items: ProviderSetupChecklistItem[];
+  warnings: string[];
+  generated_at: string;
+};
+
 export type ProviderRoutingPreview = {
   local_only: boolean;
   validation: ProviderRoutingValidationReport;
@@ -2862,6 +2911,7 @@ export type ProviderProfileSummary = {
   base_url_source?: string | null;
   api_key_env?: string | null;
   secret_ref?: string | null;
+  local_secret_ref?: string | null;
   model_profiles: Array<{
     model_id: string;
     display_name?: string;
@@ -2891,11 +2941,15 @@ export type ProviderProfileDraft = {
   base_url_env?: string | null;
   api_key_env?: string | null;
   secret_ref?: string | null;
+  local_secret_ref?: string | null;
   model_profiles: Array<{
     model_id: string;
     display_name?: string;
+    supports_text?: boolean;
     supports_json?: boolean;
+    supports_tools?: boolean;
     supports_streaming?: boolean;
+    enabled?: boolean;
     recommended_use_cases?: string[];
   }>;
   allowed_modes?: string[];
@@ -2915,6 +2969,41 @@ export type ProviderConnectionStatus = {
   error_type?: string | null;
   redaction_applied: boolean;
 };
+
+export type ProviderConnectionTestPayload = {
+  provider_profile_id?: string | null;
+  provider_type?: string | null;
+  base_url?: string | null;
+  base_url_env?: string | null;
+  api_key_env?: string | null;
+  secret_ref?: string | null;
+  local_secret_ref?: string | null;
+  transient_api_key?: string | null;
+  timeout_seconds?: number;
+  allow_real_connection?: boolean;
+};
+
+export type ProviderModelFetchPayload = ProviderConnectionTestPayload & {
+  model_list_endpoint?: string | null;
+  allow_real_provider?: boolean;
+  explicit_disable_missing?: boolean;
+};
+
+export type ProviderModelFetchReport = {
+  status: string;
+  safe_message: string;
+  provider_profile_id?: string | null;
+  provider_type?: string | null;
+  models: ProviderProfileSummary["model_profiles"];
+  added?: number;
+  updated?: number;
+  disabled?: number;
+  unchanged?: number;
+  redaction_applied?: boolean;
+  error_type?: string | null;
+};
+
+export type ProviderModelPatchItem = ProviderProfileSummary["model_profiles"][number];
 
 export type ProviderConnectionStatusCacheView = {
   provider_profile_id: string;
@@ -3511,11 +3600,35 @@ export async function fetchProjectProviderStatus(projectId: string, providerProf
   return requestJson<{ local_only: boolean; status: string | Record<string, unknown>; connection_cache?: ProviderConnectionStatusCacheView }>(`/projects/${encodeURIComponent(projectId)}/providers/${encodeURIComponent(providerProfileId)}/status`);
 }
 
-export async function testProjectProviderConnection(projectId: string, providerProfileId: string): Promise<ProviderConnectionStatus> {
+export async function testProjectProviderConnection(projectId: string, providerProfileId: string, payload?: ProviderConnectionTestPayload): Promise<ProviderConnectionStatus> {
   return requestJson<ProviderConnectionStatus>(`/projects/${encodeURIComponent(projectId)}/providers/test-connection`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ provider_profile_id: providerProfileId, timeout_seconds: 10 })
+    body: JSON.stringify({ provider_profile_id: providerProfileId, timeout_seconds: 10, ...(payload ?? {}) })
+  });
+}
+
+export async function fetchProjectProviderModels(projectId: string, payload: ProviderModelFetchPayload): Promise<{ local_only: boolean; report: ProviderModelFetchReport }> {
+  return requestJson<{ local_only: boolean; report: ProviderModelFetchReport }>(`/projects/${encodeURIComponent(projectId)}/providers/fetch-models`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function syncProjectProviderModels(projectId: string, payload: ProviderModelFetchPayload): Promise<{ local_only: boolean; report: ProviderModelFetchReport }> {
+  return requestJson<{ local_only: boolean; report: ProviderModelFetchReport }>(`/projects/${encodeURIComponent(projectId)}/providers/sync-models`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function patchProjectProviderModels(projectId: string, providerProfileId: string, models: ProviderModelPatchItem[]): Promise<{ local_only: boolean; provider_profile_id: string; models: ProviderModelPatchItem[] }> {
+  return requestJson<{ local_only: boolean; provider_profile_id: string; models: ProviderModelPatchItem[] }>(`/projects/${encodeURIComponent(projectId)}/providers/${encodeURIComponent(providerProfileId)}/models`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ models })
   });
 }
 
@@ -3525,6 +3638,14 @@ export async function fetchProjectProviderCapabilityMatrix(projectId: string): P
 
 export async function fetchProjectProviderModelAssignments(projectId: string): Promise<ProjectProviderModelAssignmentSummary> {
   return requestJson<ProjectProviderModelAssignmentSummary>(`/projects/${encodeURIComponent(projectId)}/providers/model-assignments`);
+}
+
+export async function fetchProjectProviderSetupChecklist(projectId: string): Promise<ProviderSetupChecklistReport> {
+  return requestJson<ProviderSetupChecklistReport>(`/projects/${encodeURIComponent(projectId)}/providers/setup-checklist`);
+}
+
+export async function fetchProjectWorkflowCheck(projectId: string): Promise<ProductWorkflowCheckReport> {
+  return requestJson<ProductWorkflowCheckReport>(`/projects/${encodeURIComponent(projectId)}/workflow-check`);
 }
 
 export async function validateProjectProviderModelAssignments(projectId: string, config: ProviderRoutingConfig): Promise<ProjectProviderModelAssignmentSummary> {
@@ -6089,6 +6210,36 @@ export type NovelPreferences = {
   updated_at?: string;
 };
 
+export type NovelLlmAction = "draft" | "rewrite" | "summary";
+
+export type NovelLlmGenerationResponse = {
+  local_only: boolean;
+  provider_gateway_used: boolean;
+  action: NovelLlmAction;
+  use_case: string;
+  current_model: string;
+  generated_text: string;
+  safe_summary: string;
+  safety_notes: string[];
+  world_state_unchanged: boolean;
+};
+
+export type NovelQualityReport = {
+  project_id: string;
+  manuscript_id?: string | null;
+  case_id?: string;
+  status: "pass" | "warning" | "fail" | string;
+  issues: Array<{
+    severity: string;
+    code: string;
+    message: string;
+    ref_type?: string;
+    ref_id?: string;
+    safe_detail?: string;
+  }>;
+  created_at?: string;
+};
+
 export type TavernCharacter = {
   tavern_character_id: string;
   project_id: string;
@@ -6360,6 +6511,22 @@ export async function createNovelChapter(projectId: string, input: { chapter_id:
 export async function updateNovelChapter(projectId: string, chapterId: string, input: Partial<NovelChapter>): Promise<NovelChapter> {
   return requestJson<NovelChapter>(`/projects/${encodeURIComponent(projectId)}/novel/chapters/${encodeURIComponent(chapterId)}`, {
     method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input)
+  });
+}
+
+export async function generateNovelLlmDraft(projectId: string, input: { action: NovelLlmAction; manuscript_id?: string; chapter_id?: string; scene_id?: string; text?: string }): Promise<NovelLlmGenerationResponse> {
+  return requestJson<NovelLlmGenerationResponse>(`/projects/${encodeURIComponent(projectId)}/novel/llm/generate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input)
+  });
+}
+
+export async function runNovelQuality(projectId: string, input: { case_id: string; manuscript_id: string; chapter_ids?: string[]; enabled_rules?: string[] }): Promise<NovelQualityReport> {
+  return requestJson<NovelQualityReport>(`/projects/${encodeURIComponent(projectId)}/novel/quality/run`, {
+    method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input)
   });

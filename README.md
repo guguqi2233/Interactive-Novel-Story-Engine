@@ -15,7 +15,7 @@ experience-first. The near-term roadmap is now:
 - v3.6: Local Performance & Accessibility Polish, including provider model
   list performance, capability matrix performance, and provider UI
   accessibility polish
-- v3.7: Local Complete Product
+- v3.7: Local Playable Complete Product CN / 中文本地可游玩完整产品版
 - v4.0: Local AI Narrative Studio Stable
 
 Online-Ready Architecture, account systems, cloud sync, online marketplaces,
@@ -46,8 +46,8 @@ v3.5 provider surfaces:
 
 Provider connectivity boundaries:
 
-- `ProviderProfile` may store only `api_key_env` or `secret_ref`, never a raw
-  API key.
+- `ProviderProfile` may store only `api_key_env`, `secret_ref`, or
+  `local_secret_ref`, never a raw API key.
 - `transient_api_key` may be used only for one connection test. It is not
   persisted and must not enter logs, diagnostics, backups, exports, prompt
   profiles, project files, or frontend state.
@@ -62,11 +62,121 @@ Provider connectivity boundaries:
 
 v3.6 polishes provider model list performance, capability matrix performance,
 safe cache/stale refresh UX, and accessibility for provider setup, connection
-results, model discovery, and mode assignment screens. v3.7 Local Complete
-Product acceptance should include provider connection tests, model list
+results, model discovery, and mode assignment screens. v3.7 Local Playable
+Complete Product CN acceptance includes a Chinese player/creator home,
+manual-only real-provider setup, provider connection tests, model list
 discovery, local model-profile synchronization, and mode-based assignment for
 Novel, Tavern, World, Cross-Mode, and Quality while preserving Provider
 Gateway as the only model entry point.
+
+### Real LLM Manual Smoke Test
+
+v3.7 can use real LLM providers at runtime only after a local user explicitly
+configures and manually tests them. The manual smoke-test guide is
+`docs/REAL_LLM_MANUAL_SMOKE_TEST.md`.
+
+Use that guide to verify:
+
+- configuring `openai`, OpenAI-compatible, relay-style, `local_http`, custom,
+  `mock`, or `local_stub` profiles;
+- choosing `api_key_env`, `secret_ref`, `local_secret_ref`, or a one-time
+  `transient_api_key` without storing plaintext keys in project files;
+- manually running **Test Connection** and **Fetch Models** from the Provider
+  UI;
+- assigning models for Novel, Tavern, World, Cross-Mode, and Quality use cases;
+- using a real provider in Novel drafting, Tavern replies, and World
+  parse/narrate flows through Provider Gateway;
+- returning to `mock` / `local_stub` after the smoke test.
+
+Manual real-provider checks may send prompts to the configured provider and may
+produce provider-side costs. CI, release checks, and automated tests must not
+call real providers and must continue to use fake clients, `mock`, or
+`local_stub`. Provider Connection & Model Discovery is local configuration; it
+is not API resale and is not tied to any specific relay service.
+
+## 中文产品手册 / 离线帮助
+
+中文本地产品手册位于 `docs/PRODUCT_GUIDE.md`。这是 v3.7 Local Playable
+Complete Product CN 的离线使用说明，面向玩家、作者和本地创作者。
+
+手册覆盖：
+
+- 这是什么、本地优先说明、首次启动；
+- 打开 / 创建项目、最近项目、Demo 项目；
+- 配置真实 LLM / 中转站 / 本地模型；
+- 使用 `api_key_env`、`secret_ref`、`local_secret_ref`，以及一次性
+  `transient_api_key`；
+- 手动 Test Connection、Fetch Models、读取模型列表和手动添加模型；
+- 为 Novel / Tavern / World / Cross-Mode / Quality 分配模型；
+- 写小说、角色 RP、大世界游玩、Cross-Mode、创作 / Mod；
+- 质量检查、调试 / 回放、备份 / 恢复、诊断 / 导出；
+- API Key 安全、Mature 默认关闭、常见问题；
+- 明确不支持账号、云同步、在线市场、远程包下载、在线平台和任意代码插件。
+
+手册是本地离线文档，不包含真实 Provider Key，不声称在线平台能力，
+也不改变 World Engine、Provider Gateway、StateDelta/EventLog、
+visibility 或 Mod 权限边界。
+
+## v3.7 Local Playable Complete Product CN
+
+v3.7 is the **Local Playable Complete Product CN / 中文本地可游玩完整产品版**.
+It collects the existing Novel, Tavern, World, Authoring / Mod, Provider, QA,
+Debug, Replay, Backup, Restore, Diagnostics, Export, Desktop, and Settings
+surfaces into one local product flow, but the default UI is now Chinese and
+player/creator-oriented rather than a developer dashboard.
+
+The first screen should emphasize continuing a local project, writing novels,
+Tavern RP, open-world play, provider/model setup, and local safety status.
+Debug, QA, Authoring / Mods, Diagnostics, Product Readiness, and raw replay
+tools remain available as Advanced Tools; they do not occupy the default Home.
+v3.7 is not a new online platform phase and it does not add accounts, cloud
+sync, an online marketplace, remote package download, online writing/RP/play,
+multiplayer collaboration, API resale, or arbitrary-code plugins.
+
+v3.7 playable local workflows:
+
+- Use the Chinese default UI to open/create a local project, configure models,
+  and choose the next action without a screen full of disabled developer panels.
+- Write locally in Novel Studio with manuscripts, outlines, chapters, scenes,
+  World-to-Novel imports, quality checks, and safe export.
+- Roleplay locally in Tavern Studio with character cards, sessions, RP memory,
+  voice/tone, boundaries, Tavern-to-World proposals, Tavern-to-Novel drafts,
+  backup, export, and RP safety checks.
+- Play locally in World Studio with backend-submitted actions, maps, NPCs,
+  quests, inventory, modules, saves, EventLog, Timeline Replay, visible-state
+  inspection, and World quality checks.
+- Configure Providers through Provider Gateway using OpenAI,
+  OpenAI-compatible, relay-style, `local_http`, custom, `mock`, or
+  `local_stub` profiles. Users can manually test local configuration, read
+  model lists, sync safe `ModelProfile` metadata, and assign models by Novel,
+  Tavern, World, Cross-Mode, and Quality use case.
+- Use Cross-Mode draft / proposal / validation / explicit apply workflows
+  without letting Novel, Tavern, or provider output directly mutate World
+  state.
+- Author local world packs, script packs, character packs, declarative action
+  mods, and rule-module contracts through validation, preview/dry-run,
+  permission review, quality gates, and confirmed safe apply.
+- Run Quality, Debug, Replay, Hidden Leak, Playtest, Diagnostics, Local Test,
+  and Safe Debug Export workflows as local safe-summary Advanced Tools.
+- Use Backup, Restore, Export, Diagnostics, logs, and product readiness checks
+  locally with redaction and preview/confirm flows.
+
+v3.7 safety boundaries:
+
+- The World Engine remains the source of truth. The LLM is a language layer for
+  parsing, drafting, summarizing, and narration; it is not the world judge.
+- World-changing operations still require backend validation and the
+  `StateDelta` / `EventLog` path.
+- API keys must not enter project files, frontend state, logs, exports,
+  backups, diagnostics, crash reports, package manifests, docs, or tests.
+- `ProviderProfile` stores only `api_key_env`, `secret_ref`, or
+  `local_secret_ref`; one-time provider test keys must not persist or enter
+  logs, diagnostics, backups, exports, caches, or frontend state.
+- Hidden facts, NPC secrets, debug memory, raw prompts, raw outputs, raw
+  `state_deltas`, and mature/private bodies are hidden from normal UI and are
+  excluded from normal export, backup, and diagnostics by default.
+- Tests, CI, release checklists, and fixtures use fake providers, `mock`, or
+  `local_stub`; they must not call real provider networks.
 
 ## v3.0 Local Desktop Studio Polish
 
@@ -1691,8 +1801,12 @@ GET /studio/update-notes
 ```
 
 This reads local docs only. It does not check the network, download patches,
-or run update scripts. A complete searchable Offline Help Docs page is still a
-future polish item; use local `docs/` and this README as the source of truth.
+or run update scripts. The product manual is `docs/PRODUCT_GUIDE.md`; use it
+with this README and local `docs/` for offline help. The manual covers
+first-run setup, project lifecycle, Provider setup/model assignment, Novel,
+Tavern, World, Cross-Mode, Authoring/Mod, Quality, Debug/Replay,
+Backup/Restore, Export/Diagnostics, privacy/secrets, mature-module default-off
+behavior, troubleshooting, and unsupported online features.
 
 ### Desktop Health Check
 

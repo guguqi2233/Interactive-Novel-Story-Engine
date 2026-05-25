@@ -1,8 +1,12 @@
 from __future__ import annotations
+import json
+from collections.abc import Callable
 from datetime import UTC, datetime
 from time import perf_counter
 from typing import Protocol
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
+from urllib.request import Request, urlopen
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -28,8 +32,10 @@ class ProviderConnectionTestRequest(BaseModel):
     base_url_env: str | None = None
     api_key_env: str | None = None
     secret_ref: str | None = None
+    local_secret_ref: str | None = None
     transient_api_key: str | None = Field(default=None, repr=False)
     timeout_seconds: float = Field(default=10.0, gt=0, le=120)
+    allow_real_connection: bool = False
 
 
 class ProviderConnectionStatus(BaseModel):
@@ -100,6 +106,47 @@ class FakeProviderConnectionTestClient:
         return ProviderConnectionClientResult(status="connected", safe_message="Provider connection test succeeded.")
 
 
+ProviderHTTPGetTransport = Callable[[str, float, dict[str, str]], tuple[int, str]]
+
+
+class HTTPProviderConnectionTestClient:
+    """Opt-in real HTTP connection probe for trusted local user actions.
+
+    Tests should pass an injected transport. The default transport is used only
+    when a user explicitly opts in through the local UI/API.
+    """
+
+    def __init__(self, transport: ProviderHTTPGetTransport | None = None) -> None:
+        self._transport = transport or _default_http_get
+
+    def test_connection(
+        self,
+        profile: ProviderProfileV2,
+        *,
+        api_key: str | None,
+        base_url: str | None,
+        timeout_seconds: float,
+    ) -> ProviderConnectionClientResult:
+        url = _provider_models_url(profile, base_url, None)
+        headers = _provider_headers(api_key)
+        try:
+            status_code, body = self._transport(url, timeout_seconds, headers)  # type: ignore[misc]
+        except TimeoutError:
+            return ProviderConnectionClientResult(status="timeout", safe_message="Provider connection timed out.", error_type="timeout")
+        except Exception:
+            return ProviderConnectionClientResult(status="disconnected", safe_message="Provider connection failed safely.", error_type="provider_error")
+        if status_code in {401, 403}:
+            return ProviderConnectionClientResult(status="auth_failed", safe_message="Provider authentication failed.", error_type="auth_failed")
+        if 200 <= status_code < 300:
+            return ProviderConnectionClientResult(status="connected", safe_message="Provider connection test succeeded.")
+        if status_code in {404, 405}:
+            return ProviderConnectionClientResult(status="model_list_failed", safe_message="Provider connected but model list check failed.", error_type="model_list_failed")
+        safe_status = "Provider connection failed safely."
+        if _looks_like_json_object(body):
+            safe_status = "Provider endpoint responded but did not confirm model connectivity."
+        return ProviderConnectionClientResult(status="disconnected", safe_message=safe_status, error_type="disconnected")
+
+
 def redact_provider_connection_text(text: str, *, transient_api_key: str | None = None) -> str:
     return provider_redactor.redact_text(text, extra_secrets=[transient_api_key]).text
 
@@ -111,7 +158,7 @@ def build_provider_profile_for_connection_test(
 ) -> ProviderProfileV2:
     if existing_profile is not None:
         payload = existing_profile.model_dump(mode="json")
-        for field_name in ("provider_type", "base_url", "base_url_env", "api_key_env", "secret_ref"):
+        for field_name in ("provider_type", "base_url", "base_url_env", "api_key_env", "secret_ref", "local_secret_ref"):
             value = getattr(request, field_name)
             if value is not None:
                 payload[field_name] = value
@@ -126,6 +173,7 @@ def build_provider_profile_for_connection_test(
         base_url_env=request.base_url_env,
         api_key_env=request.api_key_env,
         secret_ref=request.secret_ref,
+        local_secret_ref=request.local_secret_ref,
         requires_api_key=_provider_requires_secret(provider_type),
     )
 
@@ -138,7 +186,7 @@ def test_provider_connection_safe(
     client: ProviderConnectionTestClient | None = None,
 ) -> ProviderConnectionStatus:
     resolver = secret_resolver or ProviderSecretResolver()
-    connection_client = client or FakeProviderConnectionTestClient()
+    connection_client = client or (HTTPProviderConnectionTestClient() if request.allow_real_connection else FakeProviderConnectionTestClient())
     tested_at = datetime.now(UTC).isoformat()
     start = perf_counter()
     transient_key = request.transient_api_key
@@ -233,3 +281,46 @@ def _status(status: str, safe_message: str, profile: ProviderProfileV2, error_ty
         error_type=error_type,
         redaction_applied=True,
     )
+
+
+def _provider_models_url(profile: ProviderProfileV2, base_url: str | None, model_list_endpoint: str | None) -> str:
+    provider_type = ProviderProfileType(str(profile.provider_type))
+    root = base_url or ("https://api.openai.com/v1" if provider_type == ProviderProfileType.OPENAI else None)
+    if not root:
+        raise ValueError("Provider base URL is required")
+    endpoint = model_list_endpoint or "/models"
+    if endpoint.startswith("http://") or endpoint.startswith("https://"):
+        parsed = urlparse(endpoint)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("Provider model list endpoint is invalid")
+        return endpoint
+    return f"{root.rstrip('/')}/{endpoint.lstrip('/')}"
+
+
+def _provider_headers(api_key: str | None) -> dict[str, str]:
+    headers = {"Accept": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    return headers
+
+
+def _default_http_get(url: str, timeout_seconds: float, headers: dict[str, str]) -> tuple[int, str]:
+    request = Request(url, headers=headers, method="GET")
+    try:
+        with urlopen(request, timeout=timeout_seconds) as response:
+            return int(getattr(response, "status", 200)), response.read().decode("utf-8", errors="replace")
+    except HTTPError as exc:
+        try:
+            body = exc.read().decode("utf-8", errors="replace")
+        except Exception:
+            body = ""
+        return int(exc.code), body
+    except URLError as exc:
+        raise LLMProviderError("Provider endpoint could not be reached") from exc
+
+
+def _looks_like_json_object(text: str) -> bool:
+    try:
+        return isinstance(json.loads(text), dict)
+    except Exception:
+        return False

@@ -215,6 +215,41 @@ def world_routed_provider_from_settings(settings: object) -> WorldModeRoutedProv
     return world_routed_provider_from_provider(create_llm_provider(settings), provider_id=provider_id, model_id=model_id)  # type: ignore[arg-type]
 
 
+def project_provider_gateway_from_project(
+    project_root: str,
+    *,
+    secret_resolver: object | None = None,
+    openai_compatible_transport: object | None = None,
+    local_http_transport: object | None = None,
+) -> ProviderGateway:
+    """Build a runtime ProviderGateway from project-safe provider metadata.
+
+    This does not test connections, fetch models, or mutate project files. It
+    instantiates provider runtime objects only from ProviderProfile metadata,
+    with secrets resolved by the backend-only resolver.
+    """
+
+    from app.config import Settings
+    from app.llm.provider_factory import create_llm_provider
+    from app.llm.provider_model_assignment import ProviderModelAssignmentRepository, build_project_provider_registry
+    from app.llm.provider_profiles import ProviderProfileRepository, ProviderSecretResolver
+
+    profiles = [profile for profile in ProviderProfileRepository(project_root).list_provider_profiles() if profile.enabled]
+    providers: dict[str, LLMProvider] = {}
+    resolver = secret_resolver if secret_resolver is not None else ProviderSecretResolver()
+    for profile in profiles:
+        providers[profile.provider_profile_id] = create_llm_provider(
+            Settings(llm_provider=str(profile.provider_type)),
+            provider_profile=profile,
+            secret_resolver=resolver,  # type: ignore[arg-type]
+            openai_compatible_transport=openai_compatible_transport,  # type: ignore[arg-type]
+            local_http_transport=local_http_transport,  # type: ignore[arg-type]
+        )
+    config = ProviderModelAssignmentRepository(project_root).load()
+    router = ProviderRouter(registry=build_project_provider_registry(profiles), config=config)
+    return ProviderGateway(providers, router=router)
+
+
 def _provider_id_for_settings(settings: object) -> str:
     return str(getattr(settings, "llm_provider", "mock")).strip().lower()
 

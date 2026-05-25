@@ -8,7 +8,10 @@ const tavernSource = readFileSync(resolve(root, "src", "tavernUi.tsx"), "utf8");
 const failures = [];
 
 function requireToken(source, token, label) {
-  if (!source.includes(token)) failures.push(`Missing ${label}: ${token}`);
+  const options = Array.isArray(token) ? token : [token];
+  if (!options.some((option) => source.includes(option))) {
+    failures.push(`Missing ${label}: ${options.join(" or ")}`);
+  }
 }
 
 for (const token of [
@@ -19,7 +22,7 @@ for (const token of [
   "data-windowed-tavern-messages",
   "jumpToLatestMessage",
   "data-windowed-multi-npc-scenes",
-  "Jump to latest",
+  ["Jump to latest", "跳到最新"],
   "data-windowed-rp-memory",
   "debouncedMemorySearch",
   "debouncedSceneSearch",

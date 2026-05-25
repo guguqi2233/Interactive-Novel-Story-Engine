@@ -1,0 +1,14 @@
+apply_plan_id: lantern_apply_plan
+project_id: demo_local_narrative_project
+proposal_id: lantern_proposal
+apply_target: project
+requires_confirmation: true
+dry_run_result:
+  ok: true
+  safe_summary: "Demo plan is not executed by the fixture."
+expected_changes:
+  - Review public quest note metadata before explicit confirm.
+rollback_notes: "No active world save is changed by this demo marker."
+validation_status: valid
+created_at: "2026-05-25T00:00:00+00:00"
+updated_at: "2026-05-25T00:00:00+00:00"

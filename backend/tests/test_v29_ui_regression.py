@@ -108,20 +108,20 @@ def test_v29_provider_setup_has_no_plaintext_api_key_field() -> None:
 def test_v29_privacy_export_and_diagnostics_are_secret_safe_by_default() -> None:
     app = read(APP_TSX)
 
-    for text in [
-        "API keys are not stored in project",
-        "export filters secrets",
-        "No cloud sync",
-        "Diagnostics Export",
-        "Nothing is uploaded",
-        "raw state_deltas",
-        "mature/private content",
-        "debug memory",
+    for alternatives in [
+        ("API keys are not stored in project", "API Key 不保存到项目"),
+        ("export filters secrets", "导出默认过滤"),
+        ("No cloud sync", "不使用云同步"),
+        ("Diagnostics Export", "诊断 / 导出"),
+        ("Nothing is uploaded", "不上传", "不会上传"),
+        ("raw state_deltas",),
+        ("mature/private content", "mature/private"),
+        ("debug memory",),
     ]:
-        assert text in app
+        assert any(text in app for text in alternatives), alternatives
 
     assert "api_key_status: \"[redacted]\"" in app
-    assert "Debug export gated" in app
+    assert any(text in app for text in ["Debug export gated", "Debug 导出", "Debug 包受保护", "Safe Debug Export"])
     assert "ENABLE_DEBUG_API" in app
 
 
@@ -183,4 +183,3 @@ def test_v29_static_check_script_covers_ui_safety_boundaries() -> None:
         "Secret-looking sk-* token",
     ]:
         assert token in script
-

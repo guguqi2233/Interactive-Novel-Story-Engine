@@ -1,0 +1,67 @@
+rules:
+  - use_case: novel_draft
+    primary_provider_id: local_stub
+    primary_model_id: local_stub_story
+    require_json_support: false
+    require_local_only: true
+    enabled: true
+  - use_case: novel_rewrite
+    primary_provider_id: local_stub
+    primary_model_id: local_stub_story
+    require_json_support: false
+    require_local_only: true
+    enabled: true
+  - use_case: tavern_reply
+    primary_provider_id: local_stub
+    primary_model_id: local_stub_story
+    require_json_support: false
+    require_local_only: true
+    enabled: true
+  - use_case: multi_npc_reply
+    primary_provider_id: local_stub
+    primary_model_id: local_stub_story
+    require_json_support: false
+    require_local_only: true
+    enabled: true
+  - use_case: world_intent_parse
+    primary_provider_id: local_stub
+    primary_model_id: local_stub_story
+    require_json_support: true
+    require_local_only: true
+    enabled: true
+  - use_case: world_narration
+    primary_provider_id: local_stub
+    primary_model_id: local_stub_story
+    require_json_support: false
+    require_local_only: true
+    enabled: true
+  - use_case: memory_summary
+    primary_provider_id: local_stub
+    primary_model_id: local_stub_story
+    require_json_support: true
+    require_local_only: true
+    enabled: true
+  - use_case: cross_mode_draft
+    primary_provider_id: local_stub
+    primary_model_id: local_stub_story
+    require_json_support: true
+    require_local_only: true
+    enabled: true
+  - use_case: structured_json
+    primary_provider_id: local_stub
+    primary_model_id: local_stub_story
+    require_json_support: true
+    require_local_only: true
+    enabled: true
+  - use_case: quality_eval
+    primary_provider_id: local_stub
+    primary_model_id: local_stub_story
+    require_json_support: true
+    require_local_only: true
+    enabled: true
+  - use_case: cheap_summary
+    primary_provider_id: local_stub
+    primary_model_id: local_stub_story
+    require_json_support: false
+    require_local_only: true
+    enabled: true

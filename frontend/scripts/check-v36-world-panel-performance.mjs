@@ -8,7 +8,10 @@ const pkg = readFileSync(resolve(root, "package.json"), "utf8");
 const failures = [];
 
 function requireToken(token, label) {
-  if (!worldSource.includes(token)) failures.push(`Missing ${label}: ${token}`);
+  const options = Array.isArray(token) ? token : [token];
+  if (!options.some((option) => worldSource.includes(option))) {
+    failures.push(`Missing ${label}: ${options.join(" or ")}`);
+  }
 }
 
 for (const [token, label] of [
@@ -19,9 +22,9 @@ for (const [token, label] of [
   ["data-windowed-world-inventory", "windowed inventory list marker"],
   ["data-collapsible-visible-state-inspector", "collapsible visible state inspector marker"],
   ["PaginationControls", "shared World panel pagination"],
-  ["NPC secrets, NPC hidden knowledge, hidden relationships, and debug memory are not displayed.", "NPC privacy boundary copy"],
-  ["Hidden objectives, hidden truth, and debug quest state are excluded from normal view.", "quest privacy boundary copy"],
-  ["Hidden item properties and debug economy data are excluded.", "item privacy boundary copy"],
+  [["NPC secrets, NPC hidden knowledge, hidden relationships, and debug memory are not displayed.", "NPC secrets、NPC hidden knowledge、隐藏关系和 debug memory 不会在普通界面显示。"], "NPC privacy boundary copy"],
+  [["Hidden objectives, hidden truth, and debug quest state are excluded from normal view.", "隐藏目标、隐藏真相和 debug quest state 不进入普通界面。"], "quest privacy boundary copy"],
+  [["Hidden item properties and debug economy data are excluded.", "隐藏属性和 debug economy data 不显示。"], "item privacy boundary copy"],
   ["raw state_deltas", "raw StateDelta exclusion copy"]
 ]) {
   requireToken(token, label);

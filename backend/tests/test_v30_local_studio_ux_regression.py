@@ -49,15 +49,15 @@ def test_v30_local_studio_entry_surfaces_exist() -> None:
 
 def test_v30_local_first_and_no_onlineization_copy_exists() -> None:
     app = _read(APP_TSX)
-    for token in [
-        "No account needed",
-        "No cloud sync",
-        "No online marketplace",
-        "API keys stay local",
-        "Nothing is uploaded",
-        "no remote",
+    for alternatives in [
+        ("No account needed", "无需账号"),
+        ("No cloud sync", "不使用云同步"),
+        ("No online marketplace", "无在线市场"),
+        ("API keys stay local", "API Key 仅保存在本地"),
+        ("Nothing is uploaded", "不上传", "不会上传"),
+        ("no remote", "无远程", "远程包下载"),
     ]:
-        assert token.lower() in app.lower()
+        assert any(token.lower() in app.lower() for token in alternatives), alternatives
     assert not re.search(r"<button[^>]*>\s*(Account|Cloud Sync|Online Marketplace)\s*</button>", app, re.IGNORECASE)
 
 

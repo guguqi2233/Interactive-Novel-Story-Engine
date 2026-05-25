@@ -29,6 +29,14 @@ improve keyboard/focus/a11y behavior, and make errors more resilient. They do
 not change World Engine rules, Provider Gateway routing, package validation,
 quality-gate logic, visibility, or secret boundaries.
 
+v3.7 Local Complete Product contracts close the local product workflow across
+Project, Provider, Novel, Tavern, World, Cross-Mode, Authoring / Mod, QA /
+Debug / Replay, Backup / Restore / Diagnostics, Export, Privacy, Settings,
+Offline Manual, and acceptance checklists. They are safe-summary and workflow
+readiness contracts only. They do not add accounts, cloud sync, online
+marketplaces, remote package download, online platforms, API resale, arbitrary
+code plugins, or new World Engine authority.
+
 ## Stable Contracts
 - `GameState`: `1.8` (compatible)
 - `StateDelta`: `1.8` (compatible)
@@ -75,7 +83,7 @@ quality-gate logic, visibility, or secret boundaries.
 - `CrossModeConflictReport`: `2.4` (normal/debug-safe conflict report across Novel/Tavern/World refs)
 - `CrossModeValidationReport`: `2.4` (validation report for links, drafts, proposals, apply plans, provider/profile safety, and hidden-target risks)
 - `CrossModeTimelineView`: `2.4` (normal-safe merged timeline view; hidden/debug/authoring entries filtered by default)
-- `ProviderProfileV2`: `2.5` (provider profile metadata with provider type, env/secret refs, model profiles, fallback ids, cost hints, and safety policy; no raw API keys)
+- `ProviderProfileV2`: `2.5` (provider profile metadata with provider type, env/secret/local-secret refs, model profiles, fallback ids, cost hints, and safety policy; no raw API keys)
 - `ModelProfile`: `2.5` (per-model capability, use-case, context-window, structured-output, and cost-hint metadata)
 - `ProviderSafetyPolicy`: `2.5` (allowed/disallowed modes, sensitive/debug prompt controls, logging defaults, redaction, and local-only policy)
 - `ProviderRoutingRule`: `2.5` (mode/use-case provider selection metadata with JSON capability and fallback constraints)
@@ -88,7 +96,7 @@ quality-gate logic, visibility, or secret boundaries.
 - `WorldExtensionPack`: `2.6` (additive/patch world content candidate package; no active GameState mutation)
 - `CharacterPack`: `2.6` (character/RP/voice/world-NPC-draft package; private fields excluded from public summaries)
 - `PromptProfilePack`: `2.6` (prompt/style profile package; cannot grant hidden fact access or state authority)
-- `ProviderProfilePack`: `2.6` (provider profile template package; api_key_env/secret_ref only, no raw API keys)
+- `ProviderProfilePack`: `2.6` (provider profile template package; api_key_env/secret_ref/local_secret_ref metadata only, no raw API keys)
 - `NarrativeStyleMod`: `2.6` (expression-only narrative style package; no fact authority)
 - `RPProfileMod`: `2.6` (RP/voice presentation patch package; cannot patch NPC knowledge)
 - `ActionMod`: `2.6` (declarative action mod package registered through ActionRegistry; no arbitrary code or LLM calls)
@@ -205,7 +213,15 @@ quality-gate logic, visibility, or secret boundaries.
 - `AppErrorBoundary`: `3.6` (frontend local error-boundary contract; shows safe error summaries, retry/home/diagnostics hints, and redacts stack traces, API keys, raw env, hidden facts, raw paths, and provider errors from normal UI)
 - `V36PerformanceA11yCheck`: `3.6` (`npm.cmd run check:v36-performance-a11y` static frontend regression check for lazy pages, long-list safety, debug gating, provider secret filtering, accessibility surfaces, and no account/cloud/marketplace UI)
 - `V36IntegrationRegressionCheck`: `3.6` (`npm.cmd run check:v36-integration-regression` static integration check for route splitting, safe caches, large reports/lists, provider status/model caches, shortcut safety, ErrorBoundary redaction, and local-first constraints)
-- `LocalCompleteProductProviderAcceptance`: `3.7 planned` (acceptance contract requiring provider connection test, model discovery, local model-profile synchronization, and mode-based model assignment while keeping API keys out of project files, logs, diagnostics, backups, exports, and frontend state)
+- `ProductReadinessDashboard`: `3.7` (frontend safe-summary readiness contract for Project, Provider, model assignment, Novel, Tavern, World, Authoring/Mod, QA/Debug/Replay, Backup/Restore, Export/Diagnostics, Privacy, and Documentation)
+- `ProductWorkflowCheckReport`: `3.7` (read-only local workflow checker contract for project lifecycle, Provider setup, model discovery/assignment, Novel/Tavern/World, Cross-Mode, Authoring/Mod, Quality/Debug/Replay, Backup/Restore, Export/Diagnostics, and privacy boundaries)
+- `ProviderCompleteSetupChecklist`: `3.7` (safe checklist contract for provider profile, `api_key_env`/`secret_ref`/`local_secret_ref`, connection status, model discovery/manual model, `ModelProfile` sync, mode assignment, JSON capability warnings, and no persisted plaintext keys)
+- `LocalProjectLifecycleChecklist`: `3.7` (safe local lifecycle readiness contract for create/open/recent project, health, settings, Provider settings, Quality, backup, restore dry-run, diagnostics preview, export, safe path summary, and local privacy notice)
+- `StudioCompleteWorkflowChecklist`: `3.7` (frontend readiness contract for Novel, Tavern, World, Cross-Mode, Authoring/Mod, QA/Debug/Replay, Backup/Diagnostics, and Export workflows; safe summaries only)
+- `LocalPrivacySafetyReview`: `3.7` (product-level local privacy and safety review contract for API key, transient key, ProviderProfile, visible_state, hidden facts, NPC secrets, debug gating, mature/private default-off, export/backup/diagnostics filtering, mod permissions, and no account/cloud/marketplace status)
+- `ProductAcceptanceChecklistUI`: `3.7` (safe product acceptance checklist UI for local complete product readiness; no auto-fix, no upload, no direct GameState mutation, no real provider calls)
+- `DemoLocalNarrativeProject`: `3.7` (minimal deterministic local demo project contract using safe local_stub/mock provider metadata, no real API key, no `.env`, no mature/private/debug/raw state_deltas, no executable plugin payloads)
+- `ProductGuideOfflineManual`: `3.7` (offline manual contract describing local-first use, Provider/model setup, Novel/Tavern/World/Cross-Mode/Authoring/QA/Debug/Backup/Export workflows, privacy/secrets, mature default-off, and unsupported online features)
 - `WorldProjectSection`: `2.1` (project-aware World Mode adapter config)
 - `ProjectPackageManifest`: `2.1` (NarrativeProject import/export package manifest)
 - `ProjectValidationReport`: `2.1` (normal/debug-safe project validation report)

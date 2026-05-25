@@ -1,0 +1,108 @@
+npcs:
+  - id: mira
+    name: Mira
+    location_id: harbor_square
+    faction_id: harbor_council
+    personality: Warm, organized, and quick to welcome travelers.
+    knowledge:
+      - harbor_square_is_ready
+      - lantern_needs_lens
+    goals:
+      - id: coordinate_lantern_repair
+        description: Help the town prepare the lantern before dusk.
+        priority: 5
+        status: active
+        conditions:
+          - knows:lantern_needs_lens
+        desired_state:
+          quest: relight_lantern
+        allowed_actions:
+          - talk_to_npc
+        forbidden_actions:
+          - attack
+    priorities:
+      community_safety: 5
+      personal_risk: 1
+    constraints:
+      - keep_public_paths_clear
+    plan_state: {}
+    schedule:
+      - time_of_day: morning
+        location_id: harbor_square
+        activity: greeting arrivals
+      - time_of_day: evening
+        location_id: lantern_house
+        activity: checking the signal lamp
+  - id: toma
+    name: Toma
+    location_id: tide_gate
+    faction_id: tidekeepers
+    personality: Patient, practical, and fond of simple repairs.
+    knowledge:
+      - tide_gate_is_open
+      - repair_lens_fits_lantern
+    goals:
+      - id: share_repair_tip
+        description: Tell helpful visitors how the repair lens fits the lantern.
+        priority: 4
+        status: active
+        conditions:
+          - knows:repair_lens_fits_lantern
+        desired_state:
+          fact: repair_lens_fits_lantern
+        allowed_actions:
+          - talk_to_npc
+        forbidden_actions:
+          - flee
+    priorities:
+      community_safety: 4
+      personal_risk: 1
+    constraints:
+      - avoid_confusion
+    plan_state: {}
+    merchant: true
+    shop_inventory:
+      - harbor_token
+    buy_price_modifier: 1.0
+    sell_price_modifier: 0.5
+    schedule:
+      - time_of_day: morning
+        location_id: tide_gate
+        activity: checking the pier ropes
+      - time_of_day: evening
+        location_id: harbor_square
+        activity: sharing tide reports
+  - id: lina
+    name: Lina
+    location_id: lantern_house
+    faction_id: harbor_council
+    personality: Curious, careful, and proud of the town lantern.
+    knowledge:
+      - lantern_needs_lens
+      - repair_lens_fits_lantern
+    goals:
+      - id: test_signal
+        description: Make sure the lantern signal can be seen from the square.
+        priority: 4
+        status: active
+        conditions:
+          - knows:lantern_needs_lens
+        desired_state:
+          quest: relight_lantern
+        allowed_actions:
+          - talk_to_npc
+        forbidden_actions:
+          - attack
+    priorities:
+      community_safety: 5
+      personal_risk: 1
+    constraints:
+      - keep_signal_public
+    plan_state: {}
+    schedule:
+      - time_of_day: morning
+        location_id: lantern_house
+        activity: polishing the lantern frame
+      - time_of_day: evening
+        location_id: harbor_square
+        activity: listening for the bell

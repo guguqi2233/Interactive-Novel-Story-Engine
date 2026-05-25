@@ -1,17 +1,23 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.llm.provider_connection_test import (
+    HTTPProviderConnectionTestClient,
+    ProviderHTTPGetTransport,
     ProviderConnectionTestRequest,
     build_provider_profile_for_connection_test,
+    _default_http_get,
+    _provider_headers,
+    _provider_models_url,
     redact_provider_connection_text,
     test_provider_connection_safe,
 )
-from app.llm.provider_profiles import ModelProfile, ProviderProfileType, ProviderProfileV2
+from app.llm.provider_profiles import ModelProfile, ProviderProfileType, ProviderProfileV2, ProviderSecretResolver
 from app.llm.provider_redaction import provider_redactor
 
 
@@ -27,6 +33,7 @@ class ProviderModelFetchRequest(ProviderConnectionTestRequest):
     model_config = ConfigDict(extra="ignore")
 
     model_list_endpoint: str | None = None
+    allow_real_provider: bool = False
 
 
 class ProviderModelSyncRequest(ProviderModelFetchRequest):
@@ -107,14 +114,58 @@ class UnsupportedModelListError(Exception):
     pass
 
 
+class ProviderModelListAuthError(Exception):
+    pass
+
+
+class HTTPProviderModelDiscoveryClient:
+    """Opt-in HTTP model discovery client for trusted local user actions."""
+
+    def __init__(
+        self,
+        *,
+        secret_resolver: ProviderSecretResolver | None = None,
+        transport: ProviderHTTPGetTransport | None = None,
+    ) -> None:
+        self._resolver = secret_resolver or ProviderSecretResolver()
+        self._transport = transport or _default_http_get
+
+    def fetch_models(
+        self,
+        profile: ProviderProfileV2,
+        *,
+        model_list_endpoint: str | None,
+        transient_api_key: str | None,
+    ) -> list[dict[str, Any]]:
+        base_url = self._resolver.resolve_base_url(profile)
+        api_key = transient_api_key if transient_api_key else self._resolver.resolve_api_key(profile)
+        url = _provider_models_url(profile, base_url, model_list_endpoint)
+        status_code, body = self._transport(url, profile.default_timeout_seconds, _provider_headers(api_key))
+        if status_code in {401, 403}:
+            raise ProviderModelListAuthError("Provider authentication failed.")
+        if status_code in {404, 405}:
+            raise UnsupportedModelListError("Provider does not expose a model list endpoint.")
+        if not 200 <= status_code < 300:
+            raise RuntimeError("Provider model list request failed safely.")
+        return _models_from_http_body(body)
+
+
 def fetch_provider_models_safe(
     profile: ProviderProfileV2,
     request: ProviderModelFetchRequest,
     *,
     client: ProviderModelDiscoveryClient | None = None,
+    secret_resolver: ProviderSecretResolver | None = None,
+    connection_client: HTTPProviderConnectionTestClient | None = None,
 ) -> ProviderModelDiscoveryReport:
     fetched_at = datetime.now(UTC).isoformat()
-    connection = test_provider_connection_safe(profile, request)
+    resolver = secret_resolver or ProviderSecretResolver()
+    connection = test_provider_connection_safe(
+        profile,
+        request.model_copy(update={"allow_real_connection": request.allow_real_provider}),
+        secret_resolver=resolver,
+        client=connection_client if request.allow_real_provider else None,
+    )
     if connection.status != "connected":
         return ProviderModelDiscoveryReport(
             status=connection.status,
@@ -138,9 +189,19 @@ def fetch_provider_models_safe(
             redaction_applied=True,
         )
 
-    discovery_client = client or FakeProviderModelDiscoveryClient()
+    discovery_client = client or (HTTPProviderModelDiscoveryClient(secret_resolver=resolver) if request.allow_real_provider else FakeProviderModelDiscoveryClient())
     try:
         raw_models = discovery_client.fetch_models(profile, model_list_endpoint=request.model_list_endpoint, transient_api_key=request.transient_api_key)
+    except ProviderModelListAuthError:
+        return ProviderModelDiscoveryReport(
+            status="auth_failed",
+            safe_message=redact_provider_connection_text("Provider authentication failed.", transient_api_key=request.transient_api_key),
+            provider_profile_id=profile.provider_profile_id,
+            provider_type=str(profile.provider_type),
+            fetched_at=fetched_at,
+            error_type="auth_failed",
+            redaction_applied=True,
+        )
     except UnsupportedModelListError:
         return ProviderModelDiscoveryReport(
             status="unsupported_model_list",
@@ -182,8 +243,10 @@ def sync_provider_models_safe(
     request: ProviderModelSyncRequest,
     *,
     client: ProviderModelDiscoveryClient | None = None,
+    secret_resolver: ProviderSecretResolver | None = None,
+    connection_client: HTTPProviderConnectionTestClient | None = None,
 ) -> tuple[ProviderProfileV2, ProviderModelSyncReport]:
-    report = fetch_provider_models_safe(profile, request, client=client)
+    report = fetch_provider_models_safe(profile, request, client=client, secret_resolver=secret_resolver, connection_client=connection_client)
     synced_at = datetime.now(UTC).isoformat()
     if report.status != "ok":
         return profile, ProviderModelSyncReport(
@@ -273,3 +336,24 @@ def _model_without_seen(model: ModelProfile) -> dict[str, Any]:
     data = model.model_dump(mode="json", exclude_none=True)
     data.pop("last_seen_at", None)
     return data
+
+
+def _models_from_http_body(body: str) -> list[dict[str, Any]]:
+    try:
+        payload = provider_redactor.redact_mapping(json.loads(body))
+    except Exception as exc:
+        raise RuntimeError("Provider model list response was not valid JSON.") from exc
+    raw_models: Any
+    if isinstance(payload, dict):
+        raw_models = payload.get("data") or payload.get("models") or payload.get("items")
+    else:
+        raw_models = payload
+    if not isinstance(raw_models, list):
+        raise RuntimeError("Provider model list response did not contain a model array.")
+    models: list[dict[str, Any]] = []
+    for item in raw_models:
+        if isinstance(item, dict):
+            models.append(dict(item))
+        elif isinstance(item, str):
+            models.append({"id": item})
+    return models

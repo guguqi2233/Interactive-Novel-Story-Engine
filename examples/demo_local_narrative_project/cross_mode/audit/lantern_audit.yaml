@@ -1,0 +1,10 @@
+audit_id: lantern_audit
+project_id: demo_local_narrative_project
+action_type: review_proposal
+actor: test
+source_artifact_id: lantern_proposal
+target_refs:
+  - world:quest:relight_lantern
+timestamp: "2026-05-25T00:00:00+00:00"
+safe_summary: "Audit marker documents that the demo proposal remains local and unapplied."
+result: dry_run

@@ -1,0 +1,11 @@
+{
+  "local_stub": {
+    "provider_profile_id": "local_stub",
+    "status": "connected",
+    "tested_at": "2026-05-25T00:00:00+00:00",
+    "latency_ms": 1.0,
+    "safe_error_type": null,
+    "model_count": 1,
+    "redaction_applied": true
+  }
+}

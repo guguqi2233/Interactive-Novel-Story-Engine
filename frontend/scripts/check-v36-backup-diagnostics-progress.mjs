@@ -8,7 +8,10 @@ const pkg = readFileSync(resolve(root, "package.json"), "utf8");
 const failures = [];
 
 function requireToken(token, label) {
-  if (!appSource.includes(token)) failures.push(`Missing ${label}: ${token}`);
+  const tokens = Array.isArray(token) ? token : [token];
+  if (!tokens.some((candidate) => appSource.includes(candidate))) {
+    failures.push(`Missing ${label}: ${tokens.join(" | ")}`);
+  }
 }
 
 for (const [token, label] of [
@@ -22,8 +25,8 @@ for (const [token, label] of [
   ["LocalLongOperationProgress", "shared backup/diagnostics progress component"],
   ["data-v36-progress-steps", "progress check marker"],
   ["data-v36-progress-excluded-summary", "excluded summary marker"],
-  ["cannot cancel safely", "safe cancel-disabled wording"],
-  ["Long-running status", "long-running status wording"],
+  [["cannot cancel safely", "当前不可安全取消"], "safe cancel-disabled wording"],
+  [["Long-running status", "长时间本地操作"], "long-running status wording"],
   ["Upload", "upload boundary summary"],
   ["never", "no upload wording"],
   [".env", ".env exclusion"],
@@ -33,9 +36,9 @@ for (const [token, label] of [
   ["mature/private", "mature/private exclusion"],
   ["db/log/cache/build outputs", "db/log/cache/build outputs exclusion"],
   ["sanitizeDisplayError(progress.safeError)", "safe progress error rendering"],
-  ["Diagnostics progress", "diagnostics progress panel"],
+  [["Diagnostics progress", "诊断包进度"], "diagnostics progress panel"],
   ["Debug export progress", "debug export progress panel"],
-  ["Backup / restore progress", "backup/restore progress panel"]
+  [["Backup / restore progress", "备份 / 恢复进度"], "backup/restore progress panel"]
 ]) {
   requireToken(token, label);
 }

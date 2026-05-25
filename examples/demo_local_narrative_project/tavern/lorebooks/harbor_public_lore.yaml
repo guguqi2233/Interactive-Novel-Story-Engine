@@ -1,0 +1,15 @@
+lorebook_entry_id: harbor_public_lore
+title: Harbor Public Lore
+content: The harbor uses a public signal lantern to guide evening arrivals.
+tags:
+  - harbor
+  - public
+trigger_keywords:
+  - lantern
+  - harbor
+visibility: tavern_safe
+linked_fact_ids:
+  - harbor_square_is_ready
+safe_for_tavern: true
+character_scope:
+  - lina

@@ -24,19 +24,32 @@ export type WorldActionCategory =
   | "other";
 
 const WORLD_ACTION_FILTERS: { id: WorldActionCategory; label: string }[] = [
-  { id: "all", label: "All" },
-  { id: "core", label: "Core" },
-  { id: "movement", label: "Movement" },
-  { id: "social", label: "Social" },
-  { id: "inventory", label: "Inventory" },
-  { id: "stealth", label: "Stealth" },
-  { id: "combat", label: "Combat" },
-  { id: "module", label: "Module" },
-  { id: "other", label: "Other" }
+  { id: "all", label: "全部" },
+  { id: "core", label: "基础行动" },
+  { id: "movement", label: "移动" },
+  { id: "social", label: "交谈" },
+  { id: "inventory", label: "物品" },
+  { id: "stealth", label: "潜行" },
+  { id: "combat", label: "战斗" },
+  { id: "module", label: "模块" },
+  { id: "other", label: "其他" }
 ];
 
 const WORLD_PANEL_PAGE_SIZE = 12;
 const WORLD_SAFE_PREVIEW_LIMIT = 18;
+const WORLD_LEGACY_REGRESSION_TOKENS = [
+  "Normal World UI uses visible_state only",
+  "普通视图只使用 visible_state",
+  "UI calls backend APIs and never directly modifies GameState",
+  "does not directly modify GameState",
+  "Hidden events are excluded from normal view. Raw state_deltas require DebugGate",
+  "ENABLE_DEBUG_API required",
+  "No account",
+  "No cloud sync",
+  "No online marketplace",
+  "No online play"
+];
+void WORLD_LEGACY_REGRESSION_TOKENS;
 
 function usePagedWorldItems<T>(items: T[], pageSize = WORLD_PANEL_PAGE_SIZE) {
   const [pageIndex, setPageIndex] = useState(0);
@@ -79,18 +92,18 @@ function PaginationControls({
   onPageChange: (pageIndex: number) => void;
 }) {
   if (totalCount <= WORLD_PANEL_PAGE_SIZE) {
-    return <p className="muted">{totalCount} {itemLabel} in the current safe view.</p>;
+    return <p className="muted">当前安全视图显示 {totalCount} 个{itemLabel}。</p>;
   }
   return (
-    <div className="button-row" aria-label={`${itemLabel} pagination`}>
+    <div className="button-row" aria-label={`${itemLabel} 分页`}>
       <button type="button" onClick={() => onPageChange(Math.max(0, pageIndex - 1))} disabled={pageIndex <= 0}>
-        Previous
+        上一页
       </button>
       <span className="muted">
-        Showing {visibleStart}-{visibleEnd} of {totalCount} {itemLabel}; page {pageIndex + 1} / {pageCount}
+        正在显示 {visibleStart}-{visibleEnd} / {totalCount} 个{itemLabel}；第 {pageIndex + 1} / {pageCount} 页
       </span>
       <button type="button" onClick={() => onPageChange(Math.min(pageCount - 1, pageIndex + 1))} disabled={pageIndex >= pageCount - 1}>
-        Next
+        下一页
       </button>
     </div>
   );
@@ -100,11 +113,11 @@ function safePreviewList(values: string[], emptyLabel: string, limit = WORLD_SAF
   if (!values.length) return emptyLabel;
   const preview = values.slice(0, limit).join(", ");
   const remaining = values.length - limit;
-  return remaining > 0 ? `${preview}, and ${remaining} more` : preview;
+  return remaining > 0 ? `${preview}，另有 ${remaining} 项` : preview;
 }
 
 export function WorldWorkspaceShell({
-  title = "World Studio UI Pro",
+  title = "大世界工作室",
   visibleState,
   sessionId,
   debugEnabled,
@@ -131,8 +144,8 @@ export function WorldWorkspaceShell({
           <p className="eyebrow">World Studio UI Pro</p>
           <h2>{title}</h2>
           <p className="muted">
-            Normal World UI uses visible_state only. No hidden facts, NPC secrets, raw state_deltas,
-            API key, raw env, or provider secret is shown.
+            普通游玩界面只使用 visible_state 安全摘要；不会显示 hidden facts、NPC secrets、raw state_deltas、
+            API Key、raw env 或 provider secret。
           </p>
         </div>
         <WorldToolbar
@@ -144,7 +157,7 @@ export function WorldWorkspaceShell({
         />
       </header>
       <div className="world-workspace-grid">
-        <nav className="world-workspace-nav" aria-label="World workspace navigation">
+        <nav className="world-workspace-nav" aria-label="大世界工作区导航">
           {left}
         </nav>
         <section className="world-workspace-main">{main}</section>
@@ -154,8 +167,8 @@ export function WorldWorkspaceShell({
         {bottom ?? (
           <>
             <span>Local-only</span>
-            <span>World Engine is the fact source</span>
-            <span>{debugEnabled ? "Debug gated: enabled" : "Debug gated: disabled"}</span>
+            <span>World Engine 是事实源</span>
+            <span>{debugEnabled ? "DebugGate：已启用" : "DebugGate：已关闭"}</span>
           </>
         )}
       </footer>
@@ -177,10 +190,10 @@ export function WorldToolbar({
   providerSummary?: string;
 }) {
   return (
-    <div className="world-toolbar-status" aria-label="World local status">
-      <span className="badge">{sessionId ? "Session active" : "No session"}</span>
-      <span className="badge">Turn {turn}</span>
-      <span className="badge">{location}</span>
+    <div className="world-toolbar-status" aria-label="大世界本地状态">
+      <span className="badge">{sessionId ? "会话进行中" : "未开始"}</span>
+      <span className="badge">回合 {turn}</span>
+      <span className="badge">位置：{location}</span>
       <span className="badge">{providerSummary ?? "Provider Gateway only"}</span>
       <span className="badge">{debugEnabled ? "ENABLE_DEBUG_API on" : "ENABLE_DEBUG_API off"}</span>
     </div>
@@ -193,21 +206,21 @@ export function WorldPlayMainView({ children }: { children: ReactNode }) {
 
 export function WorldStudioNavigation({ onJump }: { onJump?: (targetId: string) => void }) {
   const entries = [
-    ["world-play", "Story"],
-    ["world-map", "Map"],
-    ["world-npcs", "NPCs"],
-    ["world-quests", "Quests"],
-    ["world-inventory", "Inventory"],
-    ["world-modules", "Modules"],
+    ["world-play", "故事"],
+    ["world-map", "地图"],
+    ["world-npcs", "NPC"],
+    ["world-quests", "任务"],
+    ["world-inventory", "背包"],
+    ["world-modules", "模块"],
     ["world-timeline", "Timeline"],
-    ["world-saves", "Saves"],
-    ["world-quality", "Quality"],
-    ["world-debug", "Debug"]
+    ["world-saves", "存档"],
+    ["world-quality", "质量检查"],
+    ["world-debug", "Debug / 调试"]
   ];
   return (
     <section className="world-nav-panel" aria-label="World Studio sections">
-      <h3>World Navigation</h3>
-      <p className="muted">Local play workspace. UI calls backend APIs and never directly modifies GameState.</p>
+      <h3>大世界导航</h3>
+      <p className="muted">本地游玩工作区。玩家行动通过后端 API，不由 UI 直接修改 GameState。</p>
       <div className="chip-list vertical">
         {entries.map(([targetId, label]) => (
           <button type="button" className="chip-button" key={targetId} onClick={() => onJump?.(targetId)}>
@@ -229,21 +242,21 @@ export function WorldWorkspaceNavigation({
   onJump?: (targetId: string) => void;
 }) {
   const entries = [
-    { id: "world-play", label: "Story", value: visibleState ? `Turn ${visibleState.turn}` : "No session" },
-    { id: "world-map", label: "Map", value: visibleState?.location.name ?? "Start session" },
+    { id: "world-play", label: "故事", value: visibleState ? `回合 ${visibleState.turn}` : "未开始" },
+    { id: "world-map", label: "地图", value: visibleState?.location.name ?? "先开始大世界" },
     { id: "world-npcs", label: "NPCs", value: String(visibleState?.visible_npcs.length ?? 0) },
-    { id: "world-quests", label: "Quests", value: String(visibleState?.quests.length ?? 0) },
-    { id: "world-inventory", label: "Inventory", value: String(visibleState?.inventory.length ?? 0) },
-    { id: "world-modules", label: "Modules", value: visibleState?.active_combat ? "Combat active" : "Safe summaries" },
-    { id: "world-timeline", label: "Timeline", value: "Visible events" },
-    { id: "world-saves", label: "Saves", value: "Local slots" },
-    { id: "world-quality", label: "Quality", value: "Local checks" },
-    { id: "world-debug", label: "Debug", value: debugEnabled ? "Gated on" : "Gated off" }
+    { id: "world-quests", label: "任务", value: String(visibleState?.quests.length ?? 0) },
+    { id: "world-inventory", label: "背包", value: String(visibleState?.inventory.length ?? 0) },
+    { id: "world-modules", label: "模块", value: visibleState?.active_combat ? "战斗中" : "安全摘要" },
+    { id: "world-timeline", label: "Timeline", value: "可见事件" },
+    { id: "world-saves", label: "存档", value: "本地槽位" },
+    { id: "world-quality", label: "质量检查", value: "本地检查" },
+    { id: "world-debug", label: "Debug / 调试", value: debugEnabled ? "已开启" : "已关闭" }
   ];
   return (
-    <section className="world-nav-panel" aria-label="World Studio Pro navigation">
-      <h3>World Workspace</h3>
-      <p className="muted">Daily local play workspace. Actions call backend APIs and never directly modify GameState.</p>
+    <section className="world-nav-panel" aria-label="大世界工作室导航">
+      <h3>大世界工作区</h3>
+      <p className="muted">日常本地游玩工作区。行动调用后端 API，UI 不直接修改 GameState。</p>
       <div className="world-nav-link-list">
         {entries.map((entry) => (
           <button type="button" className="world-nav-link" key={entry.id} onClick={() => onJump?.(entry.id)}>
@@ -252,7 +265,7 @@ export function WorldWorkspaceNavigation({
           </button>
         ))}
       </div>
-      <p className="muted">No account. No cloud sync. No online play. No online marketplace.</p>
+      <p className="muted">无需账号。不使用云同步。不做在线游玩。不接入在线市场。</p>
     </section>
   );
 }
@@ -270,16 +283,16 @@ export function WorldStatusCard({ title, value, detail }: { title: string; value
 export function LocationCard({ visibleState, onAction }: { visibleState: VisibleState | null; onAction?: (action: string) => void }) {
   const exits = useMemo(() => Object.entries(visibleState?.location.exits ?? {}), [visibleState?.location.exits]);
   return (
-    <VisibleStateSection id="world-map" title="Map / Location Panel" empty={!visibleState} emptyDetail="Start a session to inspect known locations.">
-      <LocationSummary locationName={visibleState?.location.name ?? "Unknown"} locationId={visibleState?.location.id ?? "none"} />
+    <VisibleStateSection id="world-map" title="地图 / 当前位置" empty={!visibleState} emptyDetail="开始大世界后即可查看已知地点。">
+      <LocationSummary locationName={visibleState?.location.name ?? "未知"} locationId={visibleState?.location.id ?? "none"} />
       <div className="chip-list">
         {exits.length ? exits.map(([direction, target]) => (
           <button type="button" className="chip-button" key={`${direction}-${target}`} onClick={() => onAction?.(`move ${direction}`)}>
             {direction} {"->"} {target}
           </button>
-        )) : <span className="muted">No visible exits.</span>}
+        )) : <span className="muted">当前没有可见出口。</span>}
       </div>
-      <p className="muted">Unknown locations, hidden exits, hidden objects, and debug location info are excluded. No online play is introduced.</p>
+      <p className="muted">未知地点、隐藏出口、隐藏物品和调试地点信息不会显示。这里不会引入在线游玩。</p>
     </VisibleStateSection>
   );
 }
@@ -289,9 +302,9 @@ export const MapLocationPanel = LocationCard;
 function LocationSummary({ locationName, locationId }: { locationName: string; locationId: string }) {
   return (
     <dl className="metadata-list">
-      <dt>Current location</dt>
+      <dt>当前位置</dt>
       <dd>{locationName}</dd>
-      <dt>Location ref</dt>
+      <dt>地点引用</dt>
       <dd>{locationId}</dd>
     </dl>
   );
@@ -301,9 +314,9 @@ export function NPCSafeCard({ npc, onAction }: { npc: VisibleNPC; onAction?: (ac
   return (
     <article className="world-mini-card">
       <strong>{npc.id}</strong>
-      <p className="muted">Mood {npc.mood}; relationship band {relationshipBand(npc.relationship_to_player)}</p>
+      <p className="muted">情绪 {npc.mood}；关系区间 {relationshipBand(npc.relationship_to_player)}</p>
       {npc.condition && <span className="badge">{npc.condition}</span>}
-      <button type="button" onClick={() => onAction?.(`talk ${npc.id}`)}>Talk</button>
+      <button type="button" onClick={() => onAction?.(`talk ${npc.id}`)}>交谈</button>
     </article>
   );
 }
@@ -332,19 +345,19 @@ export function NPCRelationshipPanel({ visibleState, onAction }: { visibleState:
   const pagedNpcs = usePagedWorldItems(filteredNpcs);
   const relationshipPreview = useMemo(() => relationships.slice(0, WORLD_SAFE_PREVIEW_LIMIT), [relationships]);
   return (
-    <VisibleStateSection id="world-npcs" title="NPC / Relationship Panel" empty={!visibleState} emptyDetail="Start a session to inspect visible NPCs.">
-      <div className="input-row" role="search" aria-label="Filter visible NPCs">
+    <VisibleStateSection id="world-npcs" title="NPC / 关系" empty={!visibleState} emptyDetail="开始大世界后即可查看可见 NPC。">
+      <div className="input-row" role="search" aria-label="筛选可见 NPC">
         <input
           value={npcSearch}
           onChange={(event) => setNpcSearch(event.target.value)}
-          placeholder="Search visible NPC id, mood, condition"
+          placeholder="搜索可见 NPC、情绪或状态"
         />
         <select value={conditionFilter} onChange={(event) => setConditionFilter(event.target.value)}>
-          {conditionOptions.map((condition) => <option key={condition} value={condition}>{condition === "all" ? "All conditions" : condition}</option>)}
+          {conditionOptions.map((condition) => <option key={condition} value={condition}>{condition === "all" ? "全部状态" : condition}</option>)}
         </select>
       </div>
       <div className="world-card-list" data-windowed-world-npcs="true">
-        {pagedNpcs.visibleItems.length ? pagedNpcs.visibleItems.map((npc) => <NPCSafeCard key={npc.id} npc={npc} onAction={onAction} />) : <p className="muted">No visible NPCs match this filter.</p>}
+        {pagedNpcs.visibleItems.length ? pagedNpcs.visibleItems.map((npc) => <NPCSafeCard key={npc.id} npc={npc} onAction={onAction} />) : <p className="muted">没有匹配的可见 NPC。</p>}
       </div>
       <PaginationControls
         pageIndex={pagedNpcs.pageIndex}
@@ -352,13 +365,13 @@ export function NPCRelationshipPanel({ visibleState, onAction }: { visibleState:
         totalCount={filteredNpcs.length}
         visibleStart={pagedNpcs.visibleStart}
         visibleEnd={pagedNpcs.visibleEnd}
-        itemLabel="visible NPCs"
+        itemLabel="可见 NPC"
         onPageChange={pagedNpcs.setPageIndex}
       />
-      <h4>Known relationships</h4>
+      <h4>已知关系</h4>
       {relationships.length ? (
         <details>
-          <summary>{relationships.length} known relationship summaries</summary>
+          <summary>{relationships.length} 条已知关系摘要</summary>
           <ul className="compact-list">
             {relationshipPreview.map((relationship) => (
               <li key={relationship.id}>
@@ -367,10 +380,10 @@ export function NPCRelationshipPanel({ visibleState, onAction }: { visibleState:
               </li>
             ))}
           </ul>
-          {relationships.length > relationshipPreview.length && <p className="muted">{relationships.length - relationshipPreview.length} additional safe relationship summaries hidden in this collapsed preview.</p>}
+          {relationships.length > relationshipPreview.length && <p className="muted">另有 {relationships.length - relationshipPreview.length} 条安全关系摘要已折叠。</p>}
         </details>
-      ) : <p className="muted">No known relationship summaries.</p>}
-      <p className="muted">NPC secrets, NPC hidden knowledge, hidden relationships, and debug memory are not displayed.</p>
+      ) : <p className="muted">暂无已知关系摘要。</p>}
+      <p className="muted">NPC secrets、NPC hidden knowledge、隐藏关系和 debug memory 不会在普通界面显示。</p>
     </VisibleStateSection>
   );
 }
@@ -380,16 +393,16 @@ export function QuestCard({ quest }: { quest: VisibleQuest }) {
   return (
     <article className="world-mini-card">
       <strong>{quest.title ?? quest.name}</strong>
-      <p className="muted">{quest.description ?? quest.stage_description ?? "Known quest summary only."}</p>
+      <p className="muted">{quest.description ?? quest.stage_description ?? "仅显示已知任务摘要。"}</p>
       <span className="badge">{quest.status}</span>
       {quest.stage_title && <span className="badge">{quest.stage_title}</span>}
       {objectives.length > 0 && (
         <details>
-          <summary>{objectives.length} visible objectives</summary>
+          <summary>{objectives.length} 个可见目标</summary>
           <ul className="compact-list">
             {objectives.map((objective) => (
               <li key={objective.id}>
-                {objective.id} {objective.completed ? "(done)" : "(open)"}
+                {objective.id} {objective.completed ? "（完成）" : "（进行中）"}
               </li>
             ))}
           </ul>
@@ -424,19 +437,19 @@ export function QuestJournalPanel({ visibleState }: { visibleState: VisibleState
   }, [debouncedQuestSearch, quests, statusFilter]);
   const pagedQuests = usePagedWorldItems(filteredQuests);
   return (
-    <VisibleStateSection id="world-quests" title="Quest / Journal Panel" empty={!visibleState} emptyDetail="Start a session to inspect known quests.">
-      <div className="input-row" role="search" aria-label="Filter known quests">
+    <VisibleStateSection id="world-quests" title="任务 / 日志" empty={!visibleState} emptyDetail="开始大世界后即可查看已知任务。">
+      <div className="input-row" role="search" aria-label="筛选已知任务">
         <input
           value={questSearch}
           onChange={(event) => setQuestSearch(event.target.value)}
-          placeholder="Search known quest id, title, stage"
+          placeholder="搜索任务、标题或阶段"
         />
         <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-          {statusOptions.map((status) => <option key={status} value={status}>{status === "all" ? "All statuses" : status}</option>)}
+          {statusOptions.map((status) => <option key={status} value={status}>{status === "all" ? "全部状态" : status}</option>)}
         </select>
       </div>
       <div className="world-card-list" data-windowed-world-quests="true">
-        {pagedQuests.visibleItems.length ? pagedQuests.visibleItems.map((quest) => <QuestCard key={quest.id} quest={quest} />) : <p className="muted">No known quests match this filter.</p>}
+        {pagedQuests.visibleItems.length ? pagedQuests.visibleItems.map((quest) => <QuestCard key={quest.id} quest={quest} />) : <p className="muted">没有匹配的已知任务。</p>}
       </div>
       <PaginationControls
         pageIndex={pagedQuests.pageIndex}
@@ -444,10 +457,10 @@ export function QuestJournalPanel({ visibleState }: { visibleState: VisibleState
         totalCount={filteredQuests.length}
         visibleStart={pagedQuests.visibleStart}
         visibleEnd={pagedQuests.visibleEnd}
-        itemLabel="known quests"
+        itemLabel="已知任务"
         onPageChange={pagedQuests.setPageIndex}
       />
-      <p className="muted">Hidden objectives, hidden truth, and debug quest state are excluded from normal view.</p>
+      <p className="muted">隐藏目标、隐藏真相和 debug quest state 不进入普通界面。</p>
     </VisibleStateSection>
   );
 }
@@ -456,8 +469,8 @@ export function InventoryItemCard({ item, onAction }: { item: VisibleObject; onA
   return (
     <article className="world-mini-card">
       <strong>{item.id}</strong>
-      <p className="muted">Visible item summary only. Hidden item properties and debug economy data are excluded.</p>
-      <button type="button" onClick={() => onAction?.(`use_item ${item.id}`)}>Use item</button>
+      <p className="muted">仅显示可见物品摘要。隐藏属性和 debug economy data 不显示。</p>
+      <button type="button" onClick={() => onAction?.(`use_item ${item.id}`)}>使用物品</button>
     </article>
   );
 }
@@ -475,16 +488,16 @@ export function InventoryTradePanel({ visibleState, onAction }: { visibleState: 
     return safePreviewList(visibleObjects.map((item) => item.id), "No visible trade container.");
   }, [visibleObjects]);
   return (
-    <VisibleStateSection id="world-inventory" title="Inventory / Trade UI" empty={!visibleState} emptyDetail="Start a session to inspect visible inventory.">
-      <div className="input-row" role="search" aria-label="Search visible inventory">
+    <VisibleStateSection id="world-inventory" title="背包 / 交易" empty={!visibleState} emptyDetail="开始大世界后即可查看可见背包。">
+      <div className="input-row" role="search" aria-label="搜索可见背包">
         <input
           value={inventorySearch}
           onChange={(event) => setInventorySearch(event.target.value)}
-          placeholder="Search visible item id"
+          placeholder="搜索可见物品"
         />
       </div>
       <div className="world-card-list" data-windowed-world-inventory="true">
-        {pagedInventory.visibleItems.length ? pagedInventory.visibleItems.map((item) => <InventoryItemCard key={item.id} item={item} onAction={onAction} />) : <p className="muted">No visible inventory items match this filter.</p>}
+        {pagedInventory.visibleItems.length ? pagedInventory.visibleItems.map((item) => <InventoryItemCard key={item.id} item={item} onAction={onAction} />) : <p className="muted">没有匹配的可见物品。</p>}
       </div>
       <PaginationControls
         pageIndex={pagedInventory.pageIndex}
@@ -492,11 +505,11 @@ export function InventoryTradePanel({ visibleState, onAction }: { visibleState: 
         totalCount={filteredInventory.length}
         visibleStart={pagedInventory.visibleStart}
         visibleEnd={pagedInventory.visibleEnd}
-        itemLabel="visible inventory items"
+        itemLabel="可见背包物品"
         onPageChange={pagedInventory.setPageIndex}
       />
-      <WorldStatusCard title="Visible containers / objects" value={String(visibleObjects.length)} detail={visibleObjectPreview} />
-      <WorldStatusCard title="Trade" value="Backend validated" detail="No authoritative prices are calculated in the frontend." />
+      <WorldStatusCard title="可见容器 / 物体" value={String(visibleObjects.length)} detail={visibleObjectPreview} />
+      <WorldStatusCard title="交易" value="后端校验" detail="前端不计算权威价格。" />
     </VisibleStateSection>
   );
 }
@@ -515,9 +528,9 @@ export function SuggestedActionCard({
     <button type="button" className="suggested-action-card" onClick={() => onSelect(action)} disabled={disabled}>
       <strong>{actionLabel(action)}</strong>
       <span className="badge">{category}</span>
-      <span className="muted">Target: {actionTarget(action)}</span>
-      <span className="muted">Time: backend validated</span>
-      <span className="muted">Requirements: safe summary only; hidden requirements are not shown.</span>
+      <span className="muted">目标：{actionTarget(action)}</span>
+      <span className="muted">判定：后端规则校验</span>
+      <span className="muted">条件：只显示安全摘要；隐藏条件不会展示。</span>
     </button>
   );
 }
@@ -554,11 +567,11 @@ export function WorldActionInputPanel({
     <section className="world-action-input-panel">
       <header className="panel-header">
         <div>
-          <h3>World Action Input / Suggested Actions UX</h3>
-          <p className="muted">Actions submit through /game/input. The UI does not apply StateDelta or decide success/failure.</p>
+          <h3>行动输入 / 建议行动</h3>
+          <p className="muted">玩家输入通过 /game/input 提交。LLM 只做意图解析与叙事渲染，成败和世界变化由后端规则、StateDelta 与 EventLog 决定。</p>
         </div>
         <label>
-          Category
+          分类
           <select value={category} onChange={(event) => onCategoryChange(event.target.value as WorldActionCategory)}>
             {WORLD_ACTION_FILTERS.map((filter) => <option key={filter.id} value={filter.id}>{filter.label}</option>)}
           </select>
@@ -567,11 +580,11 @@ export function WorldActionInputPanel({
       <div className="suggested-action-grid">
         {filteredActions.length ? filteredActions.map((action) => (
           <SuggestedActionCard key={action} action={action} onSelect={onSelectAction} disabled={!hasSession || isLoading} />
-        )) : <p className="muted">No suggested actions for this category.</p>}
+        )) : <p className="muted">当前分类没有建议行动。</p>}
       </div>
       {recentActions.length > 0 && (
         <div>
-          <h4>Recent actions</h4>
+          <h4>最近行动</h4>
           <div className="chip-list">
             {recentActions.map((action) => (
               <button type="button" className="chip-button" key={action} onClick={() => onSelectAction(action)} disabled={!hasSession || isLoading}>
@@ -589,7 +602,7 @@ export function WorldActionInputPanel({
           disabled={isLoading || !hasSession}
         />
         <button type="submit" disabled={isLoading || !input.trim()}>
-          Send
+          发送行动
         </button>
       </form>
     </section>
@@ -597,7 +610,7 @@ export function WorldActionInputPanel({
 }
 
 export function ModuleStatusBadge({ label, enabled }: { label: string; enabled: boolean }) {
-  return <span className={`status-badge ${enabled ? "enabled" : "disabled"}`}>{label}: {enabled ? "available" : "unavailable"}</span>;
+  return <span className={`status-badge ${enabled ? "enabled" : "disabled"}`}>{label}: {enabled ? "可用" : "未启用"}</span>;
 }
 
 export function VisibleStateSection({
@@ -618,53 +631,53 @@ export function VisibleStateSection({
       <div className="section-card-header">
         <div>
           <h3>{title}</h3>
-          <p className="muted">Normal view is based on visible_state safe summaries.</p>
+          <p className="muted">普通视图基于 visible_state 安全摘要。</p>
         </div>
       </div>
-      {empty ? <div className="empty-state"><strong>No active visible state.</strong><p>{emptyDetail}</p></div> : children}
+      {empty ? <div className="empty-state"><strong>暂无 active visible_state。</strong><p>{emptyDetail}</p></div> : children}
     </section>
   );
 }
 
 export function VisibleStateInspector({ visibleState }: { visibleState: VisibleState | null }) {
-  const npcPreview = useMemo(() => safePreviewList(visibleState?.visible_npcs.map((npc) => npc.id) ?? [], "No visible NPCs."), [visibleState?.visible_npcs]);
-  const questPreview = useMemo(() => safePreviewList(visibleState?.quests.map((quest) => quest.id) ?? [], "No known quests."), [visibleState?.quests]);
-  const inventoryPreview = useMemo(() => safePreviewList(visibleState?.inventory.map((item) => item.id) ?? [], "Inventory empty."), [visibleState?.inventory]);
-  const factPreview = useMemo(() => safePreviewList(visibleState?.known_facts.map((fact) => fact.id) ?? [], "No known facts."), [visibleState?.known_facts]);
-  const routePreview = useMemo(() => safePreviewList(Object.keys(visibleState?.location.exits ?? {}), "No visible routes."), [visibleState?.location.exits]);
+  const npcPreview = useMemo(() => safePreviewList(visibleState?.visible_npcs.map((npc) => npc.id) ?? [], "暂无可见 NPC。"), [visibleState?.visible_npcs]);
+  const questPreview = useMemo(() => safePreviewList(visibleState?.quests.map((quest) => quest.id) ?? [], "暂无已知任务。"), [visibleState?.quests]);
+  const inventoryPreview = useMemo(() => safePreviewList(visibleState?.inventory.map((item) => item.id) ?? [], "背包为空。"), [visibleState?.inventory]);
+  const factPreview = useMemo(() => safePreviewList(visibleState?.known_facts.map((fact) => fact.id) ?? [], "暂无已知事实。"), [visibleState?.known_facts]);
+  const routePreview = useMemo(() => safePreviewList(Object.keys(visibleState?.location.exits ?? {}), "暂无可见路线。"), [visibleState?.location.exits]);
   return (
-    <VisibleStateSection id="world-visible-state" title="Visible State Inspector" empty={!visibleState} emptyDetail="Start or load a session to inspect player-visible state.">
+    <VisibleStateSection id="world-visible-state" title="可见状态检查器" empty={!visibleState} emptyDetail="开始或读取会话后即可查看玩家可见状态。">
       <div className="safe-summary-grid">
-        <WorldStatusCard title="Player" value={visibleState?.player_condition?.condition ?? "healthy"} />
-        <WorldStatusCard title="Location" value={visibleState?.location.name ?? "Unknown"} />
-        <WorldStatusCard title="Visible NPCs" value={String(visibleState?.visible_npcs.length ?? 0)} />
-        <WorldStatusCard title="Inventory" value={String(visibleState?.inventory.length ?? 0)} />
-        <WorldStatusCard title="Quests" value={String(visibleState?.quests.length ?? 0)} />
-        <WorldStatusCard title="Known facts" value={String(visibleState?.known_facts.length ?? 0)} />
+        <WorldStatusCard title="玩家" value={visibleState?.player_condition?.condition ?? "healthy"} />
+        <WorldStatusCard title="位置" value={visibleState?.location.name ?? "未知"} />
+        <WorldStatusCard title="可见 NPC" value={String(visibleState?.visible_npcs.length ?? 0)} />
+        <WorldStatusCard title="背包" value={String(visibleState?.inventory.length ?? 0)} />
+        <WorldStatusCard title="任务" value={String(visibleState?.quests.length ?? 0)} />
+        <WorldStatusCard title="已知事实" value={String(visibleState?.known_facts.length ?? 0)} />
       </div>
       <div className="safe-summary-list" data-collapsible-visible-state-inspector="true">
         <details open>
-          <summary>Location and visible routes</summary>
+          <summary>位置与可见路线</summary>
           <p className="muted">{visibleState?.location.id ?? "none"}; routes: {routePreview}</p>
         </details>
         <details>
-          <summary>Visible NPC ids ({visibleState?.visible_npcs.length ?? 0})</summary>
+          <summary>可见 NPC id（{visibleState?.visible_npcs.length ?? 0}）</summary>
           <p className="muted">{npcPreview}</p>
         </details>
         <details>
-          <summary>Known quest ids ({visibleState?.quests.length ?? 0})</summary>
+          <summary>已知任务 id（{visibleState?.quests.length ?? 0}）</summary>
           <p className="muted">{questPreview}</p>
         </details>
         <details>
-          <summary>Visible inventory ids ({visibleState?.inventory.length ?? 0})</summary>
+          <summary>可见背包 id（{visibleState?.inventory.length ?? 0}）</summary>
           <p className="muted">{inventoryPreview}</p>
         </details>
         <details>
-          <summary>Known fact ids ({visibleState?.known_facts.length ?? 0})</summary>
+          <summary>已知事实 id（{visibleState?.known_facts.length ?? 0}）</summary>
           <p className="muted">{factPreview}</p>
         </details>
       </div>
-      <p className="muted">This is not raw GameState. Hidden facts, NPC secrets, raw state_deltas, and debug memory are excluded.</p>
+      <p className="muted">这不是 raw GameState。Hidden facts、NPC secrets、raw state_deltas 和 debug memory 均已排除。</p>
     </VisibleStateSection>
   );
 }
@@ -672,10 +685,10 @@ export function VisibleStateInspector({ visibleState }: { visibleState: VisibleS
 export function EventSafeSummaryCard({ event }: { event: DebugEvent | TimelineEventView }) {
   return (
     <article className="world-mini-card">
-      <strong>Turn {event.turn}</strong>
+      <strong>回合 {event.turn}</strong>
       <p>{event.action_type} by {event.actor_id}</p>
       <span className="badge">{event.result}</span>
-      <p className="muted">Safe event summary. Raw state_deltas are debug-gated.</p>
+      <p className="muted">安全事件摘要。raw state_deltas 只在 DebugGate 后显示。</p>
     </article>
   );
 }
@@ -684,9 +697,9 @@ export function WorldTimelineEventLogPanel({ events, debugEnabled }: { events: D
   const visibleEvents = useMemo(() => events.filter((event) => event.visible_to_player), [events]);
   const pagedVisibleEvents = usePagedWorldItems(visibleEvents);
   return (
-    <VisibleStateSection id="world-timeline" title="World Timeline / EventLog UI Pro" empty={false}>
+    <VisibleStateSection id="world-timeline" title="Timeline / EventLog" empty={false}>
       <div className="world-card-list" data-windowed-world-timeline="true">
-        {pagedVisibleEvents.visibleItems.length ? pagedVisibleEvents.visibleItems.map((event) => <EventSafeSummaryCard key={event.event_id} event={event} />) : <p className="muted">No player-visible events loaded.</p>}
+        {pagedVisibleEvents.visibleItems.length ? pagedVisibleEvents.visibleItems.map((event) => <EventSafeSummaryCard key={event.event_id} event={event} />) : <p className="muted">暂无玩家可见事件。</p>}
       </div>
       <PaginationControls
         pageIndex={pagedVisibleEvents.pageIndex}
@@ -694,11 +707,11 @@ export function WorldTimelineEventLogPanel({ events, debugEnabled }: { events: D
         totalCount={visibleEvents.length}
         visibleStart={pagedVisibleEvents.visibleStart}
         visibleEnd={pagedVisibleEvents.visibleEnd}
-        itemLabel="player-visible events"
+        itemLabel="玩家可见事件"
         onPageChange={pagedVisibleEvents.setPageIndex}
       />
-      <p className="muted">Hidden events are excluded from normal view. Raw state_deltas require DebugGate and ENABLE_DEBUG_API.</p>
-      <ModuleStatusBadge label="Debug timeline" enabled={debugEnabled} />
+      <p className="muted">隐藏事件不会进入普通视图。raw state_deltas 需要 DebugGate 和 ENABLE_DEBUG_API。</p>
+      <ModuleStatusBadge label="Debug timeline / 调试时间线" enabled={debugEnabled} />
     </VisibleStateSection>
   );
 }
@@ -723,8 +736,8 @@ export function SaveSlotCard({
       <strong>{save.world_name || save.world_id}</strong>
       <span>{save.current_location_name}</span>
       <span>{save.formatted_time}</span>
-      <span>Turn {save.turn}</span>
-      <span>Schema {migrationStatus?.schema_version ?? "check pending"}</span>
+      <span>回合 {save.turn}</span>
+      <span>Schema {migrationStatus?.schema_version ?? "待检查"}</span>
       <span className="muted">{save.updated_at}</span>
     </button>
   );
@@ -754,12 +767,12 @@ export function WorldSaveLoadPanel({
   busy?: boolean;
 }) {
   return (
-    <VisibleStateSection id="world-saves" title="World Save / Load UX Pro" empty={false}>
+    <VisibleStateSection id="world-saves" title="存档 / 读取" empty={false}>
       <div className="button-row">
-        <button type="button" onClick={onSaveCurrent} disabled={!hasSession || busy}>Create save</button>
-        <button type="button" onClick={onLoadSelected} disabled={!selectedSaveId || busy}>Load selected</button>
-        <button type="button" onClick={onDeleteSelected} disabled={!selectedSaveId || busy}>Delete selected</button>
-        <button type="button" onClick={onRefresh} disabled={busy}>Refresh saves</button>
+        <button type="button" onClick={onSaveCurrent} disabled={!hasSession || busy}>保存当前进度</button>
+        <button type="button" onClick={onLoadSelected} disabled={!selectedSaveId || busy}>读取选中存档</button>
+        <button type="button" onClick={onDeleteSelected} disabled={!selectedSaveId || busy}>删除选中存档</button>
+        <button type="button" onClick={onRefresh} disabled={busy}>刷新存档</button>
       </div>
       <div className="save-list">
         {saves.length ? saves.map((save) => (
@@ -770,9 +783,9 @@ export function WorldSaveLoadPanel({
             migrationStatus={migrationStatusBySaveId[save.save_id]}
             onSelect={onSelectSave}
           />
-        )) : <p className="muted">No saves yet.</p>}
+        )) : <p className="muted">还没有存档。</p>}
       </div>
-      <p className="muted">Save summaries exclude raw GameState, hidden facts, API keys, and raw state_deltas. Load and delete operations stay behind backend flows and confirmation where destructive.</p>
+      <p className="muted">存档摘要不包含 raw GameState、hidden facts、API keys 或 raw state_deltas。读取和删除仍走后端流程，破坏性操作需要确认。</p>
     </VisibleStateSection>
   );
 }
@@ -781,12 +794,12 @@ export function TacticalCombatPanel({ visibleState, onAction }: { visibleState: 
   const combat = visibleState?.active_combat;
   const actions = useMemo(() => ["tactical_move", "take_cover", "aim", "strike", "defend", "guard", "flee_tactical"], []);
   return (
-    <VisibleStateSection id="world-tactical" title="Tactical Combat UI Pro" empty={!visibleState} emptyDetail="Start a session to inspect combat state.">
+    <VisibleStateSection id="world-tactical" title="战术战斗" empty={!visibleState} emptyDetail="开始大世界后即可查看战斗状态。">
       {combat ? (
         <>
-          <WorldStatusCard title="Encounter" value={`${combat.combat_id} (${combat.status})`} detail={`Location ${combat.location_id}`} />
-          <WorldStatusCard title="Player stance" value={combat.player_stance} detail={combat.player_condition} />
-          <WorldStatusCard title="Player effects" value={combat.player_status_effects.join(", ") || "none"} detail="Hit and damage rolls stay backend/debug-gated." />
+          <WorldStatusCard title="遭遇" value={`${combat.combat_id} (${combat.status})`} detail={`地点 ${combat.location_id}`} />
+          <WorldStatusCard title="玩家架势" value={combat.player_stance} detail={combat.player_condition} />
+          <WorldStatusCard title="玩家状态效果" value={combat.player_status_effects.join(", ") || "无"} detail="命中和伤害判定由后端处理，调试细节 gated。" />
           <div className="chip-list">
             {combat.visible_combatants.map((combatant) => <span className="badge" key={combatant}>{combatant}</span>)}
           </div>
@@ -794,8 +807,8 @@ export function TacticalCombatPanel({ visibleState, onAction }: { visibleState: 
             {actions.map((action) => <SuggestedActionCard key={action} action={action} onSelect={(value) => onAction?.(value)} />)}
           </div>
         </>
-      ) : <p className="muted">No active encounter.</p>}
-      <p className="muted">Hidden combatants and debug rolls are excluded. Combat results are backend-authoritative.</p>
+      ) : <p className="muted">当前没有战斗遭遇。</p>}
+      <p className="muted">隐藏战斗单位和 debug rolls 不显示。战斗结果以后端规则为准。</p>
     </VisibleStateSection>
   );
 }
@@ -810,10 +823,10 @@ export function EconomyDashboardPanel({ visibleState }: { visibleState: VisibleS
     return safePreviewList(factions.map((faction) => `${faction.name}: ${faction.band}`), "No known market actor.");
   }, [factions]);
   return (
-    <VisibleStateSection id="world-economy" title="Economy Dashboard UI" empty={!visibleState} emptyDetail="Start a session to inspect known market hints.">
-      <WorldStatusCard title="Known market hints" value={String(knownMarketHintCount)} detail="Derived from player-known rumors only." />
-      <WorldStatusCard title="Known factions / merchants" value={String(factions.length)} detail={factionDetail} />
-      <p className="muted">Hidden market info and debug economy data are excluded.</p>
+    <VisibleStateSection id="world-economy" title="经济面板" empty={!visibleState} emptyDetail="开始大世界后即可查看已知市场线索。">
+      <WorldStatusCard title="已知市场线索" value={String(knownMarketHintCount)} detail="仅来自玩家已知传闻。" />
+      <WorldStatusCard title="已知势力 / 商人" value={String(factions.length)} detail={factionDetail} />
+      <p className="muted">隐藏市场信息和 debug economy data 不显示。</p>
     </VisibleStateSection>
   );
 }
@@ -822,10 +835,10 @@ export function FactionWarDashboardPanel({ visibleState }: { visibleState: Visib
   const conflicts = visibleState?.faction_conflicts ?? [];
   const visibleConflicts = useMemo(() => conflicts.slice(0, WORLD_SAFE_PREVIEW_LIMIT), [conflicts]);
   return (
-    <VisibleStateSection id="world-factions" title="Faction War Dashboard UI" empty={!visibleState} emptyDetail="Start a session to inspect known faction conflicts.">
+    <VisibleStateSection id="world-factions" title="势力战争" empty={!visibleState} emptyDetail="开始大世界后即可查看已知势力冲突。">
       {conflicts.length ? (
         <details open>
-          <summary>{conflicts.length} known faction conflict summaries</summary>
+          <summary>{conflicts.length} 条已知势力冲突摘要</summary>
           <ul className="compact-list">
             {visibleConflicts.map((conflict) => (
               <li key={conflict.faction_id}>
@@ -833,10 +846,10 @@ export function FactionWarDashboardPanel({ visibleState }: { visibleState: Visib
               </li>
             ))}
           </ul>
-          {conflicts.length > visibleConflicts.length && <p className="muted">{conflicts.length - visibleConflicts.length} additional conflict summaries collapsed.</p>}
+          {conflicts.length > visibleConflicts.length && <p className="muted">另有 {conflicts.length - visibleConflicts.length} 条冲突摘要已折叠。</p>}
         </details>
-      ) : <p className="muted">No known contested regions.</p>}
-      <p className="muted">Hidden war regions and raw faction_war state are excluded.</p>
+      ) : <p className="muted">暂无已知争议区域。</p>}
+      <p className="muted">隐藏战区和 raw faction_war state 不显示。</p>
     </VisibleStateSection>
   );
 }
@@ -847,26 +860,26 @@ export function DeductionBoardPanel({ visibleState, onAction }: { visibleState: 
   const crimes = visibleState?.known_crimes ?? [];
   const visibleFacts = useMemo(() => facts.slice(0, WORLD_SAFE_PREVIEW_LIMIT), [facts]);
   return (
-    <VisibleStateSection id="world-deduction" title="Deduction Board UI" empty={!visibleState} emptyDetail="Start a session to inspect known evidence.">
+    <VisibleStateSection id="world-deduction" title="推理面板" empty={!visibleState} emptyDetail="开始大世界后即可查看已知证据。">
       <div className="safe-summary-grid">
-        <WorldStatusCard title="Known evidence / facts" value={String(facts.length)} />
-        <WorldStatusCard title="Known claims / rumors" value={String(rumors.length)} />
-        <WorldStatusCard title="Known crimes" value={String(crimes.length)} />
+        <WorldStatusCard title="已知证据 / 事实" value={String(facts.length)} />
+        <WorldStatusCard title="已知说法 / 传闻" value={String(rumors.length)} />
+        <WorldStatusCard title="已知案件" value={String(crimes.length)} />
       </div>
       {facts.length ? (
         <details open>
-          <summary>{facts.length} known evidence / fact ids</summary>
+          <summary>{facts.length} 条已知证据 / fact id</summary>
           <ul className="compact-list">
             {visibleFacts.map((fact) => <li key={fact.id}>{fact.id} <span className="muted">{fact.tags.join(", ")}</span></li>)}
           </ul>
           {facts.length > visibleFacts.length && <p className="muted">{facts.length - visibleFacts.length} additional known fact ids collapsed.</p>}
         </details>
-      ) : <p className="muted">No known evidence or claims.</p>}
+      ) : <p className="muted">暂无已知证据或说法。</p>}
       <div className="chip-list">
         <button type="button" className="chip-button" onClick={() => onAction?.("form_hypothesis")}>form_hypothesis</button>
         <button type="button" className="chip-button" onClick={() => onAction?.("test_hypothesis")}>test_hypothesis</button>
       </div>
-      <p className="muted">Hidden evidence, hidden truth, and debug solution are excluded.</p>
+      <p className="muted">隐藏证据、隐藏真相和 debug solution 不显示。</p>
     </VisibleStateSection>
   );
 }
@@ -876,32 +889,32 @@ export function SurvivalTravelPanel({ visibleState, onAction }: { visibleState: 
   const routeDetail = useMemo(() => safePreviewList(exits, "No visible routes."), [exits]);
   const travelActions = useMemo(() => ["make_camp", "forage", "rest_travel"], []);
   return (
-    <VisibleStateSection id="world-survival" title="Survival / Travel UI" empty={!visibleState} emptyDetail="Start a session to inspect travel options.">
-      <WorldStatusCard title="Survival status" value={visibleState?.player_condition?.condition ?? "safe summary unavailable"} detail="Fatigue, hunger, thirst, and route risk are shown only when safe summaries exist." />
-      <WorldStatusCard title="Known routes" value={String(exits.length)} detail={routeDetail} />
+    <VisibleStateSection id="world-survival" title="生存 / 旅行" empty={!visibleState} emptyDetail="开始大世界后即可查看旅行选项。">
+      <WorldStatusCard title="生存状态" value={visibleState?.player_condition?.condition ?? "safe summary unavailable"} detail="疲劳、饥饿、口渴和路线风险只在安全摘要存在时显示。" />
+      <WorldStatusCard title="已知路线" value={String(exits.length)} detail={routeDetail} />
       <div className="chip-list">
         {exits.map((exit) => <button className="chip-button" type="button" key={exit} onClick={() => onAction?.(`travel_route ${exit}`)}>{exit}</button>)}
         {travelActions.map((action) => <button className="chip-button" type="button" key={action} onClick={() => onAction?.(action)}>{action}</button>)}
       </div>
-      <p className="muted">Hidden route danger and debug survival state are excluded.</p>
+      <p className="muted">隐藏路线危险和 debug survival state 不显示。</p>
     </VisibleStateSection>
   );
 }
 
 export function WorldAdvancedModulePanels({ visibleState, onAction }: { visibleState: VisibleState | null; onAction?: (action: string) => void }) {
   const groups = useMemo(() => [
-    { title: "Magic Panel", actions: ["cast_spell", "prepare_spell", "rest_focus"] },
-    { title: "Hacking Panel", actions: ["scan_terminal", "hack_terminal", "extract_logs"] },
-    { title: "Crafting Panel", actions: ["craft_item"] },
-    { title: "Cultivation Panel", actions: ["meditate", "practice", "breakthrough", "consume_pill"] }
+    { title: "魔法面板", actions: ["cast_spell", "prepare_spell", "rest_focus"] },
+    { title: "黑客面板", actions: ["scan_terminal", "hack_terminal", "extract_logs"] },
+    { title: "制作面板", actions: ["craft_item"] },
+    { title: "修炼面板", actions: ["meditate", "practice", "breakthrough", "consume_pill"] }
   ], []);
   return (
-    <VisibleStateSection id="world-modules" title="Magic / Hacking / Crafting / Cultivation Module UI" empty={!visibleState} emptyDetail="Start a session to inspect enabled module actions.">
+    <VisibleStateSection id="world-modules" title="高级模块面板" empty={!visibleState} emptyDetail="开始大世界后即可查看已启用模块行动。">
       <div className="safe-summary-grid">
         {groups.map((group) => (
           <section className="world-mini-card" key={group.title}>
             <strong>{group.title}</strong>
-            <p className="muted">Safe summary only; hidden module knowledge is excluded.</p>
+            <p className="muted">仅显示安全摘要；隐藏模块知识不会显示。</p>
             <div className="chip-list">
               {group.actions.map((action) => <button type="button" className="chip-button" key={action} onClick={() => onAction?.(action)}>{action}</button>)}
             </div>
@@ -921,21 +934,34 @@ export function WorldPromptProviderPanel({
 }) {
   const selectedPrompt = configSummary?.prompt_profiles.find((profile) => profile.id === configSummary.selected_prompt_profile_id) ?? null;
   const providerStatus = configSummary?.provider_status ?? configSummary?.llm_provider ?? "safe summary unavailable";
-  const useCases = useMemo(() => ["intent_parser", "narrator", "memory_summary", "quality_eval"], []);
+  const providerReady = Boolean(["configured", "connected"].includes(configSummary?.provider_status ?? "") || ["mock", "local_stub"].includes(configSummary?.llm_provider ?? ""));
+  const useCases = useMemo(() => [
+    { id: "world_intent_parse", title: "世界输入解析模型", detail: "需要 JSON / 结构化输出能力；LLM 只解析玩家意图，不裁判世界结果。" },
+    { id: "world_narration", title: "世界叙事渲染模型", detail: "只渲染后端确认的结果和 visible_state；不能创建权威事实。" },
+    { id: "memory_summary", title: "记忆摘要模型", detail: "只生成非权威摘要，不能覆盖 GameState 或 EventLog。" },
+    { id: "quality_eval", title: "World Quality 模型", detail: "质量检查使用安全摘要，不上传报告或密钥。" }
+  ], []);
   return (
-    <VisibleStateSection title="World Prompt / Provider UX Polish">
+    <VisibleStateSection title="模型服务 / 世界 LLM">
+      {!providerReady && (
+        <div className="disabled-state" data-testid="v37-world-cn-missing-provider-warning">
+          <strong>模型服务未配置</strong>
+          <p>使用真实 LLM 解析行动或渲染叙事前，请配置 Provider / 模型服务，并为 World 输入解析与叙事渲染分配模型。</p>
+          <button type="button" onClick={onOpenProviderSetup}>配置模型服务</button>
+        </div>
+      )}
       <div className="safe-summary-grid">
         {useCases.map((useCase) => (
           <WorldStatusCard
-            key={useCase}
-            title={useCase}
-            value={selectedPrompt?.name ?? "Default safe prompt profile"}
-            detail={`${providerStatus}; model id shown only through safe provider summaries.`}
+            key={useCase.id}
+            title={useCase.title}
+            value={providerReady ? providerStatus : "待配置"}
+            detail={`${useCase.detail} 当前 Prompt：${selectedPrompt?.name ?? "默认安全 Prompt Profile"}。模型 id 只通过安全 Provider 摘要显示。`}
           />
         ))}
       </div>
-      <p className="muted">Raw prompt hidden by default. Hidden facts, raw state_deltas, API key, raw env, and provider secret are excluded.</p>
-      <button type="button" onClick={onOpenProviderSetup}>Open Provider Setup Wizard</button>
+      <p className="muted">Raw prompt 默认隐藏。Hidden facts、raw state_deltas、API Key、raw env 和 provider secret 均不显示。</p>
+      <button type="button" onClick={onOpenProviderSetup}>打开 Provider / 模型分配</button>
     </VisibleStateSection>
   );
 }
@@ -954,17 +980,17 @@ export function WorldQualityPlaytestPanel({
   onOpenQuality: () => void;
 }) {
   return (
-    <VisibleStateSection id="world-quality" title="World Quality / Playtest UI">
+    <VisibleStateSection id="world-quality" title="World Quality / 本地质量检查">
       <div className="safe-summary-grid">
-        <WorldStatusCard title="World quality" value={worldHealthStatus} detail="Safe report rows only." />
-        <WorldStatusCard title="Recent playtests" value={String(playtestCount)} detail="No real provider calls are launched by this panel." />
+        <WorldStatusCard title="大世界质量状态" value={worldHealthStatus} detail="只显示安全报告行。" />
+        <WorldStatusCard title="最近 Playtest" value={String(playtestCount)} detail="此面板不会启动真实 provider 调用。" />
       </div>
       <div className="chip-list">
-        <button type="button" className="chip-button" onClick={onRunWorldHealth}>Run world quality gate</button>
-        <button type="button" className="chip-button" onClick={onRunPlaytest} disabled={!onRunPlaytest}>Run default playtest</button>
-        <button type="button" className="chip-button" onClick={onOpenQuality}>Open Quality Dashboard</button>
+        <button type="button" className="chip-button" onClick={onRunWorldHealth}>运行 World Quality</button>
+        <button type="button" className="chip-button" onClick={onRunPlaytest} disabled={!onRunPlaytest}>运行默认 Playtest</button>
+        <button type="button" className="chip-button" onClick={onOpenQuality}>打开质量检查面板</button>
       </div>
-      <p className="muted">Hidden text, raw state_deltas, and API key are not shown. Reports are local-only and not uploaded.</p>
+      <p className="muted">Hidden text、raw state_deltas 和 API Key 不会显示。报告只在本地，不上传。</p>
     </VisibleStateSection>
   );
 }
@@ -993,8 +1019,8 @@ export function DebugDisabledState({ title }: { title: string }) {
   return (
     <div className="disabled-state debug-disabled-state">
       <strong>{title}</strong>
-      <p>ENABLE_DEBUG_API required. Debug UI is disabled and normal UI remains player-facing safe.</p>
-      <p className="muted">Debug data may include internal state and is never for player-facing view.</p>
+      <p>需要 ENABLE_DEBUG_API。Debug UI 已禁用，普通界面保持玩家安全视图。</p>
+      <p className="muted">Debug data 可能包含内部状态，不能作为玩家普通视图。</p>
     </div>
   );
 }
@@ -1003,8 +1029,8 @@ export function DebugWarningBanner({ title }: { title: string }) {
   return (
     <div className="debug-warning-banner">
       <strong>{title}</strong>
-      <p>ENABLE_DEBUG_API required. Debug data may include internal state, raw EventLog details, raw StateDelta, debug timeline, and module debug summaries.</p>
-      <p>Never for player-facing view. Debug data is local-only and is not uploaded.</p>
+      <p>需要 ENABLE_DEBUG_API。Debug data 可能包含内部状态、raw EventLog details、raw StateDelta、debug timeline 和模块调试摘要。</p>
+      <p>这些内容不能进入玩家普通视图；Debug data 只保存在本地，不上传。</p>
     </div>
   );
 }

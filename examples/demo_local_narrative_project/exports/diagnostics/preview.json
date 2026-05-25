@@ -1,0 +1,9 @@
+{
+  "local_only": true,
+  "uploaded": false,
+  "redacted": true,
+  "contains_secrets": false,
+  "debug_included": false,
+  "mature_private_included": false,
+  "safe_summary": "Demo diagnostics preview marker only; no diagnostics bundle is included."
+}

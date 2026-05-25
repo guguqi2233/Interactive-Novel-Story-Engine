@@ -1,0 +1,39 @@
+facts:
+  - id: harbor_square_is_ready
+    text: Harbor Square is ready for evening arrivals.
+    visibility: public
+    known_by:
+      - player
+      - mira
+      - toma
+      - lina
+    tags:
+      - location
+      - public
+  - id: tide_gate_is_open
+    text: The tide gate is open while the shore path is clear.
+    visibility: public
+    known_by:
+      - player
+      - toma
+    tags:
+      - travel
+      - public
+  - id: lantern_needs_lens
+    text: The signal lantern needs a clean lens before it can be tested.
+    visibility: discoverable
+    known_by:
+      - mira
+      - lina
+    tags:
+      - quest
+      - craft
+  - id: repair_lens_fits_lantern
+    text: The repair lens fits the town signal lantern.
+    visibility: discoverable
+    known_by:
+      - toma
+      - lina
+    tags:
+      - clue
+      - item

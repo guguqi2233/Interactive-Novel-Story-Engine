@@ -1,0 +1,5 @@
+campaign_id: demo_campaign
+world_id: demo_harbor
+title: Demo Harbor Campaign
+status: ready
+safe_summary: Local demo campaign for checking project launch, world play, and quality workflows.

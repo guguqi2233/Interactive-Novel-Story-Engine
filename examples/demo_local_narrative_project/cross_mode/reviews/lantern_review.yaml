@@ -1,0 +1,7 @@
+review_id: lantern_review
+project_id: demo_local_narrative_project
+artifact_id: lantern_proposal
+reviewer: local_demo
+status: approved
+notes: "Proposal review confirms only public quest summary metadata is included."
+created_at: "2026-05-25T00:00:00+00:00"

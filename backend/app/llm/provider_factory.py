@@ -32,10 +32,14 @@ def create_llm_provider(
     elif provider_name == "local_stub":
         provider = LocalStubProvider(invalid_json=local_stub_invalid_json)
     elif provider_name == "local_http":
-        provider = LocalHTTPProvider(settings=resolved_settings, transport=local_http_transport)
+        if provider_profile is not None:
+            profile = provider_profile.model_copy(update={"requires_api_key": provider_profile.requires_api_key if provider_profile.requires_api_key is not None else False})
+            provider = OpenAICompatibleProvider(profile, secret_resolver=secret_resolver, transport=openai_compatible_transport)
+        else:
+            provider = LocalHTTPProvider(settings=resolved_settings, transport=local_http_transport)
     elif provider_name == "openai":
-        provider = OpenAIProvider(settings=resolved_settings)
-    elif provider_name in {"openai_compatible", "relay"}:
+        provider = OpenAIProvider(settings=resolved_settings, profile=provider_profile, secret_resolver=secret_resolver)
+    elif provider_name in {"openai_compatible", "relay", "custom"}:
         profile = provider_profile or ProviderProfileV2(
             provider_profile_id=provider_name,
             display_name=provider_name,

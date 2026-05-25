@@ -1,0 +1,27 @@
+factions:
+  - id: harbor_council
+    name: Harbor Council
+    description: Neighbors who coordinate public safety tasks around the harbor.
+    default_reputation: 0
+    known_by_player: true
+    relations:
+      tidekeepers: 5
+    conflict_tags:
+      - civic_coordination
+    default_alert_level: 0
+    tags:
+      - local
+      - civic
+  - id: tidekeepers
+    name: Tidekeepers
+    description: Workers who keep the shore path, tide gate, and pier schedule clear.
+    default_reputation: 0
+    known_by_player: true
+    relations:
+      harbor_council: 5
+    conflict_tags:
+      - shore_work
+    default_alert_level: 0
+    tags:
+      - local
+      - shore

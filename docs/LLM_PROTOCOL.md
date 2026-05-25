@@ -15,8 +15,9 @@ export controls. Online accounts, cloud sync, remote registries, online
 marketplaces, and online mature-content platforms are long-term optional
 directions only.
 
-v2.9 Provider Setup UI only accepts `api_key_env` and `secret_ref` references;
-it does not expose a plaintext API key field. Provider status, Prompt Lab
+v2.9 Provider Setup UI only accepts backend secret references such as
+`api_key_env`, `secret_ref`, and v3.7 `local_secret_ref`; it does not expose a
+plaintext API key field. Provider status, Prompt Lab
 summaries, diagnostics, errors, and Quality/Debug views must use safe summaries
 or redaction. UI polish may make provider configuration easier to understand,
 but it cannot route around Provider Gateway, log raw prompts, display provider
@@ -26,7 +27,7 @@ v3.0 Local Desktop Studio Polish keeps the same LLM boundary. Local launcher,
 Project Picker, Recent Projects, Config Wizard, Provider Setup Wizard, Health
 Check, Backup / Restore, Error Recovery, Log Viewer, Diagnostics Bundle,
 Offline Help, and Settings UI do not call providers directly and do not expand
-LLM authority. Provider setup continues to use `api_key_env` or `secret_ref`;
+LLM authority. Provider setup continues to use backend-only secret references;
 the frontend must not display API key values or raw env. Diagnostics, logs,
 backups, crash reports, and desktop bundles must not include raw prompts,
 outputs, provider secrets, Authorization headers, hidden facts, mature/private
@@ -134,8 +135,8 @@ Authoring / Mod LLM boundary rules:
   voice, and other style metadata affect expression only. They must not access
   hidden facts, NPC secrets, debug memory, raw `GameState`, raw `state_deltas`,
   API keys, raw env, or provider secrets.
-- Provider Profile Packs may contain `api_key_env` or `secret_ref` references
-  only. They must not contain plaintext API keys, Authorization headers, or
+- Provider Profile Packs may contain `api_key_env`, `secret_ref`, or
+  `local_secret_ref` metadata references only. They must not contain plaintext API keys, Authorization headers, or
   provider secrets.
 - Action Mods are declarative local action definitions. They do not call LLMs,
   execute arbitrary code, or bypass `ActionRegistry`, `StateDelta`, or
@@ -271,8 +272,8 @@ Action and rule mod rules:
 
 Provider Profile Pack rules:
 
-- Provider Profile Packs may contain `api_key_env` and `secret_ref`
-  references only.
+- Provider Profile Packs may contain `api_key_env`, `secret_ref`, and
+  `local_secret_ref` metadata references only.
 - They must not contain raw API keys, authorization headers, provider secrets,
   raw env, or frontend-visible credential values.
 - Provider configuration still resolves through Provider Gateway /
@@ -302,9 +303,10 @@ Provider Gateway Pro components:
   `openai_api_key` fields.
 - `ModelProfile`: per-model capability and cost-hint metadata. Cost hints are
   local estimates, not billing records.
-- `ProviderSecretResolver`: backend-only secret resolver for `api_key_env` and
-  `secret_ref`. It may read environment variables or test fake secrets; it must
-  never return secret values to frontend, exports, logs, usage reports, or
+- `ProviderSecretResolver`: backend-only secret resolver for `api_key_env`,
+  `secret_ref`, and v3.7 `local_secret_ref`. It may read environment
+  variables, test fake secrets, or a project-external local secret store; it
+  must never return secret values to frontend, exports, logs, usage reports, or
   quality reports.
 - `ProviderRouter`: mode/use-case routing layer for `novel_draft`,
   `novel_rewrite`, `tavern_reply`, `world_intent_parse`, `world_narration`,
@@ -378,8 +380,8 @@ Provider API and UI rules:
 - Project provider APIs are local authoring/studio endpoints gated by local
   configuration.
 - Frontend provider screens may edit provider type, env-var references,
-  `secret_ref`, model profiles, allowed modes, routing preferences, and safe
-  status. They must not include a plaintext API key field.
+  `secret_ref`, `local_secret_ref`, model profiles, allowed modes, routing
+  preferences, and safe status. They must not include a plaintext API key field.
 - OpenAI-compatible and relay profiles are generic compatible API profiles.
   The project does not provide API resale, online billing, cloud accounts, or
   vendor-specific relay integrations.
@@ -400,8 +402,11 @@ or resell API access.
 
 Connection testing rules:
 
-- `ProviderProfile` may persist only provider metadata, `api_key_env`, or
-  `secret_ref`; it must not persist raw API keys.
+- `ProviderProfile` may persist only provider metadata, `api_key_env`,
+  `secret_ref`, or `local_secret_ref`; it must not persist raw API keys.
+- `local_secret_ref` resolves from a local secret store outside project files.
+  That store must be excluded from git, backups, exports, diagnostics, logs,
+  and frontend state.
 - A `transient_api_key` may be accepted only for a single connection test. It
   must not be written to project files, provider profiles, prompt profiles,
   package manifests, logs, diagnostics, backups, exports, usage records, call
@@ -412,6 +417,8 @@ Connection testing rules:
 - Tests and CI must use fake providers or fake clients and must not call real
   OpenAI, OpenAI-compatible, relay, local HTTP, or custom provider endpoints by
   default.
+- Real connection tests and model-list reads are allowed only for explicit
+  trusted local user actions such as Test Connection, Fetch Models, or Generate.
 
 Model discovery rules:
 
@@ -447,7 +454,7 @@ Mode assignment rules:
   mature/private bodies, debug memory, or raw `state_deltas`.
 - Provider connectivity diagnostics, logs, diagnostics bundles, backups,
   exports, and frontend error states must redact `transient_api_key`,
-  `api_key_env` values, `secret_ref` values, Authorization headers, token-like
+  `api_key_env` values, `secret_ref` or `local_secret_ref` values, Authorization headers, token-like
   base URL segments, raw provider errors, and raw provider responses.
 
 ### v3.6 Provider Performance Cache Boundary
@@ -475,6 +482,78 @@ Provider performance cache rules:
 - Performance caches do not perform background real-provider checks by
   default, do not upload telemetry, do not optimize cost dynamically, and do
   not let provider choice change World Engine authority.
+
+### v3.7 Local Playable Complete Product CN LLM Boundary
+
+v3.7 closes the local product workflow around the existing Provider Gateway and
+LLM boundary. The default UI is Chinese and player/creator-oriented, while
+Debug, QA, Authoring / Mods, Diagnostics, Product Readiness, and raw replay
+tools are advanced tools. Users can configure OpenAI, OpenAI-compatible,
+relay-style/custom base URL, `local_http`, custom, `mock`, and `local_stub`
+providers, test local connection configuration, fetch or manually add model
+metadata, sync safe `ModelProfile` records, and assign models by Novel,
+Tavern, World, Cross-Mode, memory summary, Quality, and low-cost summary use
+case. These are local configuration workflows, not an online platform, account
+system, cloud sync service, online marketplace, remote package downloader,
+hosted provider product, vendor-specific relay integration, or API resale
+service.
+
+v3.7 LLM / Provider rules:
+
+- Provider Gateway remains the only model entry point.
+- `ProviderProfile` may persist only provider metadata plus `api_key_env`,
+  `secret_ref`, or `local_secret_ref`. Raw API keys, Authorization headers,
+  and resolved secret values must not be stored.
+- One-time provider test keys may be used only for the current connection test
+  or model-list request. They must not enter project files, frontend state,
+  caches, logs, diagnostics, backups, exports, prompt profiles, provider
+  profile packs, packages, or docs.
+- Model discovery stores safe model ids, display names, capability metadata,
+  context/token hints, recommended use cases, enabled state, and last-seen
+  timestamps as `ModelProfile` data. It must not store raw provider responses
+  or secrets.
+- Novel, Tavern, World, Cross-Mode, and Quality model assignments are routing
+  metadata only. They cannot grant hidden fact access, mutate `GameState`,
+  apply `StateDelta`, write `EventLog`, decide Cross-Mode apply, or override
+  deterministic rules.
+- Real provider calls are manual-only. A real connection may happen only after
+  a local user chooses Test Connection, Fetch Models, or a generation action;
+  application startup, Home, readiness checks, CI, and automated tests must not
+  call real provider networks.
+- LLM output remains language/draft/summary/proposal material until validated
+  by the appropriate local contract. The World Engine remains the fact source
+  and the LLM is not the world judge.
+- Tests and CI must use fake/local_stub providers or fake clients and must not
+  call real provider networks by default.
+
+### v3.7 Manual Real-Provider Smoke Tests
+
+Real-provider smoke tests are manual-only. A local user may configure a real
+provider and click **Test Connection**, **Fetch Models**, or a generation action
+from the UI, but CI, release checks, and automated tests must not call real
+provider networks.
+
+Manual real-provider smoke tests are documented in
+`docs/REAL_LLM_MANUAL_SMOKE_TEST.md`. The documented flow covers provider
+configuration, `api_key_env` / `secret_ref` / `local_secret_ref`, one-time
+`transient_api_key`, manual connection testing, model-list discovery, model
+assignment, Novel / Tavern / World usage, and returning to `mock` /
+`local_stub`.
+
+Manual smoke-test risks:
+
+- the provider may charge for requests;
+- prompts are sent to the user-configured provider;
+- model-list APIs may not be supported by every provider;
+- hidden facts, NPC secrets, debug memory, mature/private content, and raw
+  `state_deltas` are still filtered by local visibility and export policies;
+- API keys must not enter project files, frontend storage, caches, logs,
+  diagnostics, backups, exports, tests, or docs.
+
+Manual smoke tests do not create an API resale service, account system, cloud
+sync feature, online marketplace, remote package downloader, or vendor-specific
+relay integration. They do not change Provider Gateway semantics or World
+Engine authority.
 
 ## v2.4 Cross-Mode Bridge LLM Boundary
 

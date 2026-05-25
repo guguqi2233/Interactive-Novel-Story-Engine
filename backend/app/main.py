@@ -566,6 +566,8 @@ from app.llm.provider_model_assignment import (
     apply_provider_model_assignments,
     validate_provider_model_assignments,
 )
+from app.platform.provider_setup_checklist import ProviderSetupChecklistReport, ProviderSetupChecklistService
+from app.platform.product_workflow import ProductWorkflowCheckReport, ProductWorkflowCheckService
 from app.llm.structured_output_reliability import (
     StructuredOutputReliabilityReport,
     StructuredOutputReliabilityRun,
@@ -6403,6 +6405,37 @@ def get_project_provider_capability_matrix(project_id: str) -> dict[str, Any]:
     return {"local_only": True, "matrix": matrix.safe_summary()}
 
 
+@app.get("/projects/{project_id}/providers/setup-checklist", response_model=ProviderSetupChecklistReport)
+def get_project_provider_setup_checklist(project_id: str) -> ProviderSetupChecklistReport:
+    require_authoring_api()
+    try:
+        return ProviderSetupChecklistService(get_project_repository()).check(project_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/projects/{project_id}/providers/health", response_model=dict[str, Any])
+def get_project_provider_health(project_id: str) -> dict[str, Any]:
+    require_authoring_api()
+    repo = get_provider_profile_repository(project_id)
+    cache = get_provider_connection_status_cache(project_id)
+    providers = repo.list_provider_profiles()
+    statuses = [
+        cache.safe_status(profile.provider_profile_id)
+        or cache.missing_status(profile.provider_profile_id, enabled=profile.enabled, model_count=len(profile.model_profiles))
+        for profile in providers
+    ]
+    connected = sum(1 for item in statuses if item.get("status") == "connected")
+    return {
+        "local_only": True,
+        "provider_count": len(providers),
+        "connected_count": connected,
+        "status": "ready" if connected else "not_checked",
+        "providers": [profile.safe_summary() for profile in providers],
+        "connection_statuses": statuses,
+    }
+
+
 @app.post("/projects/{project_id}/providers/test-connection", response_model=ProviderConnectionStatus)
 def test_project_provider_connection_from_payload(project_id: str, payload: ProviderConnectionTestRequest) -> ProviderConnectionStatus:
     require_authoring_api()
@@ -6545,23 +6578,25 @@ def test_project_provider_connection(project_id: str, provider_profile_id: str, 
     require_authoring_api()
     allow_real = bool((payload or {}).get("allow_real_connection", False))
     profile = get_provider_profile_repository(project_id).load_provider_profile(provider_profile_id)
-    if not allow_real:
-        request = ProviderConnectionTestRequest(
-            provider_profile_id=provider_profile_id,
-            timeout_seconds=float((payload or {}).get("timeout_seconds") or profile.default_timeout_seconds),
-        )
-        status = test_provider_connection_safe(profile, request)
-        cache = get_provider_connection_status_cache(project_id)
-        cached = cache.save_status(provider_profile_id, status, model_count=len(profile.model_profiles))
-        return {
-            "ok": status.status == "connected",
-            "dry_run": True,
-            "provider": profile.safe_summary(),
-            "status": status.model_dump(mode="json", exclude_none=True),
-            "cache": cached.safe_summary(ttl_seconds=cache.ttl_seconds),
-            "notes": ["Fake provider client used; no real provider call was made."],
-        }
-    raise HTTPException(status_code=403, detail="Real provider connection tests are disabled by default")
+    request = ProviderConnectionTestRequest(
+        provider_profile_id=provider_profile_id,
+        transient_api_key=(payload or {}).get("transient_api_key"),
+        timeout_seconds=float((payload or {}).get("timeout_seconds") or profile.default_timeout_seconds),
+        allow_real_connection=allow_real,
+    )
+    status = test_provider_connection_safe(profile, request)
+    cache = get_provider_connection_status_cache(project_id)
+    cached = cache.save_status(provider_profile_id, status, model_count=len(profile.model_profiles))
+    return {
+        "ok": status.status == "connected",
+        "dry_run": not allow_real,
+        "provider": profile.safe_summary(),
+        "status": status.model_dump(mode="json", exclude_none=True),
+        "cache": cached.safe_summary(ttl_seconds=cache.ttl_seconds),
+        "notes": ["Real provider call was user-triggered."] if allow_real else ["Fake provider client used; no real provider call was made."],
+    }
+
+
 
 
 @app.get("/projects/{project_id}/providers/usage/recent", response_model=dict[str, Any])
@@ -6931,6 +6966,16 @@ def get_narrative_project_mode(project_id: str, mode: str) -> dict[str, Any]:
 
     project = get_project_repository().load_project(project_id)
     return ModeRouter().status_for_mode(project, mode).model_dump(mode="json")
+
+
+@app.get("/projects/{project_id}/workflow-check", response_model=ProductWorkflowCheckReport)
+def get_project_workflow_check(project_id: str) -> ProductWorkflowCheckReport:
+    require_authoring_api()
+    try:
+        active_settings = getattr(app.state, "settings", settings)
+        return ProductWorkflowCheckService(get_project_repository(), settings=active_settings).check(project_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @app.post("/projects/{project_id}/world/start")
@@ -7889,6 +7934,122 @@ def reorder_novel_chapters(project_id: str, request: dict[str, Any]) -> dict[str
         return {"chapters": [item.model_dump(mode="json") for item in chapters]}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/projects/{project_id}/novel/llm/generate")
+def generate_novel_llm_preview(project_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    require_authoring_api()
+    from app.platform.novel_studio import (
+        GeneratedNovelDraft,
+        NovelDraftGenerationService,
+        NovelPromptContextBuilder,
+    )
+    from app.platform.shared_libraries import PromptProfileLibrary
+    from app.llm.fake_provider import FakeLLMProvider
+    from app.llm.provider_gateway import project_provider_gateway_from_project, routed_provider_from_provider, routed_provider_from_settings
+    from app.llm.provider_profiles import ProviderProfileRepository
+    from app.llm.provider_router import ProviderRoutingContext, ProviderRoutingUseCase
+
+    action = str(request.get("action") or "draft")
+    use_case = {
+        "draft": ProviderRoutingUseCase.NOVEL_DRAFT,
+        "rewrite": ProviderRoutingUseCase.NOVEL_REWRITE,
+        "summary": ProviderRoutingUseCase.CHEAP_SUMMARY,
+    }.get(action)
+    if use_case is None:
+        raise HTTPException(status_code=400, detail="Unsupported Novel LLM action")
+
+    try:
+        repo = get_novel_repository(project_id)
+        chapter = None
+        scene = None
+        chapter_id = str(request.get("chapter_id") or "")
+        scene_id = str(request.get("scene_id") or "")
+        if chapter_id:
+            chapter = repo.load_chapter(chapter_id)
+        if scene_id:
+            scene = repo.load_scene(scene_id)
+            if chapter is None:
+                chapter = repo.load_chapter(scene.chapter_id)
+        manuscript_id = str(request.get("manuscript_id") or getattr(chapter, "manuscript_id", None) or "")
+        if not manuscript_id:
+            manuscripts = repo.list_manuscripts()
+            manuscript_id = manuscripts[0].manuscript_id if manuscripts else ""
+        if not manuscript_id:
+            raise ValueError("Novel manuscript is required")
+        manuscript = repo.load_manuscript(manuscript_id)
+        context = NovelPromptContextBuilder(PromptProfileLibrary(project_id=project_id)).build(
+            manuscript=manuscript,
+            chapter=chapter,
+            scene=scene,
+        )
+
+        fake_payload = GeneratedNovelDraft(
+            text="这是通过 fake ProviderGateway 生成的中文章节草稿。它只作为 Novel 草稿预览，不会写入世界事实。",
+            summary="安全摘要：本次生成只影响 Novel 编辑器预览。",
+            safety_notes=["fake_provider", "provider_gateway", "world_state_unchanged"],
+        ).model_dump(mode="json")
+        raw_provider = getattr(app.state, "novel_llm_provider", None)
+        if raw_provider is not None:
+            raw_provider_name = getattr(raw_provider, "__class__", type(raw_provider)).__name__
+            provider = routed_provider_from_provider(
+                FakeLLMProvider(json_responses=[fake_payload]) if raw_provider_name in {"MockLLMProvider", "LocalStubProvider"} else raw_provider,
+                provider_id="local_stub",
+                model_id="local_stub",
+                mode="novel",
+                use_case=use_case,
+            )
+        else:
+            project = get_project_repository().load_project(project_id)
+            profiles = ProviderProfileRepository(project.project_root).list_provider_profiles()
+            real_profiles = [
+                profile
+                for profile in profiles
+                if profile.enabled and str(profile.provider_type).lower() not in {"mock", "local_stub"}
+            ]
+            if real_profiles:
+                gateway = project_provider_gateway_from_project(project.project_root)
+                provider = gateway.provider_for(ProviderRoutingContext(mode="novel", use_case=use_case))
+            else:
+                runtime_settings = getattr(app.state, "settings", settings)
+                provider_name = str(getattr(runtime_settings, "llm_provider", "mock")).strip().lower()
+                if provider_name in {"mock", "local_stub"}:
+                    provider = routed_provider_from_provider(
+                        FakeLLMProvider(json_responses=[fake_payload]),
+                        provider_id=provider_name,
+                        model_id=provider_name,
+                        mode="novel",
+                        use_case=use_case,
+                    )
+                else:
+                    provider = routed_provider_from_settings(runtime_settings, mode="novel", use_case=use_case)
+
+        service = NovelDraftGenerationService(provider, repo)
+        source_text = str(request.get("text") or getattr(chapter, "draft_text", "") or "")
+        if action == "rewrite":
+            draft = service.rewrite_scene_style(context, source_text)
+        elif action == "summary":
+            draft = service.summarize_text(context, source_text)
+        else:
+            draft = service.generate_scene_draft(context)
+        traces = getattr(getattr(provider, "gateway", None), "traces", [])
+        current_model = ""
+        if traces:
+            trace = traces[-1]
+            current_model = f"{trace.provider_profile_id}/{trace.model_id}"
+        return {
+            "local_only": True,
+            "provider_gateway_used": True,
+            "action": action,
+            "use_case": str(use_case),
+            "current_model": current_model or "ProviderGateway safe route",
+            "generated_text": draft.text,
+            "safe_summary": draft.summary,
+            "safety_notes": draft.safety_notes,
+            "world_state_unchanged": True,
+        }
+    except (FileNotFoundError, LLMProviderError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="Novel generation failed through ProviderGateway. Check model service configuration.") from exc
 
 
 @app.get("/projects/{project_id}/novel/scenes")

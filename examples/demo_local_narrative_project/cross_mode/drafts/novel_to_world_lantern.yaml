@@ -1,0 +1,19 @@
+artifact_id: novel_to_world_lantern
+project_id: demo_local_narrative_project
+direction: novel_to_world
+source_refs:
+  - novel:chapter:chapter_1
+target_refs:
+  - world:quest:relight_lantern
+artifact_type: quest_note_draft
+status: draft
+created_at: "2026-05-25T00:00:00+00:00"
+updated_at: "2026-05-25T00:00:00+00:00"
+hidden: false
+debug_only: false
+proposed_content:
+  safe_summary: Novel chapter suggests a public lantern preparation beat for review.
+  suggested_review_step: Validate against the Demo Harbor quest before applying.
+validation_status: valid
+warnings: []
+proposed_cross_mode_links: []

@@ -97,7 +97,7 @@ def _try_world_gate(project_path: str | Path, result: ProjectQualityGateResult, 
         result.checks.append(ProjectQualityGateCheck(check_id="world_quality_gate", status="skip", message="No world packs found.", category="world"))
         return
     profile = QualityGateProfile.FAST if cfg.profile == "fast" else QualityGateProfile.STANDARD
-    gate = run_quality_gate(worlds[0], QualityGateConfig(profile=profile, min_health_score=0), worlds_root=content_root)
+    gate = run_quality_gate(worlds[0], QualityGateConfig(profile=profile, min_health_score=0), worlds_root=str(content_root))
     result.report_refs.append(f"world_quality_gate:{worlds[0]}")
     if gate.passed:
         result.checks.append(ProjectQualityGateCheck(check_id="world_quality_gate", status="pass", message="World quality gate passed.", category="world"))

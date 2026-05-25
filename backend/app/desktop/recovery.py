@@ -68,7 +68,7 @@ class RecoveryService:
                     category="provider",
                     severity="warning",
                     safe_summary="Provider secret reference is missing or not configured.",
-                    suggested_action="Configure api_key_env or secret_ref in Provider Setup Wizard, or use mock/local_stub.",
+                    suggested_action="Configure api_key_env, secret_ref, or local_secret_ref in Provider Setup Wizard, or use mock/local_stub.",
                     disposition="manual_only",
                 )
             )

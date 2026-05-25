@@ -1,0 +1,7 @@
+foreshadowing_id: lantern_signal
+setup_scene_id: scene_1
+payoff_scene_id: scene_1
+hint_text: The lens catches the afternoon light before the lantern is tested.
+hidden_truth_ref: null
+status: paid_off
+visibility: normal

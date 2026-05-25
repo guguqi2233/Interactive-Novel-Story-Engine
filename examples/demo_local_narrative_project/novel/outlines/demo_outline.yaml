@@ -1,0 +1,42 @@
+outline_id: demo_outline
+project_id: demo_local_narrative_project
+manuscript_id: demo_manuscript
+title: Demo Harbor Outline
+summary: A compact outline for checking Novel workflow readiness.
+nodes:
+  - node_id: act_1
+    parent_id: null
+    node_type: act
+    title: Before Dusk
+    summary: The harbor prepares the lantern and asks for help.
+    order_index: 1
+    linked_character_ids:
+      - lina
+      - mira
+    linked_timeline_event_ids: []
+    linked_plot_thread_ids:
+      - lantern_thread
+    linked_world_bible_entry_ids: []
+    status: draft
+  - node_id: chapter_1_node
+    parent_id: act_1
+    node_type: chapter
+    title: The Lens on the Workbench
+    summary: The repair lens becomes the first clear task.
+    order_index: 2
+    linked_character_ids:
+      - lina
+      - mira
+    linked_timeline_event_ids: []
+    linked_plot_thread_ids:
+      - lantern_thread
+    linked_world_bible_entry_ids: []
+    status: draft
+linked_character_ids:
+  - lina
+  - mira
+linked_world_bible_entry_ids: []
+linked_timeline_event_ids: []
+status: draft
+created_at: "2026-05-25T00:00:00+00:00"
+updated_at: "2026-05-25T00:00:00+00:00"

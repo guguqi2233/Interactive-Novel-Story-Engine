@@ -1,0 +1,5 @@
+{
+  "project_id": "demo_local_narrative_project",
+  "status": "pass",
+  "safe_summary": "Normal demo views use public summaries and local stub provider metadata."
+}

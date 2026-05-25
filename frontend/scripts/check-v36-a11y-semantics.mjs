@@ -23,27 +23,27 @@ if (!providerSource) failures.push("KeyboardShortcutsProvider source slice not f
 if (!navSource) failures.push("UnifiedNavigation source slice not found.");
 if (!sharedSource) failures.push("Shared UI source slice not found.");
 
-for (const [token, label] of [
-  ["aria-label=\"AI Narrative Studio local workspace\"", "main local workspace landmark"],
-  ["aria-label=\"Local studio navigation\"", "main navigation label"],
-  ["aria-current={item.active ? \"page\" : undefined}", "active nav aria-current"],
-  ["aria-label={safeAriaText(`Open ${item.label}", "navigation button accessible names"],
-  ["aria-label={debugOpen ? \"Hide debug drawer\" : \"Show debug drawer\"}", "debug drawer button label"],
-  ["aria-controls=\"debug-panel\"", "debug panel control relationship"],
-  ["aria-label=\"Open keyboard shortcuts help\"", "icon-only shortcut help button label"],
-  ["function safeAriaText", "shared safe aria text redaction helper"],
-  ["aria-live=\"polite\"", "polite status live region"],
-  ["aria-live=\"assertive\"", "assertive error live region"],
-  ["aria-disabled=\"true\"", "disabled state semantic marker"],
-  ["Risk level:", "risk badge readable text"],
-  ["Validation status:", "validation badge readable text"],
-  ["Quality severity:", "quality severity readable text"],
-  ["Leak risk severity:", "leak risk readable text"],
-  ["Model capability", "model capability readable text"],
-  ["role=\"group\" aria-label=\"Filter controls\"", "filter toolbar grouping"],
-  ["Status:", "status badge readable text"]
+for (const [tokens, label] of [
+  [["aria-label=\"AI Narrative Studio local workspace\""], "main local workspace landmark"],
+  [["aria-label=\"Local studio navigation\"", "aria-label=\"Local studio navigation / 本地工作室导航\""], "main navigation label"],
+  [["aria-current={item.active ? \"page\" : undefined}"], "active nav aria-current"],
+  [["aria-label={safeAriaText(`Open ${item.label}", "aria-label={safeAriaText(`打开 ${item.cnLabel ?? item.label}"], "navigation button accessible names"],
+  [["aria-label={debugOpen ? \"Hide debug drawer\" : \"Show debug drawer\"}", "aria-label={debugOpen ? \"Hide Debug / Replay panel\" : \"Open Debug / Replay panel\"}"], "debug drawer button label"],
+  [["aria-controls=\"debug-panel\""], "debug panel control relationship"],
+  [["aria-label=\"Open keyboard shortcuts help\""], "icon-only shortcut help button label"],
+  [["function safeAriaText"], "shared safe aria text redaction helper"],
+  [["aria-live=\"polite\""], "polite status live region"],
+  [["aria-live=\"assertive\""], "assertive error live region"],
+  [["aria-disabled=\"true\""], "disabled state semantic marker"],
+  [["Risk level:"], "risk badge readable text"],
+  [["Validation status:"], "validation badge readable text"],
+  [["Quality severity:"], "quality severity readable text"],
+  [["Leak risk severity:"], "leak risk readable text"],
+  [["Model capability"], "model capability readable text"],
+  [["role=\"group\" aria-label=\"Filter controls\""], "filter toolbar grouping"],
+  [["Status:"], "status badge readable text"]
 ]) {
-  if (!appSource.includes(token)) failures.push(`Missing ${label}: ${token}`);
+  if (!tokens.some((token) => appSource.includes(token))) failures.push(`Missing ${label}: ${tokens.join(" | ")}`);
 }
 
 if (!/role="status"[\s\S]*aria-label="Local-only mode"/.test(sharedSource)) {

@@ -1,0 +1,15 @@
+plot_thread_id: lantern_thread
+title: The Harbor Signal
+description: The town prepares the lantern so evening travelers can see the harbor.
+thread_type: main
+status: developing
+linked_chapter_ids:
+  - chapter_1
+linked_scene_ids:
+  - scene_1
+linked_character_ids:
+  - lina
+  - mira
+linked_fact_ids:
+  - lantern_needs_lens
+authoring_notes: Local demo plot thread.

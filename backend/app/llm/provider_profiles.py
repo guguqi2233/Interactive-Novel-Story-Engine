@@ -20,6 +20,7 @@ from app.platform.security import contains_secret_text, redact_text, safe_identi
 
 
 SAFE_SECRET_REF_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]*(?:/[A-Za-z0-9][A-Za-z0-9_.:-]*){0,7}")
+LOCAL_SECRET_DIR_ENV = "AI_NARRATIVE_STUDIO_LOCAL_SECRET_DIR"
 UNSAFE_SECRET_REF_PATTERNS = (
     re.compile(r"sk-[A-Za-z0-9_-]{8,}", re.IGNORECASE),
     re.compile(r"(?i)authorization\s*[:=]?\s*bearer"),
@@ -120,6 +121,7 @@ class ProviderProfileV2(BaseModel):
     base_url_env: str | None = None
     api_key_env: str | None = None
     secret_ref: str | None = None
+    local_secret_ref: str | None = None
     model_profiles: list[ModelProfile] = Field(default_factory=list)
     capabilities: list[str] = Field(default_factory=list)
     allowed_modes: list[ProviderMode] = Field(default_factory=list)
@@ -151,7 +153,7 @@ class ProviderProfileV2(BaseModel):
             raise ValueError("Provider env refs must be environment variable names")
         return value
 
-    @field_validator("secret_ref")
+    @field_validator("secret_ref", "local_secret_ref")
     @classmethod
     def validate_secret_ref(cls, value: str | None) -> str | None:
         if value is None:
@@ -173,7 +175,7 @@ class ProviderProfileV2(BaseModel):
                 lowered = str(key).lower()
                 if lowered in {"api_key", "llm_api_key", "openai_api_key"}:
                     raise ValueError("ProviderProfileV2 must not contain raw API keys")
-                if lowered in {"api_key_env", "secret_ref"}:
+                if lowered in {"api_key_env", "secret_ref", "local_secret_ref"}:
                     continue
                 if isinstance(value, str) and contains_secret_text(value):
                     raise ValueError("ProviderProfileV2 must not contain secrets")
@@ -199,6 +201,8 @@ class ProviderProfileV2(BaseModel):
             "api_key_env": self.api_key_env,
             "secret_ref": "[configured]" if self.secret_ref else None,
             "secret_ref_configured": bool(self.secret_ref),
+            "local_secret_ref": "[configured]" if self.local_secret_ref else None,
+            "local_secret_ref_configured": bool(self.local_secret_ref),
             "model_profiles": [model.safe_summary() for model in self.model_profiles],
             "capabilities": list(self.capabilities),
             "allowed_modes": [str(mode) for mode in self.allowed_modes],
@@ -210,6 +214,9 @@ class ProviderProfileV2(BaseModel):
 
 
 class ProviderSecretResolver:
+    def __init__(self, *, local_secret_dir: str | Path | None = None) -> None:
+        self.local_secret_dir = Path(local_secret_dir).expanduser().resolve() if local_secret_dir else None
+
     def resolve_api_key(self, profile: ProviderProfileV2) -> str | None:
         if profile.api_key_env:
             value = os.getenv(profile.api_key_env)
@@ -218,9 +225,51 @@ class ProviderSecretResolver:
             return value
         if profile.secret_ref:
             raise LLMProviderError(f"Provider secret_ref is not available in this local secret resolver: {profile.secret_ref}")
+        if profile.local_secret_ref:
+            return self.resolve_local_secret_ref(profile.local_secret_ref)
         if profile.key_required():
-            raise LLMProviderError("Provider API key is required but no api_key_env or secret_ref is configured")
+            raise LLMProviderError("Provider API key is required but no api_key_env, secret_ref, or local_secret_ref is configured")
         return None
+
+    def resolve_local_secret_ref(self, local_secret_ref: str) -> str:
+        path = self.local_secret_path(local_secret_ref)
+        if not path.exists() or not path.is_file():
+            raise LLMProviderError("Provider local_secret_ref is not available in this local secret resolver")
+        try:
+            value = path.read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            raise LLMProviderError("Provider local_secret_ref could not be read safely") from exc
+        if not value:
+            raise LLMProviderError("Provider local_secret_ref resolved to an empty secret")
+        return value
+
+    def local_secret_path(self, local_secret_ref: str) -> Path:
+        safe_ref = ProviderProfileV2.validate_secret_ref(local_secret_ref)
+        if safe_ref is None:
+            raise LLMProviderError("Provider local_secret_ref is required")
+        base_dir = self._local_secret_base_dir()
+        relative = Path(*safe_ref.split("/"))
+        target = (base_dir / f"{relative.as_posix()}.secret").resolve()
+        if base_dir not in target.parents and target.parent != base_dir:
+            raise LLMProviderError("Provider local_secret_ref path escaped local secret store")
+        return target
+
+    def _local_secret_base_dir(self) -> Path:
+        if self.local_secret_dir is not None:
+            base_dir = self.local_secret_dir
+        else:
+            raw = os.getenv(LOCAL_SECRET_DIR_ENV)
+            if raw:
+                base_dir = Path(raw).expanduser().resolve()
+            elif os.name == "nt":
+                base = os.getenv("APPDATA") or str(Path.home() / "AppData" / "Roaming")
+                base_dir = Path(base).expanduser().resolve() / "AI Narrative Studio" / "provider-secrets"
+            else:
+                base_dir = Path(os.getenv("XDG_CONFIG_HOME") or Path.home() / ".config").expanduser().resolve() / "ai-narrative-studio" / "provider-secrets"
+        workspace = Path.cwd().resolve()
+        if base_dir == workspace or workspace in base_dir.parents:
+            raise LLMProviderError("Provider local secret store must be outside the project workspace")
+        return base_dir
 
     def resolve_base_url(self, profile: ProviderProfileV2) -> str | None:
         if profile.base_url_env:
@@ -233,6 +282,7 @@ class ProviderSecretResolver:
 
 class FakeProviderSecretResolver(ProviderSecretResolver):
     def __init__(self, secrets: dict[str, str] | None = None, base_urls: dict[str, str] | None = None) -> None:
+        super().__init__()
         self.secrets = secrets or {}
         self.base_urls = base_urls or {}
 
@@ -241,6 +291,8 @@ class FakeProviderSecretResolver(ProviderSecretResolver):
             return self.secrets[profile.api_key_env]
         if profile.secret_ref and profile.secret_ref in self.secrets:
             return self.secrets[profile.secret_ref]
+        if profile.local_secret_ref and profile.local_secret_ref in self.secrets:
+            return self.secrets[profile.local_secret_ref]
         return super().resolve_api_key(profile)
 
     def resolve_base_url(self, profile: ProviderProfileV2) -> str | None:
@@ -291,7 +343,7 @@ class ProviderProfileRepository:
             raise ValueError("Provider profile must not contain secrets")
 
     def _contains_secret_value(self, value: Any, *, key: str = "") -> bool:
-        if key in {"api_key_env", "base_url_env", "secret_ref"}:
+        if key in {"api_key_env", "base_url_env", "secret_ref", "local_secret_ref"}:
             return False
         if isinstance(value, str):
             return contains_secret_text(value)

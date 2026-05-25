@@ -202,6 +202,44 @@ Performance / accessibility optimization rules:
   actions such as apply, import, delete, restore, migration apply, or debug
   export without the existing confirmation gates.
 
+v3.7 focuses on Local Playable Complete Product CN closure. The default UI is
+Chinese and player/creator-oriented: open/create a local project, configure
+models, write novels, run Tavern RP, and play the open world. Product
+Readiness, workflow checklists, Provider setup checklist, local project
+lifecycle, Novel/Tavern/World/Cross-Mode/Authoring/QA/Backup/Export readiness,
+privacy review, product guide, navigation, settings, status, and acceptance
+checklist surfaces remain available, but Debug / QA / Authoring / Diagnostics
+are advanced tools rather than default Home panels. These product changes do
+not change World Engine fact authority.
+
+Local Playable Complete Product CN rules:
+
+- Users can write novels, run Tavern RP, and play the open world locally, but
+  each mode keeps its original authority boundary.
+- World Studio remains the only runtime World play surface, and World changes
+  still go through backend action resolution, `StateDelta`, and `EventLog`.
+- Novel and Tavern Cross-Mode work remains draft/proposal/validation/explicit
+  apply. Drafts do not directly mutate `GameState`.
+- Provider setup, connection testing, model discovery, `ModelProfile` sync,
+  and mode assignment configure Provider Gateway only. Providers and LLMs do
+  not become world arbiters.
+- Real LLM providers may be configured and manually tested by a local user, but
+  tests/CI remain fake-provider only. Real provider calls are not made at
+  startup and must not be automatic background checks.
+- Authoring and Mod workflows operate on local drafts, packages, validation
+  reports, dry-runs, and confirmed safe apply. They do not execute arbitrary
+  code and do not edit active `GameState`.
+- Quality, Debug, Replay, Diagnostics, and Safe Debug Export are local
+  observation/review surfaces. Debug/raw views remain gated by
+  `ENABLE_DEBUG_API`.
+- Backup, Restore, Export, and Diagnostics stay preview/confirm/redacted local
+  workflows and exclude API keys, provider secrets, hidden/debug data,
+  mature/private content, raw prompts/outputs, raw `state_deltas`, databases,
+  logs, caches, and build outputs by default.
+- v3.7 does not introduce accounts, cloud sync, online marketplace, remote
+  package download, online writing/RP/play, multiplayer collaboration, API
+  resale, or arbitrary-code plugins.
+
 ## v2.8 Roleplay Immersion & Mature Module Integration
 
 v2.8 strengthens Tavern/RP immersion and adds default-off mature safety policy

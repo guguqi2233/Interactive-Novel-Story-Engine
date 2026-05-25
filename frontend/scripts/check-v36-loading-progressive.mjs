@@ -9,8 +9,9 @@ const pkg = readFileSync(resolve(root, "package.json"), "utf8");
 const failures = [];
 
 function requireToken(source, token, label) {
-  if (!source.includes(token)) {
-    failures.push(`Missing ${label}: ${token}`);
+  const tokens = Array.isArray(token) ? token : [token];
+  if (!tokens.some((candidate) => source.includes(candidate))) {
+    failures.push(`Missing ${label}: ${tokens.join(" | ")}`);
   }
 }
 
@@ -25,10 +26,10 @@ for (const [token, label] of [
   ["EventLog loading", "EventLog loading state"],
   ["Timeline Replay loading", "Timeline replay loading state"],
   ["Module Browser package list loading", "module browser loading state"],
-  ["Backup preview staged loading", "backup staged loading state"],
-  ["Diagnostics preview staged loading", "diagnostics staged loading state"],
-  ["Novel dashboard loading", "Novel dashboard loading state"],
-  ["Tavern dashboard loading", "Tavern dashboard loading state"],
+  [["Backup preview staged loading", "备份预览加载中"], "backup staged loading state"],
+  [["Diagnostics preview staged loading", "诊断包预览加载中"], "diagnostics staged loading state"],
+  [["Novel dashboard loading", "正在加载 Novel 工作区"], "Novel dashboard loading state"],
+  [["Tavern dashboard loading", "Tavern 工作区加载中"], "Tavern dashboard loading state"],
   ["World dashboard loading", "World dashboard loading state"],
   ["hidden facts", "route fallback privacy copy"],
   ["raw StateDelta payloads stay out of normal view", "StateDelta safe loading copy"]

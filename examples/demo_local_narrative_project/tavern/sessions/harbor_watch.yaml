@@ -1,0 +1,29 @@
+session_id: harbor_watch
+project_id: demo_local_narrative_project
+title: Harbor Watch
+character_ids:
+  - lina
+scene_context:
+  location_ref: world:location:lantern_house
+  scene_title: Lantern House Watch
+  scene_summary: Lina checks the lantern and invites the player to inspect the lens.
+  mood_tags:
+    - calm
+    - practical
+  scene_mood_preset_id: quiet_harbor
+  relationship_tone_id: helpful
+  authoring_notes: ""
+message_refs:
+  - msg_001
+  - msg_002
+messages: []
+multi_character_scene_refs:
+  - harbor_watch_scene
+linked_memory_ids:
+  - memory_harbor_watch_summary
+linked_world_refs:
+  - world:quest:relight_lantern
+prompt_profile_id: null
+status: draft
+created_at: "2026-05-25T00:00:00+00:00"
+updated_at: "2026-05-25T00:00:00+00:00"

@@ -35,7 +35,7 @@ export function NovelStatusBadge({ status }: { status?: string | null }) {
 
 export function WordCountBadge({ text, count }: { text?: string | null; count?: number }) {
   const resolvedCount = useMemo(() => count ?? countWordsFast(text), [count, text]);
-  return <span className="word-count-badge">{resolvedCount} words</span>;
+  return <span className="word-count-badge">{resolvedCount} 字</span>;
 }
 
 export function LinkedRefList({ title, refs }: { title: string; refs?: string[] }) {
@@ -43,7 +43,7 @@ export function LinkedRefList({ title, refs }: { title: string; refs?: string[] 
   return (
     <div className="linked-ref-list">
       <strong>{title}</strong>
-      {safeRefs.length === 0 ? <span className="muted">none</span> : safeRefs.map((ref) => <span key={ref}>{ref}</span>)}
+      {safeRefs.length === 0 ? <span className="muted">无</span> : safeRefs.map((ref) => <span key={ref}>{ref}</span>)}
     </div>
   );
 }
@@ -66,11 +66,11 @@ export function ManuscriptCard({ manuscript, selected, onSelect }: { manuscript:
     <button type="button" className={`novel-card manuscript-card ${selected ? "selected-list-button" : ""}`} onClick={onSelect}>
       <div>
         <h4>{manuscript.title}</h4>
-        <p className="muted">{safeExcerpt(manuscript.description) || "Local manuscript draft."}</p>
+        <p className="muted">{safeExcerpt(manuscript.description) || "本地稿件草稿。"}</p>
       </div>
       <div className="novel-card-meta">
-        <span>{manuscript.chapter_refs?.length ?? 0} linked chapters</span>
-        <span>{manuscript.genre_tags?.join(", ") || "untagged"}</span>
+        <span>{manuscript.chapter_refs?.length ?? 0} 个关联章节</span>
+        <span>{manuscript.genre_tags?.join(", ") || "未标记"}</span>
       </div>
     </button>
   );
@@ -83,10 +83,10 @@ export function ChapterCard({ chapter, selected, onSelect }: { chapter: NovelCha
         <strong>{chapter.order_index + 1}. {chapter.title}</strong>
         <NovelStatusBadge status={chapter.status} />
       </div>
-      <p className="muted">{safeExcerpt(chapter.summary) || "No chapter summary."}</p>
+      <p className="muted">{safeExcerpt(chapter.summary) || "暂无章节摘要。"}</p>
       <div className="novel-card-meta">
         <WordCountBadge text={chapter.draft_text} />
-        <span>{chapter.scene_refs?.length ?? 0} scenes</span>
+        <span>{chapter.scene_refs?.length ?? 0} 个场景</span>
       </div>
     </button>
   );
@@ -99,9 +99,9 @@ export function SceneCard({ scene, onOpen }: { scene: NovelScene; onOpen?: () =>
         <strong>{scene.title}</strong>
         <NovelStatusBadge status={scene.status} />
       </div>
-      <p className="muted">{safeExcerpt(scene.summary) || "No scene summary."}</p>
+      <p className="muted">{safeExcerpt(scene.summary) || "暂无场景摘要。"}</p>
       <div className="novel-card-meta">
-        <span>chapter {scene.chapter_id}</span>
+        <span>章节 {scene.chapter_id}</span>
         <WordCountBadge text={scene.draft_text} />
       </div>
     </button>
@@ -124,7 +124,7 @@ export function NovelSafeSummaryPanel({ title, children }: { title: string; chil
     <aside className="novel-safe-summary-panel">
       <h4>{title}</h4>
       {children}
-      <p className="muted">Normal Novel UI excludes API keys, hidden facts, private notes, raw prompts, and raw state_deltas.</p>
+      <p className="muted">Novel normal UI 不显示 API Key、hidden facts、private notes、raw prompts 和 raw state_deltas。</p>
     </aside>
   );
 }
@@ -144,7 +144,7 @@ export function NovelToolbar({ title, actions, meta }: { title: string; actions?
 export function DraftSaveStatus({ dirty, saving, message }: { dirty?: boolean; saving?: boolean; message?: string }) {
   return (
     <span className={`draft-save-status ${dirty ? "dirty" : "clean"}`}>
-      {saving ? "saving..." : dirty ? "unsaved changes" : message || "saved locally"}
+      {saving ? "保存中..." : dirty ? "有未保存修改" : message || "已本地保存"}
     </span>
   );
 }
@@ -177,10 +177,10 @@ export function ManuscriptDashboard({ manuscripts, chapters, scenes }: { manuscr
   );
   return (
     <div className="novel-dashboard-grid">
-      <NovelMetric title="Manuscripts" value={manuscripts.length} />
-      <NovelMetric title="Chapters" value={chapters.length} />
-      <NovelMetric title="Scenes" value={scenes.length} />
-      <NovelMetric title="Total words" value={words} />
+      <NovelMetric title="稿件" value={manuscripts.length} />
+      <NovelMetric title="章节" value={chapters.length} />
+      <NovelMetric title="场景" value={scenes.length} />
+      <NovelMetric title="总字数" value={words} />
     </div>
   );
 }
@@ -214,26 +214,26 @@ export function OutlineTreePro({
 
   if (orderedChapters.length === 0) {
     return (
-      <NovelSafeSummaryPanel title="Outline Tree Pro">
-        <p>No outline nodes yet. Add a chapter to start building a local manuscript structure.</p>
+      <NovelSafeSummaryPanel title="大纲树">
+        <p>还没有大纲节点。添加章节后即可开始整理本地稿件结构。</p>
       </NovelSafeSummaryPanel>
     );
   }
 
   return (
-    <NovelSafeSummaryPanel title="Outline Tree Pro">
+    <NovelSafeSummaryPanel title="大纲树">
       <div className="outline-tree-pro">
         {orderedChapters.map((chapter, index) => {
           const childScenes = scenesByChapterId.get(chapter.chapter_id) ?? [];
           const isCollapsed = collapsed.has(chapter.chapter_id);
           const missing = [
-            !chapter.summary ? "summary" : "",
-            childScenes.length === 0 ? "scene" : ""
+            !chapter.summary ? "摘要" : "",
+            childScenes.length === 0 ? "场景" : ""
           ].filter(Boolean);
           return (
             <div key={chapter.chapter_id} className={`outline-tree-node ${chapter.chapter_id === selectedChapterId ? "selected" : ""}`}>
               <button type="button" className="outline-tree-row" onClick={() => onSelectChapter?.(chapter.chapter_id)}>
-                <span className="outline-node-type">chapter</span>
+                <span className="outline-node-type">章节</span>
                 <strong>{index + 1}. {safeExcerpt(chapter.title)}</strong>
                 <NovelStatusBadge status={chapter.status} />
                 <WordCountBadge text={chapter.draft_text} />
@@ -248,21 +248,21 @@ export function OutlineTreePro({
                     setCollapsed(next);
                   }}
                 >
-                  {isCollapsed ? "Expand" : "Collapse"}
+                  {isCollapsed ? "展开" : "折叠"}
                 </button>
-                <button type="button" disabled title="Reorder writes are available through outline APIs only after validation.">Move</button>
-                <span>{childScenes.length} scene(s)</span>
-                {missing.length > 0 && <span className="novel-warning-chip">missing {missing.join(", ")}</span>}
+                <button type="button" disabled title="重排需通过大纲 API 校验后执行。">移动</button>
+                <span>{childScenes.length} 个场景</span>
+                {missing.length > 0 && <span className="novel-warning-chip">缺少 {missing.join(", ")}</span>}
               </div>
               {!isCollapsed && (
                 <div className="outline-tree-children">
-                  {childScenes.length === 0 ? <p className="muted">No scene cards linked yet.</p> : childScenes.map((scene) => (
+                  {childScenes.length === 0 ? <p className="muted">还没有关联场景卡。</p> : childScenes.map((scene) => (
                     <OutlineNodeView
                       key={scene.scene_id}
                       depth={1}
                       node={{
                         node_id: scene.scene_id,
-                        node_type: "scene",
+                        node_type: "场景",
                         title: scene.title,
                         summary: scene.summary,
                         status: scene.status
@@ -312,15 +312,15 @@ export function ChapterListPro({
   }, [pageCount, pageIndex]);
 
   if (chapters.length === 0) {
-    return <div className="novel-card-list"><p className="muted">No chapters</p></div>;
+    return <div className="novel-card-list"><p className="muted">还没有章节</p></div>;
   }
 
   return (
     <div className="novel-card-list" data-windowed-novel-chapters="true">
       <div className="novel-card-meta">
-        <span>Rendering {windowStart + 1}-{windowEnd} of {orderedChapters.length} chapter(s)</span>
+        <span>显示 {windowStart + 1}-{windowEnd} / {orderedChapters.length} 个章节</span>
         <label>
-          Rows
+          每页
           <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>
             {[10, 25, 50].map((size) => <option key={size} value={size}>{size}</option>)}
           </select>
@@ -335,12 +335,12 @@ export function ChapterListPro({
         />
       ))}
       {orderedChapters.length > pageSize ? (
-        <div className="pagination-controls" aria-label="Novel chapter pagination">
-          <button type="button" onClick={() => setPageIndex(0)} disabled={clampedPageIndex === 0}>First</button>
-          <button type="button" onClick={() => setPageIndex(Math.max(clampedPageIndex - 1, 0))} disabled={clampedPageIndex === 0}>Previous</button>
-          <span>Page {clampedPageIndex + 1} / {pageCount}</span>
-          <button type="button" onClick={() => setPageIndex(Math.min(clampedPageIndex + 1, pageCount - 1))} disabled={clampedPageIndex >= pageCount - 1}>Next</button>
-          <button type="button" onClick={() => setPageIndex(pageCount - 1)} disabled={clampedPageIndex >= pageCount - 1}>Last</button>
+        <div className="pagination-controls" aria-label="Novel 章节分页">
+          <button type="button" onClick={() => setPageIndex(0)} disabled={clampedPageIndex === 0}>首页</button>
+          <button type="button" onClick={() => setPageIndex(Math.max(clampedPageIndex - 1, 0))} disabled={clampedPageIndex === 0}>上一页</button>
+          <span>第 {clampedPageIndex + 1} / {pageCount} 页</span>
+          <button type="button" onClick={() => setPageIndex(Math.min(clampedPageIndex + 1, pageCount - 1))} disabled={clampedPageIndex >= pageCount - 1}>下一页</button>
+          <button type="button" onClick={() => setPageIndex(pageCount - 1)} disabled={clampedPageIndex >= pageCount - 1}>末页</button>
         </div>
       ) : null}
     </div>
@@ -400,32 +400,32 @@ export function SceneCardsBoard({ scenes }: { scenes: NovelScene[] }) {
   return (
     <div className="stack">
       <NovelToolbar
-        title="Scene Cards Board"
-        meta={<span className="muted">POV, location, characters, status, tags, word count, and plot refs stay local to Novel drafts.</span>}
+        title="场景卡片"
+        meta={<span className="muted">POV、地点、人物、状态、标签、字数和剧情引用都只属于 Novel 草稿。</span>}
         actions={(
           <>
-            <input value={filter} onChange={(event) => setFilter(event.target.value)} placeholder="Filter scenes, tags, POV, location" />
+            <input value={filter} onChange={(event) => setFilter(event.target.value)} placeholder="筛选场景、标签、POV、地点" />
             <select value={status} onChange={(event) => setStatus(event.target.value)}>
               {statuses.map((item) => <option key={item} value={item}>{item}</option>)}
             </select>
             <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>
-              {[12, 24, 48].map((size) => <option key={size} value={size}>{size} cards</option>)}
+              {[12, 24, 48].map((size) => <option key={size} value={size}>{size} 张卡片</option>)}
             </select>
-            {filter !== debouncedFilter ? <span className="novel-chip">filtering...</span> : null}
+            {filter !== debouncedFilter ? <span className="novel-chip">筛选中...</span> : null}
           </>
         )}
       />
-      {filtered.length === 0 ? <p className="muted">No scenes match this filter.</p> : (
+      {filtered.length === 0 ? <p className="muted">没有匹配的场景。</p> : (
         <>
-        <p className="muted">Rendering {windowStart + 1}-{windowEnd} of {filtered.length} filtered scene card(s).</p>
+        <p className="muted">显示 {windowStart + 1}-{windowEnd} / {filtered.length} 个筛选后的场景。</p>
         <div className="scene-cards-board" data-windowed-novel-scenes="true">
           {visibleScenes.map((scene) => (
             <div key={scene.scene_id} className="scene-card-pro">
               <SceneCard scene={scene} />
               <div className="novel-card-meta">
-                <span>POV {scene.pov_character_id || "unset"}</span>
-                <span>location {scene.location_ref || "unset"}</span>
-                <span>plot {scene.linked_world_event_ids?.[0] || "unlinked"}</span>
+                <span>POV {scene.pov_character_id || "未设置"}</span>
+                <span>地点 {scene.location_ref || "未设置"}</span>
+                <span>剧情 {scene.linked_world_event_ids?.[0] || "未关联"}</span>
               </div>
               <div className="novel-chip-row">
                 {sceneTags(scene).map((tag) => <span key={tag} className="novel-chip">{safeExcerpt(tag, 40)}</span>)}
@@ -434,12 +434,12 @@ export function SceneCardsBoard({ scenes }: { scenes: NovelScene[] }) {
           ))}
         </div>
         {filtered.length > pageSize ? (
-          <div className="pagination-controls" aria-label="Novel scene pagination">
-            <button type="button" onClick={() => setPageIndex(0)} disabled={clampedPageIndex === 0}>First</button>
-            <button type="button" onClick={() => setPageIndex(Math.max(clampedPageIndex - 1, 0))} disabled={clampedPageIndex === 0}>Previous</button>
-            <span>Page {clampedPageIndex + 1} / {pageCount}</span>
-            <button type="button" onClick={() => setPageIndex(Math.min(clampedPageIndex + 1, pageCount - 1))} disabled={clampedPageIndex >= pageCount - 1}>Next</button>
-            <button type="button" onClick={() => setPageIndex(pageCount - 1)} disabled={clampedPageIndex >= pageCount - 1}>Last</button>
+          <div className="pagination-controls" aria-label="Novel 场景分页">
+            <button type="button" onClick={() => setPageIndex(0)} disabled={clampedPageIndex === 0}>首页</button>
+            <button type="button" onClick={() => setPageIndex(Math.max(clampedPageIndex - 1, 0))} disabled={clampedPageIndex === 0}>上一页</button>
+            <span>第 {clampedPageIndex + 1} / {pageCount} 页</span>
+            <button type="button" onClick={() => setPageIndex(Math.min(clampedPageIndex + 1, pageCount - 1))} disabled={clampedPageIndex >= pageCount - 1}>下一页</button>
+            <button type="button" onClick={() => setPageIndex(pageCount - 1)} disabled={clampedPageIndex >= pageCount - 1}>末页</button>
           </div>
         ) : null}
         </>
@@ -463,16 +463,16 @@ export function CharacterArcPanel({ chapters = [], scenes = [] }: { chapters?: N
     });
   }, [chapters, scenes]);
   return (
-    <NovelSafeSummaryPanel title="Character Arc Panel">
-      {characterSummaries.length === 0 ? <p>No linked characters yet. Add character refs to chapters or scenes to track arcs.</p> : characterSummaries.map((summary) => (
+    <NovelSafeSummaryPanel title="人物弧线">
+      {characterSummaries.length === 0 ? <p>还没有关联人物。给章节或场景添加人物引用后即可追踪人物弧线。</p> : characterSummaries.map((summary) => (
           <div key={summary.characterId} className="novel-card compact">
             <div className="novel-card-title-row">
               <strong>{safeExcerpt(summary.characterId)}</strong>
               <NovelStatusBadge status={summary.stage} />
             </div>
-            <p className="muted">Motivation/conflict notes remain authoring material. Turning points are inferred from linked safe scenes.</p>
-            <LinkedRefList title="linked chapters" refs={summary.linkedChapters.map((chapter) => chapter.chapter_id)} />
-            <LinkedRefList title="turning points" refs={summary.linkedScenes.slice(0, 4).map((scene) => scene.scene_id)} />
+            <p className="muted">动机和冲突说明仍是创作材料；转折点从关联的 safe scenes 推断。</p>
+            <LinkedRefList title="关联章节" refs={summary.linkedChapters.map((chapter) => chapter.chapter_id)} />
+            <LinkedRefList title="转折点" refs={summary.linkedScenes.slice(0, 4).map((scene) => scene.scene_id)} />
           </div>
         ))}
     </NovelSafeSummaryPanel>
@@ -483,15 +483,15 @@ export function PlotForeshadowingBoard({ chapters = [], scenes = [] }: { chapter
   const linkedWorldEvents = useMemo(() => uniqueRefs(scenes.flatMap((scene) => scene.linked_world_event_ids ?? [])), [scenes]);
   const unresolvedScenes = useMemo(() => scenes.filter((scene) => !scene.summary || (scene.status || "draft") !== "complete"), [scenes]);
   return (
-    <NovelSafeSummaryPanel title="Plot / Foreshadowing Board">
+    <NovelSafeSummaryPanel title="剧情线 / 伏笔">
       <div className="novel-dashboard-grid">
-        <NovelMetric title="Plot refs" value={linkedWorldEvents.length} />
-        <NovelMetric title="Open scenes" value={unresolvedScenes.length} />
-        <NovelMetric title="Chapters" value={chapters.length} />
+        <NovelMetric title="剧情引用" value={linkedWorldEvents.length} />
+        <NovelMetric title="未完成场景" value={unresolvedScenes.length} />
+        <NovelMetric title="章节" value={chapters.length} />
       </div>
-      {linkedWorldEvents.length === 0 ? <p className="muted">No plot thread refs yet.</p> : <LinkedRefList title="plot threads / world refs" refs={linkedWorldEvents} />}
+      {linkedWorldEvents.length === 0 ? <p className="muted">还没有剧情线引用。</p> : <LinkedRefList title="剧情线 / world refs" refs={linkedWorldEvents} />}
       {unresolvedScenes.slice(0, 5).map((scene) => (
-        <p key={scene.scene_id}><strong>{safeExcerpt(scene.title)}</strong>: setup/payoff status needs review. Hidden truth refs are redacted in normal view.</p>
+        <p key={scene.scene_id}><strong>{safeExcerpt(scene.title)}</strong>：铺垫/回收状态需要检查。normal view 会隐藏敏感真相引用。</p>
       ))}
     </NovelSafeSummaryPanel>
   );
@@ -508,9 +508,9 @@ export function TimelineLinkPanel({ chapters = [], scenes = [] }: { chapters?: N
     [chapters, scenes]
   );
   return (
-    <NovelSafeSummaryPanel title="Timeline Link Panel">
-      {timelineRefs.length === 0 ? <p>No safe timeline refs linked yet.</p> : <LinkedRefList title="safe timeline / world event refs" refs={timelineRefs} />}
-      <p>Timeline refs are reference-only; Novel UI cannot write World EventLog or GameState.</p>
+    <NovelSafeSummaryPanel title="时间线链接">
+      {timelineRefs.length === 0 ? <p>还没有 safe timeline refs。</p> : <LinkedRefList title="安全时间线 / world event refs" refs={timelineRefs} />}
+      <p>时间线引用只用于参考；Novel UI 不能写入 World EventLog 或 GameState。</p>
     </NovelSafeSummaryPanel>
   );
 }
@@ -525,39 +525,62 @@ export function WorldBibleSidebar({ chapters = [], scenes = [] }: { chapters?: N
     [chapters, scenes]
   );
   return (
-    <NovelSafeSummaryPanel title="World Bible Sidebar">
-      {factRefs.length === 0 ? <p>No novel-safe World Bible refs linked yet.</p> : <LinkedRefList title="novel-safe fact refs" refs={factRefs} />}
-      <p>World facts are safe references for drafting only; hidden facts and NPC secrets stay out of normal Novel UI.</p>
+    <NovelSafeSummaryPanel title="世界资料侧栏">
+      {factRefs.length === 0 ? <p>还没有 novel-safe World Bible refs。</p> : <LinkedRefList title="novel-safe fact refs" refs={factRefs} />}
+      <p>World facts 只作为写作参考；hidden facts 和 NPC secrets 不进入 Novel normal UI。</p>
     </NovelSafeSummaryPanel>
   );
 }
 
-export function NovelPromptProviderPanel({ promptProfileId, providerSummary }: { promptProfileId?: string | null; providerSummary?: string }) {
+export function NovelPromptProviderPanel({
+  promptProfileId,
+  providerSummary,
+  currentModel,
+  missingProvider,
+  onConfigureProvider
+}: {
+  promptProfileId?: string | null;
+  providerSummary?: string;
+  currentModel?: string;
+  missingProvider?: boolean;
+  onConfigureProvider?: () => void;
+}) {
   return (
-    <NovelSafeSummaryPanel title="Novel Prompt / Provider">
-      <p>Prompt profile: {promptProfileId || "project default"}</p>
-      <p>Provider: {providerSummary || "safe summary only; API key not shown"}</p>
-      <p>Use cases: novel_draft / novel_rewrite / chapter_summary.</p>
+    <NovelSafeSummaryPanel title="Novel 模型服务 / Provider">
+      <p>Prompt profile：{promptProfileId || "项目默认"}</p>
+      <p>当前模型：{currentModel || "未分配 Novel 模型"}</p>
+      <p>{providerSummary || "仅显示 safe summary；API Key 不会显示。"}</p>
+      <p>用途：novel_draft / novel_rewrite / cheap_summary。</p>
+      {missingProvider && (
+        <div className="notice-panel">
+          <strong>需要配置模型服务</strong>
+          <p>使用真实 LLM 生成、改写或摘要前，请先配置模型服务并分配 Novel 模型。</p>
+          {onConfigureProvider && <button type="button" onClick={onConfigureProvider}>配置模型服务</button>}
+        </div>
+      )}
     </NovelSafeSummaryPanel>
   );
 }
 
 export function NovelExportWizard({ onExportMarkdown, onExportTxt }: { onExportMarkdown: () => void; onExportTxt: () => void }) {
   return (
-    <NovelSafeSummaryPanel title="Novel Export Wizard">
-      <p>Markdown / TXT export preview excludes authoring notes, hidden refs, mature/private content, debug data, and API keys by default.</p>
+    <NovelSafeSummaryPanel title="Novel 导出">
+      <p>Markdown / TXT 导出默认过滤 authoring notes、hidden refs、mature/private、debug data 和 API Key。</p>
       <div className="button-row">
-        <button type="button" onClick={onExportMarkdown}>Export Markdown</button>
-        <button type="button" onClick={onExportTxt}>Export TXT</button>
+        <button type="button" onClick={onExportMarkdown}>导出 Markdown</button>
+        <button type="button" onClick={onExportTxt}>导出 TXT</button>
       </div>
     </NovelSafeSummaryPanel>
   );
 }
 
-export function NovelQualityDashboard({ issues }: { issues: NovelIssue[] }) {
+export function NovelQualityDashboard({ issues, onRun }: { issues: NovelIssue[]; onRun?: () => void }) {
   return (
-    <NovelSafeSummaryPanel title="Novel Quality Dashboard">
-      {issues.length === 0 ? <p>No report yet. Run local Novel quality checks before export.</p> : (
+    <NovelSafeSummaryPanel title="Novel Quality / 质量检查">
+      <div className="button-row">
+        {onRun && <button type="button" onClick={onRun}>运行 Novel Quality</button>}
+      </div>
+      {issues.length === 0 ? <p>暂无问题。导出前可运行本地 Novel Quality 检查。</p> : (
         <div className="novel-quality-list">
           {issues.map((issue) => (
             <div key={`${issue.code}-${issue.ref_id ?? issue.message}`} className={`novel-quality-row severity-${issue.severity}`}>
@@ -566,8 +589,8 @@ export function NovelQualityDashboard({ issues }: { issues: NovelIssue[] }) {
                 <span>{safeExcerpt(issue.category || issue.code)}</span>
               </div>
               <p>{safeExcerpt(issue.safe_detail || issue.message)}</p>
-              <p className="muted">Affected: {safeExcerpt(issue.affected_label || [issue.ref_type, issue.ref_id].filter(Boolean).join(":") || "manuscript")}</p>
-              <p className="muted">Suggested action: {safeExcerpt(issue.suggested_action || "Review the affected draft and rerun local quality checks.")}</p>
+              <p className="muted">影响对象：{safeExcerpt(issue.affected_label || [issue.ref_type, issue.ref_id].filter(Boolean).join(":") || "稿件")}</p>
+              <p className="muted">建议：{safeExcerpt(issue.suggested_action || "修订相关草稿后重新运行本地质量检查。")}</p>
             </div>
           ))}
         </div>
@@ -620,23 +643,23 @@ export function NovelSearchFilterBar({
   return (
     <div className="novel-search-bar">
       <label>
-        Search Novel Studio
-        <input value={draftValue} onChange={(event) => setDraftValue(event.target.value)} placeholder="Search chapters, scenes, plot threads" />
+        搜索 Novel
+        <input value={draftValue} onChange={(event) => setDraftValue(event.target.value)} placeholder="搜索章节、场景、剧情线" />
       </label>
       <label>
-        Status
+        状态
         <select value={status || ""} onChange={(event) => onStatusChange?.(event.target.value)}>
-          <option value="">any</option>
-          <option value="draft">draft</option>
-          <option value="revision">revision</option>
-          <option value="complete">complete</option>
+          <option value="">全部</option>
+          <option value="draft">草稿</option>
+          <option value="revision">修订</option>
+          <option value="complete">完成</option>
         </select>
       </label>
       <label>
-        Tag
-        <input value={draftTag} onChange={(event) => setDraftTag(event.target.value)} placeholder="character, plot, location" />
+        标签
+        <input value={draftTag} onChange={(event) => setDraftTag(event.target.value)} placeholder="人物、剧情、地点" />
       </label>
-      {draftValue !== debouncedValue || draftTag !== debouncedTag ? <span className="novel-chip">filtering...</span> : null}
+      {draftValue !== debouncedValue || draftTag !== debouncedTag ? <span className="novel-chip">筛选中...</span> : null}
     </div>
   );
 }
@@ -666,20 +689,20 @@ export function DraftVersionPanel({ snapshots, onCompare }: { snapshots: NovelDr
   }, [pageCount, pageIndex]);
 
   return (
-    <NovelSafeSummaryPanel title="Draft Version Compare">
+    <NovelSafeSummaryPanel title="草稿版本对比">
       <div className="novel-card-meta">
-        <button type="button" onClick={() => setCollapsed((value) => !value)}>{collapsed ? "Show snapshots" : "Collapse snapshots"}</button>
-        <span>{orderedSnapshots.length} local snapshot(s)</span>
+        <button type="button" onClick={() => setCollapsed((value) => !value)}>{collapsed ? "显示快照" : "折叠快照"}</button>
+        <span>{orderedSnapshots.length} 个本地快照</span>
         <label>
-          Rows
+          每页
           <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>
             {[5, 10, 25].map((size) => <option key={size} value={size}>{size}</option>)}
           </select>
         </label>
       </div>
-      {snapshots.length === 0 ? <p>No snapshots yet. Create one before a major rewrite.</p> : collapsed ? <p className="muted">Snapshot list collapsed for large draft history performance.</p> : (
+      {snapshots.length === 0 ? <p>还没有快照。大改前建议先创建快照。</p> : collapsed ? <p className="muted">快照列表已折叠，避免长历史卡顿。</p> : (
         <div data-windowed-draft-snapshots="true">
-          <p className="muted">Rendering {windowStart + 1}-{windowEnd} of {orderedSnapshots.length} snapshot(s).</p>
+          <p className="muted">显示 {windowStart + 1}-{windowEnd} / {orderedSnapshots.length} 个快照。</p>
           {visibleSnapshots.map((snapshot) => (
             <button key={snapshot.snapshot_id} type="button" className="novel-card" onClick={() => onCompare(snapshot.snapshot_id)}>
               <strong>{safeExcerpt(snapshot.title || snapshot.snapshot_id)}</strong>
@@ -687,17 +710,17 @@ export function DraftVersionPanel({ snapshots, onCompare }: { snapshots: NovelDr
             </button>
           ))}
           {orderedSnapshots.length > pageSize ? (
-            <div className="pagination-controls" aria-label="Draft snapshot pagination">
-              <button type="button" onClick={() => setPageIndex(0)} disabled={clampedPageIndex === 0}>First</button>
-              <button type="button" onClick={() => setPageIndex(Math.max(clampedPageIndex - 1, 0))} disabled={clampedPageIndex === 0}>Previous</button>
-              <span>Page {clampedPageIndex + 1} / {pageCount}</span>
-              <button type="button" onClick={() => setPageIndex(Math.min(clampedPageIndex + 1, pageCount - 1))} disabled={clampedPageIndex >= pageCount - 1}>Next</button>
-              <button type="button" onClick={() => setPageIndex(pageCount - 1)} disabled={clampedPageIndex >= pageCount - 1}>Last</button>
+            <div className="pagination-controls" aria-label="草稿快照分页">
+              <button type="button" onClick={() => setPageIndex(0)} disabled={clampedPageIndex === 0}>首页</button>
+              <button type="button" onClick={() => setPageIndex(Math.max(clampedPageIndex - 1, 0))} disabled={clampedPageIndex === 0}>上一页</button>
+              <span>第 {clampedPageIndex + 1} / {pageCount} 页</span>
+              <button type="button" onClick={() => setPageIndex(Math.min(clampedPageIndex + 1, pageCount - 1))} disabled={clampedPageIndex >= pageCount - 1}>下一页</button>
+              <button type="button" onClick={() => setPageIndex(pageCount - 1)} disabled={clampedPageIndex >= pageCount - 1}>末页</button>
             </div>
           ) : null}
         </div>
       )}
-      <p>Compare results are safe summaries and never expose hidden World context.</p>
+      <p>对比结果只显示 safe summaries，不暴露 hidden World context。</p>
     </NovelSafeSummaryPanel>
   );
 }
@@ -706,33 +729,34 @@ export function WritingSessionDashboard({ session, currentWordCount }: { session
   const active = session && !session.ended_at;
   const delta = session ? currentWordCount - session.word_count_start : 0;
   return (
-    <NovelSafeSummaryPanel title="Writing Session Dashboard">
+    <NovelSafeSummaryPanel title="写作会话">
       {session ? (
         <div className="novel-dashboard-grid">
-          <NovelMetric title="Status" value={active ? "active" : "ended"} />
-          <NovelMetric title="Words this session" value={Math.max(0, delta)} />
-          <NovelMetric title="Goal" value={session.local_goal_words ?? "unset"} />
-          <NovelMetric title="Chapter" value={session.active_chapter_id || "none"} />
+          <NovelMetric title="状态" value={active ? "进行中" : "已结束"} />
+          <NovelMetric title="本次字数" value={Math.max(0, delta)} />
+          <NovelMetric title="目标" value={session.local_goal_words ?? "未设置"} />
+          <NovelMetric title="章节" value={session.active_chapter_id || "无"} />
         </div>
-      ) : <p>No active writing session. Start one for local word-count tracking.</p>}
-      <p>Writing sessions are local metadata; no telemetry is uploaded.</p>
+      ) : <p>当前没有写作会话。可以开始写作来本地统计字数。</p>}
+      <p>写作会话只是本地 metadata，不上传 telemetry。</p>
     </NovelSafeSummaryPanel>
   );
 }
 
-export function WorldToNovelImportPanel({ preview }: { preview?: Record<string, unknown> | null }) {
+export function WorldToNovelImportPanel({ preview, onPreview }: { preview?: Record<string, unknown> | null; onPreview?: () => void }) {
   const sourceIds = (preview?.source_event_ids as string[] | undefined) ?? [];
   const excluded = Number(preview?.hidden_events_excluded_count ?? preview?.excluded_count ?? 0);
   return (
-    <NovelSafeSummaryPanel title="World -> Novel Import UX Pro">
-      <p>Preview uses safe event summaries only. Apply confirmation does not modify World EventLog or GameState, and raw state_deltas are excluded.</p>
+    <NovelSafeSummaryPanel title="从 World 导入章节草稿">
+      <p>预览只使用玩家可见的 safe event summaries。创建 Novel 草稿不会修改 World EventLog 或 GameState，并排除 raw state_deltas。</p>
+      {onPreview && <button type="button" onClick={onPreview}>预览 World → Novel 章节草稿</button>}
       <div className="novel-dashboard-grid">
-        <NovelMetric title="Source events" value={sourceIds.length} />
-        <NovelMetric title="Filtered" value={excluded} />
-        <NovelMetric title="Target" value={String(preview?.target_chapter_id ?? "choose chapter")} />
+        <NovelMetric title="来源事件" value={sourceIds.length} />
+        <NovelMetric title="已过滤" value={excluded} />
+        <NovelMetric title="目标" value={String(preview?.target_chapter_id ?? "选择章节")} />
       </div>
-      <LinkedRefList title="source event range" refs={sourceIds} />
-      <p className="muted">Confirm before creating or updating any Novel scene draft. Tavern/World originals are untouched.</p>
+      <LinkedRefList title="来源事件范围" refs={sourceIds} />
+      <p className="muted">创建或更新 Novel 场景草稿前仍需确认；Tavern/World 原始数据不受影响。</p>
     </NovelSafeSummaryPanel>
   );
 }

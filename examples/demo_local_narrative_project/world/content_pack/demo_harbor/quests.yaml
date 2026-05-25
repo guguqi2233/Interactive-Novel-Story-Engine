@@ -1,0 +1,35 @@
+quests:
+  - id: relight_lantern
+    title: Relight the Lantern
+    description: Help the harbor crew prepare the signal lantern before dusk.
+    initial_stage: speak_with_mira
+    visibility: public
+    stages:
+      - id: speak_with_mira
+        title: Speak with Mira
+        description: Ask Mira what the harbor needs before evening.
+        objectives:
+          - talk_to_mira
+        next_stages:
+          - fit_repair_lens
+      - id: fit_repair_lens
+        title: Fit the Repair Lens
+        description: Bring the repair lens to the lantern house and check the signal.
+        objectives:
+          - obtain_repair_lens
+          - observe_signal_lantern
+        next_stages: []
+    triggers:
+      - type: npc_talked
+        id: mira
+        action: complete_objective
+        objective_id: talk_to_mira
+        next_stage: fit_repair_lens
+      - type: item_acquired
+        id: repair_lens
+        action: complete_objective
+        objective_id: obtain_repair_lens
+      - type: location_visited
+        id: lantern_house
+        action: complete_objective
+        objective_id: observe_signal_lantern

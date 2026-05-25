@@ -847,6 +847,9 @@ class NovelDraftGenerationService:
     def summarize_chapter(self, context: NovelPromptContext) -> GeneratedNovelDraft:
         return self._generate("Summarize this chapter draft.", context)
 
+    def summarize_text(self, context: NovelPromptContext, text: str) -> GeneratedNovelDraft:
+        return self._generate(f"Summarize this chapter draft safely:\n{redact_text(text)}", context)
+
     def expand_outline_node(self, context: NovelPromptContext, node_summary: str) -> GeneratedNovelDraft:
         return self._generate(f"Expand this outline node into draft prose:\n{redact_text(node_summary)}", context)
 

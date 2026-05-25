@@ -216,6 +216,40 @@ secrets or raw provider/debug payloads. No v3.6 performance cache should be
 treated as a credential store, cloud sync mechanism, telemetry uploader, or
 provider availability monitor that runs real network checks during packaging.
 
+## v3.7 Local Playable Complete Product CN Packaging Boundary
+
+v3.7 packages the local product experience as a Chinese Local Playable
+Complete Product. The default packaged frontend should open to a Chinese
+player/creator Home for Project, Provider/model setup, Novel, Tavern RP, and
+World play. Debug / QA / Authoring / Mods / Diagnostics / Product Readiness
+remain advanced tools; packaging must not turn them into default first-screen
+debug surfaces. It is still local-first software, not an account client, cloud
+sync client, online marketplace, remote package downloader, online writing/RP/
+play platform, API resale service, or telemetry uploader.
+
+Desktop bundles, handoff archives, backups, exports, diagnostics, logs, crash
+reports, and frontend build artifacts must not contain:
+
+- `.env`, raw env, API keys, provider secrets, Authorization headers,
+  one-time provider test keys, `api_key_env` resolved values, or `secret_ref`
+  resolved values;
+- raw provider responses, raw provider errors, raw prompts, raw outputs, token-
+  like base URL path/query values, or secret resolver output;
+- hidden facts, NPC secrets, debug memory, raw `GameState`, raw
+  `state_deltas`, mature/private content, database files, local logs, caches,
+  build outputs, backups, crash reports, diagnostics bundles, or executable
+  package payloads.
+
+v3.7 product readiness, workflow checker, Provider checklist, privacy/safety
+review, acceptance checklist, and demo project assets are safe-summary local
+advanced surfaces. They must use fake/local_stub providers in tests and CI,
+must not call real providers during packaging verification, and must not upload
+project data. Local users may manually configure and test real providers from
+the Provider UI, but packaged smoke tests must stay fake-provider only. The
+demo project is a local sample only; it must not ship real
+credentials, `.env`, databases, logs, caches, mature/private content,
+debug/raw state deltas, or executable plugin code.
+
 ## Tauri / Electron Review
 
 Tauri and Electron remain future options only. v3.0 does not add either runtime

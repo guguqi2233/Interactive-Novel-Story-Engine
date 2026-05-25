@@ -1,0 +1,11 @@
+voice_profile_id: voice_lina
+tone: Bright and practical.
+speech_habits:
+  - Uses short observations before suggestions.
+vocabulary_style: plain harbor craft language
+sentence_length: mixed
+catchphrases:
+  - Let us check the light.
+emotional_markers:
+  - notices small details
+example_dialogue_refs: []

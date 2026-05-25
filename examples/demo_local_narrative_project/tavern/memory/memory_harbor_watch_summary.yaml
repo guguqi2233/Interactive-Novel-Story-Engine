@@ -1,0 +1,14 @@
+memory_id: memory_harbor_watch_summary
+project_id: demo_local_narrative_project
+session_id: harbor_watch
+character_ids:
+  - lina
+memory_type: summary
+content: Lina invited the player to help inspect the signal lantern lens.
+visibility: tavern_safe
+linked_message_ids:
+  - msg_001
+  - msg_002
+proposed_world_effect_id: null
+authoritative: false
+created_at: "2026-05-25T00:02:00+00:00"

@@ -1,0 +1,12 @@
+{
+  "project_id": "demo_local_narrative_project",
+  "suite_id": "demo_harbor_smoke",
+  "status": "pass",
+  "steps": [
+    "open_project",
+    "start_world",
+    "talk_to_mira",
+    "inspect_lantern"
+  ],
+  "safe_summary": "Local smoke path stays in public visible content."
+}

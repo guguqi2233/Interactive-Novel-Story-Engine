@@ -1,0 +1,15 @@
+rumors:
+  - id: lantern_ready_rumor
+    fact_id: lantern_needs_lens
+    text_for_player: People say the signal lantern will shine again if someone helps fit the lens.
+    truth_status: "true"
+    known_by_npcs:
+      - mira
+      - lina
+    known_by_factions:
+      - harbor_council
+    known_by_player: true
+    spread_level: 1
+    tags:
+      - public
+      - quest

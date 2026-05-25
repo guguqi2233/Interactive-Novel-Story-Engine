@@ -1,0 +1,14 @@
+proposal_id: lantern_proposal
+project_id: demo_local_narrative_project
+draft_id: novel_to_world_lantern
+direction: novel_to_world
+target_refs:
+  - world:quest:relight_lantern
+review_status: approved
+validation_status: valid
+safety_notes:
+  - Public quest hint only; no hidden details included.
+hidden: false
+debug_only: false
+created_at: "2026-05-25T00:00:00+00:00"
+updated_at: "2026-05-25T00:00:00+00:00"

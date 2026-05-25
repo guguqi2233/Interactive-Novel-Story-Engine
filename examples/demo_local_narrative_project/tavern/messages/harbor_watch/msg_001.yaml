@@ -1,0 +1,9 @@
+message_id: msg_001
+session_id: harbor_watch
+speaker_type: user
+speaker_id: player
+content: "Can I help test the lantern before dusk?"
+created_at: "2026-05-25T00:00:00+00:00"
+visibility: tavern_safe
+source_refs: []
+proposed_world_effects: []

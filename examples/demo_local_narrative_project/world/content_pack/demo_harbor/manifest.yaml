@@ -1,0 +1,5 @@
+world_id: demo_harbor
+name: Demo Harbor
+version: 0.1.0
+start_location_id: harbor_square
+description: A bright local harbor where neighbors prepare a signal lantern before dusk.

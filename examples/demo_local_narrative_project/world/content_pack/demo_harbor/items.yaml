@@ -1,0 +1,37 @@
+items:
+  - id: notice_kiosk
+    name: Notice Kiosk
+    description: A painted kiosk lists safe harbor tasks for visitors.
+    location_id: harbor_square
+    portable: false
+    base_price: 0
+    tradeable: false
+  - id: signal_lantern
+    name: Signal Lantern
+    description: The town lantern waits on its stand with space for a polished lens.
+    location_id: lantern_house
+    portable: false
+    base_price: 60
+    tradeable: false
+  - id: repair_lens
+    name: Repair Lens
+    description: A clean glass lens sized for the town signal lantern.
+    location_id: lantern_house
+    portable: true
+    base_price: 8
+    tradeable: true
+    rarity: common
+    tags:
+      - quest
+      - craft
+  - id: harbor_token
+    name: Harbor Token
+    description: A stamped token used by tidekeepers to mark completed tasks.
+    owner_id: toma
+    portable: true
+    base_price: 1
+    tradeable: true
+    rarity: common
+    tags:
+      - demo
+      - shop

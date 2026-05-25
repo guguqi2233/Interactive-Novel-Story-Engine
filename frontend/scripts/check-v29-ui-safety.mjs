@@ -8,24 +8,24 @@ const api = readFileSync(resolve(root, "src/api.ts"), "utf8");
 const pkg = readFileSync(resolve(root, "package.json"), "utf8");
 
 const requiredAppCopy = [
-  "UnifiedNavigation",
-  "LocalStatusBar",
-  "DiagnosticsExportPanel",
-  "Local Help / Onboarding",
-  "Project Home",
-  "Novel Studio",
-  "Tavern Studio",
-  "World Studio",
-  "Cross-Mode Bridge",
-  "Script / Mod Platform Pro",
-  "Provider Setup",
-  "Quality Gate Dashboard",
-  "No cloud sync",
-  "No online marketplace",
-  "API keys are not stored in project",
-  "Debug / Replay",
-  "Mature Module is disabled by default",
-  "Export local diagnostics JSON"
+  ["UnifiedNavigation"],
+  ["LocalStatusBar"],
+  ["DiagnosticsExportPanel"],
+  ["Local Help / Onboarding", "离线帮助中心", "首次使用向导"],
+  ["Project Home", "本地项目首页", "项目首页"],
+  ["Novel Studio"],
+  ["Tavern Studio"],
+  ["World Studio"],
+  ["Cross-Mode Bridge"],
+  ["Script / Mod Platform Pro"],
+  ["Provider Setup", "配置模型服务", "模型服务设置向导"],
+  ["Quality Gate Dashboard"],
+  ["No cloud sync", "不使用云同步"],
+  ["No online marketplace", "无在线市场"],
+  ["API keys are not stored in project", "API Key 不保存到项目文件", "API Key 不保存到项目"],
+  ["Debug / Replay"],
+  ["Mature Module is disabled by default", "Mature 默认关闭", "Mature Module / 成人内容模块"],
+  ["Export local diagnostics JSON", "创建本地诊断包", "诊断 / 导出"]
 ];
 
 const requiredApiHelpers = [
@@ -39,9 +39,9 @@ const requiredApiHelpers = [
 
 const failures = [];
 
-for (const token of requiredAppCopy) {
-  if (!app.includes(token)) {
-    failures.push(`Missing v2.9 UI token: ${token}`);
+for (const alternatives of requiredAppCopy) {
+  if (!alternatives.some((token) => app.includes(token))) {
+    failures.push(`Missing v2.9 UI token: ${alternatives.join(" | ")}`);
   }
 }
 

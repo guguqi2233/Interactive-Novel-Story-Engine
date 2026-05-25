@@ -84,6 +84,7 @@ class DiagnosticsBundleService:
                 ".env",
                 "API key",
                 "provider secrets",
+                "local provider secret store",
                 "raw env",
                 "raw prompt/output",
                 "hidden facts",

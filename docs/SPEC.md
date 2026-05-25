@@ -18,7 +18,7 @@ Planned local roadmap:
 - v3.6: Local Performance & Accessibility Polish, including provider model
   list performance, capability matrix performance, and provider UI
   accessibility polish
-- v3.7: Local Complete Product
+- v3.7: Local Playable Complete Product CN / 中文本地可游玩完整产品版
 - v4.0: Local AI Narrative Studio Stable
 
 Near-term non-goals:
@@ -150,12 +150,62 @@ v3.6 semantic boundaries:
   provider checks by default. Provider Gateway remains the only model entry
   point and routing authority.
 
-v3.7 Local Complete Product acceptance should include successful fake provider
-connection tests, model list discovery, local `ModelProfile` synchronization,
-mode-based model assignment for Novel/Tavern/World/Cross-Mode/Quality, large
+v3.7 Local Playable Complete Product CN acceptance should include successful
+fake provider connection tests, model list discovery, local `ModelProfile`
+synchronization, mode-based model assignment for
+Novel/Tavern/World/Cross-Mode/Quality, Chinese playable Home checks, large
 local-project performance checks, accessibility checks, and checks that API
 keys remain out of projects, logs, diagnostics, backups, exports, caches, and
 frontend state.
+
+### v3.7 Local Playable Complete Product CN
+
+v3.7 implements **Local Playable Complete Product CN / 中文本地可游玩完整产品版**.
+The scope is product closure across already-built local capabilities rather
+than a new large system. The default UI is Chinese and oriented toward
+players/creators: open or create a local project, configure a model service,
+write novels, run Tavern RP, and play the open world. Debug, QA, Authoring /
+Mods, Diagnostics, Product Readiness, and raw replay tools remain available as
+Advanced Tools rather than default first-screen content.
+
+Implemented v3.7 product scope:
+
+- Chinese playable Home, reduced navigation, folded Advanced Tools,
+  first-run Chinese product tour, local workflow checker, and product
+  acceptance checklist UI.
+- Provider setup for OpenAI, OpenAI-compatible, relay-style/custom base URL,
+  `local_http`, `mock`, and `local_stub` profiles through Provider Gateway.
+- Manual connection testing, model-list fetch, manual `model_id` entry, safe
+  `ModelProfile` synchronization, and mode-based assignments for Novel,
+  Tavern, World, Cross-Mode, memory summary, Quality, and low-cost summary.
+- Local project lifecycle, Novel, Tavern, World, Cross-Mode, Authoring / Mod,
+  QA / Debug / Replay, Backup / Restore / Diagnostics, Export, Privacy /
+  Safety, Settings, Navigation, Error/Empty/Disabled, and Offline Manual
+  final polish.
+- Demo local narrative project and integration checks that use fake/local_stub
+  provider configuration only.
+
+v3.7 semantic boundaries:
+
+- v3.7 does not add accounts, cloud sync, online marketplace, remote package
+  download, online writing/RP/play, online QA, hosted provider services, API
+  resale, multiplayer collaboration, arbitrary-code plugins, new gameplay
+  modules, or a World Engine rewrite.
+- v3.7 can run real LLM providers only when a local user manually configures
+  and triggers Test Connection, Fetch Models, or generation. Tests and CI must
+  keep using fake providers, `mock`, or `local_stub`.
+- The World Engine remains the fact source. LLMs and providers can assist with
+  language, drafting, summarization, routing, and formatting, but they cannot
+  decide world facts, apply proposals, mutate `GameState`, write `EventLog`, or
+  bypass visibility.
+- Provider Gateway remains the only model entry point. Provider/model
+  discovery and assignment are local configuration capabilities only.
+- API keys and one-time provider test keys must not enter project files,
+  frontend state, logs, diagnostics, backups, exports, caches, package
+  manifests, prompt profiles, tests, or documentation examples.
+- Normal UI continues to use `visible_state` and safe summaries. Hidden facts,
+  NPC secrets, debug memory, raw prompts, raw outputs, raw `state_deltas`, raw
+  provider responses, and mature/private bodies are not exposed by default.
 
 ### v2.9 Implemented UI Scope
 

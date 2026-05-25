@@ -1,0 +1,23 @@
+relationships:
+  - id: mira_lina_mentor
+    source_id: mira
+    target_id: lina
+    relation_type: mentor
+    trust: 3
+    fear: 0
+    affinity: 2
+    obligation: 1
+    tags:
+      - harbor
+    known_by_player: true
+  - id: toma_mira_peer
+    source_id: toma
+    target_id: mira
+    relation_type: colleague
+    trust: 2
+    fear: 0
+    affinity: 1
+    obligation: 0
+    tags:
+      - harbor
+    known_by_player: true

@@ -1,0 +1,14 @@
+tavern_character_id: lina
+project_id: demo_local_narrative_project
+display_name: Lina
+description: A careful harbor helper who tends the signal lantern.
+linked_character_profile_id: lina
+linked_world_npc_id: lina
+rp_profile_id: rp_lina
+voice_profile_id: voice_lina
+default_prompt_profile_id: null
+lorebook_refs:
+  - harbor_public_lore
+safety_flags: []
+created_at: "2026-05-25T00:00:00+00:00"
+updated_at: "2026-05-25T00:00:00+00:00"

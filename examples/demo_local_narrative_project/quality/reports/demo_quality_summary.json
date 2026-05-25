@@ -1,0 +1,8 @@
+{
+  "project_id": "demo_local_narrative_project",
+  "status": "pass",
+  "safe_summary": "Demo project has the minimum local workflow artifacts for v3.7 product checks.",
+  "blockers": [],
+  "errors": [],
+  "warnings": []
+}

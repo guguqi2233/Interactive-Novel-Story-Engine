@@ -189,6 +189,35 @@ v3.6 package UI optimization rules:
   package auto-download, account sync, cloud package sync, or arbitrary-code
   plugin runtime.
 
+v3.7 Local Complete Product keeps content and package management local while
+making the complete product flow easier to finish. Product readiness,
+Authoring / Mod workflow checks, demo project content, the offline manual,
+export checks, backup/diagnostics checks, and acceptance checklist UI can point
+to local packs and packages, but they do not add new package authority.
+
+v3.7 package/product rules:
+
+- Users can author world packs, script packs, character packs, declarative
+  Action Mods, rule-module contracts, and local demo/sample packages through
+  validation, preview/dry-run, permission review, quality gates, and confirmed
+  safe apply.
+- Cross-Mode draft/proposal/apply remains the path for turning Novel or
+  Tavern material into World changes. Content packs are not silently rewritten
+  by drafts, providers, or UI checklists.
+- Provider profile package data may include `api_key_env` or `secret_ref`
+  references only. Raw API keys, one-time provider test keys, Authorization
+  headers, raw env, and provider secrets must not enter packages, exports,
+  backups, diagnostics, logs, or frontend state.
+- Local demo/sample projects and mods must be deterministic, safe, minimal,
+  non-executable, and free of `.env`, databases, logs, caches, build outputs,
+  mature/private bodies, debug/raw `state_deltas`, and real provider secrets.
+- Normal exports and diagnostics exclude hidden facts, NPC secrets,
+  mature/private content, debug memory, raw prompts/outputs, raw
+  `state_deltas`, executable payloads, path traversal, and zip slip by default.
+- v3.7 does not add an online package registry, online marketplace, remote
+  package download, cloud package sync, online publishing, or arbitrary-code
+  plugin runtime.
+
 ## v2.8 RP / Mature Content and Package Policy
 
 v2.8 adds RP immersion and mature-policy metadata that can appear in local

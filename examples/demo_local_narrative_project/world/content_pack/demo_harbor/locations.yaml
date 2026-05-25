@@ -1,0 +1,52 @@
+locations:
+  - id: harbor_square
+    name: Harbor Square
+    description: A clean stone square faces the bay, with a notice kiosk and open market stalls.
+    exits:
+      north: lantern_house
+      east: tide_gate
+    visible_objects:
+      - notice_kiosk
+    visual:
+      x: 0
+      y: 0
+      region_id: harbor
+      icon: plaza
+      color_tag: civic
+      display_group: town
+      tags:
+        - start
+        - public
+  - id: lantern_house
+    name: Lantern House
+    description: A narrow tower holds the town signal lantern and a workbench for repairs.
+    exits:
+      south: harbor_square
+    visible_objects:
+      - signal_lantern
+      - repair_lens
+    visual:
+      x: 0
+      y: -120
+      region_id: harbor
+      icon: beacon
+      color_tag: craft
+      display_group: town
+      tags:
+        - quest
+  - id: tide_gate
+    name: Tide Gate
+    description: A wooden gate marks the path to the low pier and the tidal pools.
+    exits:
+      west: harbor_square
+    visible_objects:
+      - harbor_token
+    visual:
+      x: 140
+      y: 0
+      region_id: shore
+      icon: gate
+      color_tag: travel
+      display_group: shore
+      tags:
+        - travel

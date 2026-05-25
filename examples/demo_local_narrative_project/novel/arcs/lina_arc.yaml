@@ -1,0 +1,19 @@
+arc_id: lina_arc
+project_id: demo_local_narrative_project
+character_id: lina
+title: Lina Tests the Signal
+premise: Lina grows from careful helper to confident keeper of the lantern.
+start_state: Lina checks every detail twice.
+end_state: Lina trusts the prepared signal and shares the result with the square.
+key_turning_points:
+  - order_index: 1
+    title: Finds the lens
+    summary: Lina sees that the repair can be completed.
+    linked_scene_id: scene_1
+linked_chapter_ids:
+  - chapter_1
+linked_scene_ids:
+  - scene_1
+linked_timeline_event_ids: []
+status: draft
+authoring_notes: Local demo character arc.

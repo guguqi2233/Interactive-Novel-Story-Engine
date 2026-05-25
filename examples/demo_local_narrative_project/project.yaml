@@ -1,0 +1,36 @@
+project_id: demo_local_narrative_project
+name: Demo Local Narrative Project
+description: Minimal local demo for Novel, Tavern, World, Provider, Quality, Backup, and Diagnostics workflows.
+schema_version: "2.1"
+version: "3.7.0-demo"
+engine_version: "0.6.0"
+project_root: examples/demo_local_narrative_project
+default_world_id: demo_harbor
+active_campaign_id: demo_campaign
+created_at: "2026-05-25T00:00:00+00:00"
+updated_at: "2026-05-25T00:00:00+00:00"
+modes:
+  novel_enabled: true
+  tavern_enabled: true
+  world_enabled: true
+  script_platform_enabled: true
+  quality_enabled: true
+settings:
+  default_mode: world
+  ui_locale: en
+  notes: Local demo fixture with fake provider metadata only.
+safety_policy:
+  local_only: true
+  allow_external_providers: false
+  allow_debug_exports: false
+  allow_mature_content: false
+  export_secrets: false
+libraries:
+  character_library: null
+  world_bible: null
+  timeline: null
+  lore_facts: null
+  prompt_profiles: null
+  provider_profiles: providers/profiles
+  memory_library: null
+migration_history: []
