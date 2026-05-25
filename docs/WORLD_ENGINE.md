@@ -240,6 +240,32 @@ Local Playable Complete Product CN rules:
   package download, online writing/RP/play, multiplayer collaboration, API
   resale, or arbitrary-code plugins.
 
+v3.8 focuses on Chinese Product UX Polish. It makes the v3.7 local playable
+product easier to use, but it does not change World Engine authority.
+
+v3.8 World Engine boundary rules:
+
+- The default Home may be redesigned around writing novels, Tavern RP, and
+  open-world play, but world facts still come only from the World Engine.
+- World play CTAs such as "开始大世界" and "继续大世界" must submit actions
+  through backend game/action APIs; UI code must not directly write
+  `GameState`.
+- Debug / QA / Authoring / Diagnostics may be folded into Advanced Tools for a
+  calmer Home, but folding/hiding does not weaken `ENABLE_DEBUG_API`,
+  `DebugGate`, StateDelta redaction, EventLog read-only behavior, or safe
+  export rules.
+- Backend-unavailable recovery, Provider setup help, empty states, and inline
+  guides are UX layers only. They must not apply proposals, mutate saves,
+  rewrite EventLog, or bypass validation.
+- Normal UI remains based on `visible_state` and safe summaries. Hidden facts,
+  NPC secrets, debug memory, raw prompts, raw provider responses, raw
+  `state_deltas`, API keys, provider secrets, raw env, and mature/private
+  bodies must not enter normal Home, Novel, Tavern, World, Backup,
+  Diagnostics, or Settings views.
+- v3.8 does not add accounts, cloud sync, online marketplace, remote package
+  download, online play, API resale, arbitrary-code plugins, or new World
+  Engine rules.
+
 ## v2.8 Roleplay Immersion & Mature Module Integration
 
 v2.8 strengthens Tavern/RP immersion and adds default-off mature safety policy

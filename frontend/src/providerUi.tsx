@@ -180,21 +180,21 @@ const PROVIDER_HIGH_ERROR_RATE = 0.2;
 const PROVIDER_TIMEOUT_REPEAT_COUNT = 2;
 const PROVIDER_MODEL_PAGE_SIZE = 40;
 const PROVIDER_SETUP_WIZARD_STEPS: Array<{ id: ProviderWizardStep; label: string; detail: string }> = [
-  { id: "type", label: "选择模型服务", detail: "选择 OpenAI、兼容 API、中转站、本地模型、自定义 API 或测试 Mock。" },
-  { id: "secret", label: "密钥来源", detail: "选择临时 Key、环境变量、secret_ref、local_secret_ref 或无需密钥。" },
-  { id: "test", label: "测试连接", detail: "只有点击按钮并确认时才会连接真实 Provider；测试默认仍可走 fake。" },
-  { id: "models", label: "读取模型", detail: "读取模型列表或手动添加 model_id，不显示 raw provider response。" },
-  { id: "assignment", label: "分配模型", detail: "按 Novel、Tavern、World、Cross-Mode、Quality 分配模型。" },
-  { id: "save", label: "保存配置", detail: "只保存安全 profile metadata，不保存明文 API Key。" }
+  { id: "type", label: "选择模型服务类型", detail: "选择 OpenAI、OpenAI-compatible、中转站 / Relay、本地模型服务、自定义 API 或 Mock / 测试。" },
+  { id: "secret", label: "选择 API Key 保存方式", detail: "选择临时 Key、环境变量、secret_ref、local_secret_ref 或无需密钥；明文 Key 不会保存到 project。" },
+  { id: "test", label: "测试连接", detail: "只有用户手动点击并确认时才会连接真实模型服务；测试 / CI 仍使用 fake provider。" },
+  { id: "models", label: "读取模型", detail: "读取模型列表或手动添加 model_id；只保存安全 ModelProfile metadata，不显示 raw provider response。" },
+  { id: "assignment", label: "分配模型", detail: "按写小说、角色 RP、大世界、跨模式和质量检查等场景分配模型，不改变 Provider Gateway 语义。" },
+  { id: "save", label: "完成", detail: "保存安全 profile metadata 后即可回到首页开始写小说、角色 RP 或大世界游玩。" }
 ];
 const PROVIDER_TYPE_OPTIONS: Array<{ value: string; label: string; detail: string; requiresSecret: boolean }> = [
-  { value: "openai", label: "OpenAI", detail: "官方 OpenAI API。Base URL 可留空或使用兼容 /v1 地址。", requiresSecret: true },
-  { value: "openai_compatible", label: "OpenAI-compatible", detail: "兼容 OpenAI /v1/models 与 chat/completions 的本地或第三方端点。", requiresSecret: true },
-  { value: "relay", label: "中转站 / Relay", detail: "仅表示兼容 API 的 base URL 配置，不是 API 转售服务。", requiresSecret: true },
+  { value: "openai", label: "OpenAI", detail: "官方 OpenAI API。Base URL 通常可留空，API Key 建议使用环境变量或 secret_ref。", requiresSecret: true },
+  { value: "openai_compatible", label: "OpenAI-compatible", detail: "兼容 OpenAI API 的本地或第三方端点，通常需要填写 Base URL。", requiresSecret: true },
+  { value: "relay", label: "中转站 / Relay", detail: "只表示兼容 API 的 Base URL 配置，不是 API 转售服务，也不绑定具体中转站。", requiresSecret: true },
   { value: "local_http", label: "本地模型服务 / local_http", detail: "本机模型服务，可不需要 API Key；仍然只在手动点击时连接。", requiresSecret: false },
-  { value: "custom", label: "自定义 API", detail: "使用自定义 base URL 与可选模型列表端点。", requiresSecret: true },
-  { value: "mock", label: "Mock / 测试", detail: "测试与 CI 使用的安全假 Provider，不真实联网。", requiresSecret: false },
-  { value: "local_stub", label: "Local Stub / 本地假模型", detail: "本地 dry-run 默认值，不真实联网。", requiresSecret: false }
+  { value: "custom", label: "自定义 API", detail: "使用自定义 Base URL 与可选模型列表端点，适合本地或兼容服务。", requiresSecret: true },
+  { value: "mock", label: "Mock / 测试", detail: "测试和 CI 使用的安全假模型服务，不真实联网。", requiresSecret: false },
+  { value: "local_stub", label: "Local Stub / 本地假模型", detail: "本地 dry-run 默认值，不真实联网，适合先体验 Demo。", requiresSecret: false }
 ];
 const SLOW_PROVIDER_SAFE_ACTIONS = [
   "check base URL",
@@ -216,6 +216,22 @@ const PROVIDER_MODEL_ASSIGNMENT_USE_CASES: Array<{ value: ProviderRoutingUseCase
   { value: "quality_eval", label: "质量检查" },
   { value: "cheap_summary", label: "低成本摘要" }
 ];
+const PROVIDER_MODEL_USE_CASE_HELP: Partial<Record<ProviderRoutingUseCase, string>> = {
+  novel_draft: "用于生成章节草稿、段落续写和灵感初稿，偏重自然语言质量。",
+  novel_rewrite: "用于改写、润色、调整语气和压缩扩写，通常可选择更稳的写作模型。",
+  tavern_reply: "用于单角色 Tavern RP 回复，保持角色语气，但不直接修改 World GameState。",
+  multi_npc_reply: "用于多 NPC 场景对话，适合更强上下文和角色区分能力的模型。",
+  world_intent_parse: "用于把玩家输入解析成结构化意图，必须优先选择支持 JSON / 结构化输出的模型。",
+  world_narration: "用于把已确认的规则结果渲染成叙事文本；模型不是世界裁判。",
+  cross_mode_draft: "用于 Novel、Tavern、World 之间生成 draft/proposal，进入 World 前仍需 validation/apply。",
+  memory_summary: "用于本地记忆摘要和上下文压缩，摘要不是权威事实源。",
+  quality_eval: "用于辅助质量检查摘要或文本评估，不能替代确定性 Quality Gate。",
+  cheap_summary: "用于低成本摘要、列表压缩和非关键文本整理，可优先选择便宜/本地模型。"
+};
+
+function providerModelUseCaseHelp(useCase: ProviderRoutingUseCase): string {
+  return PROVIDER_MODEL_USE_CASE_HELP[useCase] ?? "用于本地模型路由。只保存安全 metadata，不保存 API key 或 raw provider response。";
+}
 
 export function PromptLabPage({
   summary,
@@ -956,13 +972,53 @@ function ProviderSetupWizard({
 
   return (
     <section className="studio-section provider-setup-wizard" data-testid="v37-provider-real-llm-wizard">
+      <InlineGuideCard
+        testId="v38-inline-guide-provider"
+        title="模型服务配置提示"
+        detail="按步骤选择模型服务、填写 Base URL、选择密钥引用、手动测试连接并读取模型。界面不会显示或保存明文 API Key。"
+      />
       <div className="authoring-pane-header">
         <div>
           <h4>模型服务设置向导</h4>
-          <p className="muted">配置真实 LLM API 或本地模型服务。不允许保存明文 API Key 到 project、localStorage、sessionStorage、日志、备份、导出或诊断。</p>
+          <p className="muted">像配置本地软件一样完成模型服务：选择类型、填写 Base URL、选择密钥保存方式、测试连接、读取模型、分配模型、保存完成。</p>
+          <p className="muted">不允许保存明文 API Key；不保存明文 API Key 到项目、前端存储、日志、备份、诊断或导出。测试 / CI 仍使用 fake provider，不会调用真实模型服务。</p>
         </div>
         <ProviderConnectionStatusBadge status={lastStatus} />
       </div>
+
+      <section className="provider-setup-explainer" data-testid="v38-provider-setup-explainer" aria-label="模型服务配置说明">
+        <div>
+          <h5>配置流程</h5>
+          <ol>
+            <li>选择模型服务类型</li>
+            <li>填写 Base URL</li>
+            <li>选择 API Key 保存方式</li>
+            <li>测试连接</li>
+            <li>读取模型</li>
+            <li>分配模型</li>
+            <li>完成</li>
+          </ol>
+        </div>
+        <div className="provider-explainer-grid">
+          <FeatureCard title="什么是 Base URL" detail="Base URL 是 OpenAI-compatible、Relay、本地模型服务或自定义 API 的入口地址，例如兼容 /v1 的本地服务。" />
+          <FeatureCard title="什么是 API Key" detail="API Key 用于访问模型服务，可能产生费用；界面不显示已保存 Key，也不会写入 project、localStorage 或 sessionStorage。" />
+          <FeatureCard title="环境变量 / secret_ref" detail="环境变量如 OPENAI_API_KEY；secret_ref / local_secret_ref 由后端本地解析，前端只保存引用名称。" />
+          <FeatureCard title="为什么要读取模型" detail="读取模型列表用于保存安全模型 metadata；不显示 raw provider response，不保存 Authorization header。" />
+          <FeatureCard title="为什么分配不同模型" detail="写小说、角色 RP、大世界输入解析、大世界叙事和质量检查可以用不同模型；结构化任务会提示 JSON 能力。" />
+          <FeatureCard title="测试安全边界" detail="真实连接只允许用户手动触发；自动测试不会调用真实模型服务，不做 API 转售，也不新增账号或云同步。" />
+        </div>
+      </section>
+      <section className="provider-help-section" data-testid="v38-provider-help-section" aria-label="这是什么">
+        <h5>这是什么？</h5>
+        <div className="provider-explainer-grid">
+          <FeatureCard title="模型服务是什么" detail="模型服务就是应用调用 LLM 的入口，可以是 OpenAI、OpenAI-compatible、本地模型服务、Mock 或 Local Stub。" />
+          <FeatureCard title="中转站是什么" detail="中转站 / Relay 在这里仅表示兼容 API 配置：用户自己提供合法可用的 Base URL 和 Key；本项目不是 API 转售服务，也不推荐具体服务商。" />
+          <FeatureCard title="Base URL 是什么" detail="Base URL 是模型服务地址。OpenAI 通常可留空，OpenAI-compatible、Relay、本地模型服务和自定义 API 通常需要填写。" />
+          <FeatureCard title="API Key 放在哪里" detail="推荐放在环境变量、secret_ref 或 local_secret_ref。前端不显示已保存 API Key，也不保存到 localStorage、sessionStorage 或项目文件。" />
+          <FeatureCard title="模型列表是什么" detail="模型列表用于读取可用 model_id，并保存成安全 ModelProfile metadata；raw provider response 不会显示。" />
+          <FeatureCard title="为什么要分配模型" detail="写小说、角色 RP、大世界输入解析、大世界叙事和质量检查对模型能力要求不同，因此可以按用途分配不同模型。" />
+        </div>
+      </section>
 
       <div className="wizard-progress" aria-label="Provider 设置步骤">
         {PROVIDER_SETUP_WIZARD_STEPS.map((step, index) => (
@@ -1491,6 +1547,11 @@ function ProviderModelAssignmentPanel({ projectId, profiles, onChecklistRefresh 
 
   return (
     <section className="studio-section model-assignment-panel" data-testid="v37-model-assignment-final">
+      <InlineGuideCard
+        testId="v38-inline-guide-model-assignment"
+        title="模型分配提示"
+        detail="为小说、Tavern、大世界、Cross-Mode 和质量检查分别选择模型。世界输入解析建议使用支持 JSON / 结构化输出的模型。"
+      />
       <div className="authoring-pane-header">
         <div>
           <h4>Provider Model Assignment by Mode / 按场景分配模型</h4>
@@ -1513,6 +1574,18 @@ function ProviderModelAssignmentPanel({ projectId, profiles, onChecklistRefresh 
         </div>
       </div>
       <ErrorPanel message={message} compact />
+      <section className="provider-use-case-help" data-testid="v38-provider-use-case-help" aria-label="模型使用场景说明">
+        <h5>模型使用场景说明</h5>
+        <div className="provider-use-case-help-grid">
+          {PROVIDER_MODEL_ASSIGNMENT_USE_CASES.map((item) => (
+            <article key={item.value}>
+              <strong>{item.label}</strong>
+              <p>{providerModelUseCaseHelp(item.value)}</p>
+            </article>
+          ))}
+        </div>
+        <p className="muted">JSON 能力 warning：世界输入解析、Cross-Mode 草稿、记忆摘要和质量检查需要或建议结构化输出。如果模型不支持 JSON / 结构化输出，解析可能不稳定。</p>
+      </section>
       <div className="model-assignment-grid">
         {PROVIDER_MODEL_ASSIGNMENT_USE_CASES.map((item) => {
           const rule = assignmentDrafts[item.value] ?? buildDefaultRoutingRule(item.value, defaultProviderId, defaultModelId, fallbackProfile?.provider_profile_id ?? "mock", fallbackProfile?.model_profiles[0]?.model_id ?? "mock");
@@ -1527,6 +1600,7 @@ function ProviderModelAssignmentPanel({ projectId, profiles, onChecklistRefresh 
                 <h5>{item.label}</h5>
                 {jsonWarning ? <span className="status-pill warning">需要 JSON / 结构化输出</span> : <span className="status-pill pass">可配置</span>}
               </div>
+              <p className="muted">{providerModelUseCaseHelp(item.value)}</p>
               <div className="form-grid">
                 <label>
                   主 Provider
@@ -2641,6 +2715,26 @@ function EmptyState({ title, detail }: { title: string; detail?: string }) {
       <strong>{displayTitle}</strong>
       <p>{localizedDetail}</p>
     </div>
+  );
+}
+
+function InlineGuideCard({
+  testId,
+  title,
+  detail
+}: {
+  testId: string;
+  title: string;
+  detail: string;
+}) {
+  return (
+    <aside className="inline-guide-card compact" data-testid={testId} aria-label={`${title} 内联帮助`}>
+      <div>
+        <strong>{title}</strong>
+        <p>{detail}</p>
+      </div>
+      <a href="#product-guide">了解更多</a>
+    </aside>
   );
 }
 

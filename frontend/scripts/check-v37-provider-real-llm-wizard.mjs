@@ -16,7 +16,7 @@ function sourceSlice(source, startToken, endToken) {
   const start = source.indexOf(startToken);
   if (start < 0) return "";
   const end = source.indexOf(endToken, start + startToken.length);
-  return source.slice(start, end > start ? end : start + 26000);
+  return source.slice(start, end > start ? end : start + 30000);
 }
 
 const wizardSlice = sourceSlice(providerUi, "function ProviderSetupWizard", "function ProviderConnectivityDashboard");
@@ -25,7 +25,7 @@ const saveSlice = sourceSlice(providerUi, "function cleanProviderDraft", "async 
 requireToken(providerUi, "function ProviderSetupWizard", "Provider setup wizard component");
 requireToken(providerUi, "data-testid=\"v37-provider-real-llm-wizard\"", "Provider wizard test id");
 requireToken(providerUi, "模型服务设置向导", "Chinese wizard title");
-requireToken(providerUi, "选择模型服务", "Chinese provider type step");
+requireToken(providerUi, "选择模型服务类型", "Chinese provider type step");
 requireToken(providerUi, "临时输入，仅用于本次测试", "transient key mode copy");
 requireToken(providerUi, "使用环境变量，例如 OPENAI_API_KEY", "env key mode copy");
 requireToken(providerUi, "使用本地 local_secret_ref", "local secret ref mode copy");
@@ -34,8 +34,9 @@ requireToken(providerUi, "本次点击允许连接真实 Provider", "manual real
 requireToken(providerUi, "读取模型列表", "fetch model list CTA");
 requireToken(providerUi, "同步为 ModelProfile", "sync model CTA");
 requireToken(providerUi, "手动添加 model_id", "manual model add");
-requireToken(providerUi, "按模式分配模型", "mode assignment copy");
-requireToken(providerUi, "中转站 / Relay 只表示兼容 API 的 base URL 配置", "relay no-resale copy");
+requireToken(providerUi, "按模式分配", "mode assignment copy");
+requireToken(providerUi, "中转站 / Relay", "relay provider type");
+requireToken(providerUi, "不是 API 转售服务", "relay no-resale copy");
 requireToken(providerUi, "type=\"password\"", "masked transient key input");
 requireToken(providerUi, "autoComplete=\"off\"", "transient key autocomplete disabled");
 requireToken(providerUi, "transientKeyRef", "transient key kept out of React persistent state");
@@ -45,7 +46,7 @@ requireToken(api, "fetchProjectProviderModels", "fetch models API client");
 requireToken(api, "syncProjectProviderModels", "sync models API client");
 
 for (const providerType of ["openai", "openai_compatible", "relay", "local_http", "custom", "mock", "local_stub"]) {
-  requireToken(providerUi, `value: \"${providerType}\"`, `provider type ${providerType}`);
+  requireToken(providerUi, `value: "${providerType}"`, `provider type ${providerType}`);
 }
 
 for (const statusCopy of ["未配置", "已配置，未测试", "连接成功", "认证失败", "缺少 API key", "Base URL 无效", "模型列表读取失败", "Provider 不支持模型列表", "超时"]) {

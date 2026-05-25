@@ -19,6 +19,7 @@ Planned local roadmap:
   list performance, capability matrix performance, and provider UI
   accessibility polish
 - v3.7: Local Playable Complete Product CN / 中文本地可游玩完整产品版
+- v3.8: Chinese Product UX Polish / 中文产品体验打磨版
 - v4.0: Local AI Narrative Studio Stable
 
 Near-term non-goals:
@@ -149,6 +150,47 @@ v3.6 semantic boundaries:
 - Provider caches do not store secrets and do not trigger background real
   provider checks by default. Provider Gateway remains the only model entry
   point and routing authority.
+
+### v3.8 Chinese Product UX Polish
+
+v3.8 implements **Chinese Product UX Polish / 中文产品体验打磨版**. It is a
+product-experience polish phase over v3.7, not a new large feature phase. The
+goal is to make the local Chinese product easier to use day to day: open or
+create a project, write novels, run Tavern RP, play the open world, configure a
+model service, recover from backend connection issues, and find advanced tools
+without seeing a first-screen developer console.
+
+Implemented v3.8 scope:
+
+- Default Chinese UI copy for the primary product path.
+- Product Home polish with prominent writing, Tavern RP, and world-play entry
+  cards.
+- Backend unavailable recovery UX with reconnect/startup guide/diagnostics/
+  settings actions.
+- Provider/model-service setup explanations for Chinese users, including Base
+  URL, API Key source, relay/custom compatible API wording, model list fetch,
+  model assignment, and possible costs.
+- First-run tour simplification, navigation/sidebar polish, Advanced Tools
+  collapse, empty/error/disabled state polish, Settings/Privacy polish,
+  Backup/Restore/Diagnostics polish, inline guide copy, responsive/focus/a11y
+  polish, and v3.8 regression checks.
+
+v3.8 semantic boundaries:
+
+- v3.8 does not alter World Engine rules, Provider Gateway semantics,
+  `StateDelta`, `EventLog`, visibility, import/export hardening, mature/private
+  defaults, or debug gating.
+- UI still cannot directly modify `GameState`; World play still goes through
+  backend action APIs and authoritative engine flows.
+- Debug / QA / Authoring / Diagnostics remain Advanced Tools and do not occupy
+  the default Home.
+- Users may configure real LLM providers manually, but tests and CI must use
+  fake providers, `mock`, or `local_stub`.
+- API keys and transient keys must not enter project files, frontend storage,
+  logs, diagnostics, backups, exports, caches, documentation examples, or
+  tests.
+- v3.8 does not add accounts, cloud sync, online marketplace, remote package
+  download, online writing/RP/play, API resale, or arbitrary-code plugins.
 
 v3.7 Local Playable Complete Product CN acceptance should include successful
 fake provider connection tests, model list discovery, local `ModelProfile`

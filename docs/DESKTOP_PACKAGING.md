@@ -250,6 +250,38 @@ demo project is a local sample only; it must not ship real
 credentials, `.env`, databases, logs, caches, mature/private content,
 debug/raw state deltas, or executable plugin code.
 
+## v3.8 Chinese Product UX Packaging Boundary
+
+v3.8 packages the same local-first application with a more polished Chinese
+product experience. The default packaged UI should open to a Chinese
+player/creator Home that highlights writing novels, Tavern RP, open-world
+play, opening/creating projects, Demo project, Provider/model-service setup,
+local safety, and next-step guidance. Debug, QA, Authoring / Mods,
+Diagnostics, Product Readiness, EventLog, StateDelta, and Hidden Leak reports
+remain Advanced Tools and must not become default first-screen panels.
+
+Packaging and handoff rules for v3.8:
+
+- Backend-unavailable recovery may show reconnect/startup-guide/diagnostics/
+  settings actions, but it must not print raw env, API keys, Authorization
+  headers, stack traces, sensitive paths, hidden facts, or raw `state_deltas`.
+- Provider setup may allow a local user to manually configure and test real
+  providers, but packaged smoke tests, CI, and release verification must use
+  fake providers, `mock`, `local_stub`, or injected fake clients.
+- Desktop bundles, archives, diagnostics, backups, exports, logs, crash
+  reports, and frontend build artifacts must not contain API keys,
+  `transient_api_key`, `.env`, raw env, provider secrets, Authorization
+  headers, raw provider responses, raw provider errors, raw prompts, raw
+  outputs, hidden facts, NPC secrets, mature/private content, raw
+  `state_deltas`, databases, logs, caches, `node_modules`, `frontend/dist` as a
+  source-controlled artifact, backups, crash reports, or executable plugin
+  payloads.
+- v3.8 does not add accounts, cloud sync, online marketplace, remote package
+  download, online writing/RP/play, API resale, telemetry upload, or
+  arbitrary-code plugins.
+- v3.8 does not change World Engine, Provider Gateway, StateDelta/EventLog,
+  visibility, backup/diagnostics filtering, or debug-gating boundaries.
+
 ## Tauri / Electron Review
 
 Tauri and Electron remain future options only. v3.0 does not add either runtime

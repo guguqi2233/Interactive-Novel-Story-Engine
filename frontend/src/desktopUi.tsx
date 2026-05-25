@@ -274,6 +274,20 @@ export function StudioHome(props: StudioHomeProps) {
     onOpenShortcutHelp,
     onNavigate
   } = props;
+  const safeWorkspaces = Array.isArray(workspaces) ? workspaces : [];
+  const safeWorkspaceTemplates = Array.isArray(workspaceTemplates) ? workspaceTemplates : [];
+  const safeRecentProjects = Array.isArray(recentProjects) ? recentProjects : [];
+  const safeSaves = Array.isArray(saves) ? saves : [];
+  const safeRecoveryIssues = Array.isArray(recoveryIssues) ? recoveryIssues : [];
+  const safeNarrativeEvalReports = Array.isArray(narrativeEvalReports) ? narrativeEvalReports : [];
+  const safePerformanceRecent = Array.isArray(performanceRecent) ? performanceRecent : [];
+  const safePlaytestReports = Array.isArray(playtestReports) ? playtestReports : [];
+  const safeScenarioRegressionCases = Array.isArray(scenarioRegressionCases) ? scenarioRegressionCases : [];
+  const safeScenarioRegressionRuns = Array.isArray(scenarioRegressionRuns) ? scenarioRegressionRuns : [];
+  const safeSafeApiCacheStatuses = Array.isArray(safeApiCacheStatuses) ? safeApiCacheStatuses : [];
+  const safeLocalUpdateNotes = localUpdateNotes
+    ? { ...localUpdateNotes, release_notes: Array.isArray(localUpdateNotes.release_notes) ? localUpdateNotes.release_notes : [] }
+    : undefined;
 
   return (
     <section className="studio-section desktop-studio-home" data-route-chunk="desktop-ui">
@@ -283,10 +297,10 @@ export function StudioHome(props: StudioHomeProps) {
         selectedWorldId={selectedWorldId}
         configSummary={configSummary}
         localConfigSummary={localConfigSummary}
-        safeApiCacheStatuses={safeApiCacheStatuses}
-        recentProjects={recentProjects}
-        workspaceTemplates={workspaceTemplates}
-        saves={saves}
+        safeApiCacheStatuses={safeSafeApiCacheStatuses}
+        recentProjects={safeRecentProjects}
+        workspaceTemplates={safeWorkspaceTemplates}
+        saves={safeSaves}
         worldHealth={worldHealth}
         status={status}
         onNavigate={onNavigate}
@@ -338,7 +352,7 @@ export function StudioHome(props: StudioHomeProps) {
         selectedProjectId={selectedProjectId}
         currentWorkspaceId={currentWorkspaceId}
         selectedWorldId={selectedWorldId}
-        workspaces={workspaces}
+        workspaces={safeWorkspaces}
         configSummary={configSummary}
         localConfigSummary={localConfigSummary}
         localStudioConfig={localStudioConfig}
@@ -347,11 +361,11 @@ export function StudioHome(props: StudioHomeProps) {
         diagnosticsBundlePreview={diagnosticsBundlePreview}
         diagnosticsBundleCreateResult={diagnosticsBundleCreateResult}
         worldHealth={worldHealth}
-        playtestReports={playtestReports}
-        scenarioRegressionRuns={scenarioRegressionRuns}
+        playtestReports={safePlaytestReports}
+        scenarioRegressionRuns={safeScenarioRegressionRuns}
         contentCoverage={contentCoverage}
-        safeApiCacheStatuses={safeApiCacheStatuses}
-        localUpdateNotes={localUpdateNotes}
+        safeApiCacheStatuses={safeSafeApiCacheStatuses}
+        localUpdateNotes={safeLocalUpdateNotes}
         onRunReadinessCheck={onRefreshWorkflowCheck}
         onNavigate={onNavigate}
       />
@@ -360,9 +374,9 @@ export function StudioHome(props: StudioHomeProps) {
         selectedProjectId={selectedProjectId}
         currentWorkspaceId={currentWorkspaceId}
         selectedWorldId={selectedWorldId}
-        workspaces={workspaces}
-        workspaceTemplates={workspaceTemplates}
-        recentProjects={recentProjects}
+        workspaces={safeWorkspaces}
+        workspaceTemplates={safeWorkspaceTemplates}
+        recentProjects={safeRecentProjects}
         localStudioStatus={localStudioStatus}
         localStudioConfig={localStudioConfig}
         localConfigSummary={localConfigSummary}
@@ -373,7 +387,7 @@ export function StudioHome(props: StudioHomeProps) {
         diagnosticsBundlePreview={diagnosticsBundlePreview}
         diagnosticsBundleCreateResult={diagnosticsBundleCreateResult}
         worldHealth={worldHealth}
-        narrativeEvalReports={narrativeEvalReports}
+        narrativeEvalReports={safeNarrativeEvalReports}
         contentCoverage={contentCoverage}
         onNavigate={onNavigate}
       />
@@ -383,7 +397,7 @@ export function StudioHome(props: StudioHomeProps) {
           <ErrorPanel message={workspaceError} compact />
           <ItemList
             emptyText="No workspaces loaded."
-            items={workspaces.slice(0, 8).map((workspace: any) => (
+            items={safeWorkspaces.slice(0, 8).map((workspace: any) => (
               <span key={workspace.workspace_id}>
                 {workspace.name} ({workspace.path_redacted}) - {workspace.safe_status}
                 <button type="button" onClick={() => onSelectWorkspace?.(workspace.workspace_id)}>Open</button>
@@ -392,7 +406,7 @@ export function StudioHome(props: StudioHomeProps) {
           />
           <ItemList
             emptyText="No recent projects."
-            items={recentProjects.slice(0, 6).map((project: any) => (
+            items={safeRecentProjects.slice(0, 6).map((project: any) => (
               <span key={project.workspace_id}>
                 {project.display_name} ({project.path_redacted}) - {project.safe_status}
                 <button type="button" onClick={() => onRemoveRecentProject?.(project.workspace_id)}>Remove</button>
@@ -400,10 +414,10 @@ export function StudioHome(props: StudioHomeProps) {
             ))}
           />
           <div className="button-row">
-            <button type="button" onClick={() => onClearRecentProjects?.()} disabled={!recentProjects.length}>Clear recent projects</button>
+            <button type="button" onClick={() => onClearRecentProjects?.()} disabled={!safeRecentProjects.length}>Clear recent projects</button>
             <button type="button" onClick={() => onNavigate?.("project")}>Project Home</button>
           </div>
-          <p className="muted">{workspaceTemplates.length} local templates available.</p>
+          <p className="muted">{safeWorkspaceTemplates.length} local templates available.</p>
         </SectionCard>
 
         <SectionCard title="Local Settings / Privacy" description="Safe config summary and accessibility preferences.">
@@ -487,10 +501,10 @@ export function StudioHome(props: StudioHomeProps) {
             <button type="button" onClick={() => onRunContentCoverage?.()}>Coverage</button>
           </div>
           <div className="studio-grid compact-dashboard-grid">
-            <DashboardCard title="Quality Reports" value={String(narrativeEvalReports.length)} />
-            <DashboardCard title="Playtests" value={String(playtestReports.length)} />
-            <DashboardCard title="Scenario Cases" value={String(scenarioRegressionCases.length)} />
-            <DashboardCard title="Scenario Runs" value={String(scenarioRegressionRuns.length)} />
+            <DashboardCard title="Quality Reports" value={String(safeNarrativeEvalReports.length)} />
+            <DashboardCard title="Playtests" value={String(safePlaytestReports.length)} />
+            <DashboardCard title="Scenario Cases" value={String(safeScenarioRegressionCases.length)} />
+            <DashboardCard title="Scenario Runs" value={String(safeScenarioRegressionRuns.length)} />
             <DashboardCard title="World Health" value={worldHealth?.overall_score !== undefined ? String(worldHealth.overall_score) : "empty"} />
             <DashboardCard title="Coverage" value={contentCoverage?.coverage_percent !== undefined ? `${contentCoverage.coverage_percent}%` : "empty"} />
           </div>
@@ -503,11 +517,11 @@ export function StudioHome(props: StudioHomeProps) {
           </div>
           <div className="studio-grid compact-dashboard-grid">
             <DashboardCard title="Events" value={String(eventCount)} />
-            <DashboardCard title="Saves" value={String(saves.length)} />
-            <DashboardCard title="Perf Samples" value={String(performanceRecent.length)} />
+            <DashboardCard title="Saves" value={String(safeSaves.length)} />
+            <DashboardCard title="Perf Samples" value={String(safePerformanceRecent.length)} />
             <DashboardCard title="Perf Entries" value={String(performanceSummary?.entries?.length ?? 0)} />
             <DashboardCard title="Batch Duration" value={playtestBatchReport?.duration_ms ? `${playtestBatchReport.duration_ms} ms` : "empty"} />
-            <DashboardCard title="Safe Cache" value={String(safeApiCacheStatuses.length)} />
+            <DashboardCard title="Safe Cache" value={String(safeSafeApiCacheStatuses.length)} />
           </div>
         </SectionCard>
       </div>
@@ -519,7 +533,7 @@ export function StudioHome(props: StudioHomeProps) {
         </div>
         <ItemList
           emptyText="No recovery issues."
-          items={recoveryIssues.slice(0, 8).map((issue: any) => (
+          items={safeRecoveryIssues.slice(0, 8).map((issue: any) => (
             <span key={issue.issue_id ?? issue.code ?? issue.message}>
               {issue.severity ?? "info"}: {issue.safe_summary ?? issue.message ?? "Recovery issue"}
             </span>

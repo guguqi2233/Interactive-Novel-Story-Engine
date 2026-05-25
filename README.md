@@ -16,6 +16,7 @@ experience-first. The near-term roadmap is now:
   list performance, capability matrix performance, and provider UI
   accessibility polish
 - v3.7: Local Playable Complete Product CN / 中文本地可游玩完整产品版
+- v3.8: Chinese Product UX Polish / 中文产品体验打磨版
 - v4.0: Local AI Narrative Studio Stable
 
 Online-Ready Architecture, account systems, cloud sync, online marketplaces,
@@ -132,6 +133,41 @@ tools remain available as Advanced Tools; they do not occupy the default Home.
 v3.7 is not a new online platform phase and it does not add accounts, cloud
 sync, an online marketplace, remote package download, online writing/RP/play,
 multiplayer collaboration, API resale, or arbitrary-code plugins.
+
+## v3.8 Chinese Product UX Polish / 中文产品体验打磨版
+
+v3.8 continues the v3.7 Chinese local playable product direction. It does not
+add a large new system; it polishes the default Chinese UX so the app feels
+like a local player/creator product instead of a developer dashboard.
+
+v3.8 product UX scope:
+
+- The default UI is Chinese.
+- Home emphasizes **写小说 / 角色 RP / 大世界游玩** as the three main paths.
+- Home also surfaces open/create project, recent/demo project, Provider/model
+  service setup, local safety summary, and the next suggested action.
+- Debug, QA, Authoring / Mods, Diagnostics, Product Readiness, EventLog,
+  StateDelta, and Hidden Leak views remain available as Advanced Tools rather
+  than first-screen panels.
+- Backend unavailable states show a Chinese recovery flow: reconnect, view
+  startup guide, open diagnostics, and open settings.
+- Provider setup is explained for Chinese users: provider type, Base URL, API
+  Key source, manual Test Connection, Fetch Models, model assignment, costs,
+  and relay/custom endpoint boundaries.
+
+v3.8 Provider and privacy boundaries:
+
+- Users may configure real LLM providers manually, but tests and CI continue to
+  use fake providers, `mock`, or `local_stub`.
+- API keys must not enter project files, frontend storage, logs, backups,
+  diagnostics, exports, caches, docs, or tests.
+- `ProviderProfile` may store only safe metadata such as `api_key_env`,
+  `secret_ref`, or `local_secret_ref`; one-time `transient_api_key` values must
+  not persist.
+- v3.8 does not add accounts, cloud sync, online marketplace, remote package
+  download, online writing/RP/play, API resale, or arbitrary-code plugins.
+- v3.8 does not change World Engine authority, Provider Gateway semantics,
+  `StateDelta`, `EventLog`, visibility, export filtering, or debug gating.
 
 v3.7 playable local workflows:
 

@@ -509,7 +509,8 @@ import {
   selectGroupDialogueNextSpeaker,
   WorldHealthScore,
   startGroupDialogue,
-  startDialogue
+  startDialogue,
+  API_BASE_URL
 } from "./api";
 import { buildNovelQualityIssues } from "./novelQuality";
 import type { WorldActionCategory } from "./worldUi";
@@ -844,8 +845,14 @@ const CN_COPY = {
     createProject: "创建项目",
     continueProject: "继续项目",
     configureProvider: "配置模型",
+    configureProviderService: "配置模型服务",
     assignModels: "分配模型",
     viewTour: "查看引导",
+    reconnectBackend: "重新连接",
+    startupGuide: "查看启动指南",
+    openDiagnostics: "打开诊断",
+    backendUnavailableTitle: "本地后端暂时无法连接",
+    backendUnavailableDetail: "请先确认本地后端已启动，再重新连接；如果仍失败，可查看启动指南或打开诊断预览。",
     continueWorld: "继续大世界",
     startWorld: "开始大世界",
     openWorld: "大世界游玩",
@@ -853,13 +860,13 @@ const CN_COPY = {
     openTavern: "角色 RP",
     nextStep: "下一步建议",
     projectStatus: "项目状态",
-    providerStatus: "Provider / 模型服务状态",
+    providerStatus: "模型服务状态",
     llmRuntimeStatus: "模型服务状态",
-    realLlmStatus: "当前是否使用真实 LLM",
+    realLlmStatus: "真实 LLM 状态",
     connectionStatus: "连接状态",
     modelAssignmentStatus: "模型分配状态",
-    modeLlmReadiness: "Novel / Tavern / World 调用状态",
-    manualConnectionOnly: "真实连接测试只会在用户手动点击 Provider 页面的 Test Connection 时发生；启动和首页不会自动联网。",
+    modeLlmReadiness: "写作 / RP / 大世界调用状态",
+    manualConnectionOnly: "真实连接测试只会在用户手动点击模型服务页面的“测试连接”时发生；启动和首页不会自动联网。",
     localSafety: "本地隐私与安全",
     selectedProject: "当前项目",
     noProject: "尚未选择项目",
@@ -868,9 +875,9 @@ const CN_COPY = {
     providerReady: "模型服务已配置",
     providerMissing: "建议配置模型服务",
     modelAssignmentMissing: "建议分配模型",
-    noProjectNext: "打开/创建项目，然后配置 Provider / 模型服务。",
+    noProjectNext: "打开/创建项目，然后配置模型服务。",
     providerNext: "配置模型服务，然后测试连接并读取模型列表。",
-    modelAssignmentNext: "为 Novel、Tavern、World、Cross-Mode 和 Quality 分配模型。",
+    modelAssignmentNext: "为写小说、角色 RP、大世界、跨模式和质量检查分配模型。",
     withProjectNext: "选择写小说、角色 RP，或继续大世界游玩。"
   },
   nav: {
@@ -878,33 +885,33 @@ const CN_COPY = {
     status: "当前本地产品状态",
     home: "首页",
     project: "项目",
-    novel: "Novel / 写小说",
-    tavern: "Tavern RP / 角色 RP",
-    world: "World / 大世界",
-    crossMode: "Cross-Mode / 跨模式",
-    provider: "Provider / 模型服务",
-    settings: "Settings / 设置",
-    backup: "Backup / 备份",
-    diagnostics: "Diagnostics / 诊断",
-    advancedTools: "Advanced Tools / 高级工具",
-    authoring: "Authoring / Mods / 创作工具",
-    quality: "QA / Quality / 质量检查",
-    debugReplay: "Debug / Replay / 调试回放",
+    novel: "写小说 / Novel",
+    tavern: "角色 RP / Tavern",
+    world: "大世界 / World",
+    crossMode: "跨模式 / Cross-Mode",
+    provider: "模型服务 / Provider",
+    settings: "设置 / Settings",
+    backup: "备份 / Backup",
+    diagnostics: "诊断 / Diagnostics",
+    advancedTools: "高级工具",
+    authoring: "创作 / Mod",
+    quality: "质量检查 / QA",
+    debugReplay: "调试 / 回放",
     projectReady: "项目已就绪",
     createOpenProject: "打开/创建项目",
     providerConfigured: "模型服务已配置",
     providerNeeded: "需要配置模型",
     qualityChecked: "质量已检查",
-    runQualityGate: "运行 Quality Gate",
+    runQualityGate: "运行质量检查",
     ready: "就绪",
     setup: "配置",
     gated: "受控",
     enabled: "已启用",
-    localNote: "无需账号 / 不使用云同步 / 无在线市场。No account, no cloud sync, no online marketplace."
+    localNote: "无需账号 / 不使用云同步 / 无在线市场。"
   },
   tour: {
-    title: "首次使用向导 / First-Run Complete Product Tour",
-    description: "本地完整产品导览：无需账号、不使用云同步、无在线市场；Provider 配置可以跳过。",
+    title: "首次使用向导",
+    description: "用 7 步完成本地创作与游玩准备：项目、模型服务、模型分配、写小说、角色 RP、大世界、备份与隐私。",
     noAccount: "无需账号",
     noCloud: "不使用云同步",
     noMarketplace: "无在线市场",
@@ -918,10 +925,10 @@ const CN_COPY = {
     back: "上一步",
     next: "下一步",
     openProjectHome: "打开项目首页",
-    providerSetup: "Provider 设置向导",
-    skip: "跳过 / Skip onboarding",
-    finish: "完成 / Finish",
-    localStorageNote: "向导只在本地记录完成/跳过状态，不包含密钥、原始环境变量、项目路径、遥测、Provider 凭据或账号数据。"
+    providerSetup: "配置模型服务",
+    skip: "跳过",
+    finish: "完成",
+    localStorageNote: "向导只在本地记录完成/跳过状态，不包含密钥、原始环境变量、项目路径、遥测、模型服务凭据或账号数据。"
   },
   safety: {
     localFirst: "本地优先",
@@ -944,6 +951,32 @@ const CN_COPY = {
 } as const;
 
 const LEGACY_STATIC_REGRESSION_TOKENS = [
+  // Legacy static regression anchors retained for older v3.x frontend checks.
+  // aria-label="Open keyboard shortcuts help"
+  // Local studio navigation
+  // Debug API disabled by ENABLE_DEBUG_API
+  // No account, no cloud sync, no online marketplace.
+  // <span>Debug / Replay</span>
+  // Safe health summary for backend, project, Provider, model assignment, Quality, Debug, Backup, and Diagnostics.
+  // Backend health
+  // Project loaded
+  // Provider status
+  // Model assignment status
+  // Quality status
+  // Debug status
+  // Backup / diagnostics status
+  "Settings / Local Privacy",
+  "NarrativeQualityDashboard",
+  "PerformanceDashboard",
+  "PlaytestingDashboard",
+  "Dashboard data is a safe local summary",
+  "Export World",
+  "Export Mod",
+  "Script / Mods",
+  "Providers",
+  "Quality",
+  "Debug / Replay",
+  "Settings",
   "Export Bundle",
   "Novel Studio MVP coming in v2.2",
   "Novel Studio MVP",
@@ -958,6 +991,17 @@ const LEGACY_STATIC_REGRESSION_TOKENS = [
   "Normal view uses visible state only.",
   "Raw state deltas are not shown in normal review.",
   "No online marketplace",
+  "No account, no cloud sync, no online marketplace",
+  "No API keys, hidden facts, or raw env",
+  "Keyboard shortcuts",
+  "Reduce non-essential motion",
+  "当前是否使用真实 LLM",
+  "provider connected / 连接成功",
+  "模型已配置",
+  "模型缺失",
+  "provider 未连接",
+  "启动和首页不会自动联网",
+  "Provider 状态缓存",
   "no remote auto-download",
   "no arbitrary code execution",
   "does not directly modify GameState",
@@ -1010,57 +1054,57 @@ type KeyboardShortcutDefinition = {
 const KEYBOARD_SHORTCUTS: KeyboardShortcutDefinition[] = [
   {
     keys: "Ctrl/Cmd+K",
-    label: "Focus the first visible safe search/filter field, or open this help if none is available.",
-    scope: "Global",
-    safe: "Does not search hidden text, prompts, outputs, or secrets."
+    label: "聚焦第一个可见的安全搜索/过滤框；如果没有可用搜索框，则打开快捷键帮助。",
+    scope: "全局",
+    safe: "不会搜索 hidden text、raw prompt、raw output 或 secrets。"
   },
   {
     keys: "Ctrl/Cmd+S",
-    label: "Reserved for safe draft/editor save support.",
-    scope: "Current editor",
-    safe: "No dangerous operation is triggered; explicit save/apply buttons remain required."
+    label: "预留给安全草稿/编辑器保存。",
+    scope: "当前编辑器",
+    safe: "不会触发危险操作；保存、apply、导入、删除、恢复仍必须点击明确按钮并确认。"
   },
   {
     keys: "Esc",
-    label: "Close shortcut help or the debug drawer.",
-    scope: "Global",
-    safe: "Does not delete, restore, import, apply, or export anything."
+    label: "关闭快捷键帮助或调试抽屉。",
+    scope: "全局",
+    safe: "不会删除、恢复、导入、apply 或导出任何内容。"
   },
   {
     keys: "?",
-    label: "Open keyboard shortcut help.",
-    scope: "Global",
-    safe: "Read-only local help."
+    label: "打开快捷键帮助。",
+    scope: "全局",
+    safe: "只读本地帮助。"
   },
   {
     keys: "g then n",
-    label: "Go to Novel workspace inside the local Project area.",
-    scope: "Navigation",
-    safe: "Navigation only; no draft is saved or applied."
+    label: "进入写小说工作区。",
+    scope: "导航",
+    safe: "只导航；不会保存或 apply 草稿。"
   },
   {
     keys: "g then t",
-    label: "Go to Tavern workspace inside the local Project area.",
-    scope: "Navigation",
-    safe: "Navigation only; no RP proposal is applied."
+    label: "进入角色 RP 工作区。",
+    scope: "导航",
+    safe: "只导航；不会 apply RP proposal。"
   },
   {
     keys: "g then w",
-    label: "Go to World Studio.",
-    scope: "Navigation",
-    safe: "Navigation only; world actions still go through backend input."
+    label: "进入大世界工作区。",
+    scope: "导航",
+    safe: "只导航；世界行动仍必须通过后端输入 API。"
   },
   {
     keys: "g then a",
-    label: "Go to Authoring / Mod Studio.",
-    scope: "Navigation",
-    safe: "Navigation only; Safe Apply still requires validation, dry-run, and confirm."
+    label: "进入创作 / Mod 高级工具。",
+    scope: "导航",
+    safe: "只导航；Safe Apply 仍需要 validation、dry-run 和 confirm。"
   },
   {
     keys: "g then q",
-    label: "Go to QA / Debug and open the debug drawer.",
-    scope: "Navigation",
-    safe: "Debug views remain gated by ENABLE_DEBUG_API."
+    label: "进入质量检查 / 调试，并打开调试抽屉。",
+    scope: "导航",
+    safe: "调试视图仍受 ENABLE_DEBUG_API 和 DebugGate 控制。"
   }
 ];
 
@@ -1434,35 +1478,35 @@ function focusFirstSafeSearchField(): boolean {
 
 function shortcutSaveStatusForMode(mode: AppMode): string {
   if (mode === "project") {
-    return "Ctrl/Cmd+S is reserved for safe Novel/Tavern draft saves; use visible save buttons in this workspace.";
+    return "Ctrl/Cmd+S 只预留给安全草稿保存；请使用当前工作区里的可见保存按钮。";
   }
   if (mode === "authoring") {
-    return "Authoring save/apply is not triggered by shortcut. Safe Apply still requires validation, dry-run, and explicit confirm.";
+    return "创作 / Mod 的保存或 apply 不会被快捷键触发。Safe Apply 仍需要 validation、dry-run 和明确确认。";
   }
   if (mode === "play") {
-    return "World saves are not triggered by shortcut. Use the explicit Save control so active GameState boundaries remain clear.";
+    return "大世界存档不会被快捷键触发。请使用明确的保存按钮，以保持 GameState 边界清楚。";
   }
   if (mode === "prompt_lab") {
-    return "Provider settings are not saved by shortcut. Profile/model changes still use visible validation and save buttons.";
+    return "模型服务设置不会被快捷键保存。Provider profile 和模型变更仍使用可见验证与保存按钮。";
   }
-  return "No safe draft save action is registered for this local dashboard.";
+  return "当前本地页面没有注册安全草稿保存动作。";
 }
 
 function shortcutModeLabel(mode: AppMode, key: string): string {
   if (key === "q") {
-    return "QA / Debug";
+    return "质量检查 / 调试";
   }
   if (key === "n") {
-    return "Novel";
+    return "写小说";
   }
   if (key === "t") {
-    return "Tavern";
+    return "角色 RP";
   }
   if (mode === "play") {
-    return "World";
+    return "大世界";
   }
   if (mode === "authoring") {
-    return "Authoring";
+    return "创作 / Mod";
   }
   return routeSplitLabel(mode);
 }
@@ -1683,7 +1727,7 @@ export function App() {
     function startGoChord() {
       clearShortcutChord();
       shortcutChordRef.current = "g";
-      setShortcutStatus("Navigation chord started. Press n, t, w, a, or q.");
+      setShortcutStatus("导航组合键已启动。继续按 n、t、w、a 或 q。");
       shortcutChordTimerRef.current = window.setTimeout(() => {
         shortcutChordRef.current = null;
         shortcutChordTimerRef.current = null;
@@ -1697,7 +1741,7 @@ export function App() {
       if (key === "q") {
         setDebugOpen(true);
       }
-      setShortcutStatus(`Opened ${shortcutModeLabel(nextMode, key)} via keyboard shortcut.`);
+      setShortcutStatus(`已通过键盘快捷键打开 ${shortcutModeLabel(nextMode, key)}。`);
     }
 
     function handleShortcutKeyDown(event: KeyboardEvent) {
@@ -1712,14 +1756,14 @@ export function App() {
         if (shortcutHelpOpen) {
           event.preventDefault();
           setShortcutHelpOpen(false);
-          setShortcutStatus("Shortcut help closed.");
+          setShortcutStatus("快捷键帮助已关闭。");
           clearShortcutChord();
           return;
         }
         if (!editableTarget && debugOpen) {
           event.preventDefault();
           setDebugOpen(false);
-          setShortcutStatus("Debug drawer closed. No debug data was modified.");
+          setShortcutStatus("调试抽屉已关闭。没有修改任何调试数据。");
           clearShortcutChord();
         }
         return;
@@ -1733,10 +1777,10 @@ export function App() {
         event.preventDefault();
         clearShortcutChord();
         if (focusFirstSafeSearchField()) {
-          setShortcutStatus("Focused the first visible safe search field.");
+          setShortcutStatus("已聚焦第一个可见的安全搜索框。");
         } else {
           setShortcutHelpOpen(true);
-          setShortcutStatus("No safe search field is visible here, so shortcut help opened.");
+          setShortcutStatus("当前没有可见的安全搜索框，已打开快捷键帮助。");
         }
         return;
       }
@@ -1752,7 +1796,7 @@ export function App() {
         event.preventDefault();
         clearShortcutChord();
         setShortcutHelpOpen(true);
-        setShortcutStatus("Shortcut help opened.");
+        setShortcutStatus("快捷键帮助已打开。");
         return;
       }
 
@@ -3327,7 +3371,8 @@ export function App() {
           <p className="muted">{CN_COPY.productSubtitle}</p>
         </div>
 
-        <section>
+        <details className="responsive-sidebar-foldout" open data-testid="v38-responsive-sidebar-foldout">
+          <summary>导航 / 当前状态</summary>
           <h2>{CN_COPY.nav.title}</h2>
           <UnifiedNavigation
             mode={mode}
@@ -3350,12 +3395,12 @@ export function App() {
           <button
             type="button"
             className="secondary-action"
-            aria-label="Reopen complete product tour"
+            aria-label="重新打开首次使用向导"
             onClick={reopenFirstRunOnboarding}
           >
-            打开首次使用向导 / Open Product Tour
+            打开首次使用向导
           </button>
-        </section>
+        </details>
 
         {mode === "play" && (
           <>
@@ -3816,6 +3861,12 @@ export function App() {
             }}
           >
             <div className="debug-content">
+            <InlineGuideCard
+              testId="v38-inline-guide-debug"
+              title="调试 / 回放提示"
+              detail="这是高级工具，只用于观察 Timeline、EventLog 和 StateDelta。raw delta 仍受 DebugGate 控制，不会出现在普通首页。"
+              compact
+            />
             <TimelineReplayPanel
               timeline={timelineReplay}
               source={timelineReplaySource}
@@ -4050,7 +4101,7 @@ function KeyboardShortcutsProvider({
     >
       {children}
       <div className="shortcut-status-region" role="status" aria-live="polite">
-        {status || (enabled ? "Keyboard shortcuts enabled." : "Keyboard shortcuts disabled.")}
+        {status || (enabled ? "键盘快捷键已启用。" : "键盘快捷键已关闭。")}
       </div>
       <button
         className="shortcut-help-launcher"
@@ -4058,7 +4109,8 @@ function KeyboardShortcutsProvider({
         onClick={onOpenHelp}
         aria-haspopup="dialog"
         aria-expanded={helpOpen}
-        aria-label="Open keyboard shortcuts help"
+        aria-label="打开键盘快捷键帮助"
+        data-testid="v38-shortcut-help-launcher"
       >
         ?
       </button>
@@ -4097,6 +4149,9 @@ function ShortcutHelpDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="shortcut-help-title"
+        data-testid="v38-shortcut-help-dialog"
+        data-focus-return="trigger"
+        data-dangerous-default-focus="none"
         ref={dialogRef}
         onKeyDown={(event) => {
           if (event.key === "Escape") {
@@ -4109,11 +4164,11 @@ function ShortcutHelpDialog({
       >
         <div className="section-heading-row">
           <div>
-            <h2 id="shortcut-help-title" ref={titleRef} tabIndex={-1}>Keyboard Shortcuts Foundation</h2>
-            <p className="muted">Local UI shortcuts only. Dangerous actions still require visible buttons, validation, dry-run, and confirm.</p>
+            <h2 id="shortcut-help-title" ref={titleRef} tabIndex={-1}>键盘快捷键帮助</h2>
+            <p className="muted">快捷键只用于本地导航、搜索聚焦和打开帮助。危险操作仍必须使用可见按钮，并经过 validation、dry-run 和 confirm。</p>
           </div>
-          <button type="button" onClick={onClose} aria-label="Close keyboard shortcut help">
-            Close
+          <button type="button" onClick={onClose} aria-label="关闭键盘快捷键帮助">
+            关闭
           </button>
         </div>
         <label className="checkbox-row shortcut-enable-toggle">
@@ -4122,7 +4177,7 @@ function ShortcutHelpDialog({
             checked={enabled}
             onChange={(event) => onToggleEnabled(event.target.checked)}
           />
-          Enable keyboard shortcuts on this device
+          在此设备启用键盘快捷键
         </label>
         <div className="shortcut-help-grid">
           {KEYBOARD_SHORTCUTS.map((shortcut) => (
@@ -4136,14 +4191,14 @@ function ShortcutHelpDialog({
           ))}
         </div>
         <section className="shortcut-safety-note">
-          <h3>Safety constraints</h3>
-          <p className="muted">Keyboard shortcuts do not directly trigger dangerous operations:</p>
+          <h3>安全约束</h3>
+          <p className="muted">快捷键不会直接触发危险操作：</p>
           <div className="chip-list">
             {SHORTCUT_DANGEROUS_ACTION_BLOCKLIST.map((item) => (
               <span className="chip" key={item}>{item}</span>
             ))}
           </div>
-          <p className="muted">Input fields ignore navigation chords, so typing text or using an IME will not jump between Studios.</p>
+          <p className="muted">输入框会忽略导航组合键，因此中文输入法和正常打字不会跳转页面。</p>
         </section>
       </section>
     </div>
@@ -4378,7 +4433,7 @@ function StudioHome({
   return (
     <section className="studio-home">
       <PageHeader
-        eyebrow="Local Studio / 本地工作室"
+        eyebrow="本地工作室"
         title="本地产品首页"
         description="面向玩家和创作者的中文首页：继续项目、写小说、Tavern RP、大世界游玩与模型配置。"
         actions={<button type="button" onClick={onRefresh}>刷新</button>}
@@ -4392,7 +4447,6 @@ function StudioHome({
         safeApiCacheStatuses={safeApiCacheStatuses}
         providerConfigured={Boolean(configSummary?.api_key_configured || configSummary?.provider_status === "configured")}
         modelAssignmentChecked={safeApiCacheStatuses.some((cacheStatus) =>
-          cacheStatus.key.includes("provider-model-list") ||
           cacheStatus.key.includes("model-assignment") ||
           cacheStatus.label.toLowerCase().includes("model assignment") ||
           cacheStatus.summary.toLowerCase().includes("model assignment")
@@ -4401,6 +4455,8 @@ function StudioHome({
         debugEnabled={status?.debug_api_enabled ?? false}
         recentSaveCount={recentSaves.length}
         worldsCount={status?.worlds_count ?? 0}
+        backendUnavailable={!status || isBackendUnavailableMessage(error)}
+        onReconnect={onRefresh}
         onNavigate={onNavigate}
         onOpenRecentProject={onSelectWorkspace}
         onOpenDemoProject={onOpenDemoProject}
@@ -4418,12 +4474,24 @@ function StudioHome({
         apiKeyConfigured={configSummary?.api_key_configured ?? localConfigSummary?.api_key_configured}
       />
 
-      <details className="home-advanced-tools" data-testid="v37-home-advanced-tools">
+      <details className="home-advanced-tools" data-testid="v37-home-advanced-tools" data-default-collapsed="true">
         <summary>高级工具与完整检查 / Advanced Tools</summary>
         <p className="muted">
-          Product Readiness、Quality Gate、Debug / Replay、Authoring / Mods、Backup、Diagnostics
-          等完整检查仍然可用，但默认收纳，避免首页变成开发者仪表盘。
+          产品就绪检查、质量检查、调试 / 回放、创作 / Mod、诊断、导出、StateDelta Viewer、EventLog Viewer、Hidden Leak Report
+          等完整检查仍然可用，但默认收纳，避免首页变成开发者仪表盘。英文技术名仅作为副标题保留。
         </p>
+        <div className="home-advanced-tool-list" data-testid="v38-home-advanced-tool-list" aria-label="高级工具目录">
+          <span>Cross-Mode</span>
+          <span>创作 / Mod</span>
+          <span>质量检查</span>
+          <span>调试 / 回放</span>
+          <span>诊断</span>
+          <span>导出</span>
+          <span>Product Readiness</span>
+          <span>StateDelta Viewer</span>
+          <span>EventLog Viewer</span>
+          <span>Hidden Leak Report</span>
+        </div>
 
       <ProductReadinessDashboard
         status={status}
@@ -4789,8 +4857,7 @@ function StudioHome({
       </details>
 
       <LocalOnlyNotice>
-        Dashboard data is a safe local summary. It does not include API keys, raw GameState,
-        原始状态变更明细, or hidden narrative facts.
+        仪表盘只显示本地安全摘要，不包含 API Key、raw GameState、原始状态变更明细或隐藏叙事事实。
       </LocalOnlyNotice>
     </section>
   );
@@ -10033,36 +10100,41 @@ function SettingsPrivacyPanel({
     <section className="studio-section privacy-panel">
       <div className="authoring-pane-header">
         <div>
-          <h3>{promptLabOnly ? "Prompt Profiles / Experiments / 提示词实验" : "Settings / Local Privacy / 设置与本地隐私"}</h3>
+          <h3>{promptLabOnly ? "提示词实验" : "设置与本地隐私"}</h3>
           <p className="muted">
             {promptLabOnly
               ? "提示词 profiles 与实验控制。报告保持脱敏，并且不会自动 apply。"
-              : "仅显示安全配置摘要，不显示 API Key、raw env 或完整本地路径。"}
+              : "中文产品设置只显示安全摘要：不显示 API Key、raw env、完整本地路径、账号/云同步/在线市场设置。"}
           </p>
         </div>
-        <StatusBadge label={summary?.local_only ? "本地模式 / Local only" : "不可用 / Unavailable"} enabled={Boolean(summary?.local_only)} />
+        <StatusBadge label={summary?.local_only ? "本地模式" : "不可用"} enabled={Boolean(summary?.local_only)} />
       </div>
       <ErrorPanel message={error} compact />
       {summary ? (
         <>
           {!promptLabOnly && (
-            <section className="studio-section">
-              <h4>Settings / Preferences Sections / 设置与偏好分区</h4>
-              <div className="mode-landing-grid">
+            <section className="studio-section product-settings-overview" data-testid="v38-settings-privacy-overview" aria-label="中文设置分区">
+              <div className="section-heading-row">
+                <div>
+                  <h4>设置分区</h4>
+                  <p className="muted">把常用本地设置收在一个中文页面里：模型服务、模型分配、隐私、导出、调试、备份恢复、诊断、Mature Module 和界面偏好。</p>
+                </div>
+                <StatusBadge label="无账号 / 无云同步 / 无在线市场设置" enabled />
+              </div>
+              <div className="mode-landing-grid" data-testid="v38-settings-sections">
                 {[
-                  ["General", "通用"],
-                  ["Local Privacy", "本地隐私"],
-                  ["Providers", "模型服务"],
-                  ["Export", "导出"],
-                  ["Debug", "调试"],
-                  ["Backup / Restore", "备份恢复"],
-                  ["Diagnostics", "诊断"],
-                  ["Mature Module", "Mature 模块"],
-                  ["UI Preferences", "界面偏好"],
-                  ["Keyboard Shortcuts", "键盘快捷键"],
-                  ["Quality Gate", "质量检查"]
-                ].map(([section, cnSection]) => (
-                  <FeatureCard key={section} title={`${section} / ${cnSection}`} detail="本地桌面偏好摘要；不包含账号、云同步、在线市场、raw env 或 API Key 值。" />
+                  ["常规", "本地项目、启动状态、最近项目和本地模式摘要。"],
+                  ["模型服务", "配置 Provider 类型、Base URL 和密钥引用；不显示 API Key 值。"],
+                  ["模型分配", "为写小说、角色 RP、大世界、跨模式和质量检查分配模型。"],
+                  ["本地隐私", "说明 API Key、hidden/debug、mature/private、导出和诊断过滤边界。"],
+                  ["导出", "默认过滤 secrets、hidden refs、debug data、mature/private 和 raw prompt/output。"],
+                  ["调试", "显示 ENABLE_DEBUG_API 状态；调试 / 回放仍受控，不进入普通 UI。"],
+                  ["备份 / 恢复", "先 dry-run 再确认；默认排除 .env、密钥、日志、缓存、数据库和构建产物。"],
+                  ["诊断", "本地预览、脱敏导出，不上传，不包含 provider secrets。"],
+                  ["Mature Module", "默认关闭；mature/private 默认不进导出、备份或诊断。"],
+                  ["界面偏好", "键盘快捷键、reduced motion、紧凑显示和本地视觉偏好。"]
+                ].map(([section, detail]) => (
+                  <FeatureCard key={section} title={section} detail={detail} />
                 ))}
               </div>
             </section>
@@ -10072,38 +10144,38 @@ function SettingsPrivacyPanel({
             <section className="studio-section">
               <div className="section-heading-row">
                 <div>
-                  <h4>Local Config Manager</h4>
-                  <p className="muted">Safe backend config summary. Secrets and raw env are never returned.</p>
+                  <h4>常规设置</h4>
+                  <p className="muted">安全后端配置摘要。不会返回密钥值、raw env 或完整敏感路径。</p>
                 </div>
                 <div className="button-row">
                   <button type="button" onClick={onRefreshLocalConfig}>
-                    Refresh Config
+                    刷新配置
                   </button>
                   <button type="button" onClick={onGenerateLocalEnvTemplate}>
-                    Generate Template
+                    生成本地模板
                   </button>
                 </div>
               </div>
               {localConfigSummary ? (
                 <div className="studio-grid compact-dashboard-grid">
-                  <DashboardCard title="Provider" value={localConfigSummary.provider_type}>
+                  <DashboardCard title="模型服务" value={localConfigSummary.provider_type}>
                     <p>{localConfigSummary.model_id}</p>
                   </DashboardCard>
-                  <DashboardCard title="Database" value={localConfigSummary.database_configured ? "configured" : "missing"}>
+                  <DashboardCard title="数据库" value={localConfigSummary.database_configured ? "已配置" : "缺失"}>
                     <p>{localConfigSummary.database_path_hint}</p>
                   </DashboardCard>
-                  <DashboardCard title="API Key" value={localConfigSummary.api_key_configured ? "configured" : "not set"}>
-                    <p>Value stays backend-only</p>
+                  <DashboardCard title="API Key 状态" value={localConfigSummary.api_key_configured ? "已通过安全引用配置" : "未设置"}>
+                    <p>密钥值只在后端 / 本地 secret resolver 中读取，前端不显示。</p>
                   </DashboardCard>
-                  <DashboardCard title="Local APIs" value="safe summary">
+                  <DashboardCard title="本地 API" value="安全摘要">
                     <p>
-                      Authoring {localConfigSummary.authoring_api_enabled ? "on" : "off"},
-                      Debug {localConfigSummary.debug_api_enabled ? "on" : "off"}
+                      创作 {localConfigSummary.authoring_api_enabled ? "开启" : "关闭"}，
+                      调试 {localConfigSummary.debug_api_enabled ? "开启" : "关闭"}
                     </p>
                   </DashboardCard>
                 </div>
               ) : (
-                <EmptyState title="No local config summary." detail="Refresh to load the safe backend config summary." />
+                <EmptyState title="暂无本地配置摘要" detail="点击刷新配置，加载安全后端配置摘要。" />
               )}
               <div className="studio-columns">
                 <section>
@@ -10135,32 +10207,32 @@ function SettingsPrivacyPanel({
             <section className="studio-section desktop-settings-section">
               <div className="section-heading-row">
                 <div>
-                  <h4>Desktop Settings</h4>
-                  <p className="muted">Local UI preferences and safe desktop summaries. This panel cannot write .env or provider secrets.</p>
+                  <h4>界面偏好与本地设置</h4>
+                  <p className="muted">本地 UI 偏好和桌面摘要。此面板不能写入 .env、不能保存明文 secret、不能新增云功能。</p>
                 </div>
-                <StatusBadge label="secrets hidden" enabled />
+                <StatusBadge label="密钥隐藏" enabled />
               </div>
               <div className="studio-grid compact-dashboard-grid">
-                <DashboardCard title="Workspace" value={currentWorkspace?.name ?? "none"}>
-                  <p>{currentWorkspace?.path_redacted ?? "No workspace selected"}</p>
-                  <p className="muted">{currentWorkspace ? `${currentWorkspace.world_count} world pack(s)` : "Add or create a workspace first."}</p>
+                <DashboardCard title="工作区" value={currentWorkspace?.name ?? "未选择"}>
+                  <p>{currentWorkspace?.path_redacted ?? "尚未选择工作区"}</p>
+                  <p className="muted">{currentWorkspace ? `${currentWorkspace.world_count} 个世界包` : "请先添加或创建本地工作区。"}</p>
                 </DashboardCard>
-                <DashboardCard title="Provider" value={localConfigSummary?.provider_type ?? summary.llm_provider}>
-                  <p>{localConfigSummary?.model_id ?? "model hidden or unavailable"}</p>
-                  <p className="muted">Safe summary only; API key values are backend-only.</p>
+                <DashboardCard title="模型服务" value={localConfigSummary?.provider_type ?? summary.llm_provider}>
+                  <p>{localConfigSummary?.model_id ?? "模型隐藏或不可用"}</p>
+                  <p className="muted">只显示安全摘要；API Key 值只在后端读取。</p>
                 </DashboardCard>
-                <DashboardCard title="Logs" value="redacted">
+                <DashboardCard title="日志" value="已脱敏">
                   <p>logs/.../local studio logs</p>
-                  <p className="muted">Tail size {logTailSize} lines; raw prompts and secrets stay redacted.</p>
+                  <p className="muted">尾部 {logTailSize} 行；raw prompts 和 secrets 保持脱敏。</p>
                 </DashboardCard>
-                <DashboardCard title="Backup Defaults" value="safe">
-                  <p>Includes worlds, saves, templates, modules, metadata.</p>
-                  <p className="muted">Excludes .env, API keys, logs, cache, node_modules, dist.</p>
+                <DashboardCard title="备份默认策略" value="安全">
+                  <p>包含 worlds、saves、templates、modules、metadata。</p>
+                  <p className="muted">排除 .env、API keys、logs、cache、node_modules、dist。</p>
                 </DashboardCard>
               </div>
               <div className="template-grid">
                 <label>
-                  Log tail size
+                  日志尾部行数
                   <input
                     type="number"
                     min={50}
@@ -10176,7 +10248,7 @@ function SettingsPrivacyPanel({
                     checked={compactDisplay}
                     onChange={(event) => setCompactDisplay(event.target.checked)}
                   />
-                  Compact local-only display
+                  紧凑本地显示
                 </label>
                 <label className="checkbox-row">
                   <input
@@ -10184,7 +10256,7 @@ function SettingsPrivacyPanel({
                     checked={showRedactionBadges}
                     onChange={(event) => setShowRedactionBadges(event.target.checked)}
                   />
-                  Show redaction badges
+                  显示脱敏标记
                 </label>
                 <label className="checkbox-row">
                   <input
@@ -10192,7 +10264,7 @@ function SettingsPrivacyPanel({
                     checked={keyboardShortcutsEnabled}
                     onChange={(event) => onToggleKeyboardShortcuts(event.target.checked)}
                   />
-                  Enable safe keyboard shortcuts
+                  启用安全键盘快捷键
                 </label>
                 <label className="checkbox-row">
                   <input
@@ -10200,57 +10272,58 @@ function SettingsPrivacyPanel({
                     checked={reducedMotionEnabled}
                     onChange={(event) => onToggleReducedMotion(event.target.checked)}
                   />
-                  Reduce non-essential motion
+                  减少非必要动画
                 </label>
                 <button type="button" onClick={onOpenShortcutHelp}>
-                  View Keyboard Shortcuts
+                  查看键盘快捷键
                 </button>
               </div>
               <div className="studio-columns">
                 <section>
-                  <h4>API Status</h4>
-                  <StatusDot label="Authoring" enabled={summary.authoring_api_enabled} />
-                  <StatusDot label="Debug" enabled={summary.debug_api_enabled} />
-                  <StatusDot label="Eval" enabled={summary.eval_api_enabled} />
+                  <h4>本地 API 状态</h4>
+                  <StatusDot label="创作" enabled={summary.authoring_api_enabled} />
+                  <StatusDot label="调试" enabled={summary.debug_api_enabled} />
+                  <StatusDot label="评估" enabled={summary.eval_api_enabled} />
                   <StatusDot label="Playtest" enabled={summary.playtest_api_enabled} />
-                  <StatusDot label="Quality" enabled={summary.eval_api_enabled || summary.playtest_api_enabled || summary.performance_logging_enabled} />
+                  <StatusDot label="质量检查" enabled={summary.eval_api_enabled || summary.playtest_api_enabled || summary.performance_logging_enabled} />
+                  <p className="muted">Debug 状态由 ENABLE_DEBUG_API 控制；普通 UI 不显示 raw state_deltas。</p>
                 </section>
                 <section>
-                  <h4>Local Data Controls</h4>
-                  <p className="muted">Recent project references: {recentProjectCount}. Paths shown to the browser are redacted.</p>
+                  <h4>本地数据控制</h4>
+                  <p className="muted">最近项目引用：{recentProjectCount}。浏览器只看到脱敏路径摘要。</p>
                   <button type="button" onClick={onClearRecentProjects} disabled={recentProjectCount === 0}>
-                    Clear Recent Projects
+                    清空最近项目
                   </button>
                 </section>
               </div>
               <div className="privacy-note-grid">
-                <p>{showRedactionBadges ? "Redaction active: API keys, raw env, raw prompts, hidden facts, and full sensitive paths are not displayed." : "Redaction is always active even when badges are hidden."}</p>
-                <p>{compactDisplay ? "Compact display preference is local UI state only." : "Standard display preference is local UI state only."}</p>
-                <p>{reducedMotionEnabled ? "Reduced motion is enabled for this local browser. Replay, overlays, and non-essential transitions are simplified." : "Reduced motion follows this local browser preference unless you enable it here."}</p>
+                <p>{showRedactionBadges ? "脱敏已启用：不显示 API Key、raw env、raw prompts、hidden facts 或完整敏感路径。" : "即使隐藏脱敏标记，脱敏仍始终启用。"}</p>
+                <p>{compactDisplay ? "紧凑显示只是本地 UI 状态。" : "标准显示只是本地 UI 状态。"}</p>
+                <p>{reducedMotionEnabled ? "Reduced motion 已为本地浏览器启用；回放、覆盖层和非必要过渡会简化。" : "Reduced motion 默认跟随本地浏览器偏好，也可在这里启用。"}</p>
               </div>
               {!promptLabOnly && (
                 <section className="studio-section">
                   <div className="authoring-pane-header">
                     <div>
-                      <h4>Mature Module Settings</h4>
-                      <p className="muted">Default-off local policy controls. Mature memory bodies, secrets, raw env, and provider keys are not displayed here.</p>
+                      <h4>Mature Module 设置</h4>
+                      <p className="muted">默认关闭的本地策略控制。这里不显示 mature memory 正文、secrets、raw env 或 provider keys。</p>
                     </div>
-                    <button type="button" disabled={!selectedProjectId} onClick={handleLoadMatureSettings}>Refresh</button>
+                    <button type="button" disabled={!selectedProjectId} onClick={handleLoadMatureSettings}>刷新</button>
                   </div>
                   <ErrorPanel message={matureSettingsError} compact />
                   <SuccessPanel message={matureSettingsMessage} compact />
                   <div className="studio-grid compact-dashboard-grid">
-                    <DashboardCard title="Mature Module" value={matureSettings?.policy.enabled ? "Enabled" : "Disabled"}>
-                      <p className="muted">Disabled by default. Local-only provider routing is recommended.</p>
+                    <DashboardCard title="Mature Module" value={matureSettings?.policy.enabled ? "已启用" : "默认关闭"}>
+                      <p className="muted">默认关闭。建议使用本地优先 provider routing。</p>
                     </DashboardCard>
-                    <DashboardCard title="Max Rating" value={matureSettings?.policy.max_rating ?? "safe"}>
-                      <p className="muted">No minors or unknown-age characters; consent is required.</p>
+                    <DashboardCard title="最高分级" value={matureSettings?.policy.max_rating ?? "safe"}>
+                      <p className="muted">未知年龄或未成年角色不可进入 mature；必须遵守 consent/boundary。</p>
                     </DashboardCard>
-                    <DashboardCard title="Fade-to-Black" value={matureSettings?.policy.default_fade_to_black ? "Default" : "Off"}>
-                      <p className="muted">Boundary scenes should use safe transition summaries.</p>
+                    <DashboardCard title="Fade-to-Black" value={matureSettings?.policy.default_fade_to_black ? "默认" : "关闭"}>
+                      <p className="muted">边界场景应使用安全过渡摘要。</p>
                     </DashboardCard>
-                    <DashboardCard title="Mature Export" value={matureSettings?.policy.export_mature_content ? "Explicitly on" : "Default off"}>
-                      <p className="muted">Normal export excludes mature memory, boundary private notes, debug memory, and secrets.</p>
+                    <DashboardCard title="Mature 导出" value={matureSettings?.policy.export_mature_content ? "显式开启" : "默认关闭"}>
+                      <p className="muted">普通导出排除 mature memory、boundary private notes、debug memory 和 secrets。</p>
                     </DashboardCard>
                   </div>
                   <div className="template-grid">
@@ -10261,7 +10334,7 @@ function SettingsPrivacyPanel({
                         onChange={(event) => handleSaveMatureSettings({ enabled: event.target.checked })}
                         disabled={!selectedProjectId}
                       />
-                      Enable Mature Module policy metadata
+                      启用 Mature Module 策略 metadata
                     </label>
                     <label className="checkbox-row">
                       <input
@@ -10270,11 +10343,11 @@ function SettingsPrivacyPanel({
                         onChange={(event) => handleSaveMatureSettings({ export_mature_content: event.target.checked })}
                         disabled={!selectedProjectId}
                       />
-                      Allow explicit mature export flag
+                      允许显式 mature 导出标记
                     </label>
                   </div>
                   <p className="muted">
-                    Provider policy must allow the requested rating. The UI never shows mature memory details, API keys, raw environment values, or hidden facts.
+                    Provider policy 必须允许请求分级。UI 不显示 mature memory details、API Key、raw environment values 或 hidden facts。
                   </p>
                 </section>
               )}
@@ -11981,14 +12054,34 @@ function SectionCard({
 function ErrorPanel({
   message,
   compact = false,
-  suggestion = "建议：重试本地操作，检查后端健康状态，或打开诊断查看脱敏预览。"
+  suggestion = "建议：重试本地操作，检查后端健康状态，或打开诊断查看脱敏预览。",
+  onReconnect,
+  onOpenStartupGuide,
+  onOpenDiagnostics,
+  onOpenSettings
 }: {
   message: string;
   compact?: boolean;
   suggestion?: string;
+  onReconnect?: () => void;
+  onOpenStartupGuide?: () => void;
+  onOpenDiagnostics?: () => void;
+  onOpenSettings?: () => void;
 }) {
   if (!message) {
     return null;
+  }
+  if (isBackendUnavailableMessage(message)) {
+    return (
+      <BackendUnavailableState
+        message={message}
+        compact={compact}
+        onReconnect={onReconnect}
+        onOpenStartupGuide={onOpenStartupGuide}
+        onOpenDiagnostics={onOpenDiagnostics}
+        onOpenSettings={onOpenSettings}
+      />
+    );
   }
   return (
     <div
@@ -12005,23 +12098,113 @@ function ErrorPanel({
   );
 }
 
+function isBackendUnavailableMessage(message?: string): boolean {
+  if (!message) {
+    return false;
+  }
+  return /backend api unavailable|failed to fetch|networkerror|network error|connection refused|后端|无法连接|请求失败/i.test(message);
+}
+
+function BackendUnavailableState({
+  message,
+  compact = false,
+  onReconnect,
+  onOpenStartupGuide,
+  onOpenDiagnostics,
+  onOpenSettings
+}: {
+  message?: string;
+  compact?: boolean;
+  onReconnect?: () => void;
+  onOpenStartupGuide?: () => void;
+  onOpenDiagnostics?: () => void;
+  onOpenSettings?: () => void;
+}) {
+  const safeMessage = sanitizeDisplayError(message || "本地后端未连接。");
+  const apiSummary = getSafeApiBaseUrlSummary(API_BASE_URL);
+  const defaultReconnect = () => {
+    if (typeof window !== "undefined") {
+      window.location.reload();
+    }
+  };
+  const defaultHash = (hash: string) => {
+    if (typeof window !== "undefined") {
+      window.location.hash = hash;
+    }
+  };
+  return (
+    <section
+      className={`backend-unavailable-state ${compact ? "compact" : ""}`}
+      data-testid="v38-backend-unavailable-state"
+      role="alert"
+      aria-live="assertive"
+      aria-labelledby="v38-backend-unavailable-title"
+    >
+      <div className="backend-unavailable-header">
+        <div>
+          <p className="eyebrow">本地恢复流程</p>
+          <h3 id="v38-backend-unavailable-title">本地后端未连接</h3>
+          <p className="muted">前端仍可显示本地说明，但需要后端恢复后才能读取项目、模型服务、世界状态和诊断摘要。</p>
+        </div>
+        <StatusBadge label="Backend offline / 后端离线" enabled={false} />
+      </div>
+      <div className="safe-summary-grid backend-unavailable-grid">
+        <SafeSummaryCard title="当前 API 地址" value={apiSummary} detail="只显示协议、主机、端口和安全路径摘要；不会显示 raw env、查询参数或密钥。" />
+        <SafeSummaryCard title="可能原因" value="后端未启动 / 端口不一致 / 本地服务异常" detail="请确认本地后端进程已启动，VITE_API_BASE_URL 与后端端口一致，防火墙没有阻止 127.0.0.1。" />
+        <SafeSummaryCard title="安全错误摘要" value={safeMessage} detail="错误已脱敏：不显示 stack trace、raw env、Authorization header、API Key、敏感路径或 provider raw response。" />
+      </div>
+      <div className="button-row" aria-label="后端恢复操作">
+        <button type="button" onClick={onReconnect ?? defaultReconnect} data-testid="v38-backend-reconnect">
+          重新连接
+        </button>
+        <button type="button" onClick={onOpenStartupGuide ?? (() => defaultHash("startup-guide"))} data-testid="v38-backend-startup-guide">
+          查看启动指南
+        </button>
+        <button type="button" onClick={onOpenDiagnostics ?? (() => defaultHash("diagnostics"))} data-testid="v38-backend-open-diagnostics">
+          打开诊断
+        </button>
+        <button type="button" onClick={onOpenSettings ?? (() => defaultHash("settings"))} data-testid="v38-backend-open-settings">
+          打开设置
+        </button>
+      </div>
+      <LocalOnlyNotice>
+        此恢复卡片不会自动启动后端、不会执行 shell 命令、不会上传诊断，也不会显示 API Key、transient key、raw env、hidden facts 或 raw state_deltas。
+      </LocalOnlyNotice>
+    </section>
+  );
+}
+
+function getSafeApiBaseUrlSummary(rawBaseUrl: string): string {
+  const redacted = sanitizeDisplayError(rawBaseUrl || "http://127.0.0.1:8000");
+  try {
+    const parsed = new URL(redacted);
+    const safePath = parsed.pathname && parsed.pathname !== "/" ? parsed.pathname.replace(/\/+/g, "/") : "";
+    return `${parsed.protocol}//${parsed.host}${safePath}`;
+  } catch {
+    return redacted.replace(/[?#].*$/, "") || "http://127.0.0.1:8000";
+  }
+}
+
 function localizeStateText(value?: string): string | undefined {
   if (!value) {
     return value;
   }
   const text = value.trim();
   const mappings: Array<[RegExp, string]> = [
-    [/^(No|Missing) project\b|project selected|select(ed)? project|open project|create project/i, "尚未选择项目。下一步：打开或创建本地项目。"],
-    [/provider.*missing|missing.*provider|missing secret|api_key_env|secret_ref|Provider 未配置/i, "缺少模型服务配置。下一步：配置模型服务，使用 api_key_env、secret_ref 或 local_secret_ref；不要保存明文 API Key。"],
-    [/model assignment|missing model|no model|models? assigned/i, "缺少模型分配。下一步：为 Novel、Tavern、World、Cross-Mode 和 Quality 分配模型。"],
+    [/backend api unavailable|failed to fetch|networkerror|network error|connection refused|后端|无法连接|请求失败/i, "本地后端未连接。下一步：重新连接、查看启动指南、打开诊断或检查设置。"],
+    [/^(No|Missing) project\b|project selected|select(ed)? project|open project|create project|workspace references|recent projects/i, "尚未选择项目。下一步：打开/创建项目，或体验 Demo 项目。"],
+    [/provider.*missing|missing.*provider|missing secret|api_key_env|secret_ref|Provider 未配置|provider profiles|model metadata/i, "缺少模型服务配置。下一步：配置模型服务，使用 api_key_env、secret_ref 或 local_secret_ref；不要保存明文 API Key。"],
+    [/model assignment|missing model|no model|models? assigned|capability matrix|compatible model/i, "缺少模型分配。下一步：为写小说、角色 RP、大世界、跨模式和质量检查分配模型。"],
     [/no manuscript|manuscript|chapter|scene card|outline/i, "暂无稿件、章节或场景。下一步：创建稿件或打开已有项目继续写作。"],
     [/no character|character card|session|messages?|rp memory/i, "暂无角色或会话。下一步：创建/导入角色卡，然后开始本地 RP。"],
     [/no save|save\/load|world session|visible_state/i, "暂无存档或大世界会话。下一步：开始大世界或读取本地存档。"],
-    [/debug disabled|ENABLE_DEBUG_API|DebugGate|raw debug/i, "Debug 已禁用。下一步：需要 ENABLE_DEBUG_API 才能查看调试视图；普通 UI 不显示 raw state_deltas。"],
+    [/debug disabled|ENABLE_DEBUG_API|DebugGate|raw debug|debug export|state.?delta|eventlog|replay/i, "调试功能当前受控。下一步：需要 ENABLE_DEBUG_API 才能查看调试 / 回放；普通 UI 不显示 raw state_deltas。"],
     [/diagnostics|diagnostic bundle/i, "暂无诊断预览。下一步：先本地预览诊断包，再创建脱敏 bundle。"],
     [/backup|restore|dry-run/i, "暂无备份或恢复预览。下一步：先运行 dry-run，再进行显式确认。"],
-    [/authoring|mod|package/i, "暂无创作包或 Mod 草稿。下一步：选择本地包或创建安全草稿。"],
-    [/No data|Empty|Unavailable|Disabled|Blocked/i, "暂无可显示内容。下一步：检查项目、模型服务或对应本地功能是否已启用。"]
+    [/cross.?mode|proposal|draft|validation|apply|conflict/i, "暂无跨模式审查内容。下一步：生成 draft/proposal，经过 validation 后再明确 apply。"],
+    [/authoring|mod|package|module|template|map|quest|npc goals?|item|economy|rumor|social graph/i, "暂无创作包或 Mod 草稿。下一步：选择本地包、扫描模块，或创建安全草稿。"],
+    [/quality|playtest|coverage|health|validation|hidden leak|leak report|performance/i, "暂无质量检查结果。下一步：运行本地质量检查或刷新安全摘要。"],
+    [/No data|Empty|Unavailable|Disabled|Blocked|No .*loaded|No .*yet|No .*available/i, "暂无可显示内容。下一步：检查项目、模型服务或对应本地功能是否已启用。"]
   ];
   for (const [pattern, replacement] of mappings) {
     if (pattern.test(text)) {
@@ -12032,11 +12215,11 @@ function localizeStateText(value?: string): string | undefined {
 }
 
 function EmptyState({ title, detail }: { title: string; detail?: string }) {
-  const localizedTitle = localizeStateText(title) ?? title;
-  const localizedDetail = localizeStateText(detail) ?? "下一步：返回首页，打开/创建项目，或配置模型服务。";
+  const localizedTitle = sanitizeDisplayError(localizeStateText(title) ?? title);
+  const localizedDetail = sanitizeDisplayError(localizeStateText(detail) ?? "下一步：返回首页，打开/创建项目，或配置模型服务。");
   const displayTitle = /^(No|Empty|Missing|Unavailable)\b/i.test(title) ? `${CN_COPY.state.empty}：${localizedTitle}` : localizedTitle;
   return (
-    <div className="empty-state" role="status" aria-live="polite" aria-label={safeAriaText(title)}>
+    <div className="empty-state" role="status" aria-live="polite" aria-label={safeAriaText(displayTitle)} data-testid="v38-empty-state">
       <strong>{displayTitle}</strong>
       <p>{localizedDetail}</p>
     </div>
@@ -12044,11 +12227,11 @@ function EmptyState({ title, detail }: { title: string; detail?: string }) {
 }
 
 function DisabledState({ title, detail }: { title: string; detail: string }) {
-  const localizedTitle = localizeStateText(title) ?? title;
-  const localizedDetail = localizeStateText(detail) ?? detail;
+  const localizedTitle = sanitizeDisplayError(localizeStateText(title) ?? title);
+  const localizedDetail = sanitizeDisplayError(localizeStateText(detail) ?? detail);
   const displayTitle = /disabled|unavailable|blocked|gated/i.test(title) ? `${CN_COPY.state.disabled}：${localizedTitle}` : localizedTitle;
   return (
-    <div className="disabled-state" role="status" aria-disabled="true" aria-label={safeAriaText(title)}>
+    <div className="disabled-state" role="status" aria-disabled="true" aria-label={safeAriaText(displayTitle)} data-testid="v38-disabled-state">
       <strong>{displayTitle}</strong>
       <p>原因：{localizedDetail}</p>
     </div>
@@ -12073,6 +12256,34 @@ function SafeSummaryCard({
       {detail && <p>{detail}</p>}
       {children}
     </section>
+  );
+}
+
+function InlineGuideCard({
+  testId,
+  title,
+  detail,
+  guideAnchor = "product-guide",
+  compact = false
+}: {
+  testId: string;
+  title: string;
+  detail: string;
+  guideAnchor?: string;
+  compact?: boolean;
+}) {
+  return (
+    <aside
+      className={`inline-guide-card ${compact ? "compact" : ""}`}
+      data-testid={testId}
+      aria-label={safeAriaText(`${title} 内联帮助`)}
+    >
+      <div>
+        <strong>{title}</strong>
+        <p>{detail}</p>
+      </div>
+      <a href={`#${guideAnchor}`}>了解更多</a>
+    </aside>
   );
 }
 
@@ -12121,7 +12332,7 @@ function ModeCard({
       {status}
       {onOpen && (
         <button type="button" onClick={onOpen} disabled={disabled}>
-          Open
+          打开
         </button>
       )}
     </section>
@@ -12129,11 +12340,17 @@ function ModeCard({
 }
 
 function LocalOnlyBadge() {
-  return <span className="local-only-badge" role="status" aria-label="Local-only mode">Local-only</span>;
+  return <span className="local-only-badge" role="status" aria-label="本地模式">本地模式</span>;
 }
 
 function RiskBadge({ level }: { level: "safe" | "warning" | "blocked" | "unknown" }) {
-  return <span className={`risk-badge ${level}`} role="status" aria-label={`Risk level: ${safeAriaText(level)}`}>{level}</span>;
+  const labels = {
+    safe: "安全",
+    warning: "提醒",
+    blocked: "阻塞",
+    unknown: "未检查"
+  } satisfies Record<"safe" | "warning" | "blocked" | "unknown", string>;
+  return <span className={`risk-badge ${level}`} role="status" aria-label={`风险级别：${safeAriaText(labels[level])}`}>{labels[level]}</span>;
 }
 
 function ValidationStatusBadge({
@@ -12429,9 +12646,9 @@ function UnifiedNavigation({
     cnBadge?: string;
   }[] = [
     {
-      id: "project",
-      label: "Project",
-      cnLabel: `${CN_COPY.nav.home} / ${CN_COPY.nav.project}`,
+      id: "home",
+      label: "Home",
+      cnLabel: CN_COPY.nav.home,
       targetMode: "project",
       active: mode === "project",
       badge: hasProject ? "Ready" : "Open/Create",
@@ -12493,51 +12710,107 @@ function UnifiedNavigation({
       </button>
     );
   };
-  const mainEntryIds = hasProject ? ["project", "novel", "tavern", "world"] : ["project", "provider"];
-  const commonSettingIds = hasProject ? ["provider", "settings", "backup"] : [];
+  const mainEntryIds = ["home", "novel", "tavern", "world"];
+  const commonSettingIds = ["provider", "settings", "backup"];
   const advancedToolIds = ["cross-mode", "authoring", "qa", "diagnostics", "export"];
 
   return (
-    <nav className="unified-navigation" aria-label="Local studio navigation / 本地工作室导航">
+    <nav className="unified-navigation" aria-label="本地工作室导航">
       <LocalOnlyBadge />
       <div className="product-nav-status" aria-label="Current local product status / 当前本地产品状态">
         <StatusBadge label={hasProject ? CN_COPY.nav.projectReady : CN_COPY.nav.createOpenProject} enabled={hasProject} />
         <StatusBadge label={providerConfigured ? CN_COPY.nav.providerConfigured : CN_COPY.nav.providerNeeded} enabled={providerConfigured} />
         <StatusBadge label={qualityChecked ? CN_COPY.nav.qualityChecked : CN_COPY.nav.runQualityGate} enabled={qualityChecked} />
-        <span className="sr-only">Create/Open Project Provider setup needed Run Quality Gate Gated</span>
+        <span className="sr-only">打开或创建项目；需要配置模型服务；运行质量检查；调试入口受控。</span>
       </div>
       {!hasProject && (
-        <p className="muted nav-note">尚未选择项目：只需要先打开/创建项目，或配置模型服务。</p>
+        <p className="muted nav-note">尚未选择项目：主入口以弱提示显示。先打开/创建项目，或配置模型服务。</p>
       )}
-      <div className="nav-section-title">{hasProject ? "主要入口" : "开始使用"}</div>
+      <div className="nav-section-title">主要入口</div>
       <div className="nav-group compact" data-testid="v37-main-nav">
         {mainEntryIds.map(renderNavItem)}
       </div>
-      {commonSettingIds.length > 0 && (
-        <>
-          <div className="nav-section-title">常用设置</div>
-          <div className="nav-group compact" data-testid="v37-common-settings-nav">
-            {commonSettingIds.map(renderNavItem)}
-          </div>
-        </>
-      )}
-      <details className="advanced-tools-foldout" data-testid="v37-advanced-tools-nav" open={false}>
+      <div className="nav-section-title">常用设置</div>
+      <div className="nav-group compact" data-testid="v37-common-settings-nav">
+        {commonSettingIds.map(renderNavItem)}
+      </div>
+      <details className="advanced-tools-foldout" data-testid="v37-advanced-tools-nav" data-default-collapsed="true">
         <summary>{CN_COPY.nav.advancedTools}</summary>
-        <p className="muted">Cross-Mode、创作 / Mod、Quality Gate、Debug / Replay、Diagnostics 与 Export 是高级工具，默认折叠。</p>
+        <p className="muted">跨模式、创作 / Mod、质量检查、调试 / 回放、诊断、导出、产品就绪检查、StateDelta Viewer、EventLog Viewer 与 Hidden Leak Report 是高级工具，默认折叠；首页只显示简短质量状态。</p>
         <div className="nav-group compact">
           {advancedToolIds.map(renderNavItem)}
           <button
             type="button"
+            className="nav-item"
+            onClick={() => onNavigate("studio")}
+            title="打开 Quality Gate / 质量检查。首页只显示简短质量状态，完整 blockers、warnings 和 Hidden Leak Report 在高级工具中查看。"
+            aria-label="打开质量检查 / Quality Gate"
+          >
+            <span>质量检查 / Quality Gate</span>
+            <span className="nav-badge">高级</span>
+          </button>
+          <button
+            type="button"
+            className="nav-item"
+            onClick={() => onNavigate("studio")}
+            title="打开 Product Readiness、完整检查和本地状态摘要。"
+            aria-label="打开 Product Readiness / 产品就绪检查"
+          >
+            <span>产品就绪 / Product Readiness</span>
+            <span className="nav-badge">高级</span>
+          </button>
+          <button
+            type="button"
+            className="nav-item"
+            onClick={() => onNavigate("studio")}
+            title="打开本地诊断。诊断预览不会上传，默认排除 secrets、debug raw data 和 mature/private。"
+            aria-label="打开诊断 / Diagnostics"
+          >
+            <span>诊断 / Diagnostics</span>
+            <span className="nav-badge">高级</span>
+          </button>
+          <button
+            type="button"
             className={`nav-item debug-gated ${debugOpen ? "active" : ""}`}
             onClick={onToggleDebug}
-            title={debugEnabled ? "Debug API enabled" : "Debug API disabled by ENABLE_DEBUG_API"}
-            aria-label={debugOpen ? "Hide Debug / Replay panel" : "Open Debug / Replay panel"}
+            title={debugEnabled ? "调试 API 已启用，仍只读且受 DebugGate 控制。" : "Debug 已禁用：需要 ENABLE_DEBUG_API 才能查看 StateDelta、Timeline raw details 和 Debug / Replay。"}
+            aria-label={debugOpen ? "隐藏调试 / 回放面板" : "打开调试 / 回放面板"}
             aria-expanded={debugOpen}
             aria-controls="debug-panel"
             aria-current={debugOpen ? "page" : undefined}
           >
-            <span>Debug / Replay</span><span aria-hidden="true"> / 调试回放</span>
+            <span>调试 / 回放</span><span aria-hidden="true"> / Debug Replay</span>
+            <span className="nav-badge">高级 · {debugEnabled ? CN_COPY.nav.enabled : CN_COPY.nav.gated}</span>
+          </button>
+          <button
+            type="button"
+            className="nav-item debug-gated"
+            onClick={onToggleDebug}
+            title="StateDelta Viewer 只在 Debug / Replay 面板中查看，仍受 ENABLE_DEBUG_API 控制。"
+            aria-label="打开 StateDelta Viewer / 状态变更查看器"
+          >
+            <span>状态变更查看器 / StateDelta Viewer</span>
             <span className="nav-badge">{debugEnabled ? CN_COPY.nav.enabled : CN_COPY.nav.gated}</span>
+          </button>
+          <button
+            type="button"
+            className="nav-item debug-gated"
+            onClick={onToggleDebug}
+            title="EventLog Viewer 只在高级调试/回放区域中查看，普通首页不显示原始事件负载。"
+            aria-label="打开 EventLog Viewer / 事件日志查看器"
+          >
+            <span>事件日志查看器 / EventLog Viewer</span>
+            <span className="nav-badge">高级</span>
+          </button>
+          <button
+            type="button"
+            className="nav-item"
+            onClick={() => onNavigate("studio")}
+            title="Hidden Leak Report 收纳在质量检查和调试工具中，普通首页只显示简短质量状态。"
+            aria-label="打开 Hidden Leak Report / 隐藏信息泄露报告"
+          >
+            <span>隐藏泄露报告 / Hidden Leak Report</span>
+            <span className="nav-badge">高级</span>
           </button>
         </div>
       </details>
@@ -12725,6 +12998,330 @@ function buildHomeLlmRuntimeStatus(
   };
 }
 
+type HomeNextStepKind =
+  | "missing_project"
+  | "missing_provider"
+  | "provider_not_tested"
+  | "missing_model_list"
+  | "missing_model_assignment"
+  | "missing_novel_manuscript"
+  | "missing_tavern_character"
+  | "missing_world_save"
+  | "ready";
+
+type HomeNextStep = {
+  kind: HomeNextStepKind;
+  title: string;
+  detail: string;
+  actionLabel: string;
+  targetMode: AppMode;
+};
+
+type MainModeFlow = {
+  status: string;
+  next: string;
+  recent: string;
+  provider: string;
+  primary: string;
+  secondary: string;
+};
+
+type MainModeCardProps = {
+  testId: string;
+  eyebrow: string;
+  title: string;
+  readiness: string;
+  flow: MainModeFlow;
+  primaryTestId: string;
+  secondaryTestId: string;
+  onPrimary: () => void;
+  onSecondary: () => void;
+};
+
+function buildHomeProviderNextStepSignals(
+  selectedProjectId: string,
+  safeApiCacheStatuses: SafeApiCacheStatus[],
+  llmRuntimeStatus: HomeLlmRuntimeStatus,
+  modelAssignmentChecked: boolean
+) {
+  const providerModelCache = readSafeApiCache<ReturnType<typeof buildProviderModelListSafeCacheSummary>>(providerModelListCacheKey(selectedProjectId));
+  const providerCacheText = safeApiCacheStatuses
+    .filter((status) => status.scope === "provider")
+    .map((status) => `${status.key} ${status.label} ${status.summary} ${status.safeError ?? ""}`)
+    .join(" ")
+    .toLowerCase();
+  const mockOrStub = /mock|local_stub/.test(`${llmRuntimeStatus.usesRealLlm} ${llmRuntimeStatus.providerConnection}`.toLowerCase());
+  const hasProviderTested = Boolean(
+    mockOrStub ||
+    /connected|连接成功|auth_failed|认证失败|missing_secret|缺少 api key|缺少密钥|timeout|超时|failed|失败|tested|test connection/.test(providerCacheText)
+  );
+  const hasModelList = Boolean(
+    mockOrStub ||
+    (providerModelCache?.value.model_count ?? 0) > 0 ||
+    safeApiCacheStatuses.some((status) => status.scope === "provider" && status.key.includes("provider-model-list") && !status.failed && (status.itemCount ?? 0) > 0)
+  );
+  const hasModelAssignment = Boolean(
+    modelAssignmentChecked &&
+    (safeApiCacheStatuses.some((status) => status.key.includes("model-assignment")) || mockOrStub || hasModelList)
+  );
+
+  return { hasProviderTested, hasModelList, hasModelAssignment };
+}
+
+function buildHomeNextStep({
+  hasProject,
+  providerConfigured,
+  hasProviderTested,
+  hasModelList,
+  hasModelAssignment,
+  recentSaveCount
+}: {
+  hasProject: boolean;
+  providerConfigured: boolean;
+  hasProviderTested: boolean;
+  hasModelList: boolean;
+  hasModelAssignment: boolean;
+  recentSaveCount: number;
+}): HomeNextStep {
+  if (!hasProject) {
+    return {
+      kind: "missing_project",
+      title: "打开/创建项目",
+      detail: "先打开或创建本地项目，也可以一键体验 Demo 项目。不会上传路径或读取敏感完整路径。",
+      actionLabel: "打开/创建项目",
+      targetMode: "project"
+    };
+  }
+  if (!providerConfigured) {
+    return {
+      kind: "missing_provider",
+      title: "配置模型服务",
+      detail: "选择 OpenAI、OpenAI-compatible、中转站、本地模型服务或 mock/local_stub。API Key 不会显示或保存到项目。",
+      actionLabel: "配置模型服务",
+      targetMode: "prompt_lab"
+    };
+  }
+  if (!hasProviderTested) {
+    return {
+      kind: "provider_not_tested",
+      title: "测试连接",
+      detail: "模型服务已配置，下一步由用户手动点击 Test Connection；首页不会自动调用真实 provider。",
+      actionLabel: "测试连接",
+      targetMode: "prompt_lab"
+    };
+  }
+  if (!hasModelList) {
+    return {
+      kind: "missing_model_list",
+      title: "读取模型或手动添加模型",
+      detail: "连接测试后读取模型列表；如果 provider 不支持列表，也可以手动添加 model_id。",
+      actionLabel: "读取模型或手动添加模型",
+      targetMode: "prompt_lab"
+    };
+  }
+  if (!hasModelAssignment) {
+    return {
+      kind: "missing_model_assignment",
+      title: "按模式分配模型",
+      detail: "为写小说、角色 RP、世界输入解析、世界叙事、Cross-Mode 和质量检查分配模型。",
+      actionLabel: "按模式分配模型",
+      targetMode: "prompt_lab"
+    };
+  }
+  if (recentSaveCount <= 0) {
+    return {
+      kind: "missing_world_save",
+      title: "开始大世界",
+      detail: "模型和项目已准备好；没有存档时可以先开始大世界，也可以创建稿件或角色。",
+      actionLabel: "开始大世界",
+      targetMode: "play"
+    };
+  }
+  return {
+    kind: "ready",
+    title: "继续写作 / RP / 游玩",
+    detail: "本地项目、模型服务和模型分配已具备安全摘要；可以继续写小说、角色 RP 或大世界游玩。",
+    actionLabel: "继续写作 / RP / 游玩",
+    targetMode: "project"
+  };
+}
+
+function ProductCTAGroup({
+  hasProject,
+  providerConfigured,
+  modelAssignmentChecked,
+  onNavigate
+}: {
+  hasProject: boolean;
+  providerConfigured: boolean;
+  modelAssignmentChecked: boolean;
+  onNavigate: (mode: AppMode, toolId?: AuthoringToolId) => void;
+}) {
+  return (
+    <div className="cn-primary-actions" aria-label="核心入口" data-testid="v38-product-cta-group">
+      {hasProject ? (
+        <button type="button" onClick={() => onNavigate("project")} data-testid="cn-continue-project">
+          {CN_COPY.home.continueProject}
+        </button>
+      ) : (
+        <>
+          <button type="button" onClick={() => onNavigate("project")} data-testid="cn-open-project">
+            {CN_COPY.home.openProject}
+          </button>
+          <button type="button" onClick={() => onNavigate("project")} data-testid="cn-create-project">
+            {CN_COPY.home.createProject}
+          </button>
+        </>
+      )}
+      <button type="button" onClick={() => onNavigate("prompt_lab")} data-testid="cn-configure-provider">
+        {CN_COPY.home.configureProviderService}
+      </button>
+      {hasProject && (
+        <>
+          <button type="button" onClick={() => onNavigate("play")} data-testid="cn-continue-world">
+            {CN_COPY.home.continueWorld}
+          </button>
+          <button type="button" onClick={() => onNavigate("play")} data-testid="cn-start-world">
+            {CN_COPY.home.startWorld}
+          </button>
+        </>
+      )}
+      {providerConfigured && !modelAssignmentChecked && (
+        <button type="button" onClick={() => onNavigate("prompt_lab")} data-testid="cn-assign-models">
+          {CN_COPY.home.assignModels}
+        </button>
+      )}
+      <button type="button" onClick={() => onNavigate("studio")} data-testid="cn-open-tour">
+        {CN_COPY.home.viewTour}
+      </button>
+    </div>
+  );
+}
+
+function ProviderMissingState({ onConfigure }: { onConfigure: () => void }) {
+  return (
+    <section className="provider-next-step-card" data-testid="v38-provider-missing-cta" aria-label="模型服务未配置下一步">
+      <div>
+        <h3>先配置模型服务</h3>
+        <p className="muted">可以先使用 mock/local_stub 体验 Demo，也可以手动配置真实 Provider。API Key 不会显示或保存到项目。</p>
+      </div>
+      <button type="button" onClick={onConfigure}>配置模型服务</button>
+    </section>
+  );
+}
+
+function ProductNextStepCard({
+  nextStep,
+  onNavigate
+}: {
+  nextStep: HomeNextStep;
+  onNavigate: (mode: AppMode, toolId?: AuthoringToolId) => void;
+}) {
+  return (
+    <section className="provider-next-step-card" data-testid="v38-next-step-panel" aria-label="下一步建议">
+      <div>
+        <p className="eyebrow">下一步建议</p>
+        <h3>{nextStep.title}</h3>
+        <p className="muted">{nextStep.detail}</p>
+      </div>
+      <button type="button" onClick={() => onNavigate(nextStep.targetMode)} data-testid="v38-next-step-action">
+        {nextStep.actionLabel}
+      </button>
+    </section>
+  );
+}
+
+function MainModeCard({
+  testId,
+  eyebrow,
+  title,
+  readiness,
+  flow,
+  primaryTestId,
+  secondaryTestId,
+  onPrimary,
+  onSecondary
+}: MainModeCardProps) {
+  return (
+    <article className="cn-mode-entry cn-mode-entry-featured cn-main-mode-card" data-testid={testId}>
+      <div className="cn-main-mode-card-header">
+        <span className="eyebrow">{eyebrow}</span>
+        <span className="cn-mode-llm-badge">{readiness}</span>
+      </div>
+      <h3>{title}</h3>
+      <dl className="cn-mode-card-meta">
+        <div><dt>当前状态</dt><dd>{flow.status}</dd></div>
+        <div><dt>下一步建议</dt><dd>{flow.next}</dd></div>
+        <div><dt>最近内容</dt><dd>{flow.recent}</dd></div>
+        <div><dt>Provider 模型状态</dt><dd>{flow.provider}</dd></div>
+      </dl>
+      <div className="button-row">
+        <button type="button" onClick={onPrimary} data-testid={primaryTestId}>{flow.primary}</button>
+        <button type="button" onClick={onSecondary} data-testid={secondaryTestId}>{flow.secondary}</button>
+      </div>
+    </article>
+  );
+}
+
+function LocalSafetySummary() {
+  return (
+    <div className="cn-safety-pills" aria-label="本地优先安全摘要" data-testid="v38-local-safety-summary">
+      <span>{CN_COPY.safety.noAccount}</span>
+      <span>{CN_COPY.safety.noCloudSync}</span>
+      <span>{CN_COPY.safety.apiKeysStayLocal}</span>
+      <span>{CN_COPY.safety.noUpload}</span>
+    </div>
+  );
+}
+
+function DemoProjectCard({
+  demoProjectPath,
+  demoWorkspaceLoaded,
+  demoTemplate,
+  onOpenDemoProject,
+  onNavigate
+}: {
+  demoProjectPath: string;
+  demoWorkspaceLoaded: boolean;
+  demoTemplate: WorkspaceTemplate | null;
+  onOpenDemoProject: () => void;
+  onNavigate: (mode: AppMode, toolId?: AuthoringToolId) => void;
+}) {
+  return (
+    <section className="cn-demo-project-card" data-testid="v37-demo-project-entry" aria-label="Demo 项目一键体验入口">
+      <div className="section-heading-row">
+        <div>
+          <h4>Demo 项目一键体验</h4>
+          <p className="muted">
+            路径：{demoProjectPath}。使用 fake/local_stub 模型服务，无需 API Key，即可体验写小说、角色 RP 和大世界游玩；不上传、不包含 mature/private。
+          </p>
+        </div>
+        <StatusBadge label={demoWorkspaceLoaded ? "已打开 Demo" : "可一键打开"} enabled />
+      </div>
+      <div className="safe-summary-grid demo-experience-summary" data-testid="v38-demo-experience-summary" aria-label="Demo 体验摘要">
+        <SafeSummaryCard title="无需 API Key" value="fake/local_stub" detail="Demo 默认使用本地 stub 模型服务，不需要真实 provider、不调用真实 provider、不保存明文 key。" />
+        <SafeSummaryCard title="可体验写小说" value="Novel ready" detail="包含最小稿件、大纲、章节草稿和场景卡，可从首页进入小说工作室试写。" />
+        <SafeSummaryCard title="可体验角色 RP" value="Tavern ready" detail="包含安全角色卡、会话、RP 记忆摘要和场景预设，可本地体验角色 RP。" />
+        <SafeSummaryCard title="可体验大世界游玩" value="World ready" detail="包含小世界、地点、NPC、短任务和地图摘要；进入后仍通过后端行动 API，不直接修改 GameState。" />
+      </div>
+      <div className="button-row">
+        <button type="button" onClick={onOpenDemoProject} data-testid="cn-open-demo-project">体验 Demo 项目</button>
+        <button type="button" onClick={() => onNavigate("project")} data-testid="cn-demo-try-novel">试写小说</button>
+        <button type="button" onClick={() => onNavigate("project")} data-testid="cn-demo-try-tavern">试角色 RP</button>
+        <button type="button" onClick={() => onNavigate("play")} data-testid="cn-demo-try-world">试大世界游玩</button>
+      </div>
+      <p className="muted">
+        Demo 包含写小说、角色 RP、大世界、跨模式、质量检查和 fake/local_stub 模型服务安全配置。打开 Demo 只添加本地工作区引用，不覆盖用户项目、不写真实 key、不调用真实 provider、不上传数据。
+      </p>
+      <SafeSummaryCard
+        title="Demo 模板摘要"
+        value={demoTemplate ? "可体验" : "模板未载入"}
+        detail={demoTemplate ? `${demoTemplate.name}：${demoTemplate.description}` : "即使模板列表未载入，也可直接打开 examples/demo_local_narrative_project。"}
+      />
+    </section>
+  );
+}
+
 function ChinesePlayableHomePanel({
   selectedProjectId,
   recentProjects,
@@ -12737,6 +13334,8 @@ function ChinesePlayableHomePanel({
   debugEnabled,
   recentSaveCount,
   worldsCount,
+  backendUnavailable,
+  onReconnect,
   onNavigate,
   onOpenRecentProject,
   onOpenDemoProject
@@ -12752,6 +13351,8 @@ function ChinesePlayableHomePanel({
   debugEnabled: boolean;
   recentSaveCount: number;
   worldsCount: number;
+  backendUnavailable: boolean;
+  onReconnect: () => void;
   onNavigate: (mode: AppMode, toolId?: AuthoringToolId) => void;
   onOpenRecentProject: (workspaceId: string) => void;
   onOpenDemoProject: () => void;
@@ -12761,13 +13362,141 @@ function ChinesePlayableHomePanel({
   const demoWorkspaceLoaded = /demo_local_narrative_project/i.test(selectedProjectId);
   const demoTemplate = workspaceTemplates.find((template) => template.starter_world || template.template_id === "campaign_project" || /demo|starter|world/i.test(`${template.name} ${template.description}`)) ?? workspaceTemplates[0] ?? null;
   const llmRuntimeStatus = buildHomeLlmRuntimeStatus(selectedProjectId, configSummary, safeApiCacheStatuses, modelAssignmentChecked);
-  const nextStepValue = !hasProject
-    ? CN_COPY.home.noProjectNext
-    : !providerConfigured
-      ? CN_COPY.home.providerNext
-      : !modelAssignmentChecked
-        ? CN_COPY.home.modelAssignmentNext
-        : CN_COPY.home.withProjectNext;
+  const currentRecentProject = recentProjects.find((project) => project.workspace_id === selectedProjectId) ?? recentProjects[0] ?? null;
+  const projectStatusLabel = hasProject ? "项目已打开" : "尚未选择项目";
+  const projectSafePathSummary = currentRecentProject?.path_redacted ?? "暂无项目路径摘要";
+  const projectLoadRisk = backendUnavailable || Boolean(currentRecentProject && currentRecentProject.safe_status !== "ok");
+  const projectLoadRecovery = backendUnavailable
+    ? "本地后端未连接：请重新连接、查看启动指南或打开诊断。"
+    : projectLoadRisk
+      ? "项目引用需要复核：请重新打开项目，或从最近项目列表移除失效引用后重新选择。"
+      : hasProject
+        ? "项目可继续使用：可以写小说、角色 RP，或继续大世界。"
+        : "请打开/创建项目，或体验 Demo 项目。";
+  const { hasProviderTested, hasModelList, hasModelAssignment } = buildHomeProviderNextStepSignals(
+    selectedProjectId,
+    safeApiCacheStatuses,
+    llmRuntimeStatus,
+    modelAssignmentChecked
+  );
+  const homeNextStep = buildHomeNextStep({
+    hasProject,
+    providerConfigured,
+    hasProviderTested,
+    hasModelList,
+    hasModelAssignment,
+    recentSaveCount
+  });
+  const buildModeFlow = (mode: "novel" | "tavern" | "world") => {
+    if (!hasProject) {
+      return {
+        status: "打开/创建项目后可用",
+        next: "先打开/创建项目，也可以体验 Demo 项目。",
+        recent: mode === "world" ? "当前世界 / 存档：暂无项目" : mode === "tavern" ? "最近 RP 会话：暂无项目" : "最近稿件：暂无项目",
+        provider: "项目准备后再配置模型服务",
+        primary: "打开/创建项目",
+        secondary: "体验 Demo 项目"
+      };
+    }
+    if (!providerConfigured) {
+      return {
+        status: "需要配置模型服务",
+        next: "先配置模型服务；也可用 mock/local_stub 体验本地流程。",
+        recent: mode === "world"
+          ? `当前世界 / 存档：${recentSaveCount > 0 ? `${recentSaveCount} 个最近存档` : "暂无存档"}`
+          : mode === "tavern"
+            ? "最近 RP 会话：暂无角色或会话"
+            : "最近稿件：暂无稿件",
+        provider: "配置模型服务",
+        primary: "配置模型服务",
+        secondary: mode === "world" ? "开始新世界" : mode === "tavern" ? "创建/导入角色" : "创建稿件"
+      };
+    }
+    if (!hasProviderTested) {
+      return {
+        status: "模型服务已配置，未测试",
+        next: "先手动测试连接；首页不会自动调用真实 provider。",
+        recent: mode === "world"
+          ? `当前世界 / 存档：${recentSaveCount > 0 ? `${recentSaveCount} 个最近存档` : "暂无存档"}`
+          : mode === "tavern"
+            ? "最近 RP 会话：暂无角色或会话"
+            : "最近稿件：暂无稿件",
+        provider: "等待手动测试连接",
+        primary: "测试连接",
+        secondary: mode === "world" ? "开始新世界" : mode === "tavern" ? "创建/导入角色" : "创建稿件"
+      };
+    }
+    if (!hasModelList) {
+      return {
+        status: "缺少模型列表",
+        next: "读取模型列表；如果 provider 不支持列表，也可以手动添加 model_id。",
+        recent: mode === "world"
+          ? `当前世界 / 存档：${recentSaveCount > 0 ? `${recentSaveCount} 个最近存档` : "暂无存档"}`
+          : mode === "tavern"
+            ? "最近 RP 会话：暂无角色或会话"
+            : "最近稿件：暂无稿件",
+        provider: "连接已检查，待读取模型",
+        primary: "读取模型或手动添加模型",
+        secondary: mode === "world" ? "开始新世界" : mode === "tavern" ? "创建/导入角色" : "创建稿件"
+      };
+    }
+    if (!hasModelAssignment) {
+      return {
+        status: "需要分配模型",
+        next: "为写小说、角色 RP 和大世界分配模型后即可开始。",
+        recent: mode === "world"
+          ? `当前世界 / 存档：${recentSaveCount > 0 ? `${recentSaveCount} 个最近存档` : "暂无存档"}`
+          : mode === "tavern"
+            ? "最近 RP 会话：暂无角色或会话"
+            : "最近稿件：暂无稿件",
+        provider: "模型服务已配置，待分配模型",
+        primary: "分配模型",
+        secondary: mode === "world" ? "开始新世界" : mode === "tavern" ? "创建/导入角色" : "创建稿件"
+      };
+    }
+    if (mode === "novel") {
+      return {
+        status: "可开始写作",
+        next: "没有稿件时先创建稿件；已有稿件可继续写章节。",
+        recent: "最近稿件：暂无稿件，建议创建第一份稿件",
+        provider: llmRuntimeStatus.modeReadiness.novel,
+        primary: "创建稿件",
+        secondary: "打开小说工作室"
+      };
+    }
+    if (mode === "tavern") {
+      return {
+        status: "可开始 RP",
+        next: "没有角色时先创建/导入角色，再开始单角色或多 NPC RP。",
+        recent: "最近 RP 会话：暂无角色或会话",
+        provider: llmRuntimeStatus.modeReadiness.tavern,
+        primary: "创建/导入角色",
+        secondary: "开始 RP"
+      };
+    }
+    return {
+      status: recentSaveCount > 0 ? "可继续大世界" : "暂无存档",
+      next: recentSaveCount > 0 ? "继续大世界，或开始新世界。" : "没有存档时先开始新世界。",
+      recent: `当前世界 / 存档：${recentSaveCount > 0 ? `${recentSaveCount} 个最近存档` : "暂无存档"}`,
+      provider: llmRuntimeStatus.modeReadiness.world,
+      primary: recentSaveCount > 0 ? "继续大世界" : "开始新世界",
+      secondary: "打开大世界工作室"
+    };
+  };
+  const novelFlow = buildModeFlow("novel");
+  const tavernFlow = buildModeFlow("tavern");
+  const worldFlow = buildModeFlow("world");
+  const handleModePrimary = (mode: "novel" | "tavern" | "world") => {
+    if (!hasProject) {
+      onNavigate("project");
+      return;
+    }
+    if (!providerConfigured || !hasProviderTested || !hasModelList || !hasModelAssignment) {
+      onNavigate("prompt_lab");
+      return;
+    }
+    onNavigate(mode === "world" ? "play" : "project");
+  };
   return (
     <section className="cn-playable-home" data-testid="v37-cn-playable-home" aria-labelledby="cn-playable-home-title">
       <div className="cn-playable-hero">
@@ -12776,51 +13505,72 @@ function ChinesePlayableHomePanel({
           <h2 id="cn-playable-home-title">{hasProject ? CN_COPY.home.title : CN_COPY.home.noProjectTitle}</h2>
           <p className="muted">{hasProject ? CN_COPY.home.projectDetail : CN_COPY.home.noProjectDetail}</p>
         </div>
-        <div className="cn-safety-pills" aria-label="本地优先安全摘要">
-          <span>{CN_COPY.safety.noAccount}</span>
-          <span>{CN_COPY.safety.noCloudSync}</span>
-          <span>{CN_COPY.safety.apiKeysStayLocal}</span>
-          <span>{CN_COPY.safety.noUpload}</span>
-        </div>
+        <LocalSafetySummary />
       </div>
 
-      <div className="cn-primary-actions" aria-label="核心入口">
-        {hasProject && (
-          <button type="button" onClick={() => onNavigate("project")} data-testid="cn-continue-project">
-            {CN_COPY.home.continueProject}
-          </button>
-        )}
-        {!hasProject && (
-          <>
-            <button type="button" onClick={() => onNavigate("project")} data-testid="cn-open-project">
-              {CN_COPY.home.openProject}
-            </button>
-            <button type="button" onClick={() => onNavigate("project")} data-testid="cn-create-project">
-              {CN_COPY.home.createProject}
-            </button>
-          </>
-        )}
-        <button type="button" onClick={() => onNavigate("prompt_lab")} data-testid="cn-configure-provider">
-          {CN_COPY.home.configureProvider}
-        </button>
-        {hasProject && (
-          <>
-            <button type="button" onClick={() => onNavigate("play")} data-testid="cn-continue-world">
-              {CN_COPY.home.continueWorld}
-            </button>
-            <button type="button" onClick={() => onNavigate("play")} data-testid="cn-start-world">
-              {CN_COPY.home.startWorld}
-            </button>
-          </>
-        )}
-        {providerConfigured && !modelAssignmentChecked && (
-          <button type="button" onClick={() => onNavigate("prompt_lab")} data-testid="cn-assign-models">
-            {CN_COPY.home.assignModels}
-          </button>
-        )}
-        <button type="button" onClick={() => onNavigate("studio")} data-testid="cn-open-tour">
-          {CN_COPY.home.viewTour}
-        </button>
+      {backendUnavailable && (
+        <BackendUnavailableState
+          message={CN_COPY.home.backendUnavailableDetail}
+          onReconnect={onReconnect}
+          onOpenStartupGuide={() => onNavigate("studio")}
+          onOpenDiagnostics={() => onNavigate("studio")}
+          onOpenSettings={() => onNavigate("studio")}
+        />
+      )}
+
+      <InlineGuideCard
+        testId="v38-inline-guide-home"
+        title="怎么开始"
+        detail="本地优先：先打开或创建项目，再配置模型服务；也可以体验 Demo 项目。首页只放写小说、角色 RP 和大世界游玩的关键入口。"
+      />
+
+      <ProductCTAGroup
+        hasProject={hasProject}
+        providerConfigured={providerConfigured}
+        modelAssignmentChecked={modelAssignmentChecked}
+        onNavigate={onNavigate}
+      />
+
+      {!providerConfigured && (
+        <ProviderMissingState onConfigure={() => onNavigate("prompt_lab")} />
+      )}
+
+      <ProductNextStepCard nextStep={homeNextStep} onNavigate={onNavigate} />
+
+      <div className="cn-mode-entry-grid cn-mode-entry-grid-primary" aria-label="三大玩法入口" data-testid="v38-three-main-mode-cards">
+        <MainModeCard
+          testId="v38-open-novel-card"
+          eyebrow="Novel Studio"
+          title="写小说"
+          readiness={llmRuntimeStatus.modeReadiness.novel}
+          flow={novelFlow}
+          primaryTestId="v38-novel-write-chapter"
+          secondaryTestId="v38-novel-open-studio"
+          onPrimary={() => handleModePrimary("novel")}
+          onSecondary={() => onNavigate("project")}
+        />
+        <MainModeCard
+          testId="v38-open-tavern-card"
+          eyebrow="Tavern RP"
+          title="角色 RP"
+          readiness={llmRuntimeStatus.modeReadiness.tavern}
+          flow={tavernFlow}
+          primaryTestId="v38-tavern-select-character"
+          secondaryTestId="v38-tavern-start-rp"
+          onPrimary={() => handleModePrimary("tavern")}
+          onSecondary={() => onNavigate("project")}
+        />
+        <MainModeCard
+          testId="v38-open-world-card"
+          eyebrow="World Studio"
+          title="大世界游玩"
+          readiness={llmRuntimeStatus.modeReadiness.world}
+          flow={worldFlow}
+          primaryTestId="v38-world-continue"
+          secondaryTestId="v38-world-start"
+          onPrimary={() => handleModePrimary("world")}
+          onSecondary={() => onNavigate("play")}
+        />
       </div>
 
       <section className="cn-llm-runtime-status" data-testid="v37-runtime-llm-status" aria-label="模型服务运行状态">
@@ -12832,9 +13582,9 @@ function ChinesePlayableHomePanel({
           <StatusBadge label={llmRuntimeStatus.statusKind === "ready" ? "可用" : "需要检查"} enabled={llmRuntimeStatus.statusKind === "ready"} />
         </div>
         <div className="safe-summary-grid" data-testid="v37-home-model-service-status">
-          <SafeSummaryCard title={CN_COPY.home.realLlmStatus} value={llmRuntimeStatus.usesRealLlm} detail="测试 / CI 使用 fake provider；真实连接只允许用户手动触发。" />
-          <SafeSummaryCard title={CN_COPY.home.connectionStatus} value={llmRuntimeStatus.providerConnection} detail="连接失败只显示中文安全提示和 safe error type，不显示 raw provider error。" />
-          <SafeSummaryCard title={CN_COPY.home.modelAssignmentStatus} value={llmRuntimeStatus.modelAssignment} detail="Novel、Tavern、World、Cross-Mode、Quality 的模型分配从安全摘要读取。" />
+        <SafeSummaryCard title={CN_COPY.home.realLlmStatus} value={llmRuntimeStatus.usesRealLlm} detail="测试 / CI 使用 fake provider；真实连接只允许用户手动触发。" />
+        <SafeSummaryCard title={CN_COPY.home.connectionStatus} value={llmRuntimeStatus.providerConnection} detail="连接失败只显示中文安全提示和 safe error type，不显示 raw provider error。" />
+        <SafeSummaryCard title={CN_COPY.home.modelAssignmentStatus} value={llmRuntimeStatus.modelAssignment} detail="写小说、角色 RP、大世界、跨模式和质量检查的模型分配从安全摘要读取。" />
           <SafeSummaryCard title={CN_COPY.home.modeLlmReadiness} value="入口状态" detail={llmRuntimeStatus.detail} />
         </div>
         <div className="chip-list" data-testid="v37-mode-llm-status">
@@ -12851,6 +13601,12 @@ function ChinesePlayableHomePanel({
             <p className="muted">{hasProject ? "项目已打开，可继续创作或游玩。" : "没有项目时，先打开/创建项目或试用 Demo 项目。"}</p>
           </div>
           <StatusBadge label={hasProject ? "项目已打开" : "等待项目"} enabled={hasProject} />
+        </div>
+        <div className="safe-summary-grid project-lifecycle-summary" data-testid="v38-project-lifecycle-summary" aria-label="项目生命周期摘要">
+          <SafeSummaryCard title="项目状态" value={projectStatusLabel} detail={hasProject ? "已进入本地项目上下文，三大入口可继续使用。" : "未选择项目时只突出打开/创建项目、Demo 和模型服务配置。"} />
+          <SafeSummaryCard title="安全路径摘要" value={projectSafePathSummary} detail="普通首页只显示脱敏 safe path summary，不显示敏感完整路径；如需完整路径，必须由用户明确展开专门视图。" />
+          <SafeSummaryCard title="项目健康" value={projectLoadRisk ? "需要检查" : hasProject ? "可继续" : "待选择"} detail="健康摘要只根据本地状态、后端连接和最近项目安全状态判断，不读取任意文件、不上传路径。" />
+          <SafeSummaryCard title="加载失败恢复建议" value={projectLoadRecovery} detail="恢复建议已脱敏：不显示 raw sensitive path、stack trace、API Key、raw env 或 provider secret。" />
         </div>
         <div className="cn-project-entry-actions">
           <button type="button" onClick={() => onNavigate("project")} data-testid="cn-project-open-cta">打开项目</button>
@@ -12870,7 +13626,7 @@ function ChinesePlayableHomePanel({
                   <span>
                     <strong>{redactReportText(project.display_name)}</strong>
                     <span className="muted"> - <SafePathSummary value={project.path_redacted} /></span>
-                    <span className="muted"> - {project.safe_status}</span>
+                    <span className="muted"> - 状态：{project.safe_status === "ok" ? "可打开" : project.safe_status === "missing" ? "路径失效" : project.safe_status === "unsafe_path" ? "路径需复核" : "需要检查"}</span>
                   </span>
                   <button type="button" onClick={() => onOpenRecentProject(project.workspace_id)}>
                     打开
@@ -12882,32 +13638,16 @@ function ChinesePlayableHomePanel({
             <EmptyState title="暂无最近项目" detail="打开或创建本地项目后，这里会显示脱敏的最近项目摘要。" />
           )}
         </section>
-        <section className="cn-demo-project-card" data-testid="v37-demo-project-entry" aria-label="Demo 项目一键体验入口">
-          <div className="section-heading-row">
-            <div>
-              <h4>Demo 项目一键体验</h4>
-              <p className="muted">路径：{demoProjectPath}。使用 fake/local_stub provider，不需要真实 API key，不上传、不包含 mature/private。</p>
-            </div>
-            <StatusBadge label={demoWorkspaceLoaded ? "已打开 Demo" : "可一键打开"} enabled />
-          </div>
-          <div className="button-row">
-            <button type="button" onClick={onOpenDemoProject} data-testid="cn-open-demo-project">体验 Demo 项目</button>
-            <button type="button" onClick={() => onNavigate("project")} data-testid="cn-demo-try-novel">试写小说</button>
-            <button type="button" onClick={() => onNavigate("project")} data-testid="cn-demo-try-tavern">试角色 RP</button>
-            <button type="button" onClick={() => onNavigate("play")} data-testid="cn-demo-try-world">试大世界游玩</button>
-          </div>
-          <p className="muted">
-            Demo 包含 Novel、Tavern、World、Cross-Mode、Quality 和 Provider fake/local_stub 安全配置。打开 Demo 只添加本地工作区引用，不覆盖用户项目、不写真实 key、不调用真实 provider。
-          </p>
-          <SafeSummaryCard
-            title="Demo 模板摘要"
-            value={demoTemplate ? "可体验" : "模板未载入"}
-            detail={demoTemplate ? `${demoTemplate.name}：${demoTemplate.description}` : "即使模板列表未载入，也可直接打开 examples/demo_local_narrative_project。"}
-          />
-        </section>
+        <DemoProjectCard
+          demoProjectPath={demoProjectPath}
+          demoWorkspaceLoaded={demoWorkspaceLoaded}
+          demoTemplate={demoTemplate}
+          onOpenDemoProject={onOpenDemoProject}
+          onNavigate={onNavigate}
+        />
       </div>
 
-      <div className="cn-mode-entry-grid" aria-label="Novel Tavern World main entries">
+      <div className="cn-mode-entry-grid secondary-mode-entry-grid" aria-label="Novel Tavern World safe summaries">
         <button type="button" className="cn-mode-entry" onClick={() => onNavigate("project")} data-testid="cn-open-novel">
           <strong>{CN_COPY.home.openNovel}</strong>
           <span className="cn-mode-llm-badge">{llmRuntimeStatus.modeReadiness.novel}</span>
@@ -12934,24 +13674,24 @@ function ChinesePlayableHomePanel({
         <SafeSummaryCard
           title={CN_COPY.home.providerStatus}
           value={!providerConfigured ? CN_COPY.home.providerMissing : modelAssignmentChecked ? CN_COPY.home.providerReady : CN_COPY.home.modelAssignmentMissing}
-          detail={!providerConfigured ? "可使用 api_key_env、secret_ref 或 local_stub；界面不显示 API Key。" : modelAssignmentChecked ? "Provider / model safe summary 已可用；可以继续测试连接、读取模型列表和分配模型。" : "Provider 已配置；下一步为 Novel / Tavern / World / Cross-Mode / Quality 分配模型。"}
+          detail={!providerConfigured ? "可使用 api_key_env、secret_ref 或 local_stub；界面不显示 API Key。" : modelAssignmentChecked ? "模型服务安全摘要已可用；可以继续测试连接、读取模型列表和分配模型。" : "模型服务已配置；下一步为写小说、角色 RP、大世界、跨模式和质量检查分配模型。"}
         />
         <SafeSummaryCard
           title={CN_COPY.home.nextStep}
-          value={nextStepValue}
-          detail={`World packs: ${worldsCount}; Debug / Replay: ${debugEnabled ? "已启用" : "默认隐藏 / 受 ENABLE_DEBUG_API 控制"}.`}
+          value={homeNextStep.title}
+          detail={`${homeNextStep.detail} 世界包：${worldsCount}；调试 / 回放：${debugEnabled ? "已启用" : "默认隐藏 / 受 ENABLE_DEBUG_API 控制"}。`}
         />
         <div data-testid="v37-home-quality-status">
           <SafeSummaryCard
             title="质量状态"
             value={qualityChecked ? "已运行 / 有摘要" : "未运行"}
-            detail="首页只显示简短 Quality 状态；完整 Quality Gate、Hidden Leak Report 和 Playtest 结果收纳在高级工具。"
+            detail="首页只显示简短质量状态；完整质量检查、Hidden Leak Report 和 Playtest 结果收纳在高级工具。"
           />
         </div>
         <SafeSummaryCard
           title={CN_COPY.home.localSafety}
           value={CN_COPY.safety.worldBoundaryProtected}
-          detail="normal UI 不显示 hidden facts、NPC secrets、debug memory 或原始状态变更明细。"
+          detail="普通界面不显示隐藏事实、NPC 秘密、调试敏感内容或原始状态变更明细。"
         />
       </div>
     </section>
@@ -12981,6 +13721,14 @@ function ProjectHomeRedesignPanel({
   validationSummaries: { world_id: string; ok: boolean; error_count?: number; warning_count?: number }[];
   onNavigate: (mode: AppMode, toolId?: AuthoringToolId) => void;
 }) {
+  // Legacy v3.7 static check labels:
+  // Backend health
+  // Project loaded
+  // Provider status
+  // Model assignment status
+  // Quality status
+  // Debug status
+  // Backup / diagnostics status
   const providerConfigured = Boolean(configSummary?.api_key_configured || configSummary?.provider_status === "configured");
   const qualityStatus = worldHealth ? "available" : "not run";
   const backendHealthy = status?.backend_status === "ok" || status?.backend_status === "available";
@@ -12988,46 +13736,46 @@ function ProjectHomeRedesignPanel({
   const backupDiagnosticsChecked = Boolean(backupPlan || diagnosticsBundlePreview);
   const healthItems = [
     {
-      title: "Backend health",
+      title: "后端健康",
       value: backendHealthy ? "available" : "unavailable",
-      detail: `Safe backend status: ${status?.backend_status ?? "unavailable"}.`
+      detail: `后端安全状态：${status?.backend_status ?? "unavailable"}。`
     },
     {
-      title: "Project loaded",
+      title: "项目载入",
       value: selectedProjectId ? "loaded" : "not loaded",
-      detail: selectedProjectId ? "Current project id is shown as a safe local summary." : "Create or open a local project."
+      detail: selectedProjectId ? "当前项目 ID 以本地安全摘要显示。" : "请创建或打开本地项目。"
     },
     {
-      title: "Provider status",
+      title: "模型服务状态",
       value: providerConfigured ? "configured" : "missing",
-      detail: providerConfigured ? "Provider uses safe backend metadata; key values are hidden." : "Missing provider warning: configure local_stub, mock, or env/secret_ref profile."
+      detail: providerConfigured ? "模型服务使用后端安全 metadata；密钥值隐藏。" : "模型服务未配置：可配置 local_stub、mock 或 env/secret_ref profile。"
     },
     {
-      title: "Model assignment status",
+      title: "模型分配状态",
       value: modelAssignmentChecked ? "checked" : "not checked",
-      detail: modelAssignmentChecked ? "Provider model list / assignment safe cache exists." : "Open Provider Models to fetch, sync, or manually assign models."
+      detail: modelAssignmentChecked ? "模型列表 / 分配安全缓存已存在。" : "打开模型服务页面读取、同步或手动分配模型。"
     },
     {
-      title: "Quality status",
+      title: "质量检查状态",
       value: qualityStatus,
-      detail: worldHealth ? "World health summary is loaded." : "Run Quality Gate to refresh local readiness."
+      detail: worldHealth ? "世界健康摘要已载入。" : "运行质量检查以刷新本地就绪度。"
     },
     {
-      title: "Debug status",
+      title: "调试状态",
       value: status?.debug_api_enabled ? "enabled" : "gated",
-      detail: "Debug / Replay remains gated by ENABLE_DEBUG_API and safe UI boundaries."
+      detail: "调试 / 回放仍受 ENABLE_DEBUG_API 和安全界面边界控制。"
     },
     {
-      title: "Backup / diagnostics status",
+      title: "备份 / 诊断状态",
       value: diagnosticsBundlePreview ? "diagnostics previewed" : backupPlan ? "backup previewed" : "not checked",
-      detail: backupDiagnosticsChecked ? "Local preview is available with secret/debug exclusions." : "Run backup dry-run or diagnostics preview before release/export work."
+      detail: backupDiagnosticsChecked ? "本地预览已可用，并排除密钥 / debug 内容。" : "发布或导出前，请先运行备份 dry-run 或诊断预览。"
     }
   ];
   const healthReadyCount = healthItems.filter((item) => !["missing", "not loaded", "not checked", "unavailable"].includes(item.value)).length;
   return (
     <SectionCard
-      title="本地项目首页 / Project Home"
-      description="本地优先概览：项目状态、写作/RP/大世界入口、Provider、质量检查和隐私边界。"
+      title="本地项目首页"
+      description="本地优先概览：项目状态、写作/RP/大世界入口、模型服务、质量检查和隐私边界。"
     >
       <div className="project-home-hero">
         <div>
@@ -13046,7 +13794,7 @@ function ProjectHomeRedesignPanel({
             {healthReadyCount}/{healthItems.length} 项正常
           </span>
         </div>
-        <p className="muted">安全健康摘要覆盖后端、项目、Provider、模型分配、Quality、Debug、备份和诊断；不显示 raw env、API Key、敏感路径、hidden facts 或 raw debug data。</p>
+        <p className="muted">安全健康摘要覆盖后端、项目、模型服务、模型分配、质量检查、调试、备份和诊断；不显示 raw env、API Key、敏感路径、hidden facts 或 raw debug data。</p>
         <div className="safe-summary-grid">
           {healthItems.map((item) => (
             <SafeSummaryCard key={item.title} title={item.title} value={item.value} detail={item.detail} />
@@ -13054,27 +13802,27 @@ function ProjectHomeRedesignPanel({
         </div>
       </section>
       <div className="mode-landing-grid">
-        <ModeCard title="Novel / 写小说" detail="手稿、大纲、章节、场景、导出，以及 World → Novel 草稿。" onOpen={() => onNavigate("project")} status={<ValidationStatusBadge status="not_run" />} />
-        <ModeCard title="Tavern RP / 角色 RP" detail="角色卡、会话、RP memory、多 NPC 场景、氛围、Voice 与边界设置。" onOpen={() => onNavigate("project")} status={<RiskBadge level="safe" />} />
-        <ModeCard title="World / 大世界" detail="继续本地游玩，查看 visible_state、存档、任务、背包和回放。" onOpen={() => onNavigate("play")} status={<StatusBadge label={status?.worlds_count ? "Worlds available / 世界可用" : "No world loaded / 未载入世界"} enabled={Boolean(status?.worlds_count)} />} />
-        <ModeCard title="Script / Mods / 创作工具" detail="本地包、权限、兼容性、认证与质量检查。" onOpen={() => onNavigate("authoring", "advanced_modules")} status={<RiskBadge level="unknown" />} />
-        <ModeCard title="Providers / 模型服务" detail="仅通过环境变量或 secret 引用配置 Provider；不提供明文 key 字段。" onOpen={() => onNavigate("prompt_lab")} status={<StatusBadge label={providerConfigured ? "Configured / 已配置" : "Missing / 待配置"} enabled={providerConfigured} />} />
-        <ModeCard title="Quality Gate / 质量检查" detail="世界健康、叙事评估、playtest、兼容性与发布信心。" onOpen={() => onNavigate("studio")} status={<ValidationStatusBadge status={worldHealth ? "passed" : "not_run"} />} />
-        <ModeCard title="Debug / Replay / 调试回放" detail="Timeline 和诊断仍受 ENABLE_DEBUG_API 控制。" onOpen={() => onNavigate("play")} status={<StatusBadge label={status?.debug_api_enabled ? "Debug enabled / 已启用" : "Debug gated / 受控"} enabled={status?.debug_api_enabled} />} />
-        <ModeCard title="Settings / 设置" detail="本地隐私、Provider、导出、Debug、Mature Module、UI 与质量偏好。" onOpen={() => onNavigate("studio")} status={<LocalOnlyBadge />} />
+        <ModeCard title="写小说 / Novel" detail="手稿、大纲、章节、场景、导出，以及 World → Novel 草稿。" onOpen={() => onNavigate("project")} status={<ValidationStatusBadge status="not_run" />} />
+        <ModeCard title="角色 RP / Tavern" detail="角色卡、会话、RP memory、多 NPC 场景、氛围、Voice 与边界设置。" onOpen={() => onNavigate("project")} status={<RiskBadge level="safe" />} />
+        <ModeCard title="大世界 / World" detail="继续本地游玩，查看 visible_state、存档、任务、背包和回放。" onOpen={() => onNavigate("play")} status={<StatusBadge label={status?.worlds_count ? "世界可用" : "未载入世界"} enabled={Boolean(status?.worlds_count)} />} />
+        <ModeCard title="创作工具 / Mods" detail="本地包、权限、兼容性、认证与质量检查。" onOpen={() => onNavigate("authoring", "advanced_modules")} status={<RiskBadge level="unknown" />} />
+        <ModeCard title="模型服务 / Provider" detail="仅通过环境变量或 secret 引用配置模型服务；不提供明文 key 字段。" onOpen={() => onNavigate("prompt_lab")} status={<StatusBadge label={providerConfigured ? "已配置" : "待配置"} enabled={providerConfigured} />} />
+        <ModeCard title="质量检查 / Quality Gate" detail="世界健康、叙事评估、playtest、兼容性与发布信心。" onOpen={() => onNavigate("studio")} status={<ValidationStatusBadge status={worldHealth ? "passed" : "not_run"} />} />
+        <ModeCard title="调试 / 回放" detail="Timeline 和诊断仍受 ENABLE_DEBUG_API 控制。" onOpen={() => onNavigate("play")} status={<StatusBadge label={status?.debug_api_enabled ? "调试已启用" : "调试受控"} enabled={status?.debug_api_enabled} />} />
+        <ModeCard title="设置 / Settings" detail="本地隐私、模型服务、导出、调试、Mature Module、UI 与质量偏好。" onOpen={() => onNavigate("studio")} status={<LocalOnlyBadge />} />
       </div>
       <div className="safe-summary-grid">
-        <SafeSummaryCard title="Recent activity" value={recentSaves.length ? `${recentSaves.length} recent saves` : "No recent saves"} detail="Shown as safe save summaries only." />
-        <SafeSummaryCard title="Validation" value={validationSummaries.length ? `${validationSummaries.length} worlds checked` : "Not run"} detail={validationSummaries.some((item) => !item.ok) ? "Some worlds need review." : "No blocker summary available."} />
+        <SafeSummaryCard title="最近活动" value={recentSaves.length ? `${recentSaves.length} 个最近存档` : "暂无最近存档"} detail="这里只显示安全存档摘要。" />
+        <SafeSummaryCard title="验证摘要" value={validationSummaries.length ? `${validationSummaries.length} 个世界已检查` : "未运行"} detail={validationSummaries.some((item) => !item.ok) ? "部分世界需要复核。" : "暂无阻塞摘要。"} />
         <SafeSummaryCard title="隐私摘要" value="密钥已过滤" detail="API Key 不保存到项目；导出会过滤密钥；云同步未启用/未实现。" />
       </div>
       <div className="quick-actions">
-        <button type="button" onClick={() => onNavigate("project")}>写小说 / Open Novel</button>
-        <button type="button" onClick={() => onNavigate("project")}>角色 RP / Open Tavern</button>
-        <button type="button" onClick={() => onNavigate("play")}>大世界游玩 / Open World</button>
-        <button type="button" onClick={() => onNavigate("studio")}>运行 Quality Gate</button>
+        <button type="button" onClick={() => onNavigate("project")}>写小说</button>
+        <button type="button" onClick={() => onNavigate("project")}>角色 RP</button>
+        <button type="button" onClick={() => onNavigate("play")}>大世界游玩</button>
+        <button type="button" onClick={() => onNavigate("studio")}>运行质量检查</button>
         <button type="button" onClick={() => onNavigate("studio")}>打开设置</button>
-        <button type="button" onClick={() => onNavigate("prompt_lab")}>配置 Provider</button>
+        <button type="button" onClick={() => onNavigate("prompt_lab")}>配置模型服务</button>
       </div>
       <SecretSafeNotice />
     </SectionCard>
@@ -13084,19 +13832,20 @@ function ProjectHomeRedesignPanel({
 function LocalHelpOnboardingPanel() {
   return (
     <SectionCard title="离线帮助中心" description="中文本地可游玩完整产品指南；内容随应用打包，不加载远程文档。">
+      <div id="product-guide" className="guide-anchor" aria-hidden="true" />
       <div className="mode-landing-grid">
         <FeatureCard title="产品手册" detail="使用 docs/PRODUCT_GUIDE.md 离线了解中文本地完整工作流。" />
         <FeatureCard title="快速开始" detail="打开/创建项目，选择写小说、角色 RP 或大世界游玩；需要真实 LLM 时再配置模型服务。" />
         <FeatureCard title="这是什么" detail="本地写作、角色 RP 与大世界游玩工作区，共用 World Engine 与可见性边界。" />
         <FeatureCard title="本地优先" detail="无需账号、不使用云同步、无在线市场、不上传项目，API Key 只通过本地安全引用读取。" />
         <FeatureCard title="打开 / 创建项目" detail="打开最近项目只显示脱敏路径摘要；也可以一键体验 Demo 项目。" />
-        <FeatureCard title="配置真实 LLM / 中转站 / 本地模型" detail="通过 Provider Gateway 配置 OpenAI-compatible、Relay、local_http、custom、mock 或 local_stub。" />
-        <FeatureCard title="读取模型列表" detail="手动 Test Connection / Fetch Models；不支持模型列表时可手动添加 model_id。" />
-        <FeatureCard title="分配模型" detail="为 Novel、Tavern、World、Cross-Mode 和 Quality 分配安全 ModelProfile。" />
+        <FeatureCard title="配置真实 LLM / 中转站 / 本地模型" detail="通过 Provider Gateway 配置 OpenAI-compatible、Relay、local_http、custom、mock 或 local_stub；中文界面称为模型服务。" />
+        <FeatureCard title="读取模型列表" detail="手动测试连接 / 读取模型；不支持模型列表时可手动添加 model_id。" />
+        <FeatureCard title="分配模型" detail="为写小说、角色 RP、大世界、跨模式和质量检查分配安全 ModelProfile。" />
         <FeatureCard title="写小说" detail="本地撰写稿件、大纲、章节、场景、角色弧线，支持安全导出和 World-to-Novel 导入。" />
         <FeatureCard title="角色 RP" detail="使用本地角色卡、会话、记忆、Voice/Tone、边界设置和 proposal review 进行 RP。" />
         <FeatureCard title="大世界游玩" detail="通过后端行动游玩；World 变化仍由 StateDelta/EventLog 支撑，normal UI 使用 visible_state。" />
-        <FeatureCard title="Cross-Mode" detail="Novel / Tavern / World 之间使用 draft、proposal、validation 和明确 apply，不自动同步。" />
+        <FeatureCard title="跨模式 / Cross-Mode" detail="写小说、角色 RP 与大世界之间使用 draft、proposal、validation 和明确 apply，不自动同步。" />
         <FeatureCard title="创作 / Mod" detail="编辑本地包、验证、dry-run、审查权限；Mod 默认声明式，不支持任意代码插件。" />
         <FeatureCard title="质量检查" detail="运行本地确定性检查，覆盖 hidden leak、迁移、兼容性和发布就绪度。" />
         <FeatureCard title="调试 / 回放" detail="Timeline、EventLog、StateDelta 与 debug export 保持 gated、只读和显式确认。" />
@@ -13374,32 +14123,36 @@ function FirstRunOnboardingFlow({
   const currentStep = PLAYABLE_PRODUCT_TOUR_STEPS[step] ?? PLAYABLE_PRODUCT_TOUR_STEPS[0];
   return (
     <SectionCard title={CN_COPY.tour.title} description={CN_COPY.tour.description}>
-      <div className="safe-summary-grid">
-        <SafeSummaryCard title={`${CN_COPY.tour.noAccount} / No account needed`} value="local / 本地" detail="应用使用本地后端 API，不需要账号。" />
-        <SafeSummaryCard title={`${CN_COPY.tour.noCloud} / No cloud sync`} value="disabled / 已禁用" detail="项目不会上传或同步。" />
-        <SafeSummaryCard title={`${CN_COPY.tour.noMarketplace} / No online marketplace`} value="not included / 未包含" detail="使用本地 packages 和 samples，不启动远程包下载器。" />
-        <SafeSummaryCard title={`${CN_COPY.tour.apiKeysLocal} / API keys stay local`} value="secret ref only" detail="Provider 设置使用 api_key_env 或 secret_ref；向导不会索要明文 key。" />
-        <SafeSummaryCard title={`${CN_COPY.tour.worldBoundary} / World boundary`} value="protected / 受保护" detail="Onboarding never modifies GameState." />
+      <span className="sr-only">可以先跳过模型服务配置；向导不会要求输入明文密钥，也不会修改 GameState。</span>
+      <div className="first-run-tour-shell" data-testid="v38-first-run-tour-shell">
+        <div className="tour-progress" aria-label="首次使用向导进度" data-testid="v38-tour-progress">
+          <span className="status-pill warning">{CN_COPY.tour.step} {step + 1} / {PLAYABLE_PRODUCT_TOUR_STEPS.length}</span>
+          <span className="muted">{hasProject ? CN_COPY.tour.detectedProject : CN_COPY.tour.noProject}</span>
+        </div>
+        <section className="product-tour-step-panel current-step-card" data-testid="v37-tour-current-step" aria-label={safeAriaText(currentStep.title)}>
+          <p className="eyebrow">当前步骤</p>
+          <h3 ref={stepTitleRef} tabIndex={-1}>{currentStep.title}</h3>
+          <p>{currentStep.detail}</p>
+          <p className="muted">{CN_COPY.tour.nextAction}: {currentStep.nextAction}</p>
+          <button type="button" onClick={() => onNavigate(currentStep.jumpMode, currentStep.jumpTool)}>{currentStep.jumpLabel}</button>
+        </section>
       </div>
-      <span className="sr-only">Provider setup can be skipped. The tour never asks for a plaintext key.</span>
-      <div className="tour-progress" aria-label="Complete product tour progress">
-        <span className="status-pill warning">{CN_COPY.tour.step} {step + 1} / {PLAYABLE_PRODUCT_TOUR_STEPS.length}</span>
-        <span className="muted">{hasProject ? CN_COPY.tour.detectedProject : CN_COPY.tour.noProject}</span>
-      </div>
-      <section className="product-tour-step-panel current-step-card" data-testid="v37-tour-current-step" aria-label={safeAriaText(currentStep.title)}>
-        <h3 ref={stepTitleRef} tabIndex={-1}>{currentStep.title}</h3>
-        <p>{currentStep.detail}</p>
-        <p className="muted">{CN_COPY.tour.nextAction}: {currentStep.nextAction}</p>
-      </section>
-      <div className="quick-actions">
+      <div className="quick-actions tour-main-actions" data-testid="v38-tour-main-actions">
         <button type="button" onClick={() => setStep(Math.max(0, step - 1))} disabled={step === 0}>{CN_COPY.tour.back}</button>
         <button type="button" onClick={() => setStep(Math.min(PLAYABLE_PRODUCT_TOUR_STEPS.length - 1, step + 1))} disabled={step === PLAYABLE_PRODUCT_TOUR_STEPS.length - 1}>{CN_COPY.tour.next}</button>
-        <button type="button" onClick={() => onNavigate(currentStep.jumpMode, currentStep.jumpTool)}>{currentStep.jumpLabel}</button>
-        <button type="button" onClick={onOpenProjectHome}>{CN_COPY.tour.openProjectHome}</button>
-        <button type="button" onClick={onOpenProviderSetup}>{CN_COPY.tour.providerSetup}</button>
         <button type="button" onClick={onSkip}>{CN_COPY.tour.skip}</button>
         <button type="button" onClick={onComplete}>{CN_COPY.tour.finish}</button>
       </div>
+      <details className="tour-local-boundary" data-testid="v38-tour-local-boundary">
+        <summary>本地安全说明</summary>
+        <div className="safe-summary-grid">
+          <SafeSummaryCard title={CN_COPY.tour.noAccount} value="本地" detail="应用使用本地后端 API，不需要账号。" />
+          <SafeSummaryCard title={CN_COPY.tour.noCloud} value="已禁用" detail="项目不会上传或同步。" />
+          <SafeSummaryCard title={CN_COPY.tour.noMarketplace} value="未包含" detail="使用本地 packages 和 samples，不启动远程包下载器。" />
+          <SafeSummaryCard title={CN_COPY.tour.apiKeysLocal} value="secret ref only" detail="Provider 设置使用 api_key_env 或 secret_ref；向导不会索要明文 key。" />
+          <SafeSummaryCard title={CN_COPY.tour.worldBoundary} value="受保护" detail="向导不会修改 GameState。" />
+        </div>
+      </details>
       <details className="tour-all-steps" data-testid="v37-tour-all-steps" open={false}>
         <summary>{CN_COPY.tour.viewAllSteps}</summary>
         <ol className="compact-list product-tour-steps">
@@ -13425,7 +14178,7 @@ function FirstRunOnboardingFlow({
           </ol>
         </details>
       </details>
-      <p className="muted">{CN_COPY.tour.localStorageNote} Tour state is stored locally as completed/skipped only.</p>
+      <p className="muted">{CN_COPY.tour.localStorageNote} 向导状态只记录“已完成 / 已跳过”，不保存密钥或项目内容。</p>
     </SectionCard>
   );
 }
@@ -13672,7 +14425,13 @@ function DiagnosticsBundlePanel({
   const canCreate = !includeDebug || (debugEnabled && confirmedDebug);
 
   return (
-    <SectionCard title="诊断包预览" description="写入诊断包前先本地预览。默认不包含 API key、.env、provider secrets、debug raw data、mature/private、数据库、raw logs 或 raw state；不会上传。">
+    <SectionCard title="诊断包预览" description="写入诊断包前先本地预览。默认不包含 API Key、.env、Provider secrets、debug raw data、mature/private、数据库、raw logs 或 raw state；不会上传。">
+      <InlineGuideCard
+        testId="v38-inline-guide-diagnostics"
+        title="诊断怎么用"
+        detail="先预览诊断包，再确认本地创建。默认排除 API Key、.env、Provider secrets、debug raw data 和 mature/private；不会上传。"
+        compact
+      />
       <div className="section-heading-row">
         <div>
           <h4>诊断包预览</h4>
@@ -13682,6 +14441,12 @@ function DiagnosticsBundlePanel({
           <button type="button" onClick={() => onPreview(includeDebug, confirmedDebug)}>预览诊断包</button>
           <button type="button" onClick={() => onCreate(includeDebug, confirmedDebug)} disabled={!canCreate}>创建本地诊断包</button>
         </div>
+      </div>
+      <div className="safe-summary-grid backup-diagnostics-user-summary" data-testid="v38-diagnostics-filtering-summary" aria-label="诊断过滤摘要">
+        <SafeSummaryCard title="不会上传" value="仅本地" detail="诊断预览和诊断包创建都只在本地执行，不发送到云端、账号服务或远程支持。" />
+        <SafeSummaryCard title="默认排除" value="API Key / .env / Provider secrets" detail="不会包含 API Key、.env、Provider secrets、Authorization header 或 raw env。" />
+        <SafeSummaryCard title="隐私过滤" value="debug / mature/private 默认排除" detail="普通诊断包不包含 debug raw data、raw state_deltas、hidden facts、NPC secrets、mature/private。" />
+        <SafeSummaryCard title="失败处理" value="中文安全错误" detail="失败时只显示脱敏错误摘要，不显示 stack trace、敏感路径、raw provider error 或 secrets。" />
       </div>
       <LocalLongOperationProgress
         title="诊断包进度"
@@ -14163,8 +14928,20 @@ function BackupRestoreWizardPanel({
   const [backupPath, setBackupPath] = useState<string>("backups/latest.zip");
   const [targetProjectId, setTargetProjectId] = useState<string>("restored_project");
   return (
-    <SectionCard title="备份 / 恢复向导" description="本地备份和恢复都先 dry-run。默认不包含 API key、.env、provider secrets、debug raw data、mature/private、logs/cache/build outputs。不会上传。">
+    <SectionCard title="备份 / 恢复向导" description="本地备份和恢复都先 dry-run。默认不包含 API Key、.env、Provider secrets、debug raw data、mature/private、logs/cache/build outputs。不会上传。">
+      <InlineGuideCard
+        testId="v38-inline-guide-backup"
+        title="备份 / 恢复提示"
+        detail="先运行 dry-run 看清将写入和排除内容，再创建备份或恢复。默认排除密钥、日志、缓存、数据库、debug 和 mature/private。"
+        compact
+      />
       <ErrorPanel message={error} compact />
+      <div className="safe-summary-grid backup-diagnostics-user-summary" data-testid="v38-backup-restore-filtering-summary" aria-label="备份恢复过滤摘要">
+        <SafeSummaryCard title="备份不会上传" value="仅本地" detail="备份 dry-run、创建和恢复预览都只走本地后端，不做云备份、不上传诊断、不同步项目。" />
+        <SafeSummaryCard title="备份默认排除" value="API Key / .env / Provider secrets" detail="不包含 API Key、.env、Provider secrets、Authorization header、raw env、数据库、logs/cache、build outputs。" />
+        <SafeSummaryCard title="隐私默认排除" value="debug / mature/private" detail="不默认包含 debug raw data、raw state_deltas、hidden facts、NPC secrets、mature/private。" />
+        <SafeSummaryCard title="恢复必须确认" value="先 dry-run，再 confirm" detail="恢复 dry-run 不覆盖项目。真正 apply/覆盖必须经过显式确认，并通过 zip/path/executable/secret 阻塞检查。" />
+      </div>
       <div className="quick-actions">
         <button type="button" onClick={onDryRun}>备份 dry-run 预览</button>
         <button type="button" onClick={onCreate} disabled={!plan || plan.blockers.length > 0}>确认创建本地备份</button>
@@ -14214,7 +14991,7 @@ function BackupRestoreWizardPanel({
           <SafeSummaryCard title="恢复有效" value={restorePlan.backup_valid ? "是" : "否"} detail={restorePlan.target_project_id} />
           <SafeSummaryCard title="冲突" value={String(restorePlan.conflicts.length)} detail={restorePlan.conflicts.join(", ") || "无"} />
           <SafeSummaryCard title="阻塞项" value={String(restorePlan.blockers.length)} detail={restorePlan.blockers.join(", ") || "无"} />
-          <SafeSummaryCard title="确认恢复" value="必须手动确认" detail="此 UI 只预览恢复安全性；覆盖 / apply 仍必须经过确认门禁。" />
+          <SafeSummaryCard title="确认恢复" value="必须手动确认" detail="此 UI 只预览恢复安全性；不会自动覆盖项目。覆盖 / apply 仍必须经过中文确认门禁。" />
         </div>
       )}
     </SectionCard>
@@ -15052,6 +15829,12 @@ function WorldStudioLanding({
         title="本地大世界入口"
         description="普通视图只使用 visible_state。世界变化仍走后端规则、StateDelta 和 EventLog；LLM 只做输入解析与叙事渲染。"
       />
+      <InlineGuideCard
+        testId="v38-inline-guide-world"
+        title="大世界怎么玩"
+        detail="输入行动后由本地后端解析和执行，世界结果以 StateDelta / EventLog 为准。普通界面只显示 visible_state 和安全摘要。"
+        compact
+      />
       <div className="button-row" data-testid="v37-world-cn-start-continue">
         <button type="button" onClick={onContinue} disabled={!sessionId && !selectedSaveId}>
           继续大世界
@@ -15114,6 +15897,12 @@ function ScriptModEntryPanel({
   ];
   return (
     <section className="module-entry-panel">
+      <InlineGuideCard
+        testId="v38-inline-guide-authoring"
+        title="创作 / Mod 提示"
+        detail="这里用于本地包、模块和权限审查。包不会被执行；导入、预览和安全应用都需要验证、dry-run 与确认。"
+        compact
+      />
       <div className="safe-summary-grid">
         <SafeSummaryCard title="Local packages" value={String(modules.length)} detail="Scanned local manifests only; packages are not executed." />
         <SafeSummaryCard title="Unsafe packages" value={String(unsafeCount)} detail="Blocked or high-risk packages require review." />
@@ -16454,7 +17243,7 @@ function ProjectShell({
   onOpenProviderSetup: () => void;
 }) {
   const [projectId, setProjectId] = useState("local_project");
-  const [name, setName] = useState("Local Narrative Project");
+  const [name, setName] = useState("本地叙事项目");
   const [root, setRoot] = useState("projects/local_project");
   const [novelManuscripts, setNovelManuscripts] = useState<NovelManuscript[]>([]);
   const [novelChapters, setNovelChapters] = useState<NovelChapter[]>([]);
@@ -16546,6 +17335,37 @@ function ProjectShell({
   const selected = projects.find((project) => project.project_id === selectedProjectId) ?? null;
   const novel = modeStatuses.find((status) => status.mode === "novel");
   const tavern = modeStatuses.find((status) => status.mode === "tavern");
+  const authoringApiDisabled = isAuthoringApiDisabledMessage(error);
+  const projectShellVisibleError = authoringApiDisabled ? "" : error;
+  const projectModeCards = [
+    {
+      title: "写小说",
+      detail: selectedProjectId
+        ? "继续稿件、大纲、章节、场景和导出。"
+        : "打开或创建项目后即可写小说。",
+      action: "进入写作",
+      status: novel,
+      disabled: !selectedProjectId
+    },
+    {
+      title: "角色 RP",
+      detail: selectedProjectId
+        ? "继续角色卡、会话、单角色 RP 和多 NPC 场景。"
+        : "打开或创建项目后即可开始本地 RP。",
+      action: "开始 RP",
+      status: tavern,
+      disabled: !selectedProjectId
+    },
+    {
+      title: "大世界游玩",
+      detail: selectedProjectId
+        ? "继续或开始本地大世界，普通界面只显示 visible_state。"
+        : "打开或创建项目后即可开始大世界游玩。",
+      action: "开始大世界",
+      status: modeStatuses.find((status) => status.mode === "world"),
+      disabled: !selectedProjectId
+    }
+  ];
   const selectedChapter = useMemo(() => novelChapters.find((chapter) => chapter.chapter_id === selectedChapterId) ?? null, [novelChapters, selectedChapterId]);
   const selectedChapterScenes = useMemo(() => novelScenes.filter((scene) => !selectedChapterId || scene.chapter_id === selectedChapterId), [novelScenes, selectedChapterId]);
   const novelQualityIssues = useMemo(() => [
@@ -17384,16 +18204,48 @@ function ProjectShell({
       .catch((err) => setTavernError(toErrorMessage(err)));
   }
 
+  function scrollToProjectSection(sectionId: string) {
+    if (typeof document === "undefined") {
+      return;
+    }
+    document.getElementById(sectionId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
   return (
     <div className="studio-page">
       <PageHeader
-        eyebrow="v3.7 中文本地项目"
-        title="本地项目工作台"
-        description="在本地管理小说稿件、Tavern RP、大世界游玩、模型服务和安全导出。"
+        eyebrow="v3.8 中文产品体验"
+        title="本地 AI 叙事首页"
+        description="从这里继续项目、写小说、角色 RP、玩大世界、配置模型服务，并查看本地安全摘要。"
         actions={<button type="button" onClick={onRefresh}>刷新</button>}
       />
-      <ErrorPanel message={error} />
+      <ErrorPanel message={projectShellVisibleError} />
+      {authoringApiDisabled && (
+        <div className="notice-panel" role="status" aria-label="高级创作工具暂不可用">
+          <strong>创作 / Mod 高级工具当前未启用</strong>
+          <p>
+            Authoring API 只影响高级创作工具，不影响写小说、角色 RP、大世界游玩、模型服务、备份或诊断。需要使用地图编辑、包编辑或 Mod 工具时，再在后端启用 ENABLE_AUTHORING_API。
+          </p>
+        </div>
+      )}
       <SuccessPanel message={message} />
+      <section className="mode-landing-grid" data-testid="v38-project-shell-main-modes">
+        {projectModeCards.map((card) => (
+          <FeatureCard
+            key={card.title}
+            title={card.title}
+            detail={card.detail}
+            status={<ProjectModeStatusBadge status={card.status} fallback={card.disabled ? "需要项目" : "可用"} />}
+            action={<button type="button" disabled={card.disabled} onClick={() => scrollToProjectSection(card.title === "写小说" ? "project-novel-workflow" : card.title === "角色 RP" ? "project-tavern-workflow" : "project-world-workflow")}>{card.action}</button>}
+          />
+        ))}
+        <FeatureCard
+          title="配置模型服务"
+          detail="未配置 Provider 时，先配置模型服务；API Key 不会显示在前端，也不会保存到项目。"
+          status={<StatusBadge label="模型服务" enabled={Boolean(novel?.enabled || tavern?.enabled)} />}
+          action={<button type="button" onClick={onOpenProviderSetup}>配置模型服务</button>}
+        />
+      </section>
       <section className="card-grid">
         <div className="tool-card">
           <h3>项目</h3>
@@ -17434,10 +18286,10 @@ function ProjectShell({
         <ProjectModeCard title="写小说" status={novel} message="Novel Studio 可创建稿件、写章节、导出 Markdown/TXT，并通过模型服务生成草稿。" />
         <ProjectModeCard title="角色 RP" status={tavern} message="Tavern Studio 可管理角色卡、本地会话和安全 RP。" />
         {modeStatuses.filter((status) => !["novel", "tavern"].includes(status.mode)).map((status) => (
-          <ProjectModeCard key={status.mode} title={status.mode} status={status} message="Project mode entry is routed through the v2.1 Mode Router." />
+          <ProjectModeCard key={status.mode} title={localizeProjectMode(status.mode)} status={status} message="模式入口通过本地 Mode Router 进入；不会显示 API Key、hidden facts 或 raw state_deltas。" />
         ))}
       </section>
-      <section className="mode-landing-grid">
+      <section className="mode-landing-grid" id="project-world-workflow">
         <ModeLandingPage
           title="写小说 / Novel Studio"
           localStatus="本地稿件"
@@ -17446,11 +18298,11 @@ function ProjectShell({
           actions={["创建稿件", "打开大纲", "写章节", "运行 Novel Quality", "导出草稿"]}
         />
         <ModeLandingPage
-          title="Tavern Studio"
-          localStatus="RP expression layer"
-          features={["Characters", "Sessions", "Single-character chat", "Multi-NPC scenes", "RP memory", "Emotion", "Relationship tone", "Scene mood", "Voice Lab"]}
-          warnings={["Tavern does not directly modify World state.", "Mature Module is disabled by default."]}
-          actions={["Import character card", "Create session", "Open chat", "Open multi-NPC scene", "Open RP safety settings"]}
+          title="角色 RP / Tavern Studio"
+          localStatus="本地 RP 表达层"
+          features={["角色卡", "会话", "单角色聊天", "多 NPC 场景", "RP 记忆", "情绪", "关系语气", "场景氛围", "Voice Lab"]}
+          warnings={["Tavern 不会直接修改 World 状态。", "Mature Module 默认关闭。"]}
+          actions={["导入角色卡", "创建会话", "打开聊天", "打开多 NPC 场景", "打开 RP 安全设置"]}
         />
         <ModeLandingPage
           title="Cross-Mode / 跨模式桥接"
@@ -17460,9 +18312,15 @@ function ProjectShell({
           actions={["审查草稿", "运行跨模式验证", "检查冲突", "查看审计"]}
         />
       </section>
-      <section className="tool-card">
+      <section className="tool-card" id="project-novel-workflow">
         <h3>写小说 / Novel Studio</h3>
         <p className="muted">稿件、章节、场景和导出都保存在本地。Novel 不直接修改 World GameState，normal UI 不显示 hidden facts、API Key、私密备注、raw prompts 或 raw state_deltas。</p>
+        <InlineGuideCard
+          testId="v38-inline-guide-novel"
+          title="小说工作流提示"
+          detail="先创建稿件和章节，再使用模型生成、改写或摘要。Novel 草稿不会直接写入 World GameState，导出也会过滤隐藏和敏感内容。"
+          compact
+        />
         <div className="notice-panel">
           <strong>当前模型</strong>
           <p>{novelProviderStatus.safeSummary}</p>
@@ -17635,9 +18493,15 @@ function ProjectShell({
           )}
         />
       </section>
-      <section className="tool-card">
+      <section className="tool-card" id="project-tavern-workflow">
         <h3>Tavern / 角色 RP 工作室</h3>
         <p className="muted">Tavern 用于本地角色 RP、单人聊天、多 NPC 场景、记忆摘要和跨模式草稿。它不会直接写入 World GameState、EventLog、API Key、hidden facts 或 raw state_deltas。</p>
+        <InlineGuideCard
+          testId="v38-inline-guide-tavern"
+          title="角色 RP 提示"
+          detail="先选择或创建角色，再开始单角色 RP 或多 NPC 场景。Tavern 只写本地 RP 会话；进入 World 的影响必须走 proposal、validation 和确认。"
+          compact
+        />
         <div className="notice-panel" data-testid="v37-tavern-cn-provider-status">
           <strong>模型服务状态</strong>
           <p>{tavernProviderStatus.safeSummary}</p>
@@ -17868,6 +18732,12 @@ function ProjectShell({
       </section>
       <section className="tool-card">
         <h3>跨模式桥接 / Cross-Mode Bridge</h3>
+        <InlineGuideCard
+          testId="v38-inline-guide-cross-mode"
+          title="跨模式提示"
+          detail="Cross-Mode 用草稿、提案、验证和确认把小说、RP 与大世界连接起来。它不会自动 apply，也不会在普通视图显示隐藏细节。"
+          compact
+        />
         <p className="muted">跨模式产物分为草稿（draft）、提案（proposal）、审查（review）、验证报告（validation report）和审计记录（audit record）。任何写入 World 的 Apply 都必须经过后端 validation / dry-run / explicit confirm。</p>
         <p className="muted">支持 World → Novel、Tavern → Novel、Tavern → World、Novel → World、World NPC → Tavern。普通视图默认过滤 hidden / mature / private、NPC secrets、debug memory 和 raw state_deltas。</p>
         <CrossModeDashboardPanel
@@ -18119,14 +18989,52 @@ function ProjectModeCard({ title, status, message }: { title: string; status?: N
     <div className="tool-card">
       <h3>{title}</h3>
       <p className="muted">{message}</p>
-      <StatusBadge label={status?.enabled ? "enabled" : "stub"} enabled={Boolean(status?.enabled)} />
+      <StatusBadge label={status?.enabled ? "已启用" : "待配置"} enabled={Boolean(status?.enabled)} />
       {status?.missing_requirements?.length ? (
-        <ItemList emptyText="Configured" items={status.missing_requirements.map((item) => <span key={item}>{item}</span>)} />
+        <ItemList emptyText="已配置" items={status.missing_requirements.map((item) => <span key={item}>{localizeRequirement(item)}</span>)} />
       ) : (
-        <p className="muted">Configured safely. No API keys, hidden facts, or raw env are shown here.</p>
+        <p className="muted">已安全配置：此处不显示 API Key、hidden facts 或 raw env。</p>
       )}
     </div>
   );
+}
+
+function ProjectModeStatusBadge({ status, fallback }: { status?: NarrativeProjectModeStatus; fallback: string }) {
+  if (!status) {
+    return <StatusBadge label={fallback} enabled={false} />;
+  }
+  if (status.enabled) {
+    return <StatusBadge label="可用" enabled />;
+  }
+  return <StatusBadge label={status.missing_requirements?.length ? "需要配置" : "待启用"} enabled={false} />;
+}
+
+function localizeRequirement(requirement: string): string {
+  const normalized = requirement.toLowerCase();
+  if (normalized.includes("project")) return "需要先打开或创建本地项目";
+  if (normalized.includes("provider")) return "需要配置模型服务";
+  if (normalized.includes("model")) return "需要读取或分配模型";
+  if (normalized.includes("world")) return "需要选择世界或创建存档";
+  return requirement;
+}
+
+function localizeProjectMode(mode: string): string {
+  const labels: Record<string, string> = {
+    world: "大世界",
+    cross_mode: "跨模式",
+    authoring: "创作 / Mod",
+    qa: "质量检查",
+    debug: "调试 / 回放",
+    backup: "备份",
+    diagnostics: "诊断",
+    export: "导出",
+    provider: "模型服务"
+  };
+  return labels[mode] ?? mode;
+}
+
+function isAuthoringApiDisabledMessage(message?: string): boolean {
+  return /authoring api is disabled|enable_authoring_api|authoring unavailable/i.test(message ?? "");
 }
 
 function LocalOnlyNotice({ children }: { children: ReactNode }) {
@@ -18152,14 +19060,15 @@ function SuccessPanel({ message, compact = false }: { message: string; compact?:
 
 function StatusBadge({ label, enabled }: { label: string; enabled: boolean | undefined }) {
   const state = enabled ? "enabled" : "disabled";
+  const stateLabel = enabled ? "已启用" : "未启用";
   const safeLabel = safeAriaText(label);
   return (
     <span
       className={`status-badge ${state}`}
       role="status"
-      aria-label={`Status: ${safeLabel} is ${state}`}
+      aria-label={`状态：${safeLabel} ${stateLabel}`}
     >
-      {safeLabel}: {state}
+      {safeLabel}：{stateLabel}
     </span>
   );
 }

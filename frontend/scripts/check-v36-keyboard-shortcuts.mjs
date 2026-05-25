@@ -18,7 +18,7 @@ const effectSource = effectStart >= 0 && effectEnd > effectStart ? appSource.sli
 if (!providerSource) failures.push("KeyboardShortcutsProvider source slice not found.");
 if (!effectSource) failures.push("handleShortcutKeyDown source slice not found.");
 
-for (const [token, label] of [
+for (const [tokens, label] of [
   ["data-v36-keyboard-shortcuts", "v3.6 marker"],
   ["KeyboardShortcutsProvider", "provider component"],
   ["ShortcutHelpDialog", "shortcut help UI"],
@@ -35,13 +35,14 @@ for (const [token, label] of [
   ["isEditableShortcutTarget", "editable target guard"],
   ["focusFirstSafeSearchField", "safe search focus helper"],
   ["SHORTCUT_DANGEROUS_ACTION_BLOCKLIST", "dangerous action blocklist"],
-  ["Safe Apply still requires validation, dry-run, and explicit confirm", "safe apply boundary wording"],
-  ["Debug views remain gated by ENABLE_DEBUG_API", "debug gate boundary wording"],
-  ["Input fields ignore navigation chords", "input/IME guard wording"],
-  ["Enable safe keyboard shortcuts", "settings toggle"],
-  ["View Keyboard Shortcuts", "settings help action"]
+  [["Safe Apply still requires validation, dry-run, and explicit confirm", "Safe Apply 仍需要 validation、dry-run 和明确确认"], "safe apply boundary wording"],
+  [["Debug views remain gated by ENABLE_DEBUG_API", "调试视图仍受 ENABLE_DEBUG_API"], "debug gate boundary wording"],
+  [["Input fields ignore navigation chords", "输入框会忽略导航组合键"], "input/IME guard wording"],
+  [["Enable safe keyboard shortcuts", "在此设备启用键盘快捷键"], "settings toggle"],
+  [["View Keyboard Shortcuts", "键盘快捷键帮助"], "settings help action"]
 ]) {
-  if (!appSource.includes(token)) failures.push(`Missing ${label}: ${token}`);
+  const tokenList = Array.isArray(tokens) ? tokens : [tokens];
+  if (!tokenList.some((token) => appSource.includes(token))) failures.push(`Missing ${label}: ${tokenList.join(" | ")}`);
 }
 
 for (const riskyToken of [

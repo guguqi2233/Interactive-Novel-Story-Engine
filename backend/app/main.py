@@ -7,6 +7,7 @@ from typing import Any
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import ValidationError
 
 from app.api import (
@@ -804,6 +805,22 @@ set_performance_logging_enabled(settings.enable_perf_logging)
 set_usage_tracking_enabled(settings.enable_usage_tracking)
 
 app = FastAPI(title=settings.app_name, version="0.1.0")
+LOCAL_FRONTEND_ORIGINS = [
+    "http://127.0.0.1:5173",
+    "http://localhost:5173",
+    "http://127.0.0.1:4173",
+    "http://localhost:4173",
+    "http://127.0.0.1:3000",
+    "http://localhost:3000",
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=LOCAL_FRONTEND_ORIGINS,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["content-type", "authorization"],
+    allow_credentials=False,
+    max_age=600,
+)
 app.state.session_store = InMemorySessionStore()
 app.state.save_repository = SQLiteSaveRepository(_sqlite_path_from_url(settings.database_url))
 app.state.narrative_eval_reports = []

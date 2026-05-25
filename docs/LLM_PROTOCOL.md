@@ -555,6 +555,41 @@ sync feature, online marketplace, remote package downloader, or vendor-specific
 relay integration. They do not change Provider Gateway semantics or World
 Engine authority.
 
+### v3.8 Chinese Product UX Provider Boundary
+
+v3.8 polishes the Chinese Provider/model-service UX. It explains Provider,
+Base URL, API Key source, relay/custom compatible API endpoints, model-list
+fetching, model assignment, possible costs, and fake-provider testing in more
+ordinary Chinese. This is UX polish only; it does not change Provider Gateway
+semantics or LLM authority.
+
+v3.8 Provider / LLM rules:
+
+- Provider Gateway remains the only model entry point.
+- Users may manually configure real providers such as OpenAI,
+  OpenAI-compatible, relay-style/custom base URL, `local_http`, or custom
+  profiles, but real connection tests, model-list fetches, and generation are
+  user-triggered actions only.
+- Tests, CI, release checks, and fixtures must continue to use fake providers,
+  `mock`, `local_stub`, or injected fake clients. They must not call real
+  provider networks.
+- `ProviderProfile` must not store plaintext API keys. It may persist only
+  provider metadata plus `api_key_env`, `secret_ref`, or `local_secret_ref`.
+- A `transient_api_key` may be used only for the current manual request or
+  session and must not enter project files, frontend state, caches, logs,
+  diagnostics, backups, exports, docs, tests, prompt profiles, package
+  manifests, or provider profile packs.
+- Provider UI, errors, usage summaries, model lists, model assignment, and
+  caches must not render raw provider responses, Authorization headers, raw env,
+  raw prompts, raw outputs, API keys, hidden facts, NPC secrets, debug memory,
+  mature/private content, raw `GameState`, or raw `state_deltas`.
+- LLM output can help with language, drafts, summaries, intent parsing, and
+  narration. It cannot decide world facts, apply `StateDelta`, write
+  `EventLog`, bypass visibility, or approve Cross-Mode apply.
+- Relay means a compatible API endpoint configured by the user. The project is
+  not an API resale service and does not endorse or bundle a specific relay
+  provider.
+
 ## v2.4 Cross-Mode Bridge LLM Boundary
 
 v2.4 Cross-Mode Bridge does not grant the LLM any new world authority. Cross

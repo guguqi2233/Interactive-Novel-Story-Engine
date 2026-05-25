@@ -25,12 +25,12 @@ if (!sharedSource) failures.push("Shared UI source slice not found.");
 
 for (const [tokens, label] of [
   [["aria-label=\"AI Narrative Studio local workspace\""], "main local workspace landmark"],
-  [["aria-label=\"Local studio navigation\"", "aria-label=\"Local studio navigation / 本地工作室导航\""], "main navigation label"],
+  [["aria-label=\"Local studio navigation\"", "aria-label=\"Local studio navigation / 本地工作室导航\"", "aria-label=\"本地工作室导航\""], "main navigation label"],
   [["aria-current={item.active ? \"page\" : undefined}"], "active nav aria-current"],
   [["aria-label={safeAriaText(`Open ${item.label}", "aria-label={safeAriaText(`打开 ${item.cnLabel ?? item.label}"], "navigation button accessible names"],
-  [["aria-label={debugOpen ? \"Hide debug drawer\" : \"Show debug drawer\"}", "aria-label={debugOpen ? \"Hide Debug / Replay panel\" : \"Open Debug / Replay panel\"}"], "debug drawer button label"],
+  [["aria-label={debugOpen ? \"Hide debug drawer\" : \"Show debug drawer\"}", "aria-label={debugOpen ? \"Hide Debug / Replay panel\" : \"Open Debug / Replay panel\"", "aria-label={debugOpen ? \"隐藏调试 / 回放面板\" : \"打开调试 / 回放面板\"}"], "debug drawer button label"],
   [["aria-controls=\"debug-panel\""], "debug panel control relationship"],
-  [["aria-label=\"Open keyboard shortcuts help\""], "icon-only shortcut help button label"],
+  [["aria-label=\"Open keyboard shortcuts help\"", "aria-label=\"打开键盘快捷键帮助\""], "icon-only shortcut help button label"],
   [["function safeAriaText"], "shared safe aria text redaction helper"],
   [["aria-live=\"polite\""], "polite status live region"],
   [["aria-live=\"assertive\""], "assertive error live region"],
@@ -62,7 +62,7 @@ if (!/function ModelCapabilityBadge[\s\S]*role="status"[\s\S]*Model capability/.
   failures.push("ModelCapabilityBadge does not expose an accessible capability label.");
 }
 
-if (!/aria-haspopup="dialog"[\s\S]*aria-label="Open keyboard shortcuts help"/.test(providerSource)) {
+if (!/aria-haspopup="dialog"[\s\S]*aria-label="(?:Open keyboard shortcuts help|打开键盘快捷键帮助)"/.test(providerSource)) {
   failures.push("The icon-only shortcut help launcher is missing an accessible label.");
 }
 
